@@ -1,9 +1,39 @@
 using System;
 
+using static Swolescript.SwoleScript;
+
 namespace Swolescript
 {
     public static class SwoleScriptSemantics
     {
+
+        public const string ssVersionPrefix = "@";
+        public static string GetFullPackageString(string packageName, Version version) => GetFullPackageString(packageName, version == null ? "" : version.ToString());
+        public static string GetFullPackageString(string packageName, string version)
+        {
+
+            if (!ValidatePackageName(packageName)) return "";
+
+            if (!ValidateVersionString(version) || version == "0.0" || version == "0.0.0" || version == "0.0.0.0") return packageName;
+
+            return $"{packageName}{ssVersionPrefix}{version}";
+        }
+        public static void SplitFullPackageString(string packageString, out string packageName, out string packageVersion)
+        {
+
+            packageName = packageString;
+            packageVersion = "";
+
+            int versionPrefix = packageString.IndexOf(ssVersionPrefix);
+            if (versionPrefix >= 0)
+            {
+
+                if ((versionPrefix + ssVersionPrefix.Length + 1) < packageName.Length) packageVersion = packageName.Substring(versionPrefix + ssVersionPrefix.Length + 1);
+                packageName = packageString.Substring(versionPrefix);
+
+            }
+
+        }
 
         public const int ssDefaultAutoIndentation = 2;
         public const string ssMimicNewLine = "\n";
@@ -16,7 +46,12 @@ namespace Swolescript
             return sourceString;
         }
 
+        public const string ssMsgPrefix_Info = ">>";
+        public const string ssMsgPrefix_Warning = "!!";
+        public const string ssMsgPrefix_Error = "!!!";
+
         public const string ssKeyword_Import = "import";
+        public const string ssKeyword_Insert = "insert";
 
         public const string msKeyword_If = "if";
         public const string msKeyword_Then = "then";

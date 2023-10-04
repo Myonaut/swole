@@ -240,8 +240,68 @@ namespace Swolescript
 
         }
 
-        public static readonly Regex rgAlphaNumeric = new Regex(@"^[a-zA-Z0-9\s,]*$");
+        public static Version AsVersion(this string str)
+        {
+
+            if (!string.IsNullOrEmpty(str))
+            {
+
+                try
+                {
+                    var ver = new Version(str);
+                    return ver;
+                }
+                catch { }
+
+            }
+
+            return new Version("0.0.0");
+
+        }
+
+        #region Regular Expressions
+
+        /* Regular Expressions Cheat Sheet https://regexr.com/
+        * ^ - Starts with
+        * $ - Ends with
+        * [] - Range
+        * () - Group
+        * . - Single character once
+        * + - one or more characters in a row
+        * ? - optional preceding character match
+        * \ - escape character
+        * \n - New line
+        * \d - Digit
+        * \D - Non-digit
+        * \s - White space
+        * \S - non-white space
+        * \w - alphanumeric/underscore character (word chars)
+        * \W - non-word characters
+        * {x,y} - Repeat low (x) to high (y) (no "y" means at least x, no ",y" means that many)
+        * (x|y) - Alternative - x or y
+        * 
+        * [^x] - Anything but x (where x is whatever character you want)
+        */
+
+        public static readonly Regex rgAlphaNumeric = new Regex(@"^[a-zA-Z0-9\s]*$");
+        public static readonly Regex rgAlphaNumericFilter = new Regex(@"[^a-zA-Z0-9\s]");
         public static bool IsAlphaNumeric(this string str) => rgAlphaNumeric.IsMatch(str);
+        public static string AsAlphaNumeric(this string str) => rgAlphaNumericFilter.Replace(str, "");
+
+        public static readonly Regex rgAlphaNumericNoWhitespace = new Regex(@"^[a-zA-Z0-9]*$");
+        public static readonly Regex rgAlphaNumericNoWhitespaceFilter = new Regex(@"[^a-zA-Z0-9]");
+        public static bool IsAlphaNumericNoWhitespace(this string str) => rgAlphaNumericNoWhitespace.IsMatch(str);
+        public static string AsAlphaNumericNoWhitespace(this string str) => rgAlphaNumericNoWhitespaceFilter.Replace(str, "");
+
+        public static readonly Regex rgPackageString = new Regex(@"^[a-zA-Z0-9.]*$");
+        public static readonly Regex rgPackageStringFilter = new Regex(@"[^a-zA-Z0-9.]");
+        public static bool IsPackageString(this string str) => rgPackageString.IsMatch(str);
+        public static string AsPackageString(this string str) => rgPackageStringFilter.Replace(str, "");
+
+        public static readonly Regex rgFourComponentVersionNumber = new Regex(@"^([0-9]\.){1,3}[0-9]$");
+        public static bool IsNativeVersionString(this string str) => rgFourComponentVersionNumber.IsMatch(str);
+
+        #endregion
 
     }
 

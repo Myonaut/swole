@@ -1,62 +1,57 @@
 using System;
-using System.Collections;
-using System.Collections.Generic;
-using System.Globalization;
+
+using static Swolescript.SwoleScript;
 using static Swolescript.SwoleScriptSemantics;
 
 namespace Swolescript
 {
 
     [Serializable]
-    public struct SourceScript
+    public struct SourceScript : IContent
     {
-
-        public static bool ValidateScriptName(SourceScript script) => ValidateScriptName(script.name);
-        public static bool ValidateScriptName(string name)
-        {
-
-            if (string.IsNullOrEmpty(name)) return false;
-
-            return name.IsAlphaNumeric();
-
-        }
-
-        public bool NameIsValid => ValidateScriptName(name);
 
         public override string ToString()
         {
 
-            return $"{name} created by {(string.IsNullOrEmpty(author) ? "?" : author)}";
+            return $"{name}{(string.IsNullOrEmpty(author) ? "" : (" created by" + author))}{(this.HasPackage() ? (" - imported from '" + packageInfo.GetIdentityString() + "'") : "")}";
 
         }
 
         public string name;
+        public string Name => name;
+        public bool NameIsValid => ValidateScriptName(name);
 
         public string author;
+        public string Author => author;
 
         public string creationDate;
+        public string CreationDateString => creationDate;
 
         public string lastEditDate;
+        public string LastEditDateString => lastEditDate;
 
         public string description;
+        public string Description => description;
+
+        public PackageManifest packageInfo;
+        public PackageManifest PackageInfo => packageInfo;
 
         public string source;
 
-        public const string dateFormat = "MM/dd/yyyy";
-
-        public SourceScript(string name, string author, DateTime creationDate, DateTime lastEditDate, string description, string source)
+        public SourceScript(string name, string author, DateTime creationDate, DateTime lastEditDate, string description, string source, PackageManifest packageInfo = default)
         {
 
             this.name = name;
             this.author = author;
-            this.creationDate = creationDate.ToString(dateFormat);
-            this.lastEditDate = lastEditDate.ToString(dateFormat);
+            this.creationDate = creationDate.ToString(IContent.dateFormat);
+            this.lastEditDate = lastEditDate.ToString(IContent.dateFormat);
             this.description = description;
             this.source = source;
+            this.packageInfo = packageInfo;
 
         }
 
-        public SourceScript(string name, string author, string creationDate, string lastEditDate, string description, string source)
+        public SourceScript(string name, string author, string creationDate, string lastEditDate, string description, string source, PackageManifest packageInfo = default)
         {
 
             this.name = name;
@@ -65,43 +60,14 @@ namespace Swolescript
             this.lastEditDate = lastEditDate;
             this.description = description;
             this.source = source;
-
-        }
-
-        public DateTime LastEditDate
-        {
-
-            get
-            {
-
-                if (!string.IsNullOrEmpty(lastEditDate) && DateTime.TryParse(lastEditDate, new CultureInfo("en-us"), DateTimeStyles.None, out DateTime date)) return date;
-
-                return CreationDate;
-
-            }
-
-        }
-
-        public DateTime CreationDate
-        {
-
-            get
-            {
-
-                DateTime date = DateTime.Now;
-
-                if (!string.IsNullOrEmpty(creationDate) && DateTime.TryParse(creationDate, new CultureInfo("en-us"), DateTimeStyles.None, out DateTime result)) date = result;
-
-                return date;
-
-            }
+            this.packageInfo = packageInfo;
 
         }
 
         /// <summary>
         /// Outputs a source string that is ready to be embedded in a source that references this script.
         /// </summary>
-        public string GetSourceEmbed(string packageName, int indentation = 0, bool addInitialLineBreak = false, bool addAdditionalEndLineBreak = false)
+        public string GetSourceEmbed(string topAuthor = null, PackageManifest workingPackage = default, int indentation = 0, bool addInitialLineBreak = false, bool addAdditionalEndLineBreak = false)
         {
 
             if (string.IsNullOrEmpty(source)) return "";
@@ -115,25 +81,30 @@ namespace Swolescript
             embedSource = "";
             for (int a = 0; a < splitSource.Length; a++) embedSource = embedSource + indent + splitSource[a] + (a == splitSource.Length - 1 ? "" : ssMimicNewLine); // Add indentation to each line
 
-            string header = $"{indent}// {((string.IsNullOrEmpty(packageName) ? "" : (packageName + ".")) + name)} ";
-            string auth = $"{indent}// ©{LastEditDate.Year} {(string.IsNullOrEmpty(author) ? "" : author)}";
+            bool isLocalPackage = this.HasPackage() && packageInfo.GetIdentityString() == workingPackage.GetIdentityString();
+
+            string header = $"{indent}// {((isLocalPackage || !this.HasPackage() ? "" : (packageInfo.GetIdentityString() + ".")) + name)} ";
+            string auth = $"{indent}// ©{this.LastEditDate().Year} {(string.IsNullOrEmpty(author) ? "" : author)}";
+
+            bool isSameAuthor = author == topAuthor;
              
             int boundLength = (int)Math.Max(header.Length, auth.Length);
 
             return (addInitialLineBreak ? ssMimicNewLine : "") +
                                 $"{indent}//" + (new string('+', boundLength)) + ssMimicNewLine +
                                 header + ssMimicNewLine +
-                                (string.IsNullOrEmpty(author) ? "" : (auth + ssMimicNewLine)) +
+                                (isSameAuthor || string.IsNullOrEmpty(author) ? "" : (auth + ssMimicNewLine)) +
                                 $"{indent}//" + (new string('+', boundLength)) + ssMimicNewLine +
                                 embedSource + ssMimicNewLine +
                                 $"{indent}//" + (new string('+', boundLength)) + (addAdditionalEndLineBreak ? ssMimicNewLine : "") + ssMimicNewLine;
 
         }
 
+        public const string metaDataTag_URL = "PULLED_FROM:";
         public const string metaDataTag_Name = "NAME:";
         public const string metaDataTag_Author = "AUTHOR:";
         public const string metaDataTag_CreationDate = "CREATED:";
-        public const string metaDataTag_LastEditDate = "LASTEDIT:";
+        public const string metaDataTag_LastEditDate = "LAST_EDIT:";
         public const string metaDataTag_Description = "INFO:";
         public const char descriptionMarker = '`';
 
@@ -150,6 +121,7 @@ namespace Swolescript
             string desc = SwoleScriptSemantics.MimicNewLines(description);
             desc = desc.Replace(descriptionMarker + "", "");
 
+            string l0 = string.IsNullOrEmpty(packageInfo.url) ? "" : ($"// {metaDataTag_URL} {packageInfo.url}" + ssMimicNewLine);
             string l1 = string.IsNullOrEmpty(name) ? "" : ($"// {metaDataTag_Name} {name}" + ssMimicNewLine);
             string l2 = string.IsNullOrEmpty(author) ? "" : ($"// {metaDataTag_Author} {author}" + ssMimicNewLine);
             string l3 = string.IsNullOrEmpty(creationDate) ? "" : ($"// {metaDataTag_CreationDate} {creationDate}" + ssMimicNewLine);
@@ -190,7 +162,7 @@ namespace Swolescript
 
             sourceEdit =
                 "// " + (new string('~', boundLength)) + ssMimicNewLine
-                + l1 + l2 + l3 + l4 + descStr
+                + l0 + l1 + l2 + l3 + l4 + descStr
                 + "// " + (new string('~', boundLength)) + ssMimicNewLine
                 + sourceEdit;
 
@@ -204,9 +176,11 @@ namespace Swolescript
         public SourceScript(string standaloneSource)
         {
 
+            packageInfo = default;
+
             name = "null";
             author = description = "";
-            creationDate = DateTime.Now.ToString(dateFormat);
+            creationDate = DateTime.Now.ToString(IContent.dateFormat);
             lastEditDate = null;
 
             standaloneSource = SwoleScriptSemantics.MimicNewLines(standaloneSource);
@@ -241,6 +215,13 @@ namespace Swolescript
                         line = line.Substring(0, tagIndex);
                     }
                     description = description + line;
+                    continue;
+                }
+
+                tagIndex = line.IndexOf(metaDataTag_URL);
+                if (tagIndex >= 0)
+                {
+                    if (tagIndex + metaDataTag_URL.Length < line.Length) packageInfo.url = line.Substring(tagIndex + metaDataTag_URL.Length).Trim();
                     continue;
                 }
 

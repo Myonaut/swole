@@ -17,6 +17,16 @@ namespace Swolescript
 
 #if FOUND_UNITY
 
+        public override string WorkingDirectory => Application.persistentDataPath;
+
+        #region JSON Serialization
+
+        public override string ToJson(object obj, bool prettyPrint = false) => JsonUtility.ToJson(obj, prettyPrint);
+        public override object FromJson(string json, Type type) => JsonUtility.FromJson(json, type);
+        public override T FromJson<T>(string json) => JsonUtility.FromJson<T>(json);
+
+        #endregion
+
         #region Conversions | Swole -> Unity
 
         public static Vector2 AsUnityVector(EngineInternal.Vector2 v2) => new Vector2(v2.x, v2.y);
