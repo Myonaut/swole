@@ -14,15 +14,19 @@ namespace Swolescript
 
             this.manifest = manifest;
 
-            this.scripts = new SourceScript[scripts.Count];
-            int i = 0;
-            foreach (var script in scripts) 
+            if (scripts != null)
             {
-                var script_ = script;
-                script_.packageInfo = manifest;
-                this.scripts[i] = script_; 
-                i++;
+                this.scripts = new SourceScript[scripts.Count];
+                int i = 0;
+                foreach (var script in scripts)
+                {
+                    var script_ = script;
+                    script_.packageInfo = manifest;
+                    this.scripts[i] = script_;
+                    i++;
+                }
             }
+            else this.scripts = null;
 
         }
 

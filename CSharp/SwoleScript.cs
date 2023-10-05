@@ -64,6 +64,7 @@ namespace Swolescript
         private static SwoleScript instance = new SwoleScript(new EngineHook());
         public static SwoleScript Instance => instance;
         public static EngineHook Engine => instance.engine;
+        public static RuntimeEnvironment DefaultEnvironment => Engine.RuntimeEnvironment;
         public static DirectoryInfo AssetDirectory => instance.AssetDirectoryLocal;
 
         private List<SourcePackage> packages = new List<SourcePackage>();

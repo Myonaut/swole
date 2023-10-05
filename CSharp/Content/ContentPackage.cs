@@ -40,13 +40,17 @@ namespace Swolescript
 
             this.manifest = manifest;
 
-            this.content = new IContent[content.Count];
-            int i = 0;
-            foreach (var script in this.content)
+            if (content != null)
             {
-                this.content[i] = script;
-                i++;
+                this.content = new IContent[content.Count];
+                int i = 0;
+                foreach (var script in this.content)
+                {
+                    this.content[i] = script;
+                    i++;
+                }
             }
+            else this.content = null;
 
         }
 

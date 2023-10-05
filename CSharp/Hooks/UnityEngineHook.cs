@@ -17,6 +17,30 @@ namespace Swolescript
 
 #if FOUND_UNITY
 
+        public class UnityLogger : SwoleLogger
+        {
+            protected override void LogInternal(string message) => Debug.Log(message);
+
+            protected override void LogErrorInternal(string error) => Debug.LogError(error);
+
+            protected override void LogWarningInternal(string warning) => Debug.LogWarning(warning);
+
+        }
+
+        public override SwoleLogger Logger
+        {
+
+            get
+            {
+
+                if (logger == null) logger = new UnityLogger();
+
+                return logger;
+
+            }
+
+        }
+
         public override string WorkingDirectory => Application.persistentDataPath;
 
         #region JSON Serialization
@@ -35,6 +59,20 @@ namespace Swolescript
 
         public static Quaternion AsUnityQuaternion(EngineInternal.Quaternion q) => new Quaternion(q.x, q.y, q.z, q.w);
 
+        public static Matrix4x4 AsUnityMatrix(EngineInternal.Matrix4x4 m) => new Matrix4x4(AsUnityVector(m.GetColumn(0)), AsUnityVector(m.GetColumn(1)), AsUnityVector(m.GetColumn(2)), AsUnityVector(m.GetColumn(3)));
+
+        public static GameObject AsUnityGameObject(EngineInternal.GameObject gameObject)
+        {
+            if (gameObject.instance is GameObject unityGameObject) return unityGameObject;
+            return null;
+        }
+
+        public static Transform AsUnityTransform(EngineInternal.Transform transform)
+        {
+            if (transform.instance is Transform unityTransform) return unityTransform;
+            return null;
+        }
+
         #endregion
 
         #region Conversions | Unity -> Swole
@@ -44,6 +82,20 @@ namespace Swolescript
         public static EngineInternal.Vector4 AsSwoleVector(Vector4 v4) => new EngineInternal.Vector4(v4.x, v4.y, v4.z, v4.w);
 
         public static EngineInternal.Quaternion AsSwoleQuaternion(Quaternion q) => new EngineInternal.Quaternion(q.x, q.y, q.z, q.w);
+
+        public static EngineInternal.Matrix4x4 AsSwoleMatrix(Matrix4x4 m) => new EngineInternal.Matrix4x4(AsSwoleVector(m.GetColumn(0)), AsSwoleVector(m.GetColumn(1)), AsSwoleVector(m.GetColumn(2)), AsSwoleVector(m.GetColumn(3)));
+
+        public static EngineInternal.GameObject AsSwoleGameObject(GameObject gameObject)
+        {
+            if (gameObject == null) return default;
+            return new EngineInternal.GameObject(gameObject, AsSwoleTransform(gameObject.transform));
+        }
+
+        public static EngineInternal.Transform AsSwoleTransform(Transform transform)
+        {
+            if (transform == null) return default;
+            return new EngineInternal.Transform(transform);
+        }
 
         #endregion
 
@@ -117,6 +169,89 @@ namespace Swolescript
             return AsSwoleQuaternion(transform.rotation);
         }
 
+        public override void SetLocalPosition(object engineObject, EngineInternal.Vector3 localPosition) 
+        {
+            var transform = AsTransform(engineObject);
+            if (transform == null) return;
+            transform.localPosition = AsUnityVector(localPosition);
+        }
+        public override void SetLocalRotation(object engineObject, EngineInternal.Quaternion localRotation) 
+        {
+            var transform = AsTransform(engineObject);
+            if (transform == null) return;
+            transform.localRotation = AsUnityQuaternion(localRotation);
+        }
+        public override void SetLocalScale(object engineObject, EngineInternal.Vector3 localScale)
+        {
+            var transform = AsTransform(engineObject);
+            if (transform == null) return;
+            transform.localScale = AsUnityVector(localScale);
+        }
+
+        public override void SetWorldPosition(object engineObject, EngineInternal.Vector3 position) 
+        {
+            var transform = AsTransform(engineObject);
+            if (transform == null) return;
+            transform.position = AsUnityVector(position);
+        }
+        public override void SetWorldRotation(object engineObject, EngineInternal.Quaternion rotation) 
+        {
+            var transform = AsTransform(engineObject);
+            if (transform == null) return;
+            transform.rotation = AsUnityQuaternion(rotation);
+        }
+
+        public override string GetName(object engineObject) 
+        {
+
+            if (engineObject is UnityEngine.Object unityObject)
+            {
+                return unityObject.name;
+            }
+
+            return "";
+
+        }
+
+        public override EngineInternal.Quaternion Mul(EngineInternal.Quaternion qA, EngineInternal.Quaternion qB) => AsSwoleQuaternion(AsUnityQuaternion(qA) * AsUnityQuaternion(qB));
+        public override EngineInternal.Vector3 Mul(EngineInternal.Quaternion q, EngineInternal.Vector3 v) => AsSwoleVector(AsUnityQuaternion(q) * AsUnityVector(v));
+        public override EngineInternal.Matrix4x4 Mul(EngineInternal.Matrix4x4 mA, EngineInternal.Matrix4x4 mB) => AsSwoleMatrix(AsUnityMatrix(mA) * AsUnityMatrix(mB));
+
+        public override EngineInternal.Quaternion Quaternion_Euler(float x, float y, float z) => AsSwoleQuaternion(Quaternion.Euler(x, y, z));
+
+        public override EngineInternal.Matrix4x4 Matrix4x4_TRS(EngineInternal.Vector3 position, EngineInternal.Quaternion rotation, EngineInternal.Vector3 scale) => AsSwoleMatrix(Matrix4x4.TRS(AsUnityVector(position), AsUnityQuaternion(rotation), AsUnityVector(scale)));
+
+        public override EngineInternal.Transform Transform_GetParent(EngineInternal.Transform transform) 
+        {
+            var unityTransform = AsUnityTransform(transform);
+            if (unityTransform == null) return default;
+            return AsSwoleTransform(unityTransform.parent);
+
+        }
+        public override void Transform_SetParent(EngineInternal.Transform transform, EngineInternal.Transform parent, bool worldPositionStays = true) 
+        {
+            var unityTransform = AsUnityTransform(transform);
+            if (unityTransform == null) return;
+            unityTransform.SetParent(AsUnityTransform(parent), worldPositionStays);
+        }
+
+        public override EngineInternal.GameObject GameObject_Create(string name = "") => AsSwoleGameObject(new GameObject(name));
+
+        public override EngineInternal.GameObject GameObject_Instantiate(EngineInternal.GameObject gameObject) 
+        {
+            var unityGameObject = AsUnityGameObject(gameObject);
+            if (unityGameObject == null) return default;
+            return AsSwoleGameObject(GameObject.Instantiate(unityGameObject));
+        }
+        public override void GameObject_Destroy(EngineInternal.GameObject gameObject, float timeDelay = 0) 
+        {
+            var unityGameObject = AsUnityGameObject(gameObject);
+            if (unityGameObject == null) return;
+            GameObject.Destroy(unityGameObject, timeDelay);
+        }
+
+#else
+        public override bool HookWasSuccessful => false;
 #endif
 
     }
