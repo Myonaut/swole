@@ -1,0 +1,118 @@
+#if (UNITY_STANDALONE || UNITY_EDITOR)
+
+#if BULKOUT_ENV
+using RLD;
+#endif
+
+using System.Collections;
+using System.Collections.Generic;
+
+using UnityEngine;
+
+namespace Swole.API.Unity
+{
+
+    public class RuntimePrefabHandler : MonoBehaviour
+    {
+
+#if BULKOUT_ENV
+        private RTPrefabLibDb rtLib;
+#endif
+
+        public void Awake()
+        {
+
+#if BULKOUT_ENV
+            rtLib = GameObject.FindFirstObjectByType<RTPrefabLibDb>();
+            if (rtLib == null) Destroy(this);
+#endif
+
+        }
+
+        public void Update()
+        {
+
+#if BULKOUT_ENV
+            if (rtLib == null) return;
+#endif
+
+        }
+
+        public enum AddTileCollectionResult
+        {
+
+            UnknownError, Success, NoPrefabLoaderFound, EmptyCollection, CollectionAlreadyPresent, FailedToCreateLib
+
+        }
+
+        public void AddTileCollection(string id)
+        {
+            AddTileCollectionWithResult(id);
+        }
+
+        public AddTileCollectionResult AddTileCollectionWithResult(string id)
+        {
+
+            var collection = ResourceLib.FindTileCollection(id);
+            if (collection == null || collection.tileSets == null || collection.tileSets.Length == 0) return AddTileCollectionResult.EmptyCollection;
+
+#if BULKOUT_ENV
+            var lib = rtLib.GetLib(collection.name);
+            if (lib != null) return AddTileCollectionResult.CollectionAlreadyPresent;
+            lib = rtLib.CreateLib(collection.name);
+            if (lib == null) return AddTileCollectionResult.FailedToCreateLib;
+#else
+            return AddTileCollectionResult.NoPrefabLoaderFound;
+#endif
+
+            Debug.Log($"Loading Tile Collection '{collection.id}'");
+
+            foreach (var tileSet in collection.tileSets)
+            {
+
+                if (tileSet == null || tileSet.TileCount <= 0) continue;
+
+                var tileSource = tileSet.Source;
+
+                for (int tileIndex = 0; tileIndex < tileSet.TileCount; tileIndex++)
+                {
+
+                    var tile = tileSet.tiles[tileIndex];
+                    if (tile == null) continue;
+
+                    var prefabObj = tileSet.CreatePreRuntimeTilePrefab(tileIndex, tileSource);
+                    if (prefabObj == null) continue;
+
+                    var prototype = prefabObj.AddOrGetComponent<TilePrototype>();
+                    prototype.tileSet = tileSet;
+                    prototype.tileIndex = tileIndex;
+
+#if BULKOUT_ENV
+                    var prefab = lib.CreatePrefab(prefabObj, tile.previewTexture);
+                    if (prefab == null)
+                    {
+                        prefabObj.SetActive(false);
+                        GameObject.Destroy(prefabObj);
+                        continue;
+                    }
+#else
+
+#endif
+
+                    prefabObj.SetActive(false);
+
+                    Debug.Log($"Loaded Tile '{tile.name}'");
+
+                }
+
+            }
+
+            return AddTileCollectionResult.Success;
+
+        }
+
+    }
+
+}
+
+#endif
