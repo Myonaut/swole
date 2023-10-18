@@ -4,7 +4,9 @@ using System.Collections.Generic;
 using System.IO;
 
 using Miniscript;
+
 using Swole.Script;
+
 using static Swole.Script.SwoleScriptSemantics;
 
 namespace Swole
@@ -21,7 +23,7 @@ namespace Swole
             get
             {
 
-                if (assetDirectory == null && engine != null && !string.IsNullOrEmpty(engine.WorkingDirectory)) assetDirectory = Directory.CreateDirectory($"{engine.WorkingDirectory}/swole");
+                if (assetDirectory == null && engine != null && !string.IsNullOrEmpty(engine.WorkingDirectory)) assetDirectory = Directory.CreateDirectory(Path.Combine(engine.WorkingDirectory, "swole"));
                 return assetDirectory;
 
             }
@@ -40,6 +42,14 @@ namespace Swole
         public static RuntimeEnvironment DefaultEnvironment => Engine.RuntimeEnvironment;
         public static DirectoryInfo AssetDirectory => instance.AssetDirectoryLocal;
 
+        public static DirectoryInfo CreateDirectory(string localPath)
+        {
+
+            if (string.IsNullOrEmpty(localPath)) return null;
+
+            return Directory.CreateDirectory($"{AssetDirectory}/{localPath}");
+
+        }
 
         [Serializable]
         public enum RuntimeState
@@ -230,7 +240,7 @@ namespace Swole
             for(int a = 0; a < package.ScriptCount; a++)
             {
                 var script = package[a];
-                if (script.name == scriptName) 
+                if (script.Name == scriptName) 
                 {
                     scriptOut = script;
                     return true; 
@@ -242,7 +252,7 @@ namespace Swole
             for (int a = 0; a < package.ScriptCount; a++)
             {
                 var script = package[a];
-                if (script.name.ToLower().Trim() == scriptName)
+                if (script.Name.ToLower().Trim() == scriptName)
                 {
                     scriptOut = script;
                     return true;
@@ -250,6 +260,114 @@ namespace Swole
             }
 
             return false;
+
+        }
+
+        public static string ReadSwoleScriptLine(Lexer msLexer, out bool appendLineBreak)
+        {
+            int discard = 0;
+            return ReadSwoleScriptLine(msLexer, ref discard, out appendLineBreak);
+        }
+        public static string ReadSwoleScriptLine(Lexer msLexer)
+        {
+            return ReadSwoleScriptLine(msLexer, out _);
+        }
+        public static string ReadSwoleScriptLine(Lexer msLexer, ref int endPos, out bool appendLineBreak)
+        {
+
+            string lineContent = "";
+            appendLineBreak = true;
+            while (!msLexer.AtEnd)
+            {
+
+                var token = msLexer.Dequeue();
+                if (token.type == Token.Type.EOL)
+                {
+                    appendLineBreak = token.text == ";";
+                    if (appendLineBreak) endPos = msLexer.position; // If the end of the line is a semi-colon, move endPos to its position so it gets replaced.
+                    break;
+                }
+
+                endPos = msLexer.position;
+                lineContent = lineContent + (token.type == Token.Type.Dot ? "." : token.text);
+
+            }
+
+            return lineContent;
+
+        }
+
+        public static List<PackageIdentifier> ExtractPackageDependencies(string sourceCode, List<PackageIdentifier> dependencies = null) => ExtractPackageDependencies(new Lexer(sourceCode), dependencies);
+
+        public static List<PackageIdentifier> ExtractPackageDependencies(Lexer msLexer, List<PackageIdentifier> dependencies = null)
+        {
+
+            if (dependencies == null) dependencies = new List<PackageIdentifier>();
+
+            if (msLexer == null) return dependencies;
+
+            void AddDependency(string importLine)
+            {
+                int versionChar = importLine.IndexOf(ssVersionPrefix);
+                string version = "";
+                if (versionChar >= 0 && versionChar + 1 < importLine.Length)
+                {
+                    version = importLine.Substring(versionChar + 1);
+                    if (!version.IsNativeVersionString()) version = "";
+                    importLine = versionChar > 0 ? importLine.Substring(0, versionChar) : "";
+                }
+                importLine = importLine.Trim();
+                if (string.IsNullOrEmpty(importLine)) return;
+                dependencies.Add(new PackageIdentifier(importLine, version));
+            }
+
+            bool canImport = true;
+            while (!msLexer.AtEnd)
+            {
+
+                var token = msLexer.Dequeue();
+
+                void HandleImports()
+                {
+
+                    if (!canImport) return;
+
+                    // Only recognize imports when no other code has been parsed.
+                    if (token.type != Token.Type.Identifier)
+                    {
+                        if (token.type != Token.Type.EOL)
+                        {
+                            canImport = false;
+                            return;
+                        }
+                        else return;
+                    }
+
+                    if (token.text == ssKeyword_Import) AddDependency(ReadSwoleScriptLine(msLexer)); else canImport = false;
+
+                }
+
+                HandleImports();
+
+                void HandleEmbeds()
+                {
+
+                    if (token.type == Token.Type.Identifier && token.text == ssKeyword_Insert)
+                    {
+
+                        string insertLine = ReadSwoleScriptLine(msLexer);
+                        int finalDot = insertLine.LastIndexOf('.');
+                        if (finalDot > 0) AddDependency(insertLine.Substring(0, finalDot));
+
+                    }
+
+                }
+
+                HandleEmbeds();
+
+            }
+
+            return dependencies;
 
         }
 
@@ -270,31 +388,6 @@ namespace Swole
 
             string parsedSource = source;
 
-            string ReadSwoleCodeLine(Lexer msLexer, ref int endPos, out bool appendLineBreak)
-            {
-
-                string lineContent = "";
-                appendLineBreak = true;
-                while (!msLexer.AtEnd)
-                {
-
-                    var token = msLexer.Dequeue();
-                    if (token.type == Token.Type.EOL)
-                    {
-                        appendLineBreak = token.text == ";";
-                        if (appendLineBreak) endPos = msLexer.position; // If the end of the line is a semi-colon, move endPos to its position so it gets replaced.
-                        break;
-                    }
-
-                    endPos = msLexer.position;
-                    lineContent = lineContent + (token.type == Token.Type.Dot ? "." : token.text);
-
-                }
-
-                return lineContent;
-
-            }
-
             List<SourcePackage> importedPackages = new List<SourcePackage>();
             bool HasImportedPackage(string packageName)
             {
@@ -308,7 +401,7 @@ namespace Swole
                 if (string.IsNullOrEmpty(scriptName)) return false;
                 if (localScripts != null)
                 {
-                    foreach (var localScript in localScripts) if (localScript.name == scriptName)
+                    foreach (var localScript in localScripts) if (localScript.Name == scriptName)
                         {
                             script = localScript;
                             return true;
@@ -320,7 +413,7 @@ namespace Swole
                     for (int i = 0; i < importedPackage.ScriptCount; i++)
                     {
                         var localScript = importedPackage[i];
-                        if (localScript.name == scriptName)
+                        if (localScript.Name == scriptName)
                         {
                             script = localScript;
                             return true;
@@ -343,7 +436,6 @@ namespace Swole
                 int startPos = msLexer.position;
 
                 var token = msLexer.Dequeue();
-                UnityEngine.Debug.Log(token.ToString()); // Temporary for development purposes
 
                 int endPos = msLexer.position;
 
@@ -364,7 +456,7 @@ namespace Swole
                         if (token.type == Token.Type.Identifier && token.text == ssKeyword_Import) // Comment out late import attempts
                         {
 
-                            string invalidLine = ReadSwoleCodeLine(msLexer, ref endPos, out bool appendLineBreak);
+                            string invalidLine = ReadSwoleScriptLine(msLexer, ref endPos, out bool appendLineBreak);
 
                             if (startPos >= endPos) return;
                             startPos = startPos + lengthOffset;
@@ -395,7 +487,7 @@ namespace Swole
                     if (token.text == ssKeyword_Import)
                     {
 
-                        string importLine = ReadSwoleCodeLine(msLexer, ref endPos, out bool appendLineBreak);
+                        string importLine = ReadSwoleScriptLine(msLexer, ref endPos, out bool appendLineBreak);
 
                         if (startPos >= endPos) return;
                         startPos = startPos + lengthOffset;
@@ -441,7 +533,7 @@ namespace Swole
                     if (token.type == Token.Type.Identifier && token.text == ssKeyword_Insert)
                     {
 
-                        string insertLine = ReadSwoleCodeLine(msLexer, ref endPos, out bool appendLineBreak);
+                        string insertLine = ReadSwoleScriptLine(msLexer, ref endPos, out bool appendLineBreak);
 
                         if (startPos >= endPos) return;
                         startPos = startPos + lengthOffset;

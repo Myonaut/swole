@@ -31,10 +31,14 @@ namespace Swole.UI
 
         public int sortingOrderRelativeOverride = 1;
 
+        [Tooltip("How long to wait after being pressed before the element can be dragged.")]
+        public float dragDelay;
+        protected float dragCooldown;
         public bool freeze;
 
         public RectTransform root;
 
+        public UnityEvent OnClick = new UnityEvent();
         public UnityEvent OnClose = new UnityEvent();
         public UnityEvent OnDragStart = new UnityEvent();
         public UnityEvent OnDragStep = new UnityEvent();
@@ -42,6 +46,10 @@ namespace Swole.UI
 
         public void Close()
         {
+
+#if UNITY_EDITOR
+            if (!Application.isPlaying) return;
+#endif
 
             OnClose?.Invoke();
             OnClose?.RemoveAllListeners();
@@ -56,6 +64,10 @@ namespace Swole.UI
 
         protected override void OnDestroy()
         {
+
+#if UNITY_EDITOR
+            if (!Application.isPlaying) return;
+#endif
 
             OnClose?.Invoke();
             OnClose.RemoveAllListeners();
@@ -108,7 +120,14 @@ namespace Swole.UI
 
         public void LateUpdate()
         {
-
+#if UNITY_EDITOR
+            if (!Application.isPlaying) return;
+#endif
+            if (dragCooldown > 0 && this.IsPressed()) 
+            { 
+                dragCooldown -= Time.deltaTime;
+                if (dragCooldown <= 0) OnDragStart?.Invoke();
+            }
             if (closeConditions != null)
             {
 
@@ -127,12 +146,15 @@ namespace Swole.UI
 
         protected RectTransform rectTransform;
 
-        public Canvas canvas;
+        private Canvas canvas;
 
         protected RectTransform canvasRect;
 
         protected override void Awake()
         {
+#if UNITY_EDITOR
+            if (!Application.isPlaying) return;
+#endif
 
             rectTransform = gameObject.GetComponent<RectTransform>();
 
@@ -155,7 +177,7 @@ namespace Swole.UI
 
         }
 
-        public bool IsDragging => this.IsPressed();
+        public bool IsDragging => (dragCooldown <= 0 && this.IsPressed());
          
         protected Vector2 prevCursorPosition;
 
@@ -176,18 +198,10 @@ namespace Swole.UI
         /// </summary>
         public Vector3 PreDragLocalPosition => preDragLocalPosition;
 
-        public override void OnPointerDown(PointerEventData eventData)
+        public virtual void Elevate()
         {
 
-            preDragLocalPosition = rectTransform.localPosition;
-            preDragPosition = rectTransform.position;
-
-            prevCursorPosition = eventData.position;
-
-            base.OnPointerDown(eventData);
-
-            // Handles moving the element in front of its peers when clicked.
-            if (elevationMethod != ElevationMethod.None) 
+            if (elevationMethod != ElevationMethod.None)
             {
                 if (elevationMethod.HasFlag(ElevationMethod.OverrideSorting)) // Move in front by using a canvas that overrides sorting. Only works while the element is being dragged.
                 {
@@ -202,22 +216,18 @@ namespace Swole.UI
                     dragCanvasPreSortingOrder = dragCanvas.sortingOrder;
                     dragCanvas.overrideSorting = true;
                     dragCanvas.sortingOrder = canvas.sortingOrder + sortingOrderRelativeOverride;
-                }  
-                
+                }
+
                 if (elevationMethod.HasFlag(ElevationMethod.ChangePositionInHierarchy)) // Move in front by changing its position in the hierarchy. Only moves in front of elements in the same hierarchy. If it's parented to the top canvas then it moves in front of all other elements in that canvas.
                 {
                     rectTransform.SetAsLastSibling();
                 }
             }
 
-            OnDragStart?.Invoke();
-
         }
 
-        public override void OnPointerUp(PointerEventData eventData) 
+        public virtual void Delevate()
         {
-
-            base.OnPointerUp(eventData);
 
             if (dragCanvasIsTemporary && dragCanvas != null) // Destroy temporary drag canvas if it exists.
             {
@@ -225,8 +235,8 @@ namespace Swole.UI
                 dragCanvas = null;
             }
 
-            if (elevationMethod != ElevationMethod.None) 
-            { 
+            if (elevationMethod != ElevationMethod.None)
+            {
                 if (!dragCanvasIsTemporary && dragCanvas != null) // Restore previous values if drag canvas is not temporary.
                 {
                     dragCanvas.overrideSorting = dragCanvasPrevOverrideSorting;
@@ -235,16 +245,48 @@ namespace Swole.UI
                 }
             }
 
-            OnDragStop?.Invoke();
+        }
+
+        public override void OnPointerDown(PointerEventData eventData)
+        {
+
+            OnClick?.Invoke();
+
+            dragCooldown = dragDelay;
+            preDragLocalPosition = rectTransform.localPosition;
+            preDragPosition = rectTransform.position;
+
+            prevCursorPosition = canvas.ScreenToCanvasSpace(eventData.position);
+
+            base.OnPointerDown(eventData);
+
+            // Handles moving the element in front of its peers when clicked.
+            Elevate();
+
+            if (dragDelay <= 0) OnDragStart?.Invoke();
+
+        } 
+
+        public override void OnPointerUp(PointerEventData eventData) 
+        {
+
+            base.OnPointerUp(eventData);
+
+            // Move element back to previous level of elevation if necessary.
+            Delevate();
+             
+            if (dragCooldown <= 0) OnDragStop?.Invoke();
+            dragCooldown = 0; 
 
         }
 
         public void OnDrag(PointerEventData eventData)
         {
-            if (freeze) return;
+            if (freeze || dragCooldown > 0) return;
             OnDragStep?.Invoke();
-            Move(rectTransform, root, canvasRect, eventData.position - prevCursorPosition);
-            prevCursorPosition = eventData.position;
+            var cursorPos = canvas.ScreenToCanvasSpace(eventData.position);
+            Move(rectTransform, root, canvasRect, cursorPos - prevCursorPosition);
+            prevCursorPosition = cursorPos;
 
         }
 

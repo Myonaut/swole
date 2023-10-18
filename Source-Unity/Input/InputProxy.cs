@@ -98,6 +98,11 @@ namespace Swole
         public static bool CursorSecondaryButtonUp { get { return Input.GetMouseButtonUp(CursorSecondaryButtonID); } }
         public static bool CursorSecondaryButtonDown { get { return Input.GetMouseButtonDown(CursorSecondaryButtonID); } }
 
+        public static int CursorAuxiliaryButtonID = 2;
+        public static bool CursorAuxiliaryButton { get { return Input.GetMouseButton(CursorAuxiliaryButtonID); } }
+        public static bool CursorAuxiliaryButtonUp { get { return Input.GetMouseButtonUp(CursorAuxiliaryButtonID); } }
+        public static bool CursorAuxiliaryButtonDown { get { return Input.GetMouseButtonDown(CursorAuxiliaryButtonID); } }
+
         public static Vector2 CursorPosition { get { return Input.mousePosition; } set { /* Currently unsupported */ } }
 
         public static float CursorAxisX

@@ -2,40 +2,79 @@
 
 using System.Collections;
 using System.Collections.Generic;
-using UnityEngine;
 
+using UnityEngine;
 using UnityEngine.UI;
 using UnityEngine.Events;
+using System;
 
 namespace Swole.UI
 {
 
+    /// <summary>
+    /// A UI element that creates a parent container element (the proxy) for itself, and uses it to show/hide (fold/unfold) the elements within it.
+    /// </summary>
     public class UIProxyFoldout : UITweenable
     {
 
+        [Header("Folding Options"), Tooltip("If the foldout is performed on the horizontal axis, check this box. Leave unchecked for vertical foldouts.")]
         public bool horizontal;
 
-        public bool disableMaskOnFoldOut;
+        [Tooltip("Should the element be unfolded on start?")]
+        public bool startUnfolded;
 
+        [Tooltip("The point at which the element will be anchored to, and fold out from.")]
         public PivotPresets pivotPoint;
 
+        [Tooltip("The size of the element when folded. A size of zero will completely hide the element when folded.")]
         public float foldedSize;
 
+        /// <summary>
+        /// Calculated in Awake. If dynamicSize is set to true, it is calculated each frame when the element is unfolded.
+        /// </summary>
         protected float fullSize;
 
+        [Tooltip("Should the proxy mask be disabled when the element is on full display?")]
+        public bool disableMaskOnFoldOut;
+
+        [Tooltip("Should the proxy mask image be shown?")]
+        public bool showProxyGraphic;
+
+        [Tooltip("Should the element fold when the mouse is clicked? Will wait a frame to register mouse events.")]
+        public bool autoFoldOnClickOff;
+
+        public MouseButtonMask autoFoldMouseButtonMask = MouseButtonMask.LeftMouseButton;
+
+        [Tooltip("Should the proxy object's parent be considered as part of the clickable hierarchy?")]
+        public bool includeProxyParentAsAutoFoldPreventionObject = true;
+
+        public float defaultFoldOutTime = 0.2f;
+
+        public float defaultFoldInTime = 0.2f;
+
+        public bool easeIn;
+
+        public bool easeOut = true;
+
+        [Header("Dynamic Size Options"), Tooltip("Can the unfolded size change based on the size of child elements? Useful for say - a list that has a dynamic number of options. If unchecked, unfolded size is only calculated once on Awake.")]
         public bool dynamicSize;
 
+        [Tooltip("Don't use a UIEncapsulator object for calculating dynamic size?")]
+        public bool noEncapsulatorForDynamicSize;
+
+        [Tooltip("If using dynamicSize, should the root transform move to account for size changes?")]
         public bool moveOnResize;
 
+        [Tooltip("The minimum transform depth to calculate unfolded size from. Child elements with a smaller depth than this will be ignored.")]
         public int proxyEncapsulatorMinChildDepth = 0;
 
+        [Tooltip("The maximum transform depth to calculate unfolded size from. Child elements with a greater depth than this will be ignored.")]
         public int proxyEncapsulatorChildDepth = 1;
 
         public RectOffset proxyEncapsulatorPadding;
 
+        [Tooltip("The encapsulator to use. Normally should be left blank, in which case a new one will be created. Only used when dynamicSize is set to true.")]
         public UIEncapsulator proxyEncapsulator;
-
-        public bool showProxyGraphic;
 
         protected RectTransform proxy;
 
@@ -44,6 +83,7 @@ namespace Swole.UI
         protected Mask proxyMask;
 
         public RectTransform Proxy => proxy;
+        public bool IsInitialized => proxy != null;
 
         protected Image imageLocal;
 
@@ -63,21 +103,48 @@ namespace Swole.UI
 
         }
 
+        /// <summary>
+        /// Is the element currently on full display or not.
+        /// </summary>
         protected bool state;
 
+        /// <summary>
+        /// Is the element in the process of changing states with a tween.
+        /// </summary>
         protected bool tweening;
 
         protected Vector3 pivotPosition;
 
-        protected virtual void Awake()
+        protected virtual void Start()
         {
+
+            Initialize();
+
+        }
+
+        protected virtual void Initialize()
+        {
+
+            if (!gameObject.activeSelf) gameObject.SetActive(true);
+            if (!gameObject.activeInHierarchy) return;
+
+            LayoutGroup[] layoutGroups = gameObject.GetComponentsInChildren<LayoutGroup>();
+            foreach(var layout in layoutGroups)
+            {
+                layout.CalculateLayoutInputHorizontal();
+                layout.CalculateLayoutInputVertical();
+                layout.SetLayoutHorizontal();
+                layout.SetLayoutVertical();
+                var rt = layout.GetComponent<RectTransform>();
+                LayoutRebuilder.ForceRebuildLayoutImmediate(rt);
+            }
 
             imageLocal = gameObject.GetComponent<Image>();
 
-            if (proxy == null)
+            if (!IsInitialized)
             {
 
-                proxyImage = new GameObject(gameObject.name + "_foldout").AddOrGetComponent<Image>();
+                proxyImage = new GameObject(gameObject.name + "_foldoutProxy").AddOrGetComponent<Image>();
 
                 if (imageLocal != null) proxyImage.sprite = imageLocal.sprite;
 
@@ -170,7 +237,7 @@ namespace Swole.UI
 
                 UpdateDynamicSize();
 
-                state = false;
+                state = startUnfolded;
 
             }
 
@@ -178,14 +245,7 @@ namespace Swole.UI
 
         }
 
-        public float defaultFoldOutTime = 0.2f;
-
-        public float defaultFoldInTime = 0.2f;
-
-        public bool easeIn;
-
-        public bool easeOut = true;
-
+        [Header("Events")]
         public UnityEvent OnToggle;
 
         public UnityEvent OnFoldBegin;
@@ -215,6 +275,12 @@ namespace Swole.UI
         public void Toggle(float tweenTime, bool easeIn = false, bool easeOut = false)
         {
 
+            if (!IsInitialized)
+            {
+                Initialize();
+                if (!IsInitialized) return;
+            }
+
             OnToggle?.Invoke();
 
             if (state) Fold(tweenTime, easeIn, easeOut); else FoldOut(tweenTime, easeIn, easeOut);
@@ -226,7 +292,14 @@ namespace Swole.UI
         public void Fold(float tweenTime, bool easeIn = false, bool easeOut = false)
         {
 
+            if (!IsInitialized)
+            {
+                Initialize();
+                if (!IsInitialized) return;
+            }
+
             state = false;
+            if (!enabled) return;
 
             void OnComplete()
             {
@@ -320,7 +393,14 @@ namespace Swole.UI
         public void FoldOut(float tweenTime, bool easeIn = false, bool easeOut = false)
         {
 
+            if (!IsInitialized)
+            {
+                Initialize();
+                if (!IsInitialized) return;
+            }
+
             state = true;
+            if (!enabled) return;
 
             void OnComplete()
             {
@@ -394,6 +474,12 @@ namespace Swole.UI
         public void Toggle()
         {
 
+            if (!IsInitialized)
+            {
+                Initialize();
+                if (!IsInitialized) return;
+            }
+
             Toggle(state ? defaultFoldInTime : defaultFoldOutTime, easeIn, easeOut);
 
         }
@@ -433,37 +519,38 @@ namespace Swole.UI
 
         }
 
+        [Header("Other"), Tooltip("Whether or not to use viewers. Viewers automatically fold/unfold the element. If a viewer currently has cursor focus, it will unfold the element. If no viewers have cursor focus, the element will fold automatically.")]
         public bool allowViewers = true;
 
         protected HashSet<PointerEventsProxy> viewers;
 
-        public void StartViewing(PointerEventsProxy proxy)
+        public void StartViewing(PointerEventsProxy viewer)
         {
 
             if (viewers == null) viewers = new HashSet<PointerEventsProxy>();
 
-            viewers.Add(proxy);
+            viewers.Add(viewer);
 
         }
 
-        public void StopViewing(PointerEventsProxy proxy)
+        public void StopViewing(PointerEventsProxy viewer)
         {
 
             if (viewers == null) return;
 
-            viewers.Remove(proxy);
+            viewers.Remove(viewer);
 
         }
 
         protected void UpdateDynamicSize()
         {
 
-            if (state && !tweening && dynamicSize)
+            if (IsInitialized && state && !tweening && dynamicSize)
             {
 
                 Vector3 rectSize;
 
-                if (proxyEncapsulator == null)
+                if (proxyEncapsulator == null && !noEncapsulatorForDynamicSize)
                 {
 
                     proxyEncapsulator = proxy.gameObject.AddOrGetComponent<UIEncapsulator>();
@@ -487,7 +574,7 @@ namespace Swole.UI
 
                 }
 
-                proxyEncapsulator.Recalculate();
+                proxyEncapsulator?.Recalculate();
 
                 rectSize = proxy.rect.size;
 
@@ -517,44 +604,10 @@ namespace Swole.UI
 
             UpdateDynamicSize();
 
-            if (allowViewers && viewers != null)
+            if (allowViewers && viewers != null && viewers.Count > 0)
             {
 
-                viewers.RemoveWhere(i => i == null);
-
-                bool flag = true;
-
-                while (flag)
-                {
-
-                    flag = false;
-
-                    PointerEventsProxy toRemove = null;
-
-                    foreach (PointerEventsProxy viewer in viewers)
-                    {
-
-                        if (!viewer.IsHovering)
-                        {
-
-                            toRemove = viewer;
-
-                            break;
-
-                        }
-
-                    }
-
-                    if (toRemove != null)
-                    {
-
-                        flag = true;
-
-                        viewers.Remove(toRemove);
-
-                    }
-
-                }
+                viewers.RemoveWhere(i => i == null || !i.IsHovering);
 
                 if (state)
                 {
@@ -567,6 +620,58 @@ namespace Swole.UI
 
                     if (viewers.Count > 0) FoldOut();
 
+                }
+
+            }
+
+        }
+
+        protected void LateUpdate()
+        {
+
+            if (!IsInitialized) return;
+
+            if (state && autoFoldOnClickOff && autoFoldMouseButtonMask != MouseButtonMask.None)
+            {
+
+                bool ClickedOff()
+                {
+
+                    var objects = CursorProxy.ObjectsUnderCursor;
+                    if (objects == null) return true;
+                    Transform root = proxy;
+                    if (includeProxyParentAsAutoFoldPreventionObject && proxy.parent != null) root = proxy.parent; 
+                    for(int a = 0; a < objects.Count; a++)
+                    {
+                        var obj = objects[a];
+                        if (obj == null) continue;
+                        if (obj.transform.IsInHierarchy(root)) return false;
+                    }
+
+                    return true;
+
+                }
+
+                IEnumerator AutoFold()
+                {
+
+                    yield return null;
+
+                    if (state && !tweening) Fold();
+
+                }
+
+                if (autoFoldMouseButtonMask.HasFlag(MouseButtonMask.LeftMouseButton) && InputProxy.CursorPrimaryButtonDown) 
+                {
+                    if (ClickedOff()) StartCoroutine(AutoFold());
+                } 
+                else if (autoFoldMouseButtonMask.HasFlag(MouseButtonMask.RightMouseButton) && InputProxy.CursorSecondaryButtonDown)
+                {
+                    if (ClickedOff()) StartCoroutine(AutoFold());
+                }
+                else if (autoFoldMouseButtonMask.HasFlag(MouseButtonMask.MiddleMouseButton) && InputProxy.CursorAuxiliaryButtonDown)
+                {
+                    if (ClickedOff()) StartCoroutine(AutoFold());
                 }
 
             }

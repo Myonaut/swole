@@ -3,6 +3,7 @@
 using System;
 using System.Collections;
 using System.Collections.Generic;
+using System.Reflection;
 
 using UnityEngine;
 using UnityEngine.UI;
@@ -251,50 +252,6 @@ namespace Swole
 
         }
 
-        public static Array DeepClone(this Array array)
-        {
-
-            Array newArray = Array.CreateInstance(array.GetType().GetElementType(), array.Length);
-
-            for (int a = 0; a < array.Length; a++)
-            {
-
-                object val = array.GetValue(a);
-
-                if (val == null) continue;
-
-                if (val.GetType().IsAssignableFrom(typeof(ICloneable))) val = (val as ICloneable).Clone();
-
-                newArray.SetValue(val, a);
-
-            }
-
-            return newArray;
-
-        }
-
-        public static List<T> DeepClone<T>(this List<T> list)
-        {
-
-            List<T> newList = new List<T>(list);
-
-            for (int a = 0; a < list.Count; a++)
-            {
-
-                T val = list[a];
-
-                if (val == null) continue;
-
-                if (typeof(ICloneable).IsAssignableFrom(val.GetType())) val = (T)(val as ICloneable).Clone();
-
-                newList[a] = val;
-
-            }
-
-            return newList;
-
-        }
-
         public static void ForceUpdateLayouts(this GameObject gameObject)
         {
 
@@ -358,15 +315,19 @@ namespace Swole
 
         }
 
-        public static string RemoveWhitespace(this string str)
-        {
-            return string.Join("", str.Split(default(string[]), System.StringSplitOptions.RemoveEmptyEntries));
-        }
-
-        public static string AsID(this string str) => str.ToLower().Trim();
-
+        #region UI
 
         public static bool Contains(this RectTransform rectTransform, Vector2 pixelPosition) => rectTransform != null && rectTransform.rect.Contains(rectTransform.InverseTransformPoint(pixelPosition));
+
+        public static Vector2 ScreenToCanvasSpace(this Canvas canvas, Vector2 screenPos) => ScreenToCanvasSpace((RectTransform)canvas.transform, screenPos, canvas.worldCamera);
+
+        public static Vector2 ScreenToCanvasSpace(this RectTransform rectTransform, Vector2 screenPos, Camera camera)
+        {
+            RectTransformUtility.ScreenPointToLocalPointInRectangle(rectTransform, screenPos, camera, out Vector2 localPos);
+            return localPos;
+        }
+
+        #endregion
 
     }
 

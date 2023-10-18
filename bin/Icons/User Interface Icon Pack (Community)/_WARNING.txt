@@ -1,0 +1,1 @@
+At the time of download these icons are completely black, which means they can't be tinted using the default ui shader. If you use one: you should edit its pixels to be pure white first.

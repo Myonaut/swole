@@ -13,6 +13,8 @@ namespace Swole
         public struct Vector2
         {
 
+            public override string ToString() => $"({x}, {y})";
+
             public static Vector2 operator +(Vector2 vA, Vector2 vB) => new Vector2(vA.x + vB.x, vA.y + vB.y);
             public static Vector2 operator *(Vector2 v, float scalar) => new Vector2(v.x * scalar, v.y * scalar);
             public static Vector2 operator /(Vector2 v, float scalar) => new Vector2(v.x / scalar, v.y / scalar);
@@ -43,6 +45,8 @@ namespace Swole
 
             #endregion
 
+            public override string ToString() => $"({x}, {y}, {z})";
+
             public static Vector3 operator +(Vector3 vA, Vector3 vB) => new Vector3(vA.x + vB.x, vA.y + vB.y, vA.z + vB.z);
             public static Vector3 operator *(Vector3 v, float scalar) => new Vector3(v.x * scalar, v.y * scalar, v.z * scalar);
             public static Vector3 operator /(Vector3 v, float scalar) => new Vector3(v.x / scalar, v.y / scalar, v.z * scalar);
@@ -67,6 +71,8 @@ namespace Swole
         [Serializable]
         public struct Vector4
         {
+
+            public override string ToString() => $"({x}, {y}, {z}, {w})";
 
             public static Vector4 operator +(Vector4 vA, Vector4 vB) => new Vector4(vA.x + vB.x, vA.y + vB.y, vA.z + vB.z, vA.w + vB.w);
             public static Vector4 operator *(Vector4 v, float scalar) => new Vector4(v.x * scalar, v.y * scalar, v.z * scalar, v.w * scalar);
@@ -102,9 +108,19 @@ namespace Swole
             public static Quaternion Euler(Vector3 eulerAngles) => Swole.Engine.Quaternion_Euler(eulerAngles);
             public static Quaternion Euler(float x, float y, float z) => Swole.Engine.Quaternion_Euler(x, y, z);
 
+            public static Quaternion Inverse(Quaternion q) => Swole.Engine.Quaternion_Inverse(q);
+
+            public Vector3 EulerAngles => Swole.Engine.Quaternion_EulerAngles(this);
+
             #endregion
 
+            public override string ToString() => $"({x}, {y}, {z}, {w})";
+
             public static readonly Quaternion identity = new Quaternion(0, 0, 0, 1);
+
+            public Quaternion inverse => Swole.Engine.Quaternion_Inverse(this);
+
+            public bool IsZero => (x == 0 && y == 0 && z == 0 && w == 0);
 
             public float x, y, z, w;
 
@@ -129,6 +145,13 @@ namespace Swole
             public static Matrix4x4 operator *(Matrix4x4 mA, Matrix4x4 mB) => Swole.Engine.Mul(mA, mB);
 
             public static Matrix4x4 TRS(Vector3 position, Quaternion rotation, Vector3 scale) => Swole.Engine.Matrix4x4_TRS(position, rotation, scale);
+            public static Matrix4x4 Scale(Vector3 vector) => Swole.Engine.Matrix4x4_Scale(vector);
+            public static Matrix4x4 Translate(Vector3 vector) => Swole.Engine.Matrix4x4_Translate(vector);
+            public static Matrix4x4 Rotate(Quaternion q) => Swole.Engine.Matrix4x4_Rotate(q);
+
+            public Vector3 MultiplyPoint(Matrix4x4 m, Vector3 point) => Swole.Engine.Mul(m, point);
+            public Vector3 MultiplyPoint3x4(Matrix4x4 m, Vector3 point) => Swole.Engine.Mul3x4(m,  point);
+            public Vector3 MultiplyVector(Matrix4x4 m, Vector3 vector) => Swole.Engine.Rotate(m, vector);
 
             #endregion
 
@@ -343,6 +366,18 @@ namespace Swole
 
         }
 
+        [Serializable]
+        public enum RotationOrder
+        {
+            XYZ, XZY,YZX, YXZ, ZXY, ZYX
+        }
+
+        [Serializable]
+        public enum Space
+        {
+            World, Self
+        }
+
         public struct GameObject : IVolatile
         {
 
@@ -391,8 +426,6 @@ namespace Swole
 
             #region Proxy Implementations
 
-            public void SetParent(Transform parent, bool worldPositionStays = true) => Swole.Engine.Transform_SetParent(this, parent, worldPositionStays);
-
             public Transform(object instance)
             {
                 this.instance = instance;
@@ -429,6 +462,148 @@ namespace Swole
                 get => Swole.Engine.GetLocalScale(instance);
                 set => Swole.Engine.SetLocalScale(instance, value);
             }
+
+            public Vector3 lossyScale => Swole.Engine.Transform_lossyScale(this);
+
+            public Vector3 eulerAngles
+            {
+                get => Swole.Engine.Transform_eulerAnglesGet(this);
+                set => Swole.Engine.Transform_eulerAnglesSet(this, value);
+            }
+
+            public Vector3 localEulerAngles
+            {
+                get => Swole.Engine.Transform_localEulerAnglesGet(this);
+                set => Swole.Engine.Transform_localEulerAnglesSet(this, value);
+            }
+
+            public Vector3 right
+            {
+                get => Swole.Engine.Transform_rightGet(this);
+                set => Swole.Engine.Transform_rightSet(this, value);
+            }
+
+            public Vector3 up
+            {
+                get => Swole.Engine.Transform_upGet(this);
+                set => Swole.Engine.Transform_upSet(this, value);
+            }
+
+            public Vector3 forward
+            {
+                get => Swole.Engine.Transform_forwardGet(this);
+                set => Swole.Engine.Transform_forwardSet(this, value);
+            }
+
+            public Matrix4x4 worldToLocalMatrix => Swole.Engine.Transform_worldToLocalMatrix(this);
+
+            public Matrix4x4 localToWorldMatrix => Swole.Engine.Transform_localToWorldMatrix(this);
+
+            public Transform root => Swole.Engine.Transform_root(this);
+
+            public int childCount => Swole.Engine.Transform_childCount(this);
+
+            public bool hasChanged
+            {
+                get => Swole.Engine.Transform_hasChangedGet(this);
+                set => Swole.Engine.Transform_hasChangedSet(this, value);
+            }
+
+            public int hierarchyCapacity
+            {
+                get => Swole.Engine.Transform_hierarchyCapacityGet(this);
+                set => Swole.Engine.Transform_hierarchyCapacitySet(this, value);
+            }
+
+            public int hierarchyCount => Swole.Engine.Transform_hierarchyCount(this);
+
+            public Transform GetParent() => Swole.Engine.Transform_GetParent(this);
+
+            public void SetParent(Transform p) => Swole.Engine.Transform_SetParent(this, p);
+
+            public void SetParent(Transform parent, bool worldPositionStays) => Swole.Engine.Transform_SetParent(this, parent, worldPositionStays);
+
+            public void SetPositionAndRotation(Vector3 position, Quaternion rotation) => Swole.Engine.Transform_SetPositionAndRotation(this, position, rotation);
+
+            public void SetLocalPositionAndRotation(Vector3 localPosition, Quaternion localRotation) => Swole.Engine.Transform_SetLocalPositionAndRotation(this, localPosition, localRotation);
+
+            public void GetPositionAndRotation(out Vector3 position, out Quaternion rotation) => Swole.Engine.Transform_GetPositionAndRotation(this, out position, out rotation);
+
+            public void GetLocalPositionAndRotation(out Vector3 localPosition, out Quaternion localRotation) => Swole.Engine.Transform_GetLocalPositionAndRotation(this, out localPosition, out localRotation);
+
+            public void Translate(Vector3 translation, Space relativeTo = Space.Self) => Swole.Engine.Transform_Translate(this, translation, relativeTo);
+
+            public void Translate(Vector3 translation) => Swole.Engine.Transform_Translate(this, translation);
+
+            public void Translate(float x, float y, float z, Space relativeTo = Space.Self) => Swole.Engine.Transform_Translate(this, x, y, z, relativeTo);
+
+            public void Translate(float x, float y, float z) => Swole.Engine.Transform_Translate(this, x, y, z);
+
+            public void Translate(Vector3 translation, Transform relativeTo) => Swole.Engine.Transform_Translate(this, translation, relativeTo);
+
+            public void Translate(float x, float y, float z, Transform relativeTo) => Swole.Engine.Transform_Translate(this, x, y, z, relativeTo);
+
+            public void Rotate(Vector3 eulers, Space relativeTo = Space.Self) => Swole.Engine.Transform_Rotate(this, eulers, relativeTo);
+
+            public void Rotate(Vector3 eulers) => Swole.Engine.Transform_Rotate(this, eulers);
+
+            public void Rotate(float xAngle, float yAngle, float zAngle, Space relativeTo = Space.Self) => Swole.Engine.Transform_Rotate(this, xAngle, yAngle, zAngle, relativeTo);
+
+            public void Rotate(float xAngle, float yAngle, float zAngle) => Swole.Engine.Transform_Rotate(this, xAngle, yAngle, zAngle);
+
+            public void Rotate(Vector3 axis, float angle, Space relativeTo = Space.Self) => Swole.Engine.Transform_Rotate(this, axis, angle, relativeTo);
+
+            public void Rotate(Vector3 axis, float angle) => Swole.Engine.Transform_Rotate(this, axis, angle);
+
+            public void RotateAround(Vector3 point, Vector3 axis, float angle) => Swole.Engine.Transform_RotateAround(this, point, axis, angle);
+
+            public void LookAt(Transform target, Vector3 worldUp) => Swole.Engine.Transform_LookAt(this, target, worldUp);
+
+            public void LookAt(Transform target) => Swole.Engine.Transform_LookAt(this, target);
+
+            public void LookAt(Vector3 worldPosition, Vector3 worldUp) => Swole.Engine.Transform_LookAt(this, worldPosition, worldUp);
+
+            public void LookAt(Vector3 worldPosition) => Swole.Engine.Transform_LookAt(this, worldPosition);
+
+            public Vector3 TransformDirection(Vector3 direction) => Swole.Engine.Transform_TransformDirection(this, direction);
+
+            public Vector3 TransformDirection(float x, float y, float z) => Swole.Engine.Transform_TransformDirection(this, x, y, z);
+
+            public Vector3 InverseTransformDirection(Vector3 direction) => Swole.Engine.Transform_InverseTransformDirection(this, direction);
+
+            public Vector3 InverseTransformDirection(float x, float y, float z) => Swole.Engine.Transform_InverseTransformDirection(this, x, y, z);
+
+            public Vector3 TransformVector(Vector3 vector) => Swole.Engine.Transform_TransformVector(this, vector);
+
+            public Vector3 TransformVector(float x, float y, float z) => Swole.Engine.Transform_TransformVector(this, x, y, z);
+
+            public Vector3 InverseTransformVector(Vector3 vector) => Swole.Engine.Transform_InverseTransformVector(this, vector);
+
+            public Vector3 InverseTransformVector(float x, float y, float z) => Swole.Engine.Transform_InverseTransformVector(this, x, y, z);
+
+            public Vector3 TransformPoint(Vector3 position) => Swole.Engine.Transform_TransformPoint(this, position);
+
+            public Vector3 TransformPoint(float x, float y, float z) => Swole.Engine.Transform_TransformPoint(this, x, y, z);
+
+            public Vector3 InverseTransformPoint(Vector3 position) => Swole.Engine.Transform_InverseTransformPoint(this, position);
+
+            public Vector3 InverseTransformPoint(float x, float y, float z) => Swole.Engine.Transform_InverseTransformPoint(this, x, y, z);
+
+            public void DetachChildren() => Swole.Engine.Transform_DetachChildren(this);
+
+            public void SetAsFirstSibling() => Swole.Engine.Transform_SetAsFirstSibling(this);
+
+            public void SetAsLastSibling() => Swole.Engine.Transform_SetAsLastSibling(this);
+
+            public void SetSiblingIndex(int index) => Swole.Engine.Transform_SetSiblingIndex(this, index);
+
+            public int GetSiblingIndex() => Swole.Engine.Transform_GetSiblingIndex(this);
+
+            public Transform Find(string n) => Swole.Engine.Transform_Find(this, n);
+
+            public bool IsChildOf(Transform parent) => Swole.Engine.Transform_IsChildOf(this, parent);
+
+            public Transform GetChild(int index) => Swole.Engine.Transform_GetChild(this, index);
 
             #endregion
 

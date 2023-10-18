@@ -1,6 +1,5 @@
 #if (UNITY_STANDALONE || UNITY_EDITOR)
 
-using Swole.Script;
 using System;
 using System.Collections;
 using System.Collections.Generic;
@@ -9,12 +8,47 @@ using UnityEngine;
 using UnityEngine.Events;
 using UnityEngine.UI;
 
+using TMPro;
+
+using Swole.Script;
+
 namespace Swole.API.Unity
 {
 
-    public class BleakCodeEditor : InputField, ICodeEditor
+    public class BleakCodeEditor : MonoBehaviour, ICodeEditor
     {
-        public string Code { get => text; set => SetTextWithoutNotify(value); }
+
+        [Header("Settings")]
+        public GameObject rootObject;
+
+        public object RootObject
+        {
+
+            get => rootObject == null ? gameObject : rootObject;
+
+            set
+            {
+
+                if (value is GameObject obj) rootObject = obj; else rootObject = null;
+
+            }
+
+        }
+
+        public InputField inputField;
+        public TMP_InputField inputFieldTMP;
+
+        public string Code { get => (inputFieldTMP != null ? inputFieldTMP.text : (inputField == null ? "" : inputField.text)); 
+            
+            set 
+            {
+
+                inputField?.SetTextWithoutNotify(value);
+                inputFieldTMP?.SetTextWithoutNotify(value);
+
+            } 
+        
+        }
 
         public int undoCapacity = 70;
         public int UndoHistoryCapacity { get => undoCapacity; set => undoCapacity = value; }
@@ -26,6 +60,29 @@ namespace Swole.API.Unity
             public int caretEndPos;
         }
 
+        public int SelectionAnchorPosition { 
+            
+            get => inputFieldTMP != null ? inputFieldTMP.selectionAnchorPosition : (inputField == null ? 0 : inputField.selectionAnchorPosition); 
+
+            set
+            {
+                if (inputFieldTMP != null) inputFieldTMP.selectionAnchorPosition = value;
+                if (inputField != null) inputField.selectionAnchorPosition = value;
+            }
+        
+        }
+        public int SelectionFocusPosition { 
+            
+            get => inputFieldTMP != null ? inputFieldTMP.selectionFocusPosition : (inputField == null ? 0 : inputField.selectionFocusPosition);
+
+            set
+            {
+                if (inputFieldTMP != null) inputFieldTMP.selectionFocusPosition = value;
+                if (inputField != null) inputField.selectionFocusPosition = value;
+            }
+
+        }
+
         protected List<UndoHistoryState> undoHistory = new List<UndoHistoryState>();
         protected int undoPosition;
 
@@ -34,7 +91,7 @@ namespace Swole.API.Unity
             if (undoPosition >= 0 && undoPosition < undoHistory.Count && undoHistory[undoPosition].code == code) return;
             undoCapacity = Mathf.Max(2, undoCapacity);
             if (undoPosition < undoHistory.Count - 1) undoHistory.RemoveRange(undoPosition + 1, undoHistory.Count - (undoPosition + 1));
-            undoHistory.Add(new UndoHistoryState() { code = code, caretStartPos = selectionAnchorPosition, caretEndPos = selectionFocusPosition });
+            undoHistory.Add(new UndoHistoryState() { code = code, caretStartPos = SelectionAnchorPosition, caretEndPos = SelectionFocusPosition });
             undoPosition = undoHistory.Count - 1;
             while (undoHistory.Count > undoCapacity)
             {
@@ -59,8 +116,8 @@ namespace Swole.API.Unity
             }
             var state = undoHistory[undoPosition];
             Code = state.code;
-            selectionAnchorPosition = state.caretStartPos;
-            selectionFocusPosition = state.caretEndPos;
+            SelectionAnchorPosition = state.caretStartPos;
+            SelectionFocusPosition = state.caretEndPos;
             if (undoPosition > 0) undoPosition--;
         }
 
@@ -71,9 +128,11 @@ namespace Swole.API.Unity
             if (undoPosition >= undoHistory.Count) return;
             var state = undoHistory[undoPosition];
             Code = state.code;
-            selectionAnchorPosition = state.caretStartPos;
-            selectionFocusPosition = state.caretEndPos;
+            SelectionAnchorPosition = state.caretStartPos;
+            SelectionFocusPosition = state.caretEndPos;
         }
+
+        public void RebuildLayout() { }
 
         private Dictionary<ICodeEditor.CodeEditCallback, UnityAction<string>> boundActions = new Dictionary<ICodeEditor.CodeEditCallback, UnityAction<string>>();
 
@@ -83,7 +142,38 @@ namespace Swole.API.Unity
         [SerializeField]
         private OnEditorCloseEvent onEditorClose = new OnEditorCloseEvent();
 
-        protected override void OnDestroy()
+        /// <summary>
+        /// Act as if the editor was closed but don't destroy it.
+        /// </summary>
+        public void SpoofClose()
+        {
+
+            onEditorClose?.Invoke(Code);
+            onEditorClose?.RemoveAllListeners();
+
+            if (inputFieldTMP != null)
+            {
+                inputFieldTMP.onValueChanged?.RemoveAllListeners();
+                inputFieldTMP.onSubmit?.RemoveAllListeners();
+                inputFieldTMP.onEndEdit?.RemoveAllListeners();
+            }
+            if (inputField != null)
+            {
+                inputField.onValueChanged?.RemoveAllListeners();
+                inputField.onSubmit?.RemoveAllListeners();
+                inputField.onEndEdit?.RemoveAllListeners();
+            }
+
+            undoHistory?.Clear();
+
+            SetTitle("");
+            Code = "";
+
+            ListenForChanges(AddUndoState);
+
+        } 
+
+        protected void OnDestroy()
         {
 
             StopListeningForChanges(AddUndoState);
@@ -94,10 +184,10 @@ namespace Swole.API.Unity
             boundActions?.Clear();
             boundActions = null;
 
-            undoHistory.Clear();
+            undoHistory?.Clear();
             undoHistory = null;
 
-            base.OnDestroy();
+            if (inputFieldTMP != null && inputFieldTMP.verticalScrollbar != null && scrollBarVisibility != null) inputFieldTMP.verticalScrollbar.onValueChanged.RemoveListener(scrollBarVisibility);
 
         }
 
@@ -128,40 +218,111 @@ namespace Swole.API.Unity
                 action = new UnityAction<string>(callback);
                 boundActions[callback] = action;
             }
-            onValueChanged?.AddListener(action);
-            onSubmit?.AddListener(action);
-            onEndEdit?.AddListener(action);
+            if (inputFieldTMP != null)
+            {
+                inputFieldTMP.onValueChanged?.AddListener(action);
+                inputFieldTMP.onSubmit?.AddListener(action);
+                inputFieldTMP.onEndEdit?.AddListener(action);
+            }
+            if (inputField != null)
+            {
+                inputField.onValueChanged?.AddListener(action);
+                inputField.onSubmit?.AddListener(action);
+                inputField.onEndEdit?.AddListener(action);
+            }
         }
 
         public virtual bool StopListeningForChanges(ICodeEditor.CodeEditCallback callback)
         {
             if (boundActions == null) return false;
             if (!boundActions.TryGetValue(callback, out var action)) return false;
-            onValueChanged?.RemoveListener(action);
-            onSubmit?.RemoveListener(action);
-            onEndEdit?.RemoveListener(action);
+            if (inputFieldTMP != null)
+            {
+                inputFieldTMP.onValueChanged?.RemoveListener(action);
+                inputFieldTMP.onSubmit?.RemoveListener(action);
+                inputFieldTMP.onEndEdit?.RemoveListener(action);
+            }
+            if (inputField != null)
+            {
+                inputField.onValueChanged?.RemoveListener(action);
+                inputField.onSubmit?.RemoveListener(action);
+                inputField.onEndEdit?.RemoveListener(action);
+            }
             return true;
         }
 
-        protected override void Awake()
+        [Header("UI")]
+        public Text titleText;
+        public TMP_Text titleTextTMP;
+
+        public object TitleObject
         {
 
-            contentType = ContentType.Standard;
-            lineType = LineType.MultiLineNewline;
+            get => titleTextTMP == null ? titleText : titleTextTMP;
 
-            base.Awake();
+            set
+            {
+
+                if (value is Text txt) titleText = txt; else if (value is TMP_Text txtTMP) titleTextTMP = txtTMP;
+
+            }
+
+        }
+
+        public void SetTitle(string title)
+        {
+            if (titleText != null) titleText.text = title;
+            if (titleTextTMP != null) titleTextTMP.SetText(title);
+        }
+
+        private UnityAction<float> scrollBarVisibility;
+
+        protected void Awake()
+        {
+
+            if (inputFieldTMP != null)
+            {
+                inputFieldTMP.contentType = TMP_InputField.ContentType.Standard;
+                inputFieldTMP.lineType = TMP_InputField.LineType.MultiLineNewline;
+                if (inputFieldTMP.textComponent != null)
+                {
+                    inputFieldTMP.textComponent.enableWordWrapping = false;
+                    inputFieldTMP.textComponent.overflowMode = TextOverflowModes.Overflow;
+                }
+                if (inputFieldTMP.verticalScrollbar != null)
+                {
+                    var canvasGroup = inputFieldTMP.verticalScrollbar.gameObject.AddOrGetComponent<CanvasGroup>();
+                    canvasGroup.interactable = true;
+                    canvasGroup.blocksRaycasts = true;
+                    if (scrollBarVisibility == null) scrollBarVisibility = new UnityAction<float>((float val) => {
+
+                        if (inputFieldTMP != null && inputFieldTMP.verticalScrollbar != null && canvasGroup != null) canvasGroup.alpha = inputFieldTMP.verticalScrollbar.size < 0.999f ? 1f : 0f;
+
+                    });
+                    inputFieldTMP.verticalScrollbar.onValueChanged.AddListener(scrollBarVisibility);
+                } 
+            }
+            if (inputField != null)
+            {
+                inputField.contentType = InputField.ContentType.Standard;
+                inputField.lineType = InputField.LineType.MultiLineNewline;
+                if (inputField.textComponent != null)
+                {
+                    inputField.textComponent.horizontalOverflow = HorizontalWrapMode.Overflow;
+                    inputField.textComponent.verticalOverflow = VerticalWrapMode.Overflow;
+                }
+            }
 
             ListenForChanges(AddUndoState);
 
         }
 
-        public bool testUndo;
-        public bool testRedo;
+        public bool IsFocused => inputFieldTMP != null ? inputFieldTMP.isFocused : (inputField != null ? inputField.isFocused : false);
 
         protected void Update()
         {
 
-            if (isFocused)
+            if (IsFocused)
             {
 
                 if (rapidUndoTime > timeToRapidUndo)

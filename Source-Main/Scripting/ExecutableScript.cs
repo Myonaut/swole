@@ -20,7 +20,7 @@ namespace Swole.Script
             this.interpreter = interpreter;
             this.priority = priority;
         }
-        public ExecutableScript(SourceScript script, int priority, SwoleLogger logger = null) : this((script.packageInfo.NameIsValid ? script.packageInfo.name + "." : "") + (script.NameIsValid ? script.name : ""), script.source, priority, logger) { }
+        public ExecutableScript(SourceScript script, int priority, SwoleLogger logger = null) : this((script.packageInfo.NameIsValid ? script.packageInfo.name + "." : "") + (script.NameIsValid ? script.Name : ""), script.source, priority, logger) { }
         public ExecutableScript(string identity, string source, int priority, SwoleLogger logger = null)
         {
             this.priority = priority;

@@ -74,12 +74,15 @@ namespace Swole.UI
             Vector2 localSize = rectTransform.sizeDelta;
             Vector2 contentSize = content.sizeDelta;
 
+            float sizeX = localSize.x == 0 ? 1 : (contentSize.x / localSize.x); // Prevent divide by zero
+            float sizeY = localSize.x == 0 ? 1 : (contentSize.y / localSize.y); // Prevent divide by zero
+
             if (scrollbarHor != null)
             {
 
                 scrollbarHor.value = startHor;
-
-                scrollbarHor.size = 1 / (contentSize.x / localSize.x);
+                
+                scrollbarHor.size = 1 / sizeX;
 
             }
 
@@ -88,7 +91,7 @@ namespace Swole.UI
 
                 scrollbarVer.value = startVer;
 
-                scrollbarVer.size = 1 / (contentSize.x / localSize.x);
+                scrollbarVer.size = 1 / sizeY;
 
             }
 
@@ -97,6 +100,26 @@ namespace Swole.UI
             lockedCursor = false;
 
             cursorVisible = InputProxy.IsCursorVisible;
+
+        }
+
+        protected virtual void Start()
+        { 
+
+
+            if (scrollbarHor != null && scrollbarHor.handleRect != null) // Possible workaround to stop scrollbar handle from occasionally disappearing? (It disappears because its position becomes NaN)
+            {
+
+                scrollbarHor.handleRect.anchoredPosition = Vector2.zero;
+
+            }
+
+            if (scrollbarVer != null && scrollbarVer.handleRect != null) // Possible workaround to stop scrollbar handle from occasionally disappearing? (It disappears because its position becomes NaN)
+            {
+
+                scrollbarVer.handleRect.anchoredPosition = Vector2.zero;
+
+            }
 
         }
 
@@ -271,7 +294,9 @@ namespace Swole.UI
             if (scrollbarHor != null)
             {
 
-                scrollbarHor.size = 1 / Mathf.Max(1, contentSize.x / localSize.x);
+                float sizeX = localSize.x == 0 ? 1 : (contentSize.x / localSize.x); // Prevent divide by zero
+
+                scrollbarHor.size = 1 / sizeX;
 
                 scrollbarHor.gameObject.SetActive(scrollbarHor.size < 1);
             }
@@ -279,7 +304,9 @@ namespace Swole.UI
             if (scrollbarVer != null)
             {
 
-                scrollbarVer.size = 1 / Mathf.Max(1, contentSize.y / localSize.y);
+                float sizeY = localSize.x == 0 ? 1 : (contentSize.y / localSize.y); // Prevent divide by zero
+
+                scrollbarVer.size = 1 / sizeY;
 
                 scrollbarVer.gameObject.SetActive(scrollbarVer.size < 1);
 

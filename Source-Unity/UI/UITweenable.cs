@@ -10,6 +10,7 @@ namespace Swole.UI
     public class UITweenable : MonoBehaviour
     {
 
+        [Tooltip("If an additional tween call comes through before the current tween is finished, should it be ignored or be performed later?")]
         public bool queueConsecutiveTweenCalls;
 
         protected TweenState currentTween;

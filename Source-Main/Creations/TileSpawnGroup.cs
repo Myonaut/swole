@@ -6,11 +6,41 @@ using static Swole.EngineInternal;
 namespace Swole
 {
 
-    [Serializable]
-    public class TileSpawnGroup
+    public class TileSpawnGroup : SwoleObject<TileSpawnGroup, TileSpawnGroup.Serialized>
     {
 
-        public TileSpawnGroup(string tileSetName, ICollection<TileSpawner> tileSpawns)
+        #region Serialization
+
+        public override string AsJSON(bool prettyPrint = false) => AsSerializableStruct().AsJSON(prettyPrint);
+
+        [Serializable]
+        public struct Serialized : ISerializableContainer<TileSpawnGroup, TileSpawnGroup.Serialized>
+        {
+
+            public string tileSetName;
+            public TileSpawner[] tileSpawns;
+
+            public TileSpawnGroup AsOriginalType(PackageInfo packageInfo = default) => new TileSpawnGroup(this);
+            public string AsJSON(bool prettyPrint = false) => Swole.Engine.ToJson(this, prettyPrint);
+
+            public object AsNonserializableObject(PackageInfo packageInfo = default) => AsOriginalType(packageInfo);
+        }
+
+        public static implicit operator Serialized(TileSpawnGroup obj) => new TileSpawnGroup.Serialized() { tileSetName = obj.tileSetName, tileSpawns = obj.tileSpawns };
+
+        public override TileSpawnGroup.Serialized AsSerializableStruct() => this;
+
+        public TileSpawnGroup(TileSpawnGroup.Serialized serializable) : base(serializable)
+        {
+
+            this.tileSetName = serializable.tileSetName;
+            this.tileSpawns = serializable.tileSpawns;
+
+        }
+
+        #endregion
+
+        public TileSpawnGroup(string tileSetName, ICollection<TileSpawner> tileSpawns) : base(default)
         {
             this.tileSetName = tileSetName;
             if (tileSpawns != null)
@@ -58,6 +88,10 @@ namespace Swole
 
         }
 
+        public string ToJSON()
+        {
+            throw new NotImplementedException();
+        }
     }
 
 }

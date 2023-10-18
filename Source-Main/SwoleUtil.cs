@@ -1,6 +1,10 @@
 using System;
 using System.Text.RegularExpressions;
 using System.Collections.Generic;
+using System.Reflection;
+using System.IO;
+using System.Threading;
+using System.Threading.Tasks;
 
 namespace Swole
 {
@@ -260,6 +264,16 @@ namespace Swole
 
         }
 
+        public static bool AsBool(this double val) => val != 0; // Equivalent to MiniScript implementation of a boolean
+
+        public static string RemoveWhitespace(this string str)
+        {
+            return string.Join("", str.Split(default(string[]), System.StringSplitOptions.RemoveEmptyEntries));
+        }
+
+        public static string AsID(this string str) => str.ToLower().Trim();
+
+
         private static List<int> available = new List<int>();
         private static List<int> restricted = new List<int>();
 
@@ -348,6 +362,123 @@ namespace Swole
 
         public static readonly Regex rgFourComponentVersionNumber = new Regex(@"^([0-9]\.){1,3}[0-9]$");
         public static bool IsNativeVersionString(this string str) => rgFourComponentVersionNumber.IsMatch(str);
+
+        #endregion
+
+        #region Generic Extensions
+
+        public static Array DeepClone(this Array array)
+        {
+
+            Array newArray = Array.CreateInstance(array.GetType().GetElementType(), array.Length);
+
+            for (int a = 0; a < array.Length; a++)
+            {
+
+                object val = array.GetValue(a);
+
+                if (val == null) continue;
+
+                if (val.GetType().IsAssignableFrom(typeof(ICloneable))) val = (val as ICloneable).Clone();
+
+                newArray.SetValue(val, a);
+
+            }
+
+            return newArray;
+
+        }
+
+        public static List<T> DeepClone<T>(this List<T> list)
+        {
+
+            List<T> newList = new List<T>(list);
+
+            for (int a = 0; a < list.Count; a++)
+            {
+
+                T val = list[a];
+
+                if (val == null) continue;
+
+                if (typeof(ICloneable).IsAssignableFrom(val.GetType())) val = (T)(val as ICloneable).Clone();
+
+                newList[a] = val;
+
+            }
+
+            return newList;
+
+        }
+
+        private static readonly HashSet<Type> NumericTypes = new HashSet<Type>
+        {
+            typeof(int),  typeof(double),  typeof(decimal),
+            typeof(long), typeof(short),   typeof(sbyte),
+            typeof(byte), typeof(ulong),   typeof(ushort),
+            typeof(uint), typeof(float)
+        };
+
+        public static bool IsNumeric(this Type myType)
+        {
+            return NumericTypes.Contains(Nullable.GetUnderlyingType(myType) ?? myType);
+        }
+
+        public static List<PropertyInfo> GetPropertiesWithAttribute<T>(this System.Type type) where T : System.Attribute
+        {
+
+            List<PropertyInfo> properties = new List<PropertyInfo>();
+
+            PropertyInfo[] props = type.GetProperties();
+
+            for (int a = 0; a < props.Length; a++)
+            {
+
+                if (System.Attribute.IsDefined(props[a], typeof(T))) properties.Add(props[a]);
+            }
+
+            return properties;
+
+        }
+
+        public static List<FieldInfo> GetFieldsWithAttribute<T>(this System.Type type) where T : System.Attribute
+        {
+
+            List<FieldInfo> properties = new List<FieldInfo>();
+
+            FieldInfo[] props = type.GetFields();
+
+            for (int a = 0; a < props.Length; a++)
+            {
+
+                if (System.Attribute.IsDefined(props[a], typeof(T))) properties.Add(props[a]);
+            }
+
+            return properties;
+
+        }
+
+        #endregion
+
+        #region File Handling
+
+        /// <summary>
+        /// Source: https://stackoverflow.com/questions/882686/asynchronous-file-copy-move-in-c-sharp
+        /// </summary>
+        public static async Task CopyFileAsync(string sourceFile, string destinationFile, CancellationToken cancellationToken = default)
+        {
+            var fileOptions = FileOptions.Asynchronous | FileOptions.SequentialScan;
+            var bufferSize = 4096;
+
+            using (var sourceStream =
+                  new FileStream(sourceFile, FileMode.Open, FileAccess.Read, FileShare.Read, bufferSize, fileOptions))
+
+            using (var destinationStream =
+                  new FileStream(destinationFile, FileMode.CreateNew, FileAccess.Write, FileShare.None, bufferSize, fileOptions))
+
+                await sourceStream.CopyToAsync(destinationStream, bufferSize, cancellationToken)
+                                  .ConfigureAwait(false);
+        }
 
         #endregion
 

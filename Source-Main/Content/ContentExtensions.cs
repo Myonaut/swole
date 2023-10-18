@@ -16,7 +16,7 @@ namespace Swole
 
             if (content == null) return default;
 
-            if (!string.IsNullOrEmpty(content.LastEditDateString) && DateTime.TryParse(content.LastEditDateString, new CultureInfo("en-us"), DateTimeStyles.None, out DateTime date)) return date;
+            if (!string.IsNullOrEmpty(content.LastEditDate) && DateTime.TryParse(content.LastEditDate, new CultureInfo("en-us"), DateTimeStyles.None, out DateTime date)) return date;
 
             return content.CreationDate();
 
@@ -29,7 +29,7 @@ namespace Swole
 
             DateTime date = DateTime.Now;
 
-            if (!string.IsNullOrEmpty(content.CreationDateString) && DateTime.TryParse(content.CreationDateString, new CultureInfo("en-us"), DateTimeStyles.None, out DateTime result)) date = result;
+            if (!string.IsNullOrEmpty(content.CreationDate) && DateTime.TryParse(content.CreationDate, new CultureInfo("en-us"), DateTimeStyles.None, out DateTime result)) date = result;
 
             return date;
 

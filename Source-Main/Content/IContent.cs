@@ -1,25 +1,28 @@
 using System;
+using System.Collections.Generic;
 using System.Globalization;
 
 namespace Swole
 {
 
-    public interface IContent
+    public interface IContent : IPackageDependent
     {
 
-        public PackageManifest PackageInfo { get; }
+        public const string dateFormat = "MM/dd/yyyy";
+
+        public PackageInfo PackageInfo { get; }
+
+        public ContentInfo ContentInfo { get; }
 
         public string Name { get; }
 
         public string Author { get; }
 
-        public string CreationDateString { get; }
+        public string CreationDate { get; }
 
-        public string LastEditDateString { get; }
+        public string LastEditDate { get; }
 
         public string Description { get; }
-
-        public const string dateFormat = "MM/dd/yyyy";
 
     }
 

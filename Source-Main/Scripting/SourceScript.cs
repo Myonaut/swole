@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 
 using static Swole.Swole;
 using static Swole.Script.SwoleScriptSemantics;
@@ -7,58 +8,83 @@ namespace Swole.Script
 {
 
     [Serializable]
-    public struct SourceScript : IContent
+    public struct SourceScript : IContent, ISwoleSerialization<SourceScript, SourceScript.Serialized>
     {
+
+        #region Serialization
+
+        public string AsJSON(bool prettyPrint = false) => AsSerializableStruct().AsJSON(prettyPrint);
+
+        [Serializable]
+        public struct Serialized : ISerializableContainer<SourceScript, SourceScript.Serialized>
+        {
+
+            public ContentInfo contentInfo; 
+            public string source;
+
+            public SourceScript AsOriginalType(PackageInfo packageInfo = default) => new SourceScript(this);
+            public string AsJSON(bool prettyPrint = false) => Swole.Engine.ToJson(this, prettyPrint);
+
+            public object AsNonserializableObject(PackageInfo packageInfo = default) => AsOriginalType(packageInfo);
+        }
+
+        public SourceScript.Serialized AsSerializableStruct() => new SourceScript.Serialized() { contentInfo = contentInfo, source = source };
+        public object AsSerializableObject() => AsSerializableStruct();
+
+        public SourceScript(SourceScript.Serialized serializable, PackageInfo packageInfo = default)
+        {
+
+            this.packageInfo = packageInfo;
+
+            this.contentInfo = serializable.contentInfo;
+            this.source = serializable.source;
+
+        }
+
+        #endregion
+
+        public List<PackageIdentifier> ExtractPackageDependencies(List<PackageIdentifier> dependencies = null)
+        {
+
+            if (dependencies == null) dependencies = new List<PackageIdentifier>();
+
+            if (!string.IsNullOrEmpty(source)) dependencies = Swole.ExtractPackageDependencies(source, dependencies);
+
+            return dependencies;
+
+        }
 
         public override string ToString()
         {
-
-            return $"{name}{(string.IsNullOrEmpty(author) ? "" : " created by" + author)}{(this.HasPackage() ? " - imported from '" + packageInfo.GetIdentityString() + "'" : "")}";
+             
+            return $"{Name}{(string.IsNullOrEmpty(Author) ? "" : " created by" + Author)}{(this.HasPackage() ? " - imported from '" + packageInfo.GetIdentityString() + "'" : "")}";
 
         }
 
-        public string name;
-        public string Name => name;
-        public bool NameIsValid => ValidateScriptName(name);
+        public string Name => contentInfo.name;
+        public bool NameIsValid => ValidateScriptName(Name);
 
-        public string author;
-        public string Author => author;
+        public string Author => contentInfo.author;
+        public string CreationDate => contentInfo.creationDate;
+        public string LastEditDate => contentInfo.lastEditDate;
+        public string Description => contentInfo.description;
 
-        public string creationDate;
-        public string CreationDateString => creationDate;
+        public PackageInfo packageInfo;
+        public PackageInfo PackageInfo => packageInfo;
 
-        public string lastEditDate;
-        public string LastEditDateString => lastEditDate;
-
-        public string description;
-        public string Description => description;
-
-        public PackageManifest packageInfo;
-        public PackageManifest PackageInfo => packageInfo;
+        public ContentInfo contentInfo;
+        public ContentInfo ContentInfo => contentInfo;
 
         public string source;
 
-        public SourceScript(string name, string author, DateTime creationDate, DateTime lastEditDate, string description, string source, PackageManifest packageInfo = default)
+        public SourceScript(string name, string author, DateTime creationDate, DateTime lastEditDate, string description, string source, PackageInfo packageInfo = default) : this(new ContentInfo() { name = name, author = author, creationDate = creationDate.ToString(IContent.dateFormat), lastEditDate = lastEditDate.ToString(IContent.dateFormat), description = description }, source, packageInfo) {}
+
+        public SourceScript(string name, string author, string creationDate, string lastEditDate, string description, string source, PackageInfo packageInfo = default) : this(new ContentInfo() { name = name, author = author, creationDate = creationDate, lastEditDate = lastEditDate, description = description }, source, packageInfo) { }
+
+        public SourceScript(ContentInfo contentInfo, string source, PackageInfo packageInfo = default)
         {
 
-            this.name = name;
-            this.author = author;
-            this.creationDate = creationDate.ToString(IContent.dateFormat);
-            this.lastEditDate = lastEditDate.ToString(IContent.dateFormat);
-            this.description = description;
-            this.source = source;
-            this.packageInfo = packageInfo;
-
-        }
-
-        public SourceScript(string name, string author, string creationDate, string lastEditDate, string description, string source, PackageManifest packageInfo = default)
-        {
-
-            this.name = name;
-            this.author = author;
-            this.creationDate = creationDate;
-            this.lastEditDate = lastEditDate;
-            this.description = description;
+            this.contentInfo = contentInfo;
             this.source = source;
             this.packageInfo = packageInfo;
 
@@ -83,17 +109,17 @@ namespace Swole.Script
 
             bool isLocalPackage = this.HasPackage() && packageInfo.GetIdentityString() == workingPackage.GetIdentityString();
 
-            string header = $"{indent}// {(isLocalPackage || !this.HasPackage() ? "" : packageInfo.GetIdentityString() + ".") + name} ";
-            string auth = $"{indent}// ©{this.LastEditDate().Year} {(string.IsNullOrEmpty(author) ? "" : author)}";
+            string header = $"{indent}// {(isLocalPackage || !this.HasPackage() ? "" : packageInfo.GetIdentityString() + ".") + Name} ";
+            string auth = $"{indent}// ©{this.LastEditDate().Year} {(string.IsNullOrEmpty(Author) ? "" : Author)}";
 
-            bool isSameAuthor = author == topAuthor;
+            bool isSameAuthor = Author == topAuthor;
 
             int boundLength = Math.Max(header.Length, auth.Length);
 
             return (addInitialLineBreak ? ssNewLine : "") +
                                 $"{indent}//" + new string('+', boundLength) + ssNewLine +
                                 header + ssNewLine +
-                                (isSameAuthor || string.IsNullOrEmpty(author) ? "" : auth + ssNewLine) +
+                                (isSameAuthor || string.IsNullOrEmpty(Author) ? "" : auth + ssNewLine) +
                                 $"{indent}//" + new string('+', boundLength) + ssNewLine +
                                 embedSource + ssNewLine +
                                 $"{indent}//" + new string('+', boundLength) + (addAdditionalEndLineBreak ? ssNewLine : "") + ssNewLine;
@@ -118,14 +144,14 @@ namespace Swole.Script
 
             string sourceEdit = source.StandardizeNewLines();
 
-            string desc = description.StandardizeNewLines();
+            string desc = Description.StandardizeNewLines();
             desc = desc.Replace(descriptionMarker + "", "");
 
             string l0 = string.IsNullOrEmpty(packageInfo.url) ? "" : $"// {metaDataTag_URL} {packageInfo.url}" + ssNewLine;
-            string l1 = string.IsNullOrEmpty(name) ? "" : $"// {metaDataTag_Name} {name}" + ssNewLine;
-            string l2 = string.IsNullOrEmpty(author) ? "" : $"// {metaDataTag_Author} {author}" + ssNewLine;
-            string l3 = string.IsNullOrEmpty(creationDate) ? "" : $"// {metaDataTag_CreationDate} {creationDate}" + ssNewLine;
-            string l4 = string.IsNullOrEmpty(lastEditDate) ? "" : $"// {metaDataTag_LastEditDate} {lastEditDate}" + ssNewLine;
+            string l1 = string.IsNullOrEmpty(Name) ? "" : $"// {metaDataTag_Name} {Name}" + ssNewLine;
+            string l2 = string.IsNullOrEmpty(Author) ? "" : $"// {metaDataTag_Author} {Author}" + ssNewLine;
+            string l3 = string.IsNullOrEmpty(CreationDate) ? "" : $"// {metaDataTag_CreationDate} {CreationDate}" + ssNewLine;
+            string l4 = string.IsNullOrEmpty(LastEditDate) ? "" : $"// {metaDataTag_LastEditDate} {LastEditDate}" + ssNewLine;
 
             int descLineCount = string.IsNullOrEmpty(desc) ? 0 : Math.Max(1, (int)Math.Ceiling(desc.Length / (float)maxDescCharsPerLine));
             string descStr = "";
@@ -178,10 +204,12 @@ namespace Swole.Script
 
             packageInfo = default;
 
-            name = "null";
-            author = description = "";
-            creationDate = DateTime.Now.ToString(IContent.dateFormat);
-            lastEditDate = null;
+            contentInfo = new ContentInfo();
+
+            contentInfo.name = "null";
+            contentInfo.author = contentInfo.description = "";
+            contentInfo.creationDate = DateTime.Now.ToString(IContent.dateFormat);
+            contentInfo.lastEditDate = null;
 
             standaloneSource = standaloneSource.StandardizeNewLines();
 
@@ -214,7 +242,7 @@ namespace Swole.Script
                         isDesc = false;
                         line = line.Substring(0, tagIndex);
                     }
-                    description = description + line;
+                    contentInfo.description = contentInfo.description + line;
                     continue;
                 }
 
@@ -228,28 +256,28 @@ namespace Swole.Script
                 tagIndex = line.IndexOf(metaDataTag_Name);
                 if (tagIndex >= 0)
                 {
-                    if (tagIndex + metaDataTag_Name.Length < line.Length) name = line.Substring(tagIndex + metaDataTag_Name.Length).Trim();
+                    if (tagIndex + metaDataTag_Name.Length < line.Length) contentInfo.name = line.Substring(tagIndex + metaDataTag_Name.Length).Trim();
                     continue;
                 }
 
                 tagIndex = line.IndexOf(metaDataTag_Author);
                 if (tagIndex >= 0)
                 {
-                    if (tagIndex + metaDataTag_Author.Length < line.Length) author = line.Substring(tagIndex + metaDataTag_Author.Length).Trim();
+                    if (tagIndex + metaDataTag_Author.Length < line.Length) contentInfo.author = line.Substring(tagIndex + metaDataTag_Author.Length).Trim();
                     continue;
                 }
 
                 tagIndex = line.IndexOf(metaDataTag_CreationDate);
                 if (tagIndex >= 0)
                 {
-                    if (tagIndex + metaDataTag_CreationDate.Length < line.Length) creationDate = line.Substring(tagIndex + metaDataTag_CreationDate.Length).Trim();
+                    if (tagIndex + metaDataTag_CreationDate.Length < line.Length) contentInfo.creationDate = line.Substring(tagIndex + metaDataTag_CreationDate.Length).Trim();
                     continue;
                 }
 
                 tagIndex = line.IndexOf(metaDataTag_LastEditDate);
                 if (tagIndex >= 0)
                 {
-                    if (tagIndex + metaDataTag_LastEditDate.Length < line.Length) lastEditDate = line.Substring(tagIndex + metaDataTag_LastEditDate.Length).Trim();
+                    if (tagIndex + metaDataTag_LastEditDate.Length < line.Length) contentInfo.lastEditDate = line.Substring(tagIndex + metaDataTag_LastEditDate.Length).Trim();
                     continue;
                 }
 
@@ -263,14 +291,14 @@ namespace Swole.Script
                         isDesc = true;
                         line = line.Substring(tagIndex + 1);
                     }
-                    description = description + line;
+                    contentInfo.description = contentInfo.description + line;
                     continue;
                 }
 
             }
             source = standaloneSource;
 
-            if (string.IsNullOrEmpty(lastEditDate)) lastEditDate = creationDate;
+            if (string.IsNullOrEmpty(contentInfo.lastEditDate)) contentInfo.lastEditDate = contentInfo.creationDate;
 
         }
 

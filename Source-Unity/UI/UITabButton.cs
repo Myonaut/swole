@@ -23,9 +23,12 @@ namespace Swole.UI
         private bool prevDisable = false;
 
         public bool toggle = false;
+        public bool IsToggledOn => toggle;
 
+        [Tooltip("Allow hover events to be called while the button is toggled on?")]
         public bool hoverWhileActive = false;
 
+        [Tooltip("Allow click events to be called while the button is toggled on?")]
         public bool clickWhileActive = false;
 
         public bool disableToggleObjectsOnHover = true;
@@ -35,15 +38,22 @@ namespace Swole.UI
         public GameObject toggleHoverObject;
         public GameObject toggleDisabledObject;
 
-        public UnityEvent OnClick;
+        public UnityEvent OnClick = new UnityEvent();
+        public UnityEvent OnHoverBegin = new UnityEvent();
+        public UnityEvent OnHoverEnd = new UnityEvent();
+        public UnityEvent OnToggleOn = new UnityEvent();
+        public UnityEvent OnToggleOff = new UnityEvent();
 
-        public UnityEvent OnHoverBegin;
+        protected void OnDestroy()
+        {
 
-        public UnityEvent OnHoverEnd;
+            OnClick?.RemoveAllListeners();
+            OnHoverBegin?.RemoveAllListeners();
+            OnHoverEnd?.RemoveAllListeners();
+            OnToggleOn?.RemoveAllListeners();
+            OnToggleOff?.RemoveAllListeners();
 
-        public UnityEvent OnToggleOn;
-
-        public UnityEvent OnToggleOff;
+        }
 
         public GameObject[] togglableObjects;
 
@@ -81,7 +91,7 @@ namespace Swole.UI
             if (toggleOnObject != null)
             {
 
-                toggleOnObject.SetActive(disable ? false : (toggleOnObject == toggleOffObject || toggleOffObject == null) ? (toggleHoverObject == null ? true : (hoverWhileActive ? (isHovering ? !disableToggleObjectsOnHover : true) : true)) : (toggleHoverObject == null ? toggle : (hoverWhileActive ? (isHovering ? !disableToggleObjectsOnHover : toggle) : toggle)));
+                toggleOnObject.SetActive(disable ? false : (toggleOnObject == toggleOffObject) ? (toggleHoverObject == null ? true : (hoverWhileActive ? (isHovering ? !disableToggleObjectsOnHover : true) : true)) : (toggleHoverObject == null ? toggle : (hoverWhileActive ? (isHovering ? !disableToggleObjectsOnHover : toggle) : toggle)));
 
             }
 

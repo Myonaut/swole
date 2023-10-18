@@ -7,7 +7,7 @@ namespace Swole
 {
 
     [Serializable]
-    public struct PackageIdentifier
+    public struct PackageIdentifier : IEquatable<PackageIdentifier>
     {
 
         public PackageIdentifier(string name, string version)
@@ -24,6 +24,16 @@ namespace Swole
 
         public static implicit operator string(PackageIdentifier dep) => GetFullPackageString(dep.name, dep.version);
         public override string ToString() => this;
+
+        public bool Equals(PackageIdentifier other)
+        {
+
+            if (name != other.name) return false;
+            if (version != other.version) return false;
+
+            return true;
+
+        }
 
     }
 

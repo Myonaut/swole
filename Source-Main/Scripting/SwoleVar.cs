@@ -20,7 +20,7 @@ namespace Swole.Script
         public SwoleVar(string name, T defaultValue)
         {
             this.name = name;
-            this.defaultValue = defaultValue;
+            this.defaultValue = defaultValue; 
         }
 
         protected T value;
@@ -34,8 +34,8 @@ namespace Swole.Script
             set
             {
 
-                if (value is T v) SetValue(v);
-
+                if (value != null) SetValue(value.Cast<T>());
+                 
             }
 
         }

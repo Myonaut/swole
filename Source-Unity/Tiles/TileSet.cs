@@ -33,6 +33,9 @@ namespace Swole
 
         private const string resourceFolderName = "Resources/";
 #if BULKOUT_ENV
+        /// <summary>
+        /// Uses Paid Asset Integration https://assetstore.unity.com/packages/tools/modeling/runtime-level-design-52325
+        /// </summary>
         public static TileSet Create(TileSetSource source, Material material, Tile[] tiles, PrefabPreviewLookAndFeel previewLookAndFeel, string path, string fileName, bool incrementIfExists = false, bool forceRefreshTilePreviews = false, bool saveTilePreviewsAsAssets = true, bool deleteExistingTilePreviewAssets = false)
 #else
         public static TileSet Create(TileSetSource source, Material material, Tile[] tiles, string path, string fileName, bool incrementIfExists = false, bool forceRefreshTilePreviews = false, bool saveTilePreviewsAsAssets = true, bool deleteExistingTilePreviewAssets = false)
@@ -208,7 +211,7 @@ namespace Swole
             if (tiles != null && tiles.Length > 0)
             {
 
-#if BULKOUT_ENV
+#if BULKOUT_ENV // Uses Paid Asset Integration https://assetstore.unity.com/packages/tools/modeling/runtime-level-design-52325
                 var previewGen = new EditorPrefabPreviewGen();
 
                 previewGen.BeginGenSession(previewLookAndFeel);

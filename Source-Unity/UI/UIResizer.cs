@@ -4,8 +4,11 @@ using System.Collections;
 using System.Collections.Generic;
 
 using UnityEngine;
+using UnityEngine.Events;
 using UnityEngine.EventSystems;
 using UnityEngine.UI;
+
+using Swole.Script;
 
 namespace Swole.UI 
 {
@@ -16,11 +19,16 @@ namespace Swole.UI
     public class UIResizer : Selectable, IDragHandler
     {
 
+        [Tooltip("Don't allow resizing along the horizontal axis.")]
+        public bool freezeHorizontal;
+        [Tooltip("Don't allow resizing along the vertical axis.")]
+        public bool freezeVertical;
+
         public float minWidth = 5;
         public float minHeight = 5;
 
-        public float maxWidth = 10000;
-        public float maxHeight = 10000;
+        public float maxWidth = 0;
+        public float maxHeight = 0;
 
         [Tooltip("Sets the anchor to be along the border of the targetRect. If the resizer is dead center inside the targetRect, then the anchor is centered instead (in which case the resizer does nothing when dragged).")]
         public bool pinToBorder = false;
@@ -35,7 +43,7 @@ namespace Swole.UI
 
         protected RectTransform rectTransform;
 
-        public Canvas canvas;
+        private Canvas canvas;
 
         protected RectTransform canvasRect;
 
@@ -49,7 +57,7 @@ namespace Swole.UI
         {
 
             base.Awake();
-
+            if (!Application.isPlaying) return;
             rectTransform = gameObject.GetComponent<RectTransform>();
 
             if (targetRect == null) 
@@ -83,8 +91,9 @@ namespace Swole.UI
 
             Vector3 worldPos = rectTransform.position;
 
-            Vector3 localPos = targetRect.InverseTransformPoint(worldPos);
+            Vector2 size = rectTransform.rect.size;
 
+            Vector3 localPos = targetRect.InverseTransformPoint(worldPos);
             Vector3 localPos_ = localPos;
 
             localPos = new Vector3((localPos.x - corners[0].x) / (corners[3].x - corners[0].x), (localPos.y - corners[0].y) / (corners[1].y - corners[0].y), 0);
@@ -124,31 +133,66 @@ namespace Swole.UI
             rectTransform.anchorMin = rectTransform.anchorMax = anchor;
             anchor = (anchor - new Vector2(0.5f, 0.5f)) * 2f;
             rectTransform.position = targetRect.TransformPoint(localPos_);
+            rectTransform.SetSizeWithCurrentAnchors(RectTransform.Axis.Horizontal, size.x);
+            rectTransform.SetSizeWithCurrentAnchors(RectTransform.Axis.Vertical, size.y);
 
         }
 
         protected Vector3 prevCursorPosition;
 
+        public UnityEvent OnClick = new UnityEvent();
+
         public override void OnPointerDown(PointerEventData eventData)
         {
 
-            prevCursorPosition = eventData.position;//InputProxy.CursorPosition;
+            prevCursorPosition = canvas.ScreenToCanvasSpace(eventData.position);//InputProxy.CursorPosition;
             base.OnPointerDown(eventData);
 
+            UpdateRefrences();
+
+            OnClick?.Invoke();
+
+        } 
+
+        public UnityEvent OnRelease = new UnityEvent();
+
+        public override void OnPointerUp(PointerEventData eventData)
+        {
+            base.OnPointerUp(eventData);
+            OnRelease?.Invoke();
         }
 
         public bool IsDragging => IsPressed();
 
-        protected Vector3[] corners2 = new Vector3[4];
+        protected List<IRebuildable> rebuildables = null;
+        public void UpdateRefrences()
+        {
 
+            if (rebuildables == null) rebuildables = new List<IRebuildable>();
+
+            targetRect.gameObject.GetComponentsInChildren<IRebuildable>(true, rebuildables);
+
+        }
+        public void RebuildReferences()
+        {
+
+            if (rebuildables == null) UpdateRefrences();
+
+            for (int a = 0; a < rebuildables.Count; a++) rebuildables[a].RebuildLayout();
+
+        } 
+
+        protected Vector3[] corners2 = new Vector3[4];
         public void OnDrag(PointerEventData eventData)
         {
 
             canvasRect.GetLocalCorners(corners2);
 
-            Vector3 cursorPosition = eventData.position;//InputProxy.CursorPosition;
+            Vector3 cursorPosition = canvas.ScreenToCanvasSpace(eventData.position);//InputProxy.CursorPosition;
 
             Vector3 translation = cursorPosition - prevCursorPosition; // Calculate translation vector from cursor that is dragging the resizer
+            if (freezeHorizontal) translation.x = 0;
+            if (freezeVertical) translation.y = 0;
 
             targetRect.GetLocalCorners(corners);
 
@@ -160,8 +204,8 @@ namespace Swole.UI
             corners[2] = canvasRect.InverseTransformPoint(targetRect.TransformPoint(corners[2] + new Vector3(Mathf.Max(signX, 0) * translation.x, Mathf.Max(signY, 0) * translation.y, 0))); // Convert targetRect corner to canvas space with translation applied
             corners[3] = canvasRect.InverseTransformPoint(targetRect.TransformPoint(corners[3] + new Vector3(Mathf.Max(signX, 0) * translation.x, Mathf.Min(signY, 0) * translation.y, 0))); // Convert targetRect corner to canvas space with translation applied
 
-            float width = Mathf.Clamp(corners[3].x - corners[0].x, minWidth, maxWidth); // Keep targetRect width within thresholds
-            float height = Mathf.Clamp(corners[1].y - corners[0].y, minHeight, maxHeight); // Keep targetRect height within thresholds
+            float width = Mathf.Clamp(corners[3].x - corners[0].x, minWidth, maxWidth > 0 ? maxWidth : (corners[3].x - corners[0].x)); // Keep targetRect width within thresholds
+            float height = Mathf.Clamp(corners[1].y - corners[0].y, minHeight, maxHeight > 0 ? maxHeight : (corners[1].y - corners[0].y)); // Keep targetRect height within thresholds
 
             float constrainX = width - (corners[3].x - corners[0].x); // Calculate out-of-bounds width
             float constrainY = height - (corners[1].y - corners[0].y); // Calculate out-of-bounds height
@@ -226,6 +270,8 @@ namespace Swole.UI
             targetRect.position = canvasRect.TransformPoint(elementPos);
 
             prevCursorPosition = cursorPosition;
+
+            RebuildReferences(); 
 
         }
 

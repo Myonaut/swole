@@ -7,18 +7,81 @@ using static Swole.EngineInternal;
 namespace Swole
 {
 
-    [Serializable]
-    public class Creation : IContent
+    public class Creation : SwoleObject<Creation, Creation.Serialized>, IContent
     {
 
-        public Creation(string name, string author, string creationDate, string lastEditDate, string description, CreationScript script, ICollection<TileSpawnGroup> tileSpawnGroups = null, PackageManifest packageInfo = default)
+        #region Serialization
+
+        public override string AsJSON(bool prettyPrint = false) => AsSerializableStruct().AsJSON(prettyPrint);
+
+        [Serializable]
+        public struct Serialized : ISerializableContainer<Creation, Creation.Serialized>
+        {
+
+            public ContentInfo contentInfo; 
+            public CreationScript script; 
+            public TileSpawnGroup.Serialized[] tileSpawnGroups;
+
+            public Creation AsOriginalType(PackageInfo packageInfo = default) => new Creation(this, packageInfo);
+            public string AsJSON(bool prettyPrint = false) => Swole.Engine.ToJson(this, prettyPrint);
+
+            public object AsNonserializableObject(PackageInfo packageInfo = default) => AsOriginalType(packageInfo);
+        }
+
+        public static implicit operator Serialized(Creation creation)
+        {
+            Serialized s = new Serialized();
+
+            s.contentInfo = creation.contentInfo;
+            s.script = creation.script;
+            if (creation.tileSpawnGroups != null)
+            {
+                s.tileSpawnGroups = new TileSpawnGroup.Serialized[creation.tileSpawnGroups.Length];
+                for (int a = 0; a < creation.tileSpawnGroups.Length; a++) s.tileSpawnGroups[a] = creation.tileSpawnGroups[a].AsSerializableStruct();
+            }
+
+            return s;
+        }
+
+        public override Creation.Serialized AsSerializableStruct() => this;
+
+        public Creation(Creation.Serialized serializable, PackageInfo packageInfo = default) : base(serializable)
+        {
+
+            this.packageInfo = packageInfo;
+
+            this.contentInfo = serializable.contentInfo;
+            this.script = serializable.script;
+
+            if (serializable.tileSpawnGroups != null)
+            {
+                this.tileSpawnGroups = new TileSpawnGroup[serializable.tileSpawnGroups.Length];
+                for (int a = 0; a < serializable.tileSpawnGroups.Length; a++) this.tileSpawnGroups[a] = serializable.tileSpawnGroups[a].AsOriginalType(packageInfo);
+            }
+
+        }
+
+        #endregion
+
+        public List<PackageIdentifier> ExtractPackageDependencies(List<PackageIdentifier> dependencies = null)
+        {
+
+            if (dependencies == null) dependencies = new List<PackageIdentifier>();
+
+            dependencies = script.ExtractPackageDependencies(dependencies);
+
+            return dependencies;
+
+        }
+
+        public Creation(string name, string author, DateTime creationDate, DateTime lastEditDate, string description, CreationScript script, ICollection<TileSpawnGroup> tileSpawnGroups = null, PackageInfo packageInfo = default) : this(new ContentInfo() { name = name, author = author, creationDate = creationDate.ToString(IContent.dateFormat), lastEditDate = lastEditDate.ToString(IContent.dateFormat), description = description }, script, tileSpawnGroups, packageInfo) { }
+
+        public Creation(string name, string author, string creationDate, string lastEditDate, string description, CreationScript script, ICollection<TileSpawnGroup> tileSpawnGroups = null, PackageInfo packageInfo = default) : this(new ContentInfo() { name = name, author = author, creationDate = creationDate, lastEditDate = lastEditDate, description = description }, script, tileSpawnGroups, packageInfo) { }
+
+        public Creation(ContentInfo contentInfo, CreationScript script, ICollection<TileSpawnGroup> tileSpawnGroups = null, PackageInfo packageInfo = default) : base(default)
         {
             this.packageInfo = packageInfo;
-            this.name = name;
-            this.author = author;
-            this.creationDate = creationDate;
-            this.lastEditDate = lastEditDate;
-            this.description = description;
+            this.contentInfo = contentInfo;
 
             this.script = script;
 
@@ -34,19 +97,16 @@ namespace Swole
             }
         }
 
-        public PackageManifest PackageInfo => packageInfo;
-        public string Name => name;
-        public string Author => author;
-        public string CreationDateString => creationDate;
-        public string LastEditDateString => lastEditDate;
-        public string Description => description;
+        public PackageInfo PackageInfo => packageInfo;
+        public ContentInfo ContentInfo => contentInfo;
+        public string Name => contentInfo.name;
+        public string Author => contentInfo.author;
+        public string CreationDate => contentInfo.creationDate;
+        public string LastEditDate => contentInfo.lastEditDate;
+        public string Description => contentInfo.description;
 
-        protected readonly PackageManifest packageInfo;
-        protected readonly string name;
-        protected readonly string author;
-        protected readonly string creationDate;
-        protected readonly string lastEditDate;
-        protected readonly string description;
+        protected readonly PackageInfo packageInfo;
+        protected readonly ContentInfo contentInfo;
 
         protected readonly CreationScript script;
         /// <summary>
