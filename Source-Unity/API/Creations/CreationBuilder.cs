@@ -288,7 +288,7 @@ namespace Swole.API.Unity
             if (hierarchyLayoutGroup == null)
             {
                 string msg = $"Hierarchy Layout Group not set for Creation Builder '{name}'";
-                Debug.LogError(msg);
+                swole.LogError(msg);
                 OnBuilderSetupFail?.Invoke();
                 ShowBuilderSetupError(msg);
                 Destroy(this);
@@ -297,7 +297,7 @@ namespace Swole.API.Unity
 
             if (hierarchyMemberPrototype == null)
             {
-                Debug.LogError($"Hierarchy Member Prototype not set for Creation Builder '{name}'");
+                swole.LogError($"Hierarchy Member Prototype not set for Creation Builder '{name}'");
                 OnBuilderSetupFail?.Invoke();
                 Destroy(this);
                 return;
@@ -306,8 +306,7 @@ namespace Swole.API.Unity
             if (hierarchyPlaceholderPrototype == null)
             {
                 string msg = $"Hierarchy Placeholder Prototype not set for Creation Builder '{name}'";
-                Debug.LogError(msg);
-                Debug.LogError(msg);
+                swole.LogError(msg);
                 OnBuilderSetupFail?.Invoke();
                 ShowBuilderSetupError(msg);
                 Destroy(this);
@@ -317,7 +316,7 @@ namespace Swole.API.Unity
             if (hierarchySlotInPrototype == null)
             {
                 string msg = $"Hierarchy Slot In Prototype not set for Creation Builder '{name}'";
-                Debug.LogError(msg);
+                swole.LogError(msg);
                 OnBuilderSetupFail?.Invoke();
                 ShowBuilderSetupError(msg);
                 Destroy(this);
@@ -385,7 +384,7 @@ namespace Swole.API.Unity
                 if (string.IsNullOrEmpty(additiveEditorSetupScene))
                 {
                     string msg = "No additive editor setup scene was set. There will be no way to control the scene camera or to load and manipulate prefabs without it!";
-                    Debug.LogWarning(msg);
+                    swole.LogWarning(msg);
                     OnEditorSetupFail?.Invoke();
                     ShowEditorSetupError(msg);
                 }

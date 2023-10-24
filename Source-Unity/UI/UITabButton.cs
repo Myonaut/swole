@@ -14,7 +14,10 @@ namespace Swole.UI
 {
 
     public class UITabButton : MonoBehaviour, IPointerEnterHandler, IPointerExitHandler, IPointerClickHandler
-    {
+    { 
+
+        [Tooltip("An optional group to control the toggling of multiple buttons.")]
+        public UITabGroup group;
 
         public string disableUnlockParameter;
 
@@ -30,6 +33,8 @@ namespace Swole.UI
 
         [Tooltip("Allow click events to be called while the button is toggled on?")]
         public bool clickWhileActive = false;
+
+        public bool reactToChildPointerEvents = true;
 
         public bool disableToggleObjectsOnHover = true;
 
@@ -105,7 +110,7 @@ namespace Swole.UI
             if (toggleHoverObject != null)
             {
 
-                toggleHoverObject.SetActive(disable ? false : (!toggle ? isHovering : (toggleOffObject == null ? isHovering : (hoverWhileActive ? isHovering : false))));
+                toggleHoverObject.SetActive(disable ? false : (!toggle ? isHovering : (hoverWhileActive ? isHovering : false)));
             }
 
             if (toggleDisabledObject != null)
@@ -121,6 +126,8 @@ namespace Swole.UI
         {
 
             if (disable) return;
+
+            if (group != null) group.ToggleButtons(this, false);
 
             toggle = true;
 
@@ -150,22 +157,45 @@ namespace Swole.UI
         public void OnPointerClick(PointerEventData eventData)
         {
 
-            if (disable || (eventData == null ? false : eventData.button != PointerEventData.InputButton.Left)) return;
+            if (disable) return;
 
+            if (eventData != null) // Ignore clicks on child buttons (and child objects if reactToChildPointerEvents is false)
+            {
+                if (eventData.button != PointerEventData.InputButton.Left) return;
+                GameObject obj = eventData.rawPointerPress;
+                if (!reactToChildPointerEvents && obj != gameObject) return;
+                if (obj != null && obj != gameObject)
+                {
+                    if (obj.GetComponent<UITabButton>() != null) return;
+                    if (obj.GetComponent<Button>() != null) return;
+                }
+            }
+            
             bool toggleState = toggle;
 
             ToggleOn();
 
-            if (toggleState ? clickWhileActive : true) OnClick.Invoke();
+            if (toggleState ? clickWhileActive : true) OnClick.Invoke(); 
 
         }
-
+         
         public bool isHovering = false;
 
         public void OnPointerEnter(PointerEventData eventData)
         {
 
             if (disable) return;
+
+            if (eventData != null)
+            {
+                /*GameObject obj = eventData.pointerEnter;
+                if (!reactToChildPointerEvents && obj != gameObject) return;
+                if (obj != null && obj != gameObject)
+                {
+                    if (obj.GetComponent<UITabButton>() != null) return;
+                    if (obj.GetComponent<Button>() != null) return;
+                }*/ // Not working as expected
+            }
 
             isHovering = hoverWhileActive || !toggle;
 
@@ -179,6 +209,17 @@ namespace Swole.UI
         {
 
             if (disable) return;
+
+            if (eventData != null)
+            {
+                /*GameObject obj = eventData.pointerEnter;
+                if (!reactToChildPointerEvents && obj != gameObject) return;
+                if (obj != null && obj != gameObject)
+                {
+                    if (obj.GetComponent<UITabButton>() != null) return;
+                    if (obj.GetComponent<Button>() != null) return;
+                }*/ // Not working as expected - sometimes stops tab button from recognizing cursor exits 
+            }
 
             bool setHover = isHovering;
 

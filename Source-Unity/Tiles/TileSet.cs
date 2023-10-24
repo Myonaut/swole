@@ -48,7 +48,7 @@ namespace Swole
             if (source == null)
             {
 
-                Debug.LogError($"[{nameof(TileSet)}] Tile set source was null.");
+                swole.LogError($"[{nameof(TileSet)}] Tile set source was null.");
 
                 return null;
 
@@ -283,8 +283,8 @@ namespace Swole
                 }
                 else
                 {
-                    Debug.LogError($"[{nameof(TileSet)}] Invalid tile set source path '{asset.sourcePath}'.");
-                    asset.sourcePath = "";
+                    swole.LogError($"[{nameof(TileSet)}] Invalid tile set source path '{asset.sourcePath}'.");
+                    asset.sourcePath = "";  
                 }
 
             }

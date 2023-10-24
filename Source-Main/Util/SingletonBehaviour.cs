@@ -45,42 +45,30 @@ namespace Swole
 
         public static bool IsCreated => instance != null; 
 
-        private static void SetInstance(T newInstance)
+        private static void SetInstance(T newInstance, bool initialize = true)
         {
             instance = newInstance;
             if (!instance.DestroyOnLoad) DontDestroyOnLoad(instance.gameObject);
-            instance.OnInit();
+            if (initialize) instance.OnInit();
         }
 
-        private void Awake()
-        {
+        private void Awake() {}
 
+        protected virtual void OnInit()
+        {
             if (instance == null)
             {
-
-                SetInstance(this as T);
-
+                SetInstance(this as T, false);
             }
             else if (instance != this)
             {
 
                 Destroy(this);
-
                 return;
 
             }
 
             if (ExecuteInStack) SingletonCallStack.Insert(this);
-            OnAwake();
-
-        }
-
-        protected virtual void OnAwake()
-        {
-        }
-
-        protected virtual void OnInit()
-        {
         }
 
         public virtual bool ExecuteInStack => true;

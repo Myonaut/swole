@@ -103,6 +103,46 @@ namespace Swole
 
         }
 
+        /// <summary>
+        /// Find the first available component in a child's transform hierarchy. Will check all hierarchical layers of the root and use the first child with childName, if found.
+        /// </summary>
+        public static T FindFirstComponentUnderChild<T>(this GameObject root, string childName, bool includeInactive = true)
+        {
+            if (root == null || string.IsNullOrEmpty(childName)) return default;
+            return root.transform.FindFirstComponentUnderChild<T>(childName, includeInactive);
+        }
+        /// <summary>
+        /// Find the first available component in a child's transform hierarchy. Will check all hierarchical layers of the root and use the first child with childName, if found.
+        /// </summary>
+        public static T FindFirstComponentUnderChild<T>(this Transform root, string childName, bool includeInactive = true)
+        {
+            if (root == null || string.IsNullOrEmpty(childName)) return default;
+            var child = root.FindDeepChildLiberal(childName);
+            if (child == null) return default;
+            return child.GetComponentInChildren<T>(includeInactive);
+        }
+
+        /// <summary>
+        /// Find the first available component in childB's hierarchy. Looks for childA under root, then looks for childB under childA.
+        /// </summary>
+        public static T FindFirstComponentUnderChildsChild<T>(this GameObject root, string childNameA, string childNameB, bool includeInactive = true)
+        {
+            if (root == null || string.IsNullOrEmpty(childNameA) || string.IsNullOrEmpty(childNameB)) return default;
+            return root.transform.FindFirstComponentUnderChildsChild<T>(childNameA, childNameB, includeInactive);
+        }
+        /// <summary>
+        /// Find the first available component in childB's hierarchy. Looks for childA under root, then looks for childB under childA.
+        /// </summary>
+        public static T FindFirstComponentUnderChildsChild<T>(this Transform root, string childNameA, string childNameB, bool includeInactive = true)
+        {
+            if (root == null || string.IsNullOrEmpty(childNameA) || string.IsNullOrEmpty(childNameB)) return default;
+            var childA = root.FindDeepChildLiberal(childNameA);
+            if (childA == null) return default;
+            var childB = childA.FindDeepChildLiberal(childNameB);
+            if (childB == null) return default;
+            return childB.GetComponentInChildren<T>(includeInactive);
+        }
+
         public static Vector2 ScaleFactor(this Canvas canvas)
         {
 

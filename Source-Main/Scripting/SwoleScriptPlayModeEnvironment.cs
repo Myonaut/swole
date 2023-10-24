@@ -85,7 +85,7 @@ namespace Swole.Script
         public override void OnUpdate() 
         {
 
-            if (!Swole.IsInPlayMode) return;
+            if (!swole.IsInPlayMode) return;
 
             m_executionStack.Evaluate(); 
 
@@ -94,7 +94,7 @@ namespace Swole.Script
         public override void OnLateUpdate() 
         {
 
-            if (!Swole.IsInPlayMode) return;
+            if (!swole.IsInPlayMode) return;
 
             m_executionStack.LateEvaluate(); 
         

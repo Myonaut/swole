@@ -23,7 +23,7 @@ namespace Swole
             public TileSpawnGroup.Serialized[] tileSpawnGroups;
 
             public Creation AsOriginalType(PackageInfo packageInfo = default) => new Creation(this, packageInfo);
-            public string AsJSON(bool prettyPrint = false) => Swole.Engine.ToJson(this, prettyPrint);
+            public string AsJSON(bool prettyPrint = false) => swole.Engine.ToJson(this, prettyPrint);
 
             public object AsNonserializableObject(PackageInfo packageInfo = default) => AsOriginalType(packageInfo);
         }
@@ -62,6 +62,21 @@ namespace Swole
         }
 
         #endregion
+
+        private string originPath;
+        public string OriginPath => originPath;
+        public IContent SetOriginPath(string path)
+        {
+            originPath = path;
+            return this;
+        }
+        private string relativePath;
+        public string RelativePath => relativePath;
+        public IContent SetRelativePath(string path)
+        {
+            relativePath = path;
+            return this;
+        }
 
         public List<PackageIdentifier> ExtractPackageDependencies(List<PackageIdentifier> dependencies = null)
         {

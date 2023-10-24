@@ -21,7 +21,7 @@ namespace Swole
             public TileSpawner[] tileSpawns;
 
             public TileSpawnGroup AsOriginalType(PackageInfo packageInfo = default) => new TileSpawnGroup(this);
-            public string AsJSON(bool prettyPrint = false) => Swole.Engine.ToJson(this, prettyPrint);
+            public string AsJSON(bool prettyPrint = false) => swole.Engine.ToJson(this, prettyPrint);
 
             public object AsNonserializableObject(PackageInfo packageInfo = default) => AsOriginalType(packageInfo);
         }
@@ -65,7 +65,7 @@ namespace Swole
         {
             get
             {
-                if (cachedTileSet == null) cachedTileSet = Swole.Engine.GetTileSet(TileSetName);
+                if (cachedTileSet == null) cachedTileSet = swole.Engine.GetTileSet(TileSetName);
                 return cachedTileSet;
             }
         }

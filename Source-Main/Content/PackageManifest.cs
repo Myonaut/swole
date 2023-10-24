@@ -14,21 +14,22 @@ namespace Swole
         {
             if (buffer == null) return default;
             string json = DefaultJsonSerializer.StringEncoder.GetString(buffer);
-            return Swole.Engine.FromJson<PackageManifest>(json);
+            return swole.Engine.FromJson<PackageManifest>(json);
         }
 
         public static implicit operator PackageInfo(PackageManifest manifest) => manifest.info;
         public static explicit operator string(PackageManifest manifest) => manifest.GetIdentityString();
 
-        public PackageManifest(string name, Version version, string curator, string description, ICollection<PackageIdentifier> dependencies = null, string url = null) : this(name, version == null ? "" : version.ToString(), curator, description, dependencies, url) { }
-        public PackageManifest(string name, string version, string curator, string description, ICollection<PackageIdentifier> dependencies = null, string url = null) : this(new PackageInfo() 
+        public PackageManifest(string name, Version version, string curator, string description, ICollection<PackageIdentifier> dependencies = null, string url = null, string[] tags = null) : this(name, version == null ? string.Empty : version.ToString(), curator, description, dependencies, url, tags) { }
+        public PackageManifest(string name, string version, string curator, string description, ICollection<PackageIdentifier> dependencies = null, string url = null, string[] tags = null) : this(new PackageInfo() 
         { 
         
             url = url,
             name = name,
             version = version, 
             curator = curator,
-            description = description
+            description = description,
+            tags = tags
 
         }, dependencies) { }
         public PackageManifest(PackageInfo info, ICollection<PackageIdentifier> dependencies = null)
@@ -58,6 +59,7 @@ namespace Swole
         public string VersionString => info.version;
         public string Curator => info.curator;
         public string Description => info.description;
+        public string[] Tags => info.tags;
 
         public bool HasURL => info.HasURL;
         public bool NameIsValid => info.NameIsValid;
@@ -71,7 +73,7 @@ namespace Swole
 
         public int DependencyCount => dependencies == null ? 0 : dependencies.Length;
         public PackageIdentifier GetDependency(int index) => index < 0 || index >= DependencyCount ? default : dependencies[index];
-        public string GetDependencyString(int index) => index < 0 || index >= DependencyCount ? "" : GetFullPackageString(dependencies[index].name, dependencies[index].version);
+        public string GetDependencyString(int index) => index < 0 || index >= DependencyCount ? string.Empty : GetFullPackageString(dependencies[index].name, dependencies[index].version);
 
         public bool Equals(PackageManifest other)
         {

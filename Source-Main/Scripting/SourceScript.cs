@@ -1,7 +1,7 @@
 using System;
 using System.Collections.Generic;
 
-using static Swole.Swole;
+using static Swole.swole;
 using static Swole.Script.SwoleScriptSemantics;
 
 namespace Swole.Script
@@ -23,7 +23,7 @@ namespace Swole.Script
             public string source;
 
             public SourceScript AsOriginalType(PackageInfo packageInfo = default) => new SourceScript(this);
-            public string AsJSON(bool prettyPrint = false) => Swole.Engine.ToJson(this, prettyPrint);
+            public string AsJSON(bool prettyPrint = false) => swole.Engine.ToJson(this, prettyPrint);
 
             public object AsNonserializableObject(PackageInfo packageInfo = default) => AsOriginalType(packageInfo);
         }
@@ -33,7 +33,7 @@ namespace Swole.Script
 
         public SourceScript(SourceScript.Serialized serializable, PackageInfo packageInfo = default)
         {
-
+            originPath = relativePath = string.Empty;
             this.packageInfo = packageInfo;
 
             this.contentInfo = serializable.contentInfo;
@@ -43,12 +43,29 @@ namespace Swole.Script
 
         #endregion
 
+        public string originPath;
+        public string OriginPath => originPath;
+        public IContent SetOriginPath(string path)
+        {
+            var content = this;
+            content.originPath = path;
+            return content;
+        }
+        public string relativePath;
+        public string RelativePath => relativePath;
+        public IContent SetRelativePath(string path)
+        {
+            var content = this;
+            content.relativePath = path;
+            return content;
+        }
+
         public List<PackageIdentifier> ExtractPackageDependencies(List<PackageIdentifier> dependencies = null)
         {
 
             if (dependencies == null) dependencies = new List<PackageIdentifier>();
 
-            if (!string.IsNullOrEmpty(source)) dependencies = Swole.ExtractPackageDependencies(source, dependencies);
+            if (!string.IsNullOrEmpty(source)) dependencies = swole.ExtractPackageDependencies(source, dependencies);
 
             return dependencies;
 
@@ -83,7 +100,7 @@ namespace Swole.Script
 
         public SourceScript(ContentInfo contentInfo, string source, PackageInfo packageInfo = default)
         {
-
+            originPath = relativePath = string.Empty;
             this.contentInfo = contentInfo;
             this.source = source;
             this.packageInfo = packageInfo;
@@ -91,23 +108,46 @@ namespace Swole.Script
         }
 
         /// <summary>
-        /// Outputs a source string that is ready to be embedded in a source that references this script.
+        /// Outputs a parsed source string that is ready to be embedded in a source that references this script.
         /// </summary>
-        public string GetSourceEmbed(string topAuthor = null, PackageManifest workingPackage = default, int indentation = 0, bool addInitialLineBreak = false, bool addAdditionalEndLineBreak = false)
+        public string GetSourceEmbed(ref List<PackageIdentifier> dependencyList, string topAuthor = null, PackageManifest workingPackage = default, int autoIndentation = 2, int indentation = 0, ICollection<SourceScript> localScripts = null, bool addInitialLineBreak = false, bool addAdditionalEndLineBreak = false)
         {
 
             if (string.IsNullOrEmpty(source)) return "";
 
+            if (dependencyList == null) dependencyList = new List<PackageIdentifier>();
+
             if (indentation < 0) indentation = 0;
             string indent = new string(' ', indentation);
 
+            bool isLocalPackage = this.HasPackage() && packageInfo.GetIdentityString() == workingPackage.GetIdentityString();
+            if (!isLocalPackage && this.HasPackage())
+            {
+                if (swole.FindPackage(packageInfo.name, packageInfo.version, out var pkg, out _) == PackageActionResult.Success)
+                {
+                    workingPackage = pkg.Manifest;
+                    if (localScripts == null) localScripts = new List<SourceScript>();
+                    localScripts.Clear();
+
+                    if (localScripts is List<SourceScript> list)
+                    {
+                        for (int a = 0; a < pkg.ScriptCount; a++) list.Add(pkg.GetScript(a));
+                    }
+                } 
+                else
+                {
+                    localScripts?.Clear();
+                }
+            }
+
             string embedSource = source.StandardizeNewLines();
+
+            swole.ParseSource(embedSource, ref dependencyList, topAuthor, workingPackage, autoIndentation, indentation, localScripts);
 
             string[] splitSource = embedSource.Split(ssNewLine);
             embedSource = "";
             for (int a = 0; a < splitSource.Length; a++) embedSource = embedSource + indent + splitSource[a] + (a == splitSource.Length - 1 ? "" : ssNewLine); // Add indentation to each line
 
-            bool isLocalPackage = this.HasPackage() && packageInfo.GetIdentityString() == workingPackage.GetIdentityString();
 
             string header = $"{indent}// {(isLocalPackage || !this.HasPackage() ? "" : packageInfo.GetIdentityString() + ".") + Name} ";
             string auth = $"{indent}// ©{this.LastEditDate().Year} {(string.IsNullOrEmpty(Author) ? "" : Author)}";
@@ -119,14 +159,14 @@ namespace Swole.Script
             return (addInitialLineBreak ? ssNewLine : "") +
                                 $"{indent}//" + new string('+', boundLength) + ssNewLine +
                                 header + ssNewLine +
-                                (isSameAuthor || string.IsNullOrEmpty(Author) ? "" : auth + ssNewLine) +
+                                (isSameAuthor || string.IsNullOrEmpty(Author) ? "" : (auth + ssNewLine)) +
                                 $"{indent}//" + new string('+', boundLength) + ssNewLine +
                                 embedSource + ssNewLine +
                                 $"{indent}//" + new string('+', boundLength) + (addAdditionalEndLineBreak ? ssNewLine : "") + ssNewLine;
 
         }
 
-        public const string metaDataTag_URL = "PULLED_FROM:";
+        public const string metaDataTag_URL = "URL:";
         public const string metaDataTag_Name = "NAME:";
         public const string metaDataTag_Author = "AUTHOR:";
         public const string metaDataTag_CreationDate = "CREATED:";
@@ -201,7 +241,7 @@ namespace Swole.Script
         /// </summary>
         public SourceScript(string standaloneSource)
         {
-
+            originPath = relativePath = string.Empty;
             packageInfo = default;
 
             contentInfo = new ContentInfo();

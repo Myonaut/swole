@@ -1,0 +1,24 @@
+{
+    "name": "myonaut.swole",
+    "version": "0.1.0",
+    "displayName": "Swole For Unity",
+    "description": "The C# + MiniScript based development environment created for the Bulk Out! video game.",
+    "unity": "2021.3",
+    "unityRelease": "27f1",
+    "documentationUrl": "https://swolescript.readthedocs.io/",
+    "licensesUrl": "https://github.com/Myonaut/swole/blob/main/LICENSE",
+    "dependencies": {
+      "com.unity.jobs": "0.70.0-preview.7",
+      "com.unity.textmeshpro": "3.0.6",
+      "com.unity.render-pipelines.universal": "12.1.12"
+   },
+   "keywords": [
+      "swole",
+      "bulkout",
+      "api"
+    ],
+    "author": {
+      "name": "Myonaut",
+      "url": "https://github.com/Myonaut"
+    }
+  }

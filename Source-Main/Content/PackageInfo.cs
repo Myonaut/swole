@@ -1,7 +1,7 @@
 using System;
 using System.Collections.Generic;
 
-using static Swole.Swole;
+using static Swole.swole;
 using static Swole.Script.SwoleScriptSemantics;
 
 namespace Swole
@@ -13,14 +13,15 @@ namespace Swole
 
         public static explicit operator string(PackageInfo info) => info.GetIdentityString();
 
-        public PackageInfo(string name, Version version, string curator, string description,string url = null) : this(name, version == null ? "" : version.ToString(), curator, description, url) { }
-        public PackageInfo(string name, string version, string curator, string description, string url = null)
+        public PackageInfo(string name, Version version, string curator, string description,string url = null, string[] tags = null) : this(name, version == null ? "" : version.ToString(), curator, description, url, tags) { }
+        public PackageInfo(string name, string version, string curator, string description, string url = null, string[] tags = null)
         {
             this.url = url;
             this.name = name;
             this.version = version;
             this.curator = curator;
             this.description = description;
+            this.tags = tags;
         }
 
         /// <summary>
@@ -42,14 +43,17 @@ namespace Swole
         public string curator;
         public string description;
 
+        /// <summary>
+        /// Optional search tags
+        /// </summary>
+        public string[] tags;
+
         public bool Equals(PackageInfo other)
         {
 
             if (name != other.name) return false;
-            if (url != other.url) return false;
             if (version != other.version) return false;
             if (curator != other.curator) return false;
-            if (description != other.description) return false;
 
             return true;
 

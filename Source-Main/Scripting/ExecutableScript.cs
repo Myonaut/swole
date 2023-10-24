@@ -25,7 +25,7 @@ namespace Swole.Script
         {
             this.priority = priority;
             if (string.IsNullOrEmpty(source)) return;
-            if (logger == null) logger = Swole.Engine.Logger;
+            if (logger == null) logger = swole.Engine.Logger;
             interpreter = new Interpreter();
             interpreter.hostData = new DefaultHostData() { identifier = identity };
             interpreter.standardOutput = interpreter.implicitOutput = (s, ignored) => logger.Log(s);
@@ -59,26 +59,26 @@ namespace Swole.Script
             OnComplete = null;
         }
 
-        public ExecutionResult Execute(ExecutionLayer layer, float timeOut = 0.01f) => Execute(Swole.DefaultEnvironment, timeOut);
+        public ExecutionResult Execute(ExecutionLayer layer, float timeOut = 0.01f) => Execute(swole.DefaultEnvironment, timeOut);
 
         public ExecutionResult Execute(RuntimeEnvironment environment, float timeOut = 0.01f)
         {
             if (disable) return ExecutionResult.Disabled;
             if (isDisposed) return ExecutionResult.Disposed;
             if (environment == null) return ExecutionResult.InvalidEnvironment;
-            var result = environment.RunForPeriod(Swole.Engine.Logger, interpreter, timeOut);
+            var result = environment.RunForPeriod(swole.Engine.Logger, interpreter, timeOut);
             if (result == ExecutionResult.Completed) OnComplete?.Invoke();
             return result;
         }
 
-        public ExecutionResult ExecuteToCompletion(ExecutionLayer layer, float timeOut = 0.1f) => ExecuteToCompletion(Swole.DefaultEnvironment, timeOut);
+        public ExecutionResult ExecuteToCompletion(ExecutionLayer layer, float timeOut = 0.1f) => ExecuteToCompletion(swole.DefaultEnvironment, timeOut);
 
         public ExecutionResult ExecuteToCompletion(RuntimeEnvironment environment, float timeOut = 0.1f)
         {
             if (disable) return ExecutionResult.Disabled;
             if (isDisposed) return ExecutionResult.Disposed;
             if (environment == null) return ExecutionResult.InvalidEnvironment;
-            var result = environment.RunUntilCompletion(Swole.Engine.Logger, interpreter, timeOut);
+            var result = environment.RunUntilCompletion(swole.Engine.Logger, interpreter, timeOut);
             if (result == ExecutionResult.Completed) OnComplete?.Invoke();
             return result;
         }

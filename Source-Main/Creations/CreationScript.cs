@@ -25,26 +25,26 @@ namespace Swole
 
             if (dependencies == null) dependencies = new List<PackageIdentifier>();
 
-            if (!string.IsNullOrEmpty(source_OnInitialize)) dependencies = Swole.ExtractPackageDependencies(source_OnInitialize, dependencies);
-            if (!string.IsNullOrEmpty(source_OnEarlyUpdate)) dependencies = Swole.ExtractPackageDependencies(source_OnEarlyUpdate, dependencies);
-            if (!string.IsNullOrEmpty(source_OnUpdate)) dependencies = Swole.ExtractPackageDependencies(source_OnUpdate, dependencies);
-            if (!string.IsNullOrEmpty(source_OnLateUpdate)) dependencies = Swole.ExtractPackageDependencies(source_OnLateUpdate, dependencies);
-            if (!string.IsNullOrEmpty(source_OnDestroy)) dependencies = Swole.ExtractPackageDependencies(source_OnDestroy, dependencies);
+            if (!string.IsNullOrEmpty(source_OnInitialize)) dependencies = swole.ExtractPackageDependencies(source_OnInitialize, dependencies);
+            if (!string.IsNullOrEmpty(source_OnEarlyUpdate)) dependencies = swole.ExtractPackageDependencies(source_OnEarlyUpdate, dependencies);
+            if (!string.IsNullOrEmpty(source_OnUpdate)) dependencies = swole.ExtractPackageDependencies(source_OnUpdate, dependencies);
+            if (!string.IsNullOrEmpty(source_OnLateUpdate)) dependencies = swole.ExtractPackageDependencies(source_OnLateUpdate, dependencies);
+            if (!string.IsNullOrEmpty(source_OnDestroy)) dependencies = swole.ExtractPackageDependencies(source_OnDestroy, dependencies);
 
-            if (!string.IsNullOrEmpty(source_OnFixedUpdate)) dependencies = Swole.ExtractPackageDependencies(source_OnFixedUpdate, dependencies);
+            if (!string.IsNullOrEmpty(source_OnFixedUpdate)) dependencies = swole.ExtractPackageDependencies(source_OnFixedUpdate, dependencies);
 
-            if (!string.IsNullOrEmpty(source_OnEnable)) dependencies = Swole.ExtractPackageDependencies(source_OnEnable, dependencies);
-            if (!string.IsNullOrEmpty(source_OnDisable)) dependencies = Swole.ExtractPackageDependencies(source_OnDisable, dependencies);
+            if (!string.IsNullOrEmpty(source_OnEnable)) dependencies = swole.ExtractPackageDependencies(source_OnEnable, dependencies);
+            if (!string.IsNullOrEmpty(source_OnDisable)) dependencies = swole.ExtractPackageDependencies(source_OnDisable, dependencies);
 
-            if (!string.IsNullOrEmpty(source_OnCollisionEnter)) dependencies = Swole.ExtractPackageDependencies(source_OnCollisionEnter, dependencies);
-            if (!string.IsNullOrEmpty(source_OnCollisionStay)) dependencies = Swole.ExtractPackageDependencies(source_OnCollisionStay, dependencies);
-            if (!string.IsNullOrEmpty(source_OnCollisionExit)) dependencies = Swole.ExtractPackageDependencies(source_OnCollisionExit, dependencies);
+            if (!string.IsNullOrEmpty(source_OnCollisionEnter)) dependencies = swole.ExtractPackageDependencies(source_OnCollisionEnter, dependencies);
+            if (!string.IsNullOrEmpty(source_OnCollisionStay)) dependencies = swole.ExtractPackageDependencies(source_OnCollisionStay, dependencies);
+            if (!string.IsNullOrEmpty(source_OnCollisionExit)) dependencies = swole.ExtractPackageDependencies(source_OnCollisionExit, dependencies);
 
-            if (!string.IsNullOrEmpty(source_OnTriggerEnter)) dependencies = Swole.ExtractPackageDependencies(source_OnTriggerEnter, dependencies);
-            if (!string.IsNullOrEmpty(source_OnTriggerStay)) dependencies = Swole.ExtractPackageDependencies(source_OnTriggerStay, dependencies);
-            if (!string.IsNullOrEmpty(source_OnTriggerExit)) dependencies = Swole.ExtractPackageDependencies(source_OnTriggerExit, dependencies);
+            if (!string.IsNullOrEmpty(source_OnTriggerEnter)) dependencies = swole.ExtractPackageDependencies(source_OnTriggerEnter, dependencies);
+            if (!string.IsNullOrEmpty(source_OnTriggerStay)) dependencies = swole.ExtractPackageDependencies(source_OnTriggerStay, dependencies);
+            if (!string.IsNullOrEmpty(source_OnTriggerExit)) dependencies = swole.ExtractPackageDependencies(source_OnTriggerExit, dependencies);
 
-            if (!string.IsNullOrEmpty(source_OnInteract)) dependencies = Swole.ExtractPackageDependencies(source_OnInteract, dependencies);
+            if (!string.IsNullOrEmpty(source_OnInteract)) dependencies = swole.ExtractPackageDependencies(source_OnInteract, dependencies);
 
             return dependencies;
         }

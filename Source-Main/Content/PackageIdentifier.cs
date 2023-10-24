@@ -1,6 +1,6 @@
 using System;
 
-using static Swole.Swole;
+using static Swole.swole;
 using static Swole.Script.SwoleScriptSemantics;
 
 namespace Swole

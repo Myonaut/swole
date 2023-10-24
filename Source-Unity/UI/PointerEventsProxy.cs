@@ -224,7 +224,7 @@ namespace Swole
 
                 lastFrame = frame;
 
-                //isHovering = isMasked || CheckIfCursorIsInBounds(); wtf?
+                //isHovering = isMasked || CheckIfCursorIsInBounds();
 
                 isHovering = gameObject.activeInHierarchy && !isMasked && CheckIfCursorIsInBounds();
 

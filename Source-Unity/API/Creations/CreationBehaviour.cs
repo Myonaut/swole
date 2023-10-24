@@ -54,7 +54,7 @@ namespace Swole.API.Unity
         protected virtual void Start()
         {
 
-            if (!Swole.IsInPlayMode || destroyed || m_behaviour != null || m_creation == null || !m_creation.HasScripting) return;
+            if (!swole.IsInPlayMode || destroyed || m_behaviour != null || m_creation == null || !m_creation.HasScripting) return;
 
             List<IVar> vars = new List<IVar>();
             // TODO: Capture variables to pass into the local environment
@@ -73,7 +73,7 @@ namespace Swole.API.Unity
 
         protected virtual void OnEnable()
         {
-            if (Swole.IsInPlayMode) 
+            if (swole.IsInPlayMode) 
             {
                 if (!IsInitialized) Initialize();
                 m_behaviour?.ExecuteToCompletion(ExecutionLayer.Enable); 
@@ -82,7 +82,7 @@ namespace Swole.API.Unity
 
         protected virtual void OnDisable()
         {
-            if (Swole.IsInPlayMode) m_behaviour?.ExecuteToCompletion(ExecutionLayer.Disable); 
+            if (swole.IsInPlayMode) m_behaviour?.ExecuteToCompletion(ExecutionLayer.Disable); 
         }
 
         [NonSerialized]
@@ -90,7 +90,7 @@ namespace Swole.API.Unity
         protected virtual void OnDestroy()
         {
             destroyed = true;
-            if (Swole.IsInPlayMode) m_behaviour?.ExecuteToCompletion(ExecutionLayer.Destroy);
+            if (swole.IsInPlayMode) m_behaviour?.ExecuteToCompletion(ExecutionLayer.Destroy);
             m_behaviour?.Dispose();
             m_behaviour = null;
             m_environment?.Dispose();
@@ -100,7 +100,7 @@ namespace Swole.API.Unity
 
         protected virtual void FixedUpdate()
         {
-            if (Swole.IsInPlayMode) 
+            if (swole.IsInPlayMode) 
             {
                 m_behaviour?.Execute(ExecutionLayer.FixedUpdate);      
             }

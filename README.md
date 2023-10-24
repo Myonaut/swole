@@ -1,0 +1,1 @@
+When added as a Unity package to your Unity project; be sure to install the packages located in the "_SETUP-UNITY" folder.

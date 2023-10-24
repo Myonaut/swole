@@ -21,10 +21,10 @@ namespace Swole
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.BeforeSplashScreen)]
         static void Initialize()
         {
-            if (!(typeof(BulkOutHook).IsAssignableFrom(Swole.Engine.GetType()))) 
+            if (!(typeof(BulkOutHook).IsAssignableFrom(swole.Engine.GetType()))) 
             {
                 activeHook = new BulkOutHook();
-                Swole.SetEngine(activeHook); 
+                swole.SetEngine(activeHook); 
             }
         }
 
@@ -43,7 +43,8 @@ namespace Swole
             #region Paid Asset Integration https://assetstore.unity.com/packages/tools/input-management/zip-gzip-multiplatform-native-plugin-39411
 
             lzip.getFileInfo(string.Empty, data);
-            for(int a = 0; a < lzip.zipFiles; a++)
+
+            for (int a = 0; a < lzip.ninfo.Count; a++)
             {
                 string fileName = lzip.ninfo[a];
                 ulong fileSize = lzip.uinfo[a];

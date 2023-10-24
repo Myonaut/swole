@@ -151,7 +151,7 @@ namespace Swole.UI
 
             }
 
-            if (IsInFocus || lockedCursor || CursorProxy.ObjectsUnderCursor.IsInHierarchy(transform))
+            if (IsInFocus || lockedCursor/* || CursorProxy.ObjectsUnderCursor.IsInHierarchy(transform)*/)
             {
 
                 if (InputProxy.Panning && InputProxy.CursorPrimaryButton)

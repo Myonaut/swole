@@ -12,7 +12,7 @@ using static Swole.Script.SwoleScriptSemantics;
 namespace Swole
 {
 
-    public class Swole
+    public class swole
     {
 
         private readonly EngineHook engine;
@@ -29,16 +29,22 @@ namespace Swole
             }
         }
 
-        public Swole(EngineHook engine)
+        public swole(EngineHook engine)
         {
             this.engine = engine;
         }
 
-        public static Swole SetEngine(EngineHook engine) => instance = new Swole(engine);
+        public static swole SetEngine(EngineHook engine) => instance = new swole(engine);
 
-        private static Swole instance = new Swole(new EngineHook());
-        public static Swole Instance => instance;
+        private static swole instance = new swole(new EngineHook());
+        public static swole Instance => instance;
         public static EngineHook Engine => instance.engine;
+
+        public static SwoleLogger DefaultLogger => Engine.Logger;
+        public static void Log(string message) => DefaultLogger.Log(message);
+        public static void LogWarning(string warning) => DefaultLogger.LogWarning(warning);
+        public static void LogError(string error) => DefaultLogger.LogError(error);
+
         public static RuntimeEnvironment DefaultEnvironment => Engine.RuntimeEnvironment;
         public static DirectoryInfo AssetDirectory => instance.AssetDirectoryLocal;
 
@@ -107,8 +113,8 @@ namespace Swole
             Success, PackageWasNull, PackageWasEmpty, PackageInvalidName, PackageInvalidVersion, PackageAlreadyLoaded, PackageNotFound, PackageNotLoaded, PackageDependencyNotFound, PackageDependencyNotLoaded, VersionOfPackageNotFound
         }
 
-        public static PackageActionResult LoadPackage(SourcePackage package, out string resultInfo) => Instance.LoadPackageLocal(package, out resultInfo);
-        public PackageActionResult LoadPackageLocal(SourcePackage package, out string resultInfo)
+        public static PackageActionResult LoadPackage(SourcePackage package, out string resultInfo) => Instance.LoadPackageInternal(package, out resultInfo);
+        public PackageActionResult LoadPackageInternal(SourcePackage package, out string resultInfo)
         {
             resultInfo = "";
             if (package == null) return PackageActionResult.PackageWasNull;
@@ -119,7 +125,7 @@ namespace Swole
             for (int a = 0; a < package.DependencyCount; a++)
             {
                 var dep = package.GetDependency(a);
-                if (FindPackageLocal(dep, out _, out resultInfo) != PackageActionResult.Success)
+                if (FindPackageInternal(dep, out _, out resultInfo) != PackageActionResult.Success)
                 {
                     resultInfo = $"Package dependency {a} '{(string.IsNullOrEmpty(dep) ? "" : dep)}' was not found.{(string.IsNullOrEmpty(resultInfo) ? "" : (" Reason: " + resultInfo))}";
                     return PackageActionResult.PackageDependencyNotFound;
@@ -130,23 +136,23 @@ namespace Swole
             return PackageActionResult.Success;
         }
 
-        public static PackageActionResult UnloadPackage(SourcePackage package, out string resultInfo) => Instance.UnloadPackageLocal(package, out resultInfo);
-        public PackageActionResult UnloadPackageLocal(SourcePackage package, out string resultInfo)
+        public static PackageActionResult UnloadPackage(SourcePackage package, out string resultInfo) => Instance.UnloadPackageInternal(package, out resultInfo);
+        public PackageActionResult UnloadPackageInternal(SourcePackage package, out string resultInfo)
         {
             resultInfo = "";
             if (package == null) return PackageActionResult.PackageWasNull;
-            return UnloadPackageLocal(package.Name, out resultInfo);
+            return UnloadPackageInternal(package.Name, out resultInfo);
         }
-        public static PackageActionResult UnloadPackage(string packageName, out string resultInfo) => Instance.UnloadPackageLocal(packageName, out resultInfo);
-        public PackageActionResult UnloadPackageLocal(string packageName, out string resultInfo)
+        public static PackageActionResult UnloadPackage(string packageName, out string resultInfo) => Instance.UnloadPackageInternal(packageName, out resultInfo);
+        public PackageActionResult UnloadPackageInternal(string packageName, out string resultInfo)
         {
             resultInfo = "";
             if (!ValidatePackageName(packageName)) return PackageActionResult.PackageInvalidName;
             return packages.RemoveAll(i => i.Name == packageName) > 0 ? PackageActionResult.Success : PackageActionResult.PackageNotLoaded;
         }
 
-        public static PackageActionResult FindPackage(string packageStringOrName, out SourcePackage packageOut, out string resultInfo) => Instance.FindPackageLocal(packageStringOrName, out packageOut, out resultInfo);
-        public PackageActionResult FindPackageLocal(string packageStringOrName, out SourcePackage packageOut, out string resultInfo)
+        public static PackageActionResult FindPackage(string packageStringOrName, out SourcePackage packageOut, out string resultInfo) => Instance.FindPackageInternal(packageStringOrName, out packageOut, out resultInfo);
+        public PackageActionResult FindPackageInternal(string packageStringOrName, out SourcePackage packageOut, out string resultInfo)
         {
 
             resultInfo = "";
@@ -166,10 +172,10 @@ namespace Swole
 
             }
 
-            return FindPackageLocal(packageStringOrName, packageVersion, out packageOut, out resultInfo);
+            return FindPackageInternal(packageStringOrName, packageVersion, out packageOut, out resultInfo);
         }
-        public static PackageActionResult FindPackage(string packageName, string packageVersion, out SourcePackage packageOut, out string resultInfo) => Instance.FindPackageLocal(packageName, packageVersion, out packageOut, out resultInfo);
-        public PackageActionResult FindPackageLocal(string packageName, string packageVersion, out SourcePackage packageOut, out string resultInfo)
+        public static PackageActionResult FindPackage(string packageName, string packageVersion, out SourcePackage packageOut, out string resultInfo) => Instance.FindPackageInternal(packageName, packageVersion, out packageOut, out resultInfo);
+        public PackageActionResult FindPackageInternal(string packageName, string packageVersion, out SourcePackage packageOut, out string resultInfo)
         {
 
             resultInfo = "";
@@ -224,13 +230,13 @@ namespace Swole
             return PackageActionResult.PackageNotLoaded;
         }
 
-        public static bool TryFindScript(string packageName, string scriptName, out SourceScript scriptOut, out string resultInfo) => Instance.TryFindScriptLocal(packageName, scriptName, out scriptOut, out resultInfo);
-        public bool TryFindScriptLocal(string packageName, string scriptName, out SourceScript scriptOut, out string resultInfo)
+        public static bool TryFindScript(string packageName, string scriptName, out SourceScript scriptOut, out string resultInfo) => Instance.TryFindScriptInternal(packageName, scriptName, out scriptOut, out resultInfo);
+        public bool TryFindScriptInternal(string packageName, string scriptName, out SourceScript scriptOut, out string resultInfo)
         {
 
             scriptOut = default;
 
-            if (FindPackageLocal(packageName, out var package, out resultInfo) != PackageActionResult.Success) 
+            if (FindPackageInternal(packageName, out var package, out resultInfo) != PackageActionResult.Success) 
             {
 
                 resultInfo = $"Could not find package '{packageName}'.{(string.IsNullOrEmpty(resultInfo) ? "" : (" Reason: " + resultInfo))}";
@@ -365,6 +371,8 @@ namespace Swole
 
                 HandleEmbeds();
 
+                // TODO: Add support for future intrinsic functions that reference assets in external packages
+
             }
 
             return dependencies;
@@ -374,8 +382,15 @@ namespace Swole
         /// <summary>
         /// Converts SwoleScript code to MiniScript code. 'workingPackage' is the package currently being edited, if applicable. 'topAuthor' is the author of the source that has been passed to this function. 'localScripts' is other scripts that are included in the workingPackage, if applicable.
         /// </summary>
-        public string ParseSourceLocal(string source, ref List<PackageIdentifier> dependencyList, string topAuthor = null, PackageManifest workingPackage = default, int autoIndentation = ssDefaultAutoIndentation, ICollection<SourceScript> localScripts = null) 
+        public string ParseSourceInternal(string source, ref List<PackageIdentifier> dependencyList, string topAuthor = null, PackageManifest workingPackage = default, int autoIndentation = ssDefaultAutoIndentation, int startIndentation = 0, ICollection<SourceScript> localScripts = null) 
         {
+
+            if (localScripts == null && swole.FindPackage(workingPackage.Name, workingPackage.VersionString, out var workingSourcePackage, out _) == PackageActionResult.Success && workingSourcePackage != null)
+            {
+                var scriptsList = new List<SourceScript>();
+                for (int a = 0; a < workingSourcePackage.ScriptCount; a++) scriptsList.Add(workingSourcePackage[a]);
+                localScripts = scriptsList;
+            }
 
             List<PackageIdentifier> deps = dependencyList;
 
@@ -427,7 +442,7 @@ namespace Swole
 
             var msLexer = new Lexer(source);
             int lengthOffset = 0;
-            int indentation = 0;
+            int indentation = startIndentation;
             bool canImport = true;
             Token prevToken = null;
             while (!msLexer.AtEnd)
@@ -495,7 +510,7 @@ namespace Swole
 
                         string replacementString = "";
 
-                        if (FindPackageLocal(importLine, out var package, out string resultInfo) == PackageActionResult.Success && package != null)
+                        if (FindPackageInternal(importLine, out var package, out string resultInfo) == PackageActionResult.Success && package != null)
                         {
 
                             if (HasImportedPackage(package.GetIdentityString()))
@@ -559,17 +574,21 @@ namespace Swole
 
                             if (string.IsNullOrEmpty(packageName) && TryFindLocalOrImportedScript(scriptName, out var embedScript, out bool isLocalDependency)) 
                             {
-
-                                embedString = embedScript.GetSourceEmbed(topAuthor, workingPackage, indentation, startPos > 0, appendLineBreak);
-                                if (!isLocalDependency && embedScript.PackageInfo.NameIsValid) AddDependency(embedScript.PackageInfo.GetIdentity());
+                                if (embedScript.source != source) // Naive counter against recursive script embeds
+                                {
+                                    embedString = embedScript.GetSourceEmbed(ref deps, topAuthor, workingPackage, autoIndentation, indentation, localScripts, startPos > 0, appendLineBreak);
+                                    if (!isLocalDependency && embedScript.PackageInfo.NameIsValid) AddDependency(embedScript.PackageInfo.GetIdentity()); // Only add packages that aren't the same as the working package
+                                }
 
                             }
-                            else if (TryFindScriptLocal(packageName, scriptName, out embedScript, out string resultInfo))
+                            else if (TryFindScriptInternal(packageName, scriptName, out embedScript, out string resultInfo))
                             {
-                                embedString = embedScript.GetSourceEmbed(topAuthor, workingPackage, indentation, startPos > 0, appendLineBreak);
-                                SplitFullPackageString(packageName, out string pckName, out string pckVer);
-                                AddDependency(new PackageIdentifier(pckName, pckVer));
-
+                                if (embedScript.source != source) // Naive counter against recursive script embeds
+                                {
+                                    embedString = embedScript.GetSourceEmbed(ref deps, topAuthor, workingPackage, autoIndentation, indentation, localScripts, startPos > 0, appendLineBreak);
+                                    SplitFullPackageString(packageName, out string pckName, out string pckVer);
+                                    AddDependency(new PackageIdentifier(pckName, pckVer));
+                                }
                             }
                             else
                             {
@@ -603,7 +622,7 @@ namespace Swole
         /// <summary>
         /// Converts SwoleScript code to MiniScript code. 'workingPackage' is the package currently being edited, if applicable. 'topAuthor' is the author of the source that has been passed to this function. 'localScripts' is other scripts that are included in the workingPackage, if applicable.
         /// </summary>
-        public static string ParseSource(string source, ref List<PackageIdentifier> dependencyList, string topAuthor = null, PackageManifest workingPackage = default, int autoIndentation = ssDefaultAutoIndentation, ICollection<SourceScript> localScripts = null) => Instance.ParseSourceLocal(source, ref dependencyList, topAuthor, workingPackage, autoIndentation, localScripts);
+        public static string ParseSource(string source, ref List<PackageIdentifier> dependencyList, string topAuthor = null, PackageManifest workingPackage = default, int autoIndentation = ssDefaultAutoIndentation, int startIndentation = 0, ICollection<SourceScript> localScripts = null) => Instance.ParseSourceInternal(source, ref dependencyList, topAuthor, workingPackage, autoIndentation, startIndentation, localScripts);
 
         #endregion
 

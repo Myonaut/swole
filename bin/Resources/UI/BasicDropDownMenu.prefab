@@ -133,6 +133,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   queueConsecutiveTweenCalls: 0
   horizontal: 0
+  startUnfolded: 0
   pivotPoint: 0
   foldedSize: 0
   disableMaskOnFoldOut: 0
@@ -147,6 +148,7 @@ MonoBehaviour:
   dynamicSize: 0
   noEncapsulatorForDynamicSize: 0
   moveOnResize: 0
+  pinContainerOnResize: 1
   proxyEncapsulatorMinChildDepth: 0
   proxyEncapsulatorChildDepth: 1
   proxyEncapsulatorPadding:
@@ -577,7 +579,7 @@ RectTransform:
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
   m_AnchorMin: {x: 0.5, y: 1}
   m_AnchorMax: {x: 0.5, y: 1}
-  m_AnchoredPosition: {x: 0, y: -46}
+  m_AnchoredPosition: {x: 0, y: 0}
   m_SizeDelta: {x: 180, y: 38}
   m_Pivot: {x: 0.5, y: 1}
 --- !u!222 &4265874904793493863
@@ -635,6 +637,7 @@ MonoBehaviour:
   toggle: 0
   hoverWhileActive: 1
   clickWhileActive: 1
+  reactToChildPointerEvents: 0
   disableToggleObjectsOnHover: 0
   toggleOnObject: {fileID: 0}
   toggleOffObject: {fileID: 0}

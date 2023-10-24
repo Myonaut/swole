@@ -1,7 +1,7 @@
 #if (UNITY_STANDALONE || UNITY_EDITOR)
 
 #if BULKOUT_ENV
-using RLD;
+using RLD; // Paid Asset Integration https://assetstore.unity.com/packages/tools/modeling/runtime-level-design-52325
 #endif
 
 using System.Collections;
@@ -16,14 +16,14 @@ namespace Swole.API.Unity
     {
 
 #if BULKOUT_ENV
-        private RTPrefabLibDb rtLib;
+        private RTPrefabLibDb rtLib; // Paid Asset Integration https://assetstore.unity.com/packages/tools/modeling/runtime-level-design-52325
 #endif
 
         public void Awake()
         {
 
 #if BULKOUT_ENV
-            rtLib = GameObject.FindFirstObjectByType<RTPrefabLibDb>();
+            rtLib = GameObject.FindFirstObjectByType<RTPrefabLibDb>(); // Paid Asset Integration https://assetstore.unity.com/packages/tools/modeling/runtime-level-design-52325
             if (rtLib == null) Destroy(this);
 #endif
 
@@ -56,8 +56,8 @@ namespace Swole.API.Unity
             var collection = ResourceLib.FindTileCollection(id);
             if (collection == null || collection.tileSets == null || collection.tileSets.Length == 0) return AddTileCollectionResult.EmptyCollection;
 
-#if BULKOUT_ENV
-            var lib = rtLib.GetLib(collection.name);
+#if BULKOUT_ENV // Paid Asset Integration https://assetstore.unity.com/packages/tools/modeling/runtime-level-design-52325
+            var lib = rtLib.GetLib(collection.name); 
             if (lib != null) return AddTileCollectionResult.CollectionAlreadyPresent;
             lib = rtLib.CreateLib(collection.name);
             if (lib == null) return AddTileCollectionResult.FailedToCreateLib;
@@ -65,7 +65,7 @@ namespace Swole.API.Unity
             return AddTileCollectionResult.NoPrefabLoaderFound;
 #endif
 
-            Debug.Log($"Loading Tile Collection '{collection.id}'");
+            swole.Log($"Loading Tile Collection '{collection.id}'");
 
             foreach (var tileSet in collection.tileSets)
             {
@@ -87,21 +87,21 @@ namespace Swole.API.Unity
                     prototype.tileSet = tileSet;
                     prototype.tileIndex = tileIndex;
 
-#if BULKOUT_ENV
+#if BULKOUT_ENV // Paid Asset Integration https://assetstore.unity.com/packages/tools/modeling/runtime-level-design-52325
                     var prefab = lib.CreatePrefab(prefabObj, tile.previewTexture);
                     if (prefab == null)
                     {
                         prefabObj.SetActive(false);
                         GameObject.Destroy(prefabObj);
                         continue;
-                    }
+                    } 
 #else
 
 #endif
 
                     prefabObj.SetActive(false);
 
-                    Debug.Log($"Loaded Tile '{tile.name}'");
+                    swole.Log($"Loaded Tile '{tile.name}'");
 
                 }
 

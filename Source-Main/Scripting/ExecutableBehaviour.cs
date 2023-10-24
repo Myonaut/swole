@@ -87,7 +87,7 @@ namespace Swole.Script
 
             }
 
-            if (environment == null) environment = Swole.DefaultEnvironment;
+            if (environment == null) environment = swole.DefaultEnvironment;
             this.environment = environment;
 
             if (!string.IsNullOrEmpty(source_OnInitialize)) script_OnInitialize = new ExecutableScript($"{identity}_OnInitialize", source_OnInitialize, 0, logger);

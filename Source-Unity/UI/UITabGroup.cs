@@ -38,10 +38,40 @@ namespace Swole.UI
         [Tooltip("Should the group allow no tabs to be active?")]
         public bool allowNullActive = false;
 
-        public List<UITabButton> buttons = new List<UITabButton>();
+        [SerializeField]
+        private List<UITabButton> buttons = new List<UITabButton>();
         public int Count => buttons == null ? 0 : buttons.Count;
+        public UITabButton GetButton(int index)
+        {
+            if (index < 0 || index > Count) return null;
+            return buttons[index];
+        }
 
-        protected virtual void ToggleButtons(UITabButton active, bool updateActive = true)
+        public void Add(GameObject button)
+        {
+            if (button == null) return;
+            Add(button.GetComponentInChildren<UITabButton>(true));
+        }
+        public void Add(UITabButton button)
+        {
+            if (button == null) return;
+            if (!buttons.Contains(button)) buttons.Add(button);
+            if (button.group != null) button.group.Remove(button);
+            button.group = this;
+        }
+        public void Remove(GameObject button)
+        {
+            if (button == null) return;
+            Remove(button.GetComponentInChildren<UITabButton>(true));
+        }
+        public void Remove(UITabButton button)
+        {
+            buttons.RemoveAll(i => i == button);
+            if (button != null && button.group == this) button.group = null;
+        }
+
+        public virtual void ToggleButtons(int active, bool updateActive = true) => ToggleButtons(GetButton(active), updateActive);
+        public virtual void ToggleButtons(UITabButton active, bool updateActive = true)
         {
 
             if (buttons == null) return;
@@ -60,7 +90,7 @@ namespace Swole.UI
                 if (button == null || button == active) continue;
                 button.ToggleOff();
             }
-
+             
         }
 
         protected virtual void Awake()
@@ -73,20 +103,12 @@ namespace Swole.UI
         protected virtual void Start()
         {
 
-            buttons.RemoveAll(i => i == null);
-
-            foreach (UITabButton button in buttons)
+            buttons.RemoveAll(i => i == null); 
+             
+            foreach (UITabButton button in buttons) 
             {
-
-                if (button.OnClick == null) button.OnClick = new UnityEvent();
-
-                button.OnClick.AddListener(() =>
-                {
-
-                    ToggleButtons(button, false);
-
-                });
-
+                if (button.group != null && button.group != this) button.group.Remove(button);
+                button.group = this;
             }
 
             if (allowNullActive)
@@ -95,7 +117,7 @@ namespace Swole.UI
                 ToggleButtons(null, false);
 
             }
-            else
+            else if (buttons.Count > 0)
             {
 
 

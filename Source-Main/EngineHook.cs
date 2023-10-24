@@ -14,12 +14,22 @@ namespace Swole
         public virtual string Name => "No Engine";
         public virtual bool HookWasSuccessful => true;
 
+        public class ConsoleLogger : SwoleLogger
+        {
+            protected override void LogInternal(string message) => Console.WriteLine(message);
+
+            protected override void LogErrorInternal(string error) => Console.Error.WriteLine(error);
+
+            protected override void LogWarningInternal(string warning) => Console.WriteLine($"[WARN]: {warning}");
+
+        }
+
         protected SwoleLogger logger;
         public virtual SwoleLogger Logger
         {
             get
             {
-                if (logger == null) logger = new SwoleLogger();
+                if (logger == null) logger = new ConsoleLogger();
 
                 return logger;
             }
@@ -82,21 +92,21 @@ namespace Swole
 
         public struct DecompressionResult
         {
-            public List<FileDescr> fileNames;
+            public List<FileDescr> fileDescs;
             public List<byte[]> fileData;
         }
 
         public void DecompressZIP(string filePath, ref List<FileDescr> fileNames, ref List<byte[]> fileData) => DecompressZIP(string.IsNullOrEmpty(filePath) ? null : File.ReadAllBytes(filePath), ref fileNames, ref fileData);
         async public Task<DecompressionResult> DecompressZIPAsync(string filePath, List<FileDescr> fileNames = null, List<byte[]> fileData = null)
         {
-            if (string.IsNullOrEmpty(filePath)) return new DecompressionResult() { fileNames = fileNames, fileData = fileData };
+            if (string.IsNullOrEmpty(filePath)) return new DecompressionResult() { fileDescs = fileNames, fileData = fileData };
 
             byte[] bytes = await File.ReadAllBytesAsync(filePath);
 
             void Decompress() => DecompressZIP(bytes, ref fileNames, ref fileData);
             await Task.Run(Decompress);
 
-            return new DecompressionResult() { fileNames = fileNames, fileData = fileData };
+            return new DecompressionResult() { fileDescs = fileNames, fileData = fileData };
         }
 
         public virtual void DecompressZIP(byte[] data, ref List<FileDescr> fileNames, ref List<byte[]> fileData)

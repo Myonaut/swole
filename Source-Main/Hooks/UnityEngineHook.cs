@@ -22,10 +22,10 @@ namespace Swole
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.BeforeSplashScreen)]
         static void Initialize()
         {
-            if (!(typeof(UnityEngineHook).IsAssignableFrom(Swole.Engine.GetType()))) 
+            if (!(typeof(UnityEngineHook).IsAssignableFrom(swole.Engine.GetType()))) 
             {
                 activeHook = new UnityEngineHook();
-                Swole.SetEngine(activeHook); 
+                swole.SetEngine(activeHook); 
             }
         }
 
@@ -37,7 +37,7 @@ namespace Swole
 
             public static PersistentBehaviour New(EngineHook hook)
             {
-                var b = new GameObject($"_{nameof(Swole)}").AddComponent<PersistentBehaviour>();
+                var b = new GameObject($"_{nameof(swole)}").AddComponent<PersistentBehaviour>();
                 DontDestroyOnLoad(b.gameObject);
                 b.hook = hook;
                 return b;
@@ -82,7 +82,7 @@ namespace Swole
             get
             {
 
-                if (logger == null) logger = new UnityLogger();
+                if (logger == null || !typeof(UnityLogger).IsAssignableFrom(logger.GetType())) logger = new UnityLogger();
 
                 return logger;
 

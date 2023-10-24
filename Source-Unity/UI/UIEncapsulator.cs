@@ -150,8 +150,9 @@ namespace Swole.UI
 
         public bool updateEveryFrame;
 
+        [Tooltip("After the encapsulator resizes, should only the top layer of children be put back to their previous positions? If the encapsulator is floating away then unchecking this may help.")]
         public bool onlyResetTopLevelChildren = true;
-
+         
         public bool includeTextComponents = false;
 
         public int minChildDepth;

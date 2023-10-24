@@ -191,9 +191,9 @@ namespace Swole
         {
             if (main.IsZero) delta = Quaternion.identity;
             if (delta.IsZero) delta = Quaternion.identity;
-            return Swole.Engine.Mul(main, delta);
+            return swole.Engine.Mul(main, delta);
         }
-        public static Quaternion MutateEulerAsQuaternion(Vector3 main, Vector3 delta) => Swole.Engine.Mul(Quaternion.Euler(main), Quaternion.Euler(delta));
+        public static Quaternion MutateEulerAsQuaternion(Vector3 main, Vector3 delta) => swole.Engine.Mul(Quaternion.Euler(main), Quaternion.Euler(delta));
         public static Vector3 MutateEuler(Vector3 main, Vector3 delta) => MutateEulerAsQuaternion(main, delta).EulerAngles;
 
         public MutationOp mutationOp;

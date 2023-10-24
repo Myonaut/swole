@@ -175,6 +175,7 @@ namespace Swole
 
         public string Curator => Manifest.Curator;
         public string Description => Manifest.Description;
+        public string[] Tags => Manifest.Tags;
 
         protected readonly IContent[] content;
 

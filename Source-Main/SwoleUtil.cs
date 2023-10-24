@@ -264,14 +264,10 @@ namespace Swole
 
         }
 
-        public static bool AsBool(this double val) => val != 0; // Equivalent to MiniScript implementation of a boolean
-
-        public static string RemoveWhitespace(this string str)
-        {
-            return string.Join("", str.Split(default(string[]), System.StringSplitOptions.RemoveEmptyEntries));
-        }
-
-        public static string AsID(this string str) => str.ToLower().Trim();
+        /// <summary>
+        /// Equivalent to the MiniScript implementation of a boolean
+        /// </summary>
+        public static bool AsBool(this double val) => val != 0;
 
 
         private static List<int> available = new List<int>();
@@ -321,7 +317,16 @@ namespace Swole
 
         }
 
-        #region Regular Expressions
+        #region String Extensions
+
+        public static string RemoveWhitespace(this string str)
+        {
+            return string.Join("", str.Split(default(string[]), System.StringSplitOptions.RemoveEmptyEntries));
+        }
+
+        public static string AsID(this string str) => str.ToLower().Trim();
+
+        public static bool IsURL(this string str) => Uri.IsWellFormedUriString(str, UriKind.Absolute);
 
         /* Regular Expressions Cheat Sheet https://regexr.com/
         * ^ - Starts with
@@ -345,23 +350,62 @@ namespace Swole
         * [^x] - Anything but x (where x is whatever character you want)
         */
 
+        public static readonly Regex rgAlphabetic = new Regex(@"^[a-zA-Z\s]*$");
+        public static readonly Regex rgAlphabeticFilter = new Regex(@"[^a-zA-Z\s]");
+        public static bool IsAlphabetic(this string str) => rgAlphabetic.IsMatch(str);
+        public static string AsAlphabetic(this string str) => rgAlphabeticFilter.Replace(str, "");
+
+        public static readonly Regex rgAlphabeticNoWhitespace = new Regex(@"^[a-zA-Z]*$");
+        public static readonly Regex rgAlphabeticFilterNoWhitespace = new Regex(@"[^a-zA-Z]");
+        public static bool IsAlphabeticNoWhitespace(this string str) => rgAlphabeticNoWhitespace.IsMatch(str);
+        public static string AsAlphabeticNoWhitespace(this string str) => rgAlphabeticFilterNoWhitespace.Replace(str, "");
+
         public static readonly Regex rgAlphaNumeric = new Regex(@"^[a-zA-Z0-9\s]*$");
         public static readonly Regex rgAlphaNumericFilter = new Regex(@"[^a-zA-Z0-9\s]");
         public static bool IsAlphaNumeric(this string str) => rgAlphaNumeric.IsMatch(str);
         public static string AsAlphaNumeric(this string str) => rgAlphaNumericFilter.Replace(str, "");
+
+        public static readonly Regex rgAlphaNumericWithSpacesAndUnderscores = new Regex(@"^[a-zA-Z0-9\s_]*$");
+        public static readonly Regex rgAlphaNumericWithSpacesAndUnderscoresFilter = new Regex(@"[^a-zA-Z0-9\s_]");
+        public static bool IsAlphaNumericWithSpacesAndUnderscores(this string str) => rgAlphaNumeric.IsMatch(str);
+        public static string AsAlphaNumericWithSpacesAndUnderscores(this string str) => rgAlphaNumericFilter.Replace(str, "");
 
         public static readonly Regex rgAlphaNumericNoWhitespace = new Regex(@"^[a-zA-Z0-9]*$");
         public static readonly Regex rgAlphaNumericNoWhitespaceFilter = new Regex(@"[^a-zA-Z0-9]");
         public static bool IsAlphaNumericNoWhitespace(this string str) => rgAlphaNumericNoWhitespace.IsMatch(str);
         public static string AsAlphaNumericNoWhitespace(this string str) => rgAlphaNumericNoWhitespaceFilter.Replace(str, "");
 
+        public static readonly Regex rgProjectName = new Regex(@"^[a-zA-Z0-9\s_\-.\s]*$");
+        public static readonly Regex rgProjectNameFilter = new Regex(@"[^a-zA-Z0-9_\-.\s]");
+        public static bool IsProjectName(this string str) => rgProjectName.IsMatch(str);
+        public static string AsProjectName(this string str) => rgProjectNameFilter.Replace(str, "");
+
+        public static readonly Regex rgTagsString = new Regex(@"^[a-zA-Z0-9\s_\-.,\s]*$");
+        public static readonly Regex rgTagsStringFilter = new Regex(@"[^a-zA-Z0-9_\-.,\s]");
+        public static bool IsTagsString(this string str) => rgTagsString.IsMatch(str);
+        public static string AsTagsString(this string str) => rgTagsStringFilter.Replace(str, "");
+
         public static readonly Regex rgPackageString = new Regex(@"^[a-zA-Z0-9.]*$");
         public static readonly Regex rgPackageStringFilter = new Regex(@"[^a-zA-Z0-9.]");
-        public static bool IsPackageString(this string str) => rgPackageString.IsMatch(str);
-        public static string AsPackageString(this string str) => rgPackageStringFilter.Replace(str, "");
+        public static bool IsPackageString(this string str) => rgPackageString.IsMatch(str) && !str.StartsWith('.') && !str.EndsWith('.') && (str.Length > 0 ? str.Substring(0, 1).IsAlphabeticNoWhitespace() : false);
+        public static string AsPackageString(this string str) 
+        { 
+            str = rgPackageStringFilter.Replace(str, "");
+            while (str.StartsWith('.')) str = str.Length > 1 ? str.Substring(1) : string.Empty;
+            while (str.EndsWith('.')) str = str.Length > 1 ? str.Substring(0, str.Length - 1) : string.Empty;
+            if (str.Length > 0 && !str.Substring(0, 1).IsAlphabeticNoWhitespace()) str = "x." + str;
+
+            return str;
+        }
 
         public static readonly Regex rgFourComponentVersionNumber = new Regex(@"^([0-9]\.){1,3}[0-9]$");
         public static bool IsNativeVersionString(this string str) => rgFourComponentVersionNumber.IsMatch(str);
+
+        /// <summary>
+        /// Source: https://stackoverflow.com/questions/1365407/c-sharp-code-to-validate-email-address
+        /// </summary>
+        public static readonly Regex rgEmailAddress = new Regex(@"^(?!\.)(""([^""\r\\]|\\[""\r\\])*""|" + @"([-a-z0-9!#$%&'*+/=?^_`{|}~]|(?<!\.)\.)*)(?<!\.)" + @"@[a-z0-9][\w\.-]*[a-z0-9]\.[a-z][a-z\.]*[a-z]$", RegexOptions.IgnoreCase);
+        public static bool IsEmailAddress(this string str) => rgEmailAddress.IsMatch(str);
 
         #endregion
 
@@ -479,6 +523,37 @@ namespace Swole
                 await sourceStream.CopyToAsync(destinationStream, bufferSize, cancellationToken)
                                   .ConfigureAwait(false);
         }
+
+        /// <summary>
+        /// Source: https://stackoverflow.com/questions/5617320/given-full-path-check-if-path-is-subdirectory-of-some-other-path-or-otherwise
+        /// </summary>
+        public static bool IsSubPathOf(this string subPath, string basePath)
+        {
+            var rel = Path.GetRelativePath(
+                basePath.Replace('\\', '/'),
+                subPath.Replace('\\', '/'));
+            return rel != "."
+                && rel != ".."
+                && !rel.StartsWith("../")
+                && !Path.IsPathRooted(rel);
+        }
+        public static bool IsSubDirectoryOf(this DirectoryInfo subDir, string basePath) => IsSubPathOf(subDir == null ? string.Empty : subDir.FullName, basePath);
+        public static bool IsSubDirectoryOf(this DirectoryInfo subDir, DirectoryInfo baseDir) => IsSubPathOf(subDir == null ? string.Empty : subDir.FullName, baseDir == null ? string.Empty : baseDir.FullName);
+
+        /// <summary>
+        /// Source: https://stackoverflow.com/questions/2281531/how-can-i-compare-directory-paths-in-c
+        /// </summary>
+        public static string NormalizePath(this string path)
+        {
+            return Path.GetFullPath(new Uri(path).LocalPath)
+                       .TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+        }
+        public static string NormalizePathCaseInsensitive(this string path) => path.NormalizePath().ToUpperInvariant();
+
+        public static bool IsIdenticalPath(this string path, string otherPath) => path.NormalizePath() == otherPath.NormalizePath();
+        public static bool IsIdenticalPathIgnoreCase(this string path, string otherPath) => path.NormalizePathCaseInsensitive() == otherPath.NormalizePathCaseInsensitive();
+
+        public static string NormalizeDirectorySeparators(this string path, bool useAltSeparatorChar = true) => path.Replace(useAltSeparatorChar ? Path.DirectorySeparatorChar : Path.AltDirectorySeparatorChar, useAltSeparatorChar ? Path.AltDirectorySeparatorChar : Path.DirectorySeparatorChar);
 
         #endregion
 

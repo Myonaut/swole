@@ -68,7 +68,7 @@ namespace Swole
 
         }
 
-        public EngineInternal.TileInstance CreateNewInstance(EngineInternal.TileSet tileSet, Vector3 rootWorldPosition, Quaternion rootWorldRotation) => Swole.Engine.CreateNewTileInstance(tileSet, tileIndex, rootWorldPosition, rootWorldRotation, positionInRoot, rotationInRoot, scaleInRoot);
+        public EngineInternal.TileInstance CreateNewInstance(EngineInternal.TileSet tileSet, Vector3 rootWorldPosition, Quaternion rootWorldRotation) => swole.Engine.CreateNewTileInstance(tileSet, tileIndex, rootWorldPosition, rootWorldRotation, positionInRoot, rotationInRoot, scaleInRoot);
         
     }
 

@@ -20,10 +20,10 @@ namespace Swole
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.BeforeSplashScreen)]
         static void Initialize()
         {
-            if (!(typeof(BulkOutIntermediaryHook).IsAssignableFrom(Swole.Engine.GetType())))
+            if (!(typeof(BulkOutIntermediaryHook).IsAssignableFrom(swole.Engine.GetType())))
             {
                 activeHook = new BulkOutIntermediaryHook();
-                Swole.SetEngine(activeHook);
+                swole.SetEngine(activeHook);
             }
         }
 

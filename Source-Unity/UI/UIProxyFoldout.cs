@@ -6,7 +6,6 @@ using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.UI;
 using UnityEngine.Events;
-using System;
 
 namespace Swole.UI
 {
@@ -30,7 +29,7 @@ namespace Swole.UI
         public float foldedSize;
 
         /// <summary>
-        /// Calculated in Awake. If dynamicSize is set to true, it is calculated each frame when the element is unfolded.
+        /// Calculated on initialize. If dynamicSize is set to true, it is calculated each frame when the element is unfolded.
         /// </summary>
         protected float fullSize;
 
@@ -64,6 +63,9 @@ namespace Swole.UI
 
         [Tooltip("If using dynamicSize, should the root transform move to account for size changes?")]
         public bool moveOnResize;
+
+        [Tooltip("If using dynamicSize, should the container transform stay at its current world position during size changes?")]
+        public bool pinContainerOnResize = true;
 
         [Tooltip("The minimum transform depth to calculate unfolded size from. Child elements with a smaller depth than this will be ignored.")]
         public int proxyEncapsulatorMinChildDepth = 0;
@@ -576,10 +578,11 @@ namespace Swole.UI
 
                 proxyEncapsulator?.Recalculate();
 
-                rectSize = proxy.rect.size;
+                rectSize = proxyEncapsulator == null ? rectTransform.rect.size : proxy.rect.size;
 
                 float newSize = horizontal ? rectSize.x : rectSize.y;
 
+                Vector3 containerPos = rectTransform.position;
                 if (moveOnResize)
                 {
 
@@ -594,7 +597,12 @@ namespace Swole.UI
                 }
 
                 fullSize = newSize;
-
+                if (proxyEncapsulator == null) 
+                {
+                    proxy.SetSizeWithCurrentAnchors(RectTransform.Axis.Horizontal, rectSize.x);
+                    proxy.SetSizeWithCurrentAnchors(RectTransform.Axis.Vertical, rectSize.y);
+                }
+                if (pinContainerOnResize) rectTransform.position = containerPos;
             }
 
         }
@@ -657,7 +665,7 @@ namespace Swole.UI
 
                     yield return null;
 
-                    if (state && !tweening) Fold();
+                    if (ClickedOff() && state && !tweening) Fold();
 
                 }
 

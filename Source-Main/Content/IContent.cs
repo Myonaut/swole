@@ -24,6 +24,12 @@ namespace Swole
 
         public string Description { get; }
 
+        public string OriginPath { get; }
+        public IContent SetOriginPath(string path);
+
+        public string RelativePath { get; }
+        public IContent SetRelativePath(string path);
+
     }
 
 }
