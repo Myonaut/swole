@@ -292,7 +292,7 @@ namespace Swole.API.Unity
                     else
                     {
                         loadingLeanTween = false;
-                        Debug.LogWarning($"[{packageDisplayName}] Could not locate/access cached package data for LeanTween!");
+                        Debug.LogWarning($"[{packageDisplayName}] Could not locate/access cached package data for LeanTween! {cachedPath}");
                     }
                 }
             }
@@ -343,7 +343,7 @@ namespace Swole.API.Unity
                     else
                     {
                         loadingMiniScript = false;
-                        Debug.LogWarning($"[{packageDisplayName}] Could not locate/access cached package data for MiniScript!");
+                        Debug.LogWarning($"[{packageDisplayName}] Could not locate/access cached package data for MiniScript! {cachedPath}");
                     }
                 }
             }
