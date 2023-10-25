@@ -10,13 +10,18 @@ using UnityEditor.Build;
 using UnityEditor.PackageManager;
 using UnityEngine;
 using UnityEditor.Callbacks;
+using UnityEditor.PackageManager.Requests;
 
 namespace Swole.API.Unity
 {
 
     public class SwoleUnityPackageSetup : AssetPostprocessor
     {
-         
+
+        private static bool invalid;
+        public static bool Valid => !invalid;
+        private static void Invalidate() => invalid = true;
+
         public const string packageDisplayName = "Swole Dev Suite";
         public const string packageNameSubstring = "myonaut.swole";
         /// <summary>
@@ -130,24 +135,44 @@ namespace Swole.API.Unity
 
         [InitializeOnLoadMethod, DidReloadScripts]
         private static void OnInitialize()
-        { 
-            Debug.Log("Swole setup init test");
+        {
+            if (!Valid) return;
             SubscribeToRegistered();
             SubscribeToRegistering();
             SubscribeToAssemblyReloadComplete();
 
-            BeginLoadingAssets();     
+            Run();
         }
 
         private static void OnRemove()
         {
-            UnsubscribeToRegistered();
-            UnsubscribeToRegistering();
-            UnsubscribeToAssemblyReloadComplete();
+            if (!Valid) return;
 
-            SetUnloaded();
+            Invalidate();
+            try
+            {
+                UnsubscribeToRegistered();
+            }
+            catch { }
+            try
+            {
+                UnsubscribeToRegistering();
+            }
+            catch { }
+            try
+            {
+                UnsubscribeToAssemblyReloadComplete();
+            }
+            catch { }
+
+            try
+            {
+                SetUnloaded();
+            }
+            catch { }
 
             DeleteMutableAssets();
+            Debug.Log($"[{packageDisplayName}] Removal process complete!");
         }
 
         static void OnPostprocessAllAssets(string[] importedAssets, string[] deletedAssets, string[] movedAssets, string[] movedFromAssetPaths, bool didDomainReload)
@@ -166,12 +191,7 @@ namespace Swole.API.Unity
                 Debug.Log("Moved Asset: " + movedAssets[i] + " from: " + movedFromAssetPaths[i]);
             }
 
-            if (didDomainReload)
-            {
-                Debug.Log("Domain has been reloaded");
-            }
-
-            BeginLoadingAssets();
+            Run();
         }
 
         private static bool subscribedRegistered;
@@ -191,7 +211,7 @@ namespace Swole.API.Unity
         {
             // Code executed here can safely assume that the Editor has finished compiling the new list of packages
             Debug.Log("Swole setup after package registered test");
-            BeginLoadingAssets();
+            Run();
         }
 
         private static void RegisteringPackagesEventHandler(PackageRegistrationEventArgs packageRegistrationEventArgs)
@@ -208,7 +228,83 @@ namespace Swole.API.Unity
 
         private static void AssemblyReloadComplete()
         {
-            BeginLoadingAssets();
+            Run();
+        }
+
+        private static bool isRunning;
+        public static bool IsRunning => isRunning;
+        public static void Run()
+        {
+#if SWOLE_ENV
+            if (CanFullyLoad())
+            {
+                return;
+            }
+            else
+            {
+                SetUnloaded();
+            }
+#endif
+
+            if (!Valid || IsRunning) return;
+
+            isRunning = true;
+
+            string packageDir = null;
+            ListRequest Request = null;
+
+            void Step()
+            {
+                if (packageDir == null && Request == null)
+                {
+                    Request = Client.List();
+                }
+
+                if (Request != null)
+                {
+                    if (Request.IsCompleted)
+                    {
+                        if (Request.Status == StatusCode.Success)
+                        {
+                            foreach (var package in Request.Result)
+                            {
+                                if (package.displayName == packageDisplayName && package.name.ToLower().Contains(packageNameSubstring.ToLower()))
+                                {
+                                    packageDir = package.resolvedPath;
+                                    break;
+                                }
+                            }
+                        }
+                        else if (Request.Status >= StatusCode.Failure)
+                        {
+                            Debug.Log($"[{packageDisplayName}] Encountered error while performing package lookup: {Request.Error.message}");
+                        }
+
+                        Request = null;
+                    }
+                    else
+                    {
+                        return;
+                    }
+                }
+
+                if (!string.IsNullOrEmpty(packageDir))
+                {
+                    BeginLoadingAssets(packageDir);
+
+                    if (!CanFullyLoad()) return;
+                    SetFullyLoaded();
+                } 
+                else
+                {
+                    Debug.Log($"[{packageDisplayName}] Package directory path was empty!");
+                }
+
+                isRunning = false;
+                EditorApplication.update -= Step;
+            }
+
+            EditorApplication.update += Step;
         }
 
         #region >>> USE CASE SPECIFIC CODE
@@ -247,21 +343,11 @@ namespace Swole.API.Unity
             #endregion
         }
 
-        private static void BeginLoadingAssets()
+        private static void BeginLoadingAssets(string packageDirectoryPath)
         {
+            if (!Valid) return;
             #region >>> USE CASE SPECIFIC CODE
             // > Only execute this code if the assets haven't started being loaded, otherwise just keep waiting
-
-#if SWOLE_ENV
-            if (CanFullyLoad()) 
-            { 
-                return;
-            } 
-            else
-            {
-                SetUnloaded(); 
-            }
-#endif
 
             bool refresh = false;
 
@@ -282,7 +368,7 @@ namespace Swole.API.Unity
                 loadingLeanTween = true;
                 if (!FoundLeanTween())
                 {
-                    string cachedPath = Path.Combine(Directory.GetParent(Application.dataPath).FullName, "Library", "PackageCache", setupFolderName, "LeanTween.unitypackage");
+                    string cachedPath = Path.Combine(packageDirectoryPath, setupFolderName, "LeanTween.unitypackage");
                     if (File.Exists(cachedPath))
                     {
                         Debug.Log($"[{packageDisplayName}] Installing LeanTween unitypackage...");
@@ -305,7 +391,7 @@ namespace Swole.API.Unity
                     Debug.Log($"[{packageDisplayName}] Installing MiniScript assets...");
                     CreateMutableImportDir();
                     var targetDir = Directory.CreateDirectory(miniScriptPath);
-                    string cachedPath = Path.Combine(Directory.GetParent(Application.dataPath).FullName, "Library", "PackageCache", "MiniScript");
+                    string cachedPath = Path.Combine(packageDirectoryPath, "MiniScript");
                     if (Directory.Exists(cachedPath))
                     {
                         try
@@ -352,8 +438,6 @@ namespace Swole.API.Unity
 
             // <
 #endregion
-
-            WaitToFullyLoad();
         }
 
         public static void DeleteMutableAssets()
