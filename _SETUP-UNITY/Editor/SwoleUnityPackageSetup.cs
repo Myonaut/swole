@@ -25,8 +25,17 @@ namespace Swole.API.Unity
         public const string fullyLoadedScriptingDefineSymbol = "SWOLE_ENV";
 
         #region >>> USE CASE SPECIFIC CODE
-        private static bool FoundLeanTween() => Type.GetType($"LeanTween") != null;
-        private static bool FoundMiniScript() => Type.GetType($"Miniscript.Script") != null;
+        private static bool CheckIfTypeExists(string typeName)
+        {
+            var assemblies = AppDomain.CurrentDomain.GetAssemblies();
+            foreach(var assembly in assemblies)
+            {
+                if (assembly.GetType(typeName, false, true) != null) return true;
+            }
+            return false;
+        }
+        private static bool FoundLeanTween() => CheckIfTypeExists($"LeanTween");
+        private static bool FoundMiniScript() => CheckIfTypeExists($"Miniscript.Script");
         #endregion
 
         public static bool CanFullyLoad()
@@ -203,7 +212,7 @@ namespace Swole.API.Unity
         }
 
         #region >>> USE CASE SPECIFIC CODE
-        private static string mutableImportPath = Path.Combine(Application.dataPath, packageDisplayName);
+        private static string mutableImportPath = Path.Combine(Application.dataPath, $"{packageDisplayName} (READ-ONLY)");
         private static string miniScriptPath = Path.Combine(Application.dataPath, mutableImportPath, "MiniScript");
         private static string leanTweenPath = Path.Combine(Application.dataPath, "LeanTween");
 
@@ -214,7 +223,7 @@ namespace Swole.API.Unity
         private const string warningFileName = "WARNING.txt";
 
         private static string warningFileText = "This folder is prone to deletion or change! DO NOT STORE ANYTHING IN HERE!" + Environment.NewLine +
-                        $"If you want the contents of this folder to remain even when the package '{packageDisplayName}' is removed or updated, simply delete this file.";
+                        $"If you need the contents of this folder to remain even when the package '{packageDisplayName}' is removed or updated, simply delete this file.";
 
         private static void WaitForLeanTweenPackageImport(string n)
         {
@@ -241,6 +250,17 @@ namespace Swole.API.Unity
         {
             #region >>> USE CASE SPECIFIC CODE
             // > Only execute this code if the assets haven't started being loaded, otherwise just keep waiting
+
+#if SWOLE_ENV
+            if (CanFullyLoad()) 
+            { 
+                return;
+            } 
+            else
+            {
+                SetUnloaded(); 
+            }
+#endif
 
             bool refresh = false;
 
@@ -294,7 +314,12 @@ namespace Swole.API.Unity
                             var subDirs = topDir.EnumerateDirectories("*", SearchOption.AllDirectories);
                             foreach (var subDir in subDirs)
                             {
-                                if (subDir.Name == ".source")
+                                if (subDir.Name == ".hidden")
+                                {
+                                    topFiles = subDir.EnumerateFiles("*", SearchOption.TopDirectoryOnly);
+                                    foreach (var topFile in topFiles) File.Copy(topFile.FullName, Path.Combine(sourceDir.FullName, topFile.Name));
+                                }
+                                else if (subDir.Name == ".source")
                                 {
                                     topFiles = subDir.EnumerateFiles("*", SearchOption.TopDirectoryOnly);
                                     foreach (var topFile in topFiles) File.Copy(topFile.FullName, Path.Combine(sourceDir.FullName, topFile.Name));
@@ -322,7 +347,7 @@ namespace Swole.API.Unity
             if (refresh) AssetDatabase.Refresh();
 
             // <
-            #endregion
+#endregion
 
             WaitToFullyLoad();
         }

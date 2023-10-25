@@ -1,3 +1,4 @@
-[submodule "MiniScript/source"]
-	path = MiniScript/.source
+
+[submodule "MiniScript/.hidden/.source"]
+	path = MiniScript/.hidden/.source
 	url = https://github.com/JoeStrout/miniscript.git
