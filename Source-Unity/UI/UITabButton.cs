@@ -14,7 +14,7 @@ namespace Swole.UI
 {
 
     public class UITabButton : MonoBehaviour, IPointerEnterHandler, IPointerExitHandler, IPointerClickHandler
-    { 
+    {
 
         [Tooltip("An optional group to control the toggling of multiple buttons.")]
         public UITabGroup group;
@@ -170,15 +170,15 @@ namespace Swole.UI
                     if (obj.GetComponent<Button>() != null) return;
                 }
             }
-            
+
             bool toggleState = toggle;
 
             ToggleOn();
 
-            if (toggleState ? clickWhileActive : true) OnClick.Invoke(); 
+            if (toggleState ? clickWhileActive : true) OnClick.Invoke();
 
         }
-         
+
         public bool isHovering = false;
 
         public void OnPointerEnter(PointerEventData eventData)
@@ -233,9 +233,9 @@ namespace Swole.UI
 
         protected void OnEnable()
         {
-
+#if SWOLE_ENV
             LeanTween.delayedCall(0.01f, UpdateGraphic);
-
+#endif
         }
 
         protected void OnDisable()

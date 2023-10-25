@@ -65,7 +65,9 @@ namespace Swole.Script
 
             if (dependencies == null) dependencies = new List<PackageIdentifier>();
 
+            #if SWOLE_ENV
             if (!string.IsNullOrEmpty(source)) dependencies = swole.ExtractPackageDependencies(source, dependencies);
+            #endif
 
             return dependencies;
 
@@ -142,7 +144,9 @@ namespace Swole.Script
 
             string embedSource = source.StandardizeNewLines();
 
+#if SWOLE_ENV
             swole.ParseSource(embedSource, ref dependencyList, topAuthor, workingPackage, autoIndentation, indentation, localScripts);
+#endif
 
             string[] splitSource = embedSource.Split(ssNewLine);
             embedSource = "";

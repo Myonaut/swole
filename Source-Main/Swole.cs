@@ -3,7 +3,9 @@ using System.Collections;
 using System.Collections.Generic;
 using System.IO;
 
+#if SWOLE_ENV
 using Miniscript;
+#endif
 
 using Swole.Script;
 
@@ -230,6 +232,7 @@ namespace Swole
             return PackageActionResult.PackageNotLoaded;
         }
 
+
         public static bool TryFindScript(string packageName, string scriptName, out SourceScript scriptOut, out string resultInfo) => Instance.TryFindScriptInternal(packageName, scriptName, out scriptOut, out resultInfo);
         public bool TryFindScriptInternal(string packageName, string scriptName, out SourceScript scriptOut, out string resultInfo)
         {
@@ -268,6 +271,8 @@ namespace Swole
             return false;
 
         }
+
+#if SWOLE_ENV
 
         public static string ReadSwoleScriptLine(Lexer msLexer, out bool appendLineBreak)
         {
@@ -624,7 +629,9 @@ namespace Swole
         /// </summary>
         public static string ParseSource(string source, ref List<PackageIdentifier> dependencyList, string topAuthor = null, PackageManifest workingPackage = default, int autoIndentation = ssDefaultAutoIndentation, int startIndentation = 0, ICollection<SourceScript> localScripts = null) => Instance.ParseSourceInternal(source, ref dependencyList, topAuthor, workingPackage, autoIndentation, startIndentation, localScripts);
 
-        #endregion
+#endif
+
+#endregion
 
     }
 

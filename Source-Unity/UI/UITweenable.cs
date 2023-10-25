@@ -17,9 +17,9 @@ namespace Swole.UI
 
         protected class TweenState
         {
-
+#if SWOLE_ENV
             public LTDescr tween;
-
+#endif
             public bool complete;
 
         }
@@ -29,10 +29,11 @@ namespace Swole.UI
 
             if (currentTween != null && !currentTween.complete && !queueConsecutiveTweenCalls)
             {
-
+#if SWOLE_ENV
                 currentTween.tween.callOnCompletes();
 
                 LeanTween.cancel(currentTween.tween.uniqueId);
+#endif
 
                 currentTween = null;
 
@@ -40,6 +41,7 @@ namespace Swole.UI
 
         }
 
+#if SWOLE_ENV
         protected virtual void AppendTween(LTDescr tween, System.Action OnComplete = null, System.Action OnResume = null)
         {
 
@@ -96,6 +98,7 @@ namespace Swole.UI
             currentTween = state;
 
         }
+#endif
 
     }
 

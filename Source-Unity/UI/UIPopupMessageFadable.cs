@@ -115,19 +115,20 @@ namespace Swole.UI
 
         public UIPopupMessageFadable Show()
         {
-
+#if SWOLE_ENV
             LeanTween.cancel(gameObject);
-             
+#endif
+
             Initialize();
 
             gameObject.SetActive(true);
             enabled = true;
 
             UpdateAlphas(0);
-
+#if SWOLE_ENV
             LeanTween.value(gameObject, 0, 1, fadeInTime).setOnUpdate(UpdateAlphas);
             LeanTween.delayedCall(gameObject, displayTime, () => { LeanTween.value(gameObject, 1, 0, fadeOutTime).setEaseInExpo().setOnUpdate(UpdateAlphas).setOnComplete(() => { Close(); }); });
-
+#endif
             return this;
 
         }

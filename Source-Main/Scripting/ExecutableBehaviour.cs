@@ -90,6 +90,7 @@ namespace Swole.Script
             if (environment == null) environment = swole.DefaultEnvironment;
             this.environment = environment;
 
+            #if SWOLE_ENV
             if (!string.IsNullOrEmpty(source_OnInitialize)) script_OnInitialize = new ExecutableScript($"{identity}_OnInitialize", source_OnInitialize, 0, logger);
             if (!string.IsNullOrEmpty(source_OnEarlyUpdate)) script_OnEarlyUpdate = new ExecutableScript($"{identity}_OnEarlyUpdate", source_OnEarlyUpdate, 1, logger);
             if (!string.IsNullOrEmpty(source_OnUpdate)) script_OnUpdate = new ExecutableScript($"{identity}_OnUpdate", source_OnUpdate, 2, logger);
@@ -105,6 +106,7 @@ namespace Swole.Script
             if (!string.IsNullOrEmpty(source_OnTriggerStay)) script_OnTriggerStay = new ExecutableScript($"{identity}_OnTriggerStay", source_OnTriggerStay, 12, logger);
             if (!string.IsNullOrEmpty(source_OnTriggerExit)) script_OnTriggerExit = new ExecutableScript($"{identity}_OnTriggerExit", source_OnTriggerExit, 13, logger);
             if (!string.IsNullOrEmpty(source_OnInteract)) script_OnInteract = new ExecutableScript($"{identity}_OnInteract", source_OnInteract, 14, logger);
+            #endif
 
         }
 

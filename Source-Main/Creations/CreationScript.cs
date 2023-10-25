@@ -25,6 +25,7 @@ namespace Swole
 
             if (dependencies == null) dependencies = new List<PackageIdentifier>();
 
+            #if SWOLE_ENV
             if (!string.IsNullOrEmpty(source_OnInitialize)) dependencies = swole.ExtractPackageDependencies(source_OnInitialize, dependencies);
             if (!string.IsNullOrEmpty(source_OnEarlyUpdate)) dependencies = swole.ExtractPackageDependencies(source_OnEarlyUpdate, dependencies);
             if (!string.IsNullOrEmpty(source_OnUpdate)) dependencies = swole.ExtractPackageDependencies(source_OnUpdate, dependencies);
@@ -45,6 +46,7 @@ namespace Swole
             if (!string.IsNullOrEmpty(source_OnTriggerExit)) dependencies = swole.ExtractPackageDependencies(source_OnTriggerExit, dependencies);
 
             if (!string.IsNullOrEmpty(source_OnInteract)) dependencies = swole.ExtractPackageDependencies(source_OnInteract, dependencies);
+            #endif
 
             return dependencies;
         }

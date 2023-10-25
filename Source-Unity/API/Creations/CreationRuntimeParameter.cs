@@ -7,7 +7,9 @@ using System.Reflection;
 
 using UnityEngine;
 
+#if SWOLE_ENV
 using Miniscript;
+#endif
 
 using Swole.Script;
 namespace Swole.API.Unity
@@ -773,7 +775,9 @@ namespace Swole.API.Unity
 
         }
 
+#if SWOLE_ENV
         public Value ValueMS => variable == null ? null : variable.ValueMS;
+#endif
 
         public string Name => baseParameter.name;
 

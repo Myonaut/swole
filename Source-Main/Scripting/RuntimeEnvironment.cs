@@ -2,7 +2,9 @@ using System;
 using System.Collections;
 using System.Collections.Generic;
 
+#if SWOLE_ENV
 using Miniscript;
+#endif
 
 using static Swole.Script.SwoleScriptSemantics;
 
@@ -32,6 +34,7 @@ namespace Swole.Script
             else this.globalVars = null;
         }
 
+        #if SWOLE_ENV
         public ExecutionResult RunForPeriod(SwoleLogger logger, Interpreter interpreter, float timeOut = 0.01f, bool restartIfNotRunning = true, bool setVars = true)
         {
 
@@ -125,6 +128,7 @@ namespace Swole.Script
             return ExecutionResult.Completed;
 
         }
+        #endif
 
         private bool isDisposed = false;
 

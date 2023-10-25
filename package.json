@@ -1,7 +1,7 @@
 {
-    "name": "myonaut.swole",
+    "name": "git.myonaut.swole",
     "version": "0.1.0",
-    "displayName": "Swole For Unity",
+    "displayName": "Swole Dev Suite",
     "description": "The C# + MiniScript based development environment created for the Bulk Out! video game.",
     "unity": "2021.3",
     "unityRelease": "27f1",

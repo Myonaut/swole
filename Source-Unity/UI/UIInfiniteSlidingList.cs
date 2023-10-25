@@ -261,7 +261,9 @@ namespace Swole.UI
 
             if (!initialized) Initialize();
 
+#if SWOLE_ENV
             LeanTween.cancel(gameObject);
+#endif
 
             currentTween = null;
 
@@ -584,8 +586,9 @@ namespace Swole.UI
 
             if (time <= 0)
             {
-
+#if SWOLE_ENV
                 AppendTween(LeanTween.delayedCall(gameObject, 0.001f, ShiftMembers), null, OnSlideBegin.Invoke);
+#endif
 
             }
             else
@@ -594,7 +597,7 @@ namespace Swole.UI
                 float mul = visibleCount / visibleCountM1;
 
                 Vector3 targetPos = startPos + new Vector3(x * amount * mul * memberSize * (positiveToNegative ? -1 : 1), (1 - x) * amount * mul * memberSize * (positiveToNegative ? -1 : 1), 0);
-
+#if SWOLE_ENV
                 void SlidePosition(float t)
                 {
 
@@ -616,7 +619,7 @@ namespace Swole.UI
                 if (easeOut) newTween.setEaseOutExpo();
 
                 AppendTween(newTween, ShiftMembers, OnSlideBegin.Invoke);
-
+#endif
             }
 
         }

@@ -1,5 +1,7 @@
+#if SWOLE_ENV
 using Miniscript;
 using static Swole.Script.SwoleScriptSemantics;
+#endif
 
 namespace Swole.Script
 {
@@ -11,7 +13,8 @@ namespace Swole.Script
 
         protected readonly int priority;
         public int Priority => priority;
-
+        
+#if SWOLE_ENV
         protected readonly Interpreter interpreter;
         public Interpreter Interpreter => interpreter;
 
@@ -41,6 +44,7 @@ namespace Swole.Script
 
             }
         }
+#endif
 
         protected bool disable;
         public virtual bool Enabled
@@ -66,8 +70,12 @@ namespace Swole.Script
             if (disable) return ExecutionResult.Disabled;
             if (isDisposed) return ExecutionResult.Disposed;
             if (environment == null) return ExecutionResult.InvalidEnvironment;
+#if SWOLE_ENV
             var result = environment.RunForPeriod(swole.Engine.Logger, interpreter, timeOut);
             if (result == ExecutionResult.Completed) OnComplete?.Invoke();
+#else
+            var result = ExecutionResult.None;
+#endif
             return result;
         }
 
@@ -78,8 +86,12 @@ namespace Swole.Script
             if (disable) return ExecutionResult.Disabled;
             if (isDisposed) return ExecutionResult.Disposed;
             if (environment == null) return ExecutionResult.InvalidEnvironment;
+#if SWOLE_ENV
             var result = environment.RunUntilCompletion(swole.Engine.Logger, interpreter, timeOut);
             if (result == ExecutionResult.Completed) OnComplete?.Invoke();
+#else
+            var result = ExecutionResult.None;
+#endif
             return result;
         }
 

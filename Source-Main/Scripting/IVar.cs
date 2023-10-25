@@ -1,5 +1,8 @@
 using System;
+
+#if SWOLE_ENV
 using Miniscript;
+#endif
 
 namespace Swole.Script
 {
@@ -16,7 +19,9 @@ namespace Swole.Script
 
         public Type GetValueType();
 
+#if SWOLE_ENV
         public Value ValueMS { get; }
+#endif
 
     }
 

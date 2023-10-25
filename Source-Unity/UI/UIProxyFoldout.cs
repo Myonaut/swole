@@ -364,13 +364,14 @@ namespace Swole.UI
 
             if (tweenTime <= 0)
             {
-
+#if SWOLE_ENV
                 AppendTween(LeanTween.delayedCall(gameObject, 0.001f, OnComplete), null, OnStart);
+#endif
 
             }
             else
             {
-
+#if SWOLE_ENV
                 float currentSize = horizontal ? proxy.rect.size.x : proxy.rect.size.y;
 
                 void FoldProxy(float t)
@@ -387,7 +388,7 @@ namespace Swole.UI
                 if (easeOut) newTween.setEaseOutExpo();
 
                 AppendTween(newTween, OnComplete, OnStart);
-
+#endif
             }
 
         }
@@ -445,13 +446,14 @@ namespace Swole.UI
 
             if (tweenTime <= 0)
             {
-
+#if SWOLE_ENV
                 AppendTween(LeanTween.delayedCall(gameObject, 0, OnComplete), null, OnStart);
+#endif
 
             }
             else
             {
-
+#if SWOLE_ENV
                 float currentSize = horizontal ? proxy.rect.size.x : proxy.rect.size.y;
 
                 void FoldProxy(float t)
@@ -468,7 +470,7 @@ namespace Swole.UI
                 if (easeOut) newTween.setEaseOutExpo();
 
                 AppendTween(newTween, OnComplete, OnStart);
-
+#endif
             }
 
         }

@@ -1,7 +1,9 @@
 using System;
 using System.Collections.Generic;
 
+#if SWOLE_ENV
 using Miniscript;
+#endif
 
 namespace Swole.Script
 {
@@ -58,6 +60,7 @@ namespace Swole.Script
         }
         public bool ValueChanged => HasChangedValue(false);
 
+#if SWOLE_ENV
         protected Value valueMS;
 
         public Value ValueMS 
@@ -73,6 +76,7 @@ namespace Swole.Script
             }
 
         }
+#endif
 
     }
 
