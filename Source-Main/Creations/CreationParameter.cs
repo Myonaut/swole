@@ -3,7 +3,9 @@ using System.Reflection;
 using System.Collections;
 using System.Collections.Generic;
 
+#if SWOLE_ENV
 using Miniscript;
+#endif
 
 using static Swole.EngineInternal;
 
@@ -73,6 +75,7 @@ namespace Swole
             get
             {
 
+#if SWOLE_ENV
                 switch (type)
                 {
                     case Type.Float: return typeof(ValNumber);
@@ -86,6 +89,7 @@ namespace Swole
                     case Type.Quaternion: case Type.RotationLocal: case Type.RotationRoot: case Type.RotationWorld: return typeof(ValMap);
                     case Type.Matrix4x4: case Type.LocalToRoot: case Type.LocalToWorld: case Type.RootToLocal: case Type.WorldToLocal: return typeof(ValMap);
                 }
+#endif
 
                 return null;
 

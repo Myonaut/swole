@@ -234,6 +234,7 @@ namespace Swole.API.Unity
                 Debug.LogError($"[{packageDisplayName}] Failed to import LeanTween from its cached .unitypackage file!");
                 return;
             }
+            Debug.Log($"[{packageDisplayName}] Successfully installed LeanTween!");
             WaitToFullyLoad();
         }
         #endregion
@@ -284,6 +285,7 @@ namespace Swole.API.Unity
                     string cachedPath = Path.Combine(Directory.GetParent(Application.dataPath).FullName, "Library", "PackageCache", setupFolderName, "LeanTween.unitypackage");
                     if (File.Exists(cachedPath))
                     {
+                        Debug.Log($"[{packageDisplayName}] Installing LeanTween unitypackage...");
                         AssetDatabase.importPackageCompleted += WaitForLeanTweenPackageImport;
                         AssetDatabase.ImportPackage(cachedPath, false);
                     } 
@@ -300,6 +302,7 @@ namespace Swole.API.Unity
                 loadingMiniScript = true;
                 if (!FoundMiniScript())
                 {
+                    Debug.Log($"[{packageDisplayName}] Installing MiniScript assets...");
                     CreateMutableImportDir();
                     var targetDir = Directory.CreateDirectory(miniScriptPath);
                     string cachedPath = Path.Combine(Directory.GetParent(Application.dataPath).FullName, "Library", "PackageCache", "MiniScript");
@@ -330,6 +333,7 @@ namespace Swole.API.Unity
                                 }
                             }
                             refresh = true;
+                            Debug.Log($"[{packageDisplayName}] Successfully installed MiniScript!");
                         } 
                         catch(Exception ex)
                         {
