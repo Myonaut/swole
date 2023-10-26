@@ -399,19 +399,19 @@ namespace Swole.API.Unity
                             var topDir = new DirectoryInfo(cachedPath);
                             var sourceDir = new DirectoryInfo(Path.Combine(topDir.FullName, "source"));
                             var topFiles = topDir.EnumerateFiles("*", SearchOption.TopDirectoryOnly);
-                            foreach (var topFile in topFiles) File.Copy(topFile.FullName, Path.Combine(targetDir.FullName, topFile.Name));
+                            foreach (var topFile in topFiles) File.Copy(topFile.FullName, Path.Combine(targetDir.FullName, topFile.Name), true);
                             var subDirs = topDir.EnumerateDirectories("*", SearchOption.AllDirectories);
                             foreach (var subDir in subDirs)
                             {
                                 if (subDir.Name == ".hidden")
                                 {
                                     topFiles = subDir.EnumerateFiles("*", SearchOption.TopDirectoryOnly);
-                                    foreach (var topFile in topFiles) File.Copy(topFile.FullName, Path.Combine(sourceDir.FullName, topFile.Name));
+                                    foreach (var topFile in topFiles) File.Copy(topFile.FullName, Path.Combine(sourceDir.FullName, topFile.Name), true);
                                 }
                                 else if (subDir.Name == ".source")
                                 {
                                     topFiles = subDir.EnumerateFiles("*", SearchOption.TopDirectoryOnly);
-                                    foreach (var topFile in topFiles) File.Copy(topFile.FullName, Path.Combine(sourceDir.FullName, topFile.Name));
+                                    foreach (var topFile in topFiles) File.Copy(topFile.FullName, Path.Combine(sourceDir.FullName, topFile.Name), true);
                                 }
                                 else if (subDir.Name.Contains("-cs")) // Found a c-sharp source code folder
                                 {
