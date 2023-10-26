@@ -341,10 +341,6 @@ namespace Swole.API.Unity
                 Debug.LogError($"[{packageDisplayName}] Failed to import LeanTween from its cached .unitypackage file!");
                 return;
             } 
-            else
-            {
-                AddWarningFileTo(leanTweenPath);
-            }
             Debug.Log($"[{packageDisplayName}] Successfully installed LeanTween!");
             WaitToFullyLoad();
         }
@@ -360,6 +356,7 @@ namespace Swole.API.Unity
 
         private static void AddWarningFileTo(string directoryPath)
         {
+            Directory.CreateDirectory(directoryPath);
             string warningFilePath = Path.Combine(directoryPath, warningFileName);
             if (!File.Exists(warningFilePath)) File.WriteAllText(warningFilePath, warningFileText);
         }
@@ -392,6 +389,7 @@ namespace Swole.API.Unity
                     if (File.Exists(cachedPath))
                     {
                         Debug.Log($"[{packageDisplayName}] Installing LeanTween unitypackage...");
+                        AddWarningFileTo(leanTweenPath);
                         AssetDatabase.importPackageCompleted += WaitForLeanTweenPackageImport;
                         AssetDatabase.ImportPackage(cachedPath, false);
                     } 
@@ -474,6 +472,8 @@ namespace Swole.API.Unity
                     {
                         Directory.Delete(mutableImportPath, true);
                         refresh = true;
+                        string metaFilePath = $"{mutableImportPath.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar)}.meta";
+                        if (File.Exists(metaFilePath)) File.Delete(metaFilePath);
                     } 
                     catch(Exception ex)
                     {
@@ -491,6 +491,8 @@ namespace Swole.API.Unity
                     {
                         Directory.Delete(leanTweenPath, true);
                         refresh = true;
+                        string metaFilePath = $"{leanTweenPath.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar)}.meta";
+                        if (File.Exists(metaFilePath)) File.Delete(metaFilePath);
                     }
                     catch (Exception ex)
                     {
