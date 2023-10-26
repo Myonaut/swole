@@ -193,7 +193,7 @@ namespace Swole.API.Unity
                 Debug.Log("Moved Asset: " + movedAssets[i] + " from: " + movedFromAssetPaths[i]);
             }
 
-            Run();
+            OnInitialize();
         }
 
         private static bool subscribedRegistered;
@@ -212,8 +212,7 @@ namespace Swole.API.Unity
         private static void RegisteredPackagesEventHandler(PackageRegistrationEventArgs packageRegistrationEventArgs)
         {
             // Code executed here can safely assume that the Editor has finished compiling the new list of packages
-            Debug.Log("Swole setup after package registered test");
-            Run();
+            OnInitialize();
         }
 
         private static void RegisteringPackagesEventHandler(PackageRegistrationEventArgs packageRegistrationEventArgs)
@@ -238,7 +237,7 @@ namespace Swole.API.Unity
 
         private static void AssemblyReloadComplete()
         {
-            Run();
+            OnInitialize();
         }
 
         private static bool isRunning;
