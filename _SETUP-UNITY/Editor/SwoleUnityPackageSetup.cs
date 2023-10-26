@@ -397,7 +397,7 @@ namespace Swole.API.Unity
                         try
                         {
                             var topDir = new DirectoryInfo(cachedPath);
-                            var sourceDir = new DirectoryInfo(Path.Combine(targetDir.FullName, "source"));
+                            var sourceDir = Directory.CreateDirectory(Path.Combine(targetDir.FullName, "source"));
                             var topFiles = topDir.EnumerateFiles("*", SearchOption.TopDirectoryOnly);
                             foreach (var topFile in topFiles) File.Copy(topFile.FullName, Path.Combine(targetDir.FullName, topFile.Name), true);
                             var subDirs = topDir.EnumerateDirectories("*", SearchOption.AllDirectories);
