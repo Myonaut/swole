@@ -119,7 +119,6 @@ namespace Swole.API.Unity
             if (symbolCount > 0) Array.Copy(symbols_, symbols, symbolCount);
             symbols[symbolCount] = fullyLoadedScriptingDefineSymbol;
 
-            foreach (string sym in symbols) Debug.Log(sym);
             PlayerSettings.SetScriptingDefineSymbols(target, symbols);
 #endif
         }
@@ -331,12 +330,20 @@ namespace Swole.API.Unity
 
         private static void WaitForLeanTweenPackageImport(string n)
         {
-            AssetDatabase.importPackageCompleted -= WaitForLeanTweenPackageImport;
+            try
+            {
+                AssetDatabase.importPackageCompleted -= WaitForLeanTweenPackageImport;
+            }
+            catch { }
             if (!Directory.Exists(leanTweenPath))
             {
                 loadingLeanTween = false;
                 Debug.LogError($"[{packageDisplayName}] Failed to import LeanTween from its cached .unitypackage file!");
                 return;
+            } 
+            else
+            {
+                AddWarningFileTo(leanTweenPath);
             }
             Debug.Log($"[{packageDisplayName}] Successfully installed LeanTween!");
             WaitToFullyLoad();
@@ -349,6 +356,12 @@ namespace Swole.API.Unity
             loadingLeanTween = false;
             loadingMiniScript = false;
             #endregion
+        }
+
+        private static void AddWarningFileTo(string directoryPath)
+        {
+            string warningFilePath = Path.Combine(directoryPath, warningFileName);
+            if (!File.Exists(warningFilePath)) File.WriteAllText(warningFilePath, warningFileText);
         }
 
         private static void BeginLoadingAssets(string packageDirectoryPath)
@@ -367,8 +380,7 @@ namespace Swole.API.Unity
                     Debug.LogError($"[{packageDisplayName}] Failed to create mutable import directory at path '{mutableImportPath}'");
                     return;
                 }
-                string warningFilePath = Path.Combine(dir.FullName, warningFileName);
-                if (!File.Exists(warningFilePath)) File.WriteAllText(warningFilePath, warningFileText);
+                AddWarningFileTo(dir.FullName);
             }
 
             if (!loadingLeanTween)
@@ -460,7 +472,7 @@ namespace Swole.API.Unity
                 {
                     try
                     {
-                        Directory.Delete(mutableImportPath);
+                        Directory.Delete(mutableImportPath, true);
                         refresh = true;
                     } 
                     catch(Exception ex)
@@ -468,7 +480,7 @@ namespace Swole.API.Unity
                         Debug.LogError($"[{packageDisplayName}] Error while trying to delete mutable import folder: [{ex.GetType().Name}] {ex.Message}");
                     }
                 }
-            }
+            } 
 
             if (Directory.Exists(leanTweenPath))
             {
@@ -477,7 +489,7 @@ namespace Swole.API.Unity
                 {
                     try
                     {
-                        Directory.Delete(leanTweenPath);
+                        Directory.Delete(leanTweenPath, true);
                         refresh = true;
                     }
                     catch (Exception ex)
