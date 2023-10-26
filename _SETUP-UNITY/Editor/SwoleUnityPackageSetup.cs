@@ -24,6 +24,8 @@ namespace Swole.API.Unity
 
         public const string packageDisplayName = "Swole Dev Suite";
         public const string packageNameSubstring = "myonaut.swole";
+        public static bool IsPackage(UnityEditor.PackageManager.PackageInfo package) => package.displayName == packageDisplayName && package.name.ToLower().Contains(packageNameSubstring.ToLower());
+
         /// <summary>
         /// The symbol used to communicate that all the necessary assets have been imported.
         /// </summary>
@@ -216,12 +218,20 @@ namespace Swole.API.Unity
 
         private static void RegisteringPackagesEventHandler(PackageRegistrationEventArgs packageRegistrationEventArgs)
         {
-            foreach (var removedPackage in packageRegistrationEventArgs.removed)
+            foreach (var removedPackage in packageRegistrationEventArgs.changedFrom)
             {
-                if (removedPackage.displayName == packageDisplayName)
+                if (IsPackage(removedPackage))
                 {
                     OnRemove();
-                    break;
+                    return;
+                }
+            }
+            foreach (var removedPackage in packageRegistrationEventArgs.removed)
+            {
+                if (IsPackage(removedPackage))
+                {
+                    OnRemove(); 
+                    return;
                 }
             }
         }
@@ -268,7 +278,7 @@ namespace Swole.API.Unity
                         {
                             foreach (var package in Request.Result)
                             {
-                                if (package.displayName == packageDisplayName && package.name.ToLower().Contains(packageNameSubstring.ToLower()))
+                                if (IsPackage(package))
                                 {
                                     packageDir = package.resolvedPath;
                                     break;
@@ -318,8 +328,7 @@ namespace Swole.API.Unity
         private const string setupFolderName = "_SETUP-UNITY";
         private const string warningFileName = "WARNING.txt";
 
-        private static string warningFileText = "This folder is prone to deletion or change! DO NOT STORE ANYTHING IN HERE!" + Environment.NewLine +
-                        $"If you need the contents of this folder to remain even when the package '{packageDisplayName}' is removed or updated, simply delete this file.";
+        private static string warningFileText = "This folder is prone to deletion or change! DO NOT STORE ANYTHING IN HERE!";
 
         private static void WaitForLeanTweenPackageImport(string n)
         {
@@ -450,14 +459,31 @@ namespace Swole.API.Unity
                 string warningFilePath = Path.Combine(mutableImportPath, warningFileName);
                 if (File.Exists(warningFilePath))
                 {
-                    refresh = true;
                     try
                     {
-                        Directory.Delete(warningFilePath);
+                        Directory.Delete(mutableImportPath);
+                        refresh = true;
                     } 
                     catch(Exception ex)
                     {
                         Debug.LogError($"[{packageDisplayName}] Error while trying to delete mutable import folder: [{ex.GetType().Name}] {ex.Message}");
+                    }
+                }
+            }
+
+            if (Directory.Exists(leanTweenPath))
+            {
+                string warningFilePath = Path.Combine(leanTweenPath, warningFileName);
+                if (File.Exists(warningFilePath))
+                {
+                    try
+                    {
+                        Directory.Delete(leanTweenPath);
+                        refresh = true;
+                    }
+                    catch (Exception ex)
+                    {
+                        Debug.LogError($"[{packageDisplayName}] Error while trying to delete LeanTween folder: [{ex.GetType().Name}] {ex.Message}");
                     }
                 }
             }
