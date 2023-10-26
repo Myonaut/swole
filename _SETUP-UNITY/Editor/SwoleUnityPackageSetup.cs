@@ -134,15 +134,23 @@ namespace Swole.API.Unity
 #endif
         }
 
-        [InitializeOnLoadMethod, DidReloadScripts]
+        [InitializeOnLoadMethod]
         private static void OnInitialize()
+        {
+            if (!Valid) return;
+            SubscribeAndRun(true);
+        }
+         
+        [DidReloadScripts]
+        private static void SubscribeAndRun() => SubscribeAndRun(false);
+        private static void SubscribeAndRun(bool firstRun)
         {
             if (!Valid) return;
             SubscribeToRegistered();
             SubscribeToRegistering();
             SubscribeToAssemblyReloadComplete();
 
-            Run();
+            Run(firstRun);
         }
 
         private static void OnRemove()
@@ -178,21 +186,7 @@ namespace Swole.API.Unity
 
         static void OnPostprocessAllAssets(string[] importedAssets, string[] deletedAssets, string[] movedAssets, string[] movedFromAssetPaths, bool didDomainReload)
         {
-            foreach (string str in importedAssets)
-            {
-                Debug.Log("Reimported Asset: " + str);
-            }
-            foreach (string str in deletedAssets)
-            {
-                Debug.Log("Deleted Asset: " + str);
-            }
-
-            for (int i = 0; i < movedAssets.Length; i++)
-            {
-                Debug.Log("Moved Asset: " + movedAssets[i] + " from: " + movedFromAssetPaths[i]);
-            }
-
-            OnInitialize();
+            SubscribeAndRun();
         }
 
         private static bool subscribedRegistered;
@@ -211,7 +205,7 @@ namespace Swole.API.Unity
         private static void RegisteredPackagesEventHandler(PackageRegistrationEventArgs packageRegistrationEventArgs)
         {
             // Code executed here can safely assume that the Editor has finished compiling the new list of packages
-            OnInitialize();
+            SubscribeAndRun();
         }
 
         private static void RegisteringPackagesEventHandler(PackageRegistrationEventArgs packageRegistrationEventArgs)
@@ -236,12 +230,12 @@ namespace Swole.API.Unity
 
         private static void AssemblyReloadComplete()
         {
-            OnInitialize();
+            SubscribeAndRun();
         }
 
         private static bool isRunning;
         public static bool IsRunning => isRunning;
-        public static void Run()
+        public static void Run(bool firstRun = false)
         {
 #if SWOLE_ENV
             if (CanFullyLoad())
@@ -298,7 +292,7 @@ namespace Swole.API.Unity
 
                 if (!string.IsNullOrEmpty(packageDir))
                 {
-                    BeginLoadingAssets(packageDir);
+                    BeginLoadingAssets(packageDir, firstRun);
 
                     if (!CanFullyLoad()) return;
                     SetFullyLoaded();
@@ -324,7 +318,7 @@ namespace Swole.API.Unity
         private static bool loadingMiniScript = false;
 
         private const string setupFolderName = "_SETUP-UNITY";
-        private const string warningFileName = "WARNING.txt";
+        private const string warningFileName = "_WARNING.txt";
 
         private static string warningFileText = "This folder is prone to deletion or change! DO NOT STORE ANYTHING IN HERE!";
 
@@ -361,7 +355,7 @@ namespace Swole.API.Unity
             if (!File.Exists(warningFilePath)) File.WriteAllText(warningFilePath, warningFileText);
         }
 
-        private static void BeginLoadingAssets(string packageDirectoryPath)
+        private static void BeginLoadingAssets(string packageDirectoryPath, bool firstAttempt = true)
         {
             if (!Valid) return;
             #region >>> USE CASE SPECIFIC CODE
@@ -371,13 +365,45 @@ namespace Swole.API.Unity
 
             void CreateMutableImportDir()
             {
-                var dir = Directory.CreateDirectory(mutableImportPath);
+                DirectoryInfo dir = null;
+                try
+                {
+                    dir = Directory.CreateDirectory(mutableImportPath);
+                } 
+                catch(Exception ex)
+                {
+                    Debug.LogWarning($"[{packageDisplayName}] Encountered error while creating mutable import directory: [{ex.GetType().FullName}]: {ex.Message}");
+                }
                 if (dir == null)
                 {
                     Debug.LogError($"[{packageDisplayName}] Failed to create mutable import directory at path '{mutableImportPath}'");
                     return;
                 }
                 AddWarningFileTo(dir.FullName);
+            }
+
+            CreateMutableImportDir();
+            try
+            {
+                string sourcePath = Path.Combine(packageDirectoryPath, "bin", "Scenes");
+                if (Directory.Exists(sourcePath))
+                {
+                    string targetPath = Path.Combine(mutableImportPath, "bin", "Scenes");
+                    bool skip = false;
+                    if (!firstAttempt)
+                    {
+                        skip = Directory.Exists(targetPath);
+                    }
+                    if (!skip) Copy(sourcePath, targetPath);
+                }
+                else
+                {
+                    Debug.LogWarning($"[{packageDisplayName}] Could not locate/access Scenes folder in cached package path!");
+                }
+            }
+            catch (Exception ex) 
+            {
+                Debug.LogWarning($"[{packageDisplayName}] Encountered error while copying bin assets: [{ex.GetType().FullName}]: {ex.Message}");
             }
 
             if (!loadingLeanTween)
@@ -396,7 +422,7 @@ namespace Swole.API.Unity
                     else
                     {
                         loadingLeanTween = false;
-                        Debug.LogWarning($"[{packageDisplayName}] Could not locate/access cached package data for LeanTween! {cachedPath}");
+                        Debug.LogWarning($"[{packageDisplayName}] Could not locate/access cached package data for LeanTween!");
                     }
                 }
             }
@@ -406,8 +432,7 @@ namespace Swole.API.Unity
                 loadingMiniScript = true;
                 if (!FoundMiniScript())
                 {
-                    Debug.Log($"[{packageDisplayName}] Installing MiniScript assets...");
-                    CreateMutableImportDir();
+                    Debug.Log($"[{packageDisplayName}] Installing MiniScript assets...");                
                     var targetDir = Directory.CreateDirectory(miniScriptPath);
                     string cachedPath = Path.Combine(packageDirectoryPath, "MiniScript");
                     if (Directory.Exists(cachedPath))
@@ -447,7 +472,7 @@ namespace Swole.API.Unity
                     else
                     {
                         loadingMiniScript = false;
-                        Debug.LogWarning($"[{packageDisplayName}] Could not locate/access cached package data for MiniScript! {cachedPath}");
+                        Debug.LogWarning($"[{packageDisplayName}] Could not locate/access cached package data for MiniScript!");
                     }
                 }
             }
