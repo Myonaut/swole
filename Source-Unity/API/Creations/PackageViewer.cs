@@ -190,6 +190,7 @@ namespace Swole.API.Unity
                             if (string.IsNullOrEmpty(contentName) && !string.IsNullOrEmpty(content.OriginPath)) contentName = Path.GetFileName(content.OriginPath);
                             //contentName = Path.Combine(content.RelativePath, contentName);
                             listObject.name = contentName;
+                            listObject.SetActive(true);
                             var listObjectTransform = listObject.AddOrGetComponent<RectTransform>();
                             listObjectTransform.SetParent(contentLayoutGroupTransform, false);
                             var name = listObjectTransform.FindFirstComponentUnderChild<Text>("name");
