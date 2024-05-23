@@ -379,9 +379,14 @@ MonoBehaviour:
   elevationMethod: 1
   sortingOrderRelativeOverride: 1
   dragDelay: 0
+  disableChildDrag: 0
   freeze: 0
+  destroyOnClose: 0
   root: {fileID: 4685439814858277089}
   OnClick:
+    m_PersistentCalls:
+      m_Calls: []
+  OnClickRelease:
     m_PersistentCalls:
       m_Calls: []
   OnClose:
@@ -396,7 +401,24 @@ MonoBehaviour:
   OnDragStop:
     m_PersistentCalls:
       m_Calls: []
-  canvas: {fileID: 0}
+  OnLeftClick:
+    m_PersistentCalls:
+      m_Calls: []
+  OnLeftClickRelease:
+    m_PersistentCalls:
+      m_Calls: []
+  OnMiddleClick:
+    m_PersistentCalls:
+      m_Calls: []
+  OnMiddleClickRelease:
+    m_PersistentCalls:
+      m_Calls: []
+  OnRightClick:
+    m_PersistentCalls:
+      m_Calls: []
+  OnRightClickRelease:
+    m_PersistentCalls:
+      m_Calls: []
 --- !u!222 &4685439814858277093
 CanvasRenderer:
   m_ObjectHideFlags: 0
@@ -482,9 +504,9 @@ RectTransform:
   m_RootOrder: 0
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
   m_AnchorMin: {x: 0, y: 1}
-  m_AnchorMax: {x: 0, y: 1}
+  m_AnchorMax: {x: 1, y: 1}
   m_AnchoredPosition: {x: 12.7, y: 0}
-  m_SizeDelta: {x: 200, y: 27.7}
+  m_SizeDelta: {x: -42.65, y: 27.700012}
   m_Pivot: {x: 0, y: 1}
 --- !u!222 &4685439815220180009
 CanvasRenderer:
@@ -704,4 +726,16 @@ MonoBehaviour:
   m_TargetGraphic: {fileID: 7017428461136978065}
   m_OnClick:
     m_PersistentCalls:
-      m_Calls: []
+      m_Calls:
+      - m_Target: {fileID: 4685439814858277088}
+        m_TargetAssemblyTypeName: Swole.UI.UIPopup, Swole
+        m_MethodName: Close
+        m_Mode: 1
+        m_Arguments:
+          m_ObjectArgument: {fileID: 0}
+          m_ObjectArgumentAssemblyTypeName: UnityEngine.Object, UnityEngine
+          m_IntArgument: 0
+          m_FloatArgument: 0
+          m_StringArgument: 
+          m_BoolArgument: 0
+        m_CallState: 2

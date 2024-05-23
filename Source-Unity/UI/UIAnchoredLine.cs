@@ -105,13 +105,6 @@ namespace Swole.UI
 
         }
 
-        public void LateUpdate()
-        {
-
-            RefreshIfUpdated();
-
-        }
-
     }
 
 }

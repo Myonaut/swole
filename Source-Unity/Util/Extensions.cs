@@ -3,7 +3,6 @@
 using System;
 using System.Collections;
 using System.Collections.Generic;
-using System.Reflection;
 
 using UnityEngine;
 using UnityEngine.UI;
@@ -141,6 +140,18 @@ namespace Swole
             var childB = childA.FindDeepChildLiberal(childNameB);
             if (childB == null) return default;
             return childB.GetComponentInChildren<T>(includeInactive);
+        }
+
+        /// <summary>
+        /// Set the GameObject's layer and the layer of all children.
+        /// </summary>
+        public static void SetLayerAllChildren(this GameObject gameObject, int layer)
+        {
+            if (gameObject == null) return;
+
+            gameObject.layer = layer;
+            var children = gameObject.GetComponentsInChildren<Transform>(true);
+            foreach (var child in children) child.gameObject.layer = layer;
         }
 
         public static Vector2 ScaleFactor(this Canvas canvas)
@@ -292,6 +303,19 @@ namespace Swole
 
         }
 
+        public static Transform GetTransformByPath(string path, Transform root = null)
+        {
+            if (string.IsNullOrEmpty(path)) return root;
+
+            if (root == null)
+            {
+                var obj = GameObject.Find(path);
+                return obj == null ? null : obj.transform;
+            }
+
+            return root.Find(path);
+        }
+
         public static void ForceUpdateLayouts(this GameObject gameObject)
         {
 
@@ -357,9 +381,21 @@ namespace Swole
 
         #region UI
 
-        public static bool Contains(this RectTransform rectTransform, Vector2 pixelPosition) => rectTransform != null && rectTransform.rect.Contains(rectTransform.InverseTransformPoint(pixelPosition));
+        public static bool ContainsWorldPosition(this RectTransform rectTransform, Vector2 worldPosition) => rectTransform != null && rectTransform.rect.Contains(rectTransform.InverseTransformPoint(worldPosition));
+        public static bool ContainsScreenPosition(this RectTransform rectTransform, Vector2 screenPosition) 
+        {
+            if (rectTransform == null) return false;
 
-        public static Vector2 ScreenToCanvasSpace(this Canvas canvas, Vector2 screenPos) => ScreenToCanvasSpace((RectTransform)canvas.transform, screenPos, canvas.worldCamera);
+            Canvas canvas = rectTransform.GetComponentInParent<Canvas>();
+            if (canvas != null)
+            {
+                canvas.transform.TransformPoint(ScreenToCanvasSpace(canvas, screenPosition));
+            }
+
+            return ContainsWorldPosition(rectTransform, screenPosition);
+        }
+
+        public static Vector2 ScreenToCanvasSpace(this Canvas canvas, Vector2 screenPos) => ScreenToCanvasSpace((RectTransform)canvas.transform, screenPos, canvas.renderMode == RenderMode.ScreenSpaceOverlay ? null : canvas.worldCamera);
 
         public static Vector2 ScreenToCanvasSpace(this RectTransform rectTransform, Vector2 screenPos, Camera camera)
         {

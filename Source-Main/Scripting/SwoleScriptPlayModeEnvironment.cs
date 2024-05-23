@@ -60,22 +60,20 @@ namespace Swole.Script
 
         }
 
-        public static void AddBehaviour(ExecutableBehaviour behaviour)
+        public static void AddBehaviour(ExecutableBehaviour behaviour, bool force = false)
         {
             if (behaviour == null) return;
-            behaviour.AddToLayerIfHasScript(ExecutionLayer.EarlyUpdate, ExecutionStack);
-            behaviour.AddToLayerIfHasScript(ExecutionLayer.Update, ExecutionStack);
-            behaviour.AddToLayerIfHasScript(ExecutionLayer.LateUpdate, ExecutionStack);
-
+            behaviour.AddToStackLayerIfHasScript(ExecutionLayer.EarlyUpdate, ExecutionStack, force);
+            behaviour.AddToStackLayerIfHasScript(ExecutionLayer.Update, ExecutionStack, force);
+            behaviour.AddToStackLayerIfHasScript(ExecutionLayer.LateUpdate, ExecutionStack, force);
         }
 
         public static void RemoveBehaviour(ExecutableBehaviour behaviour)
         {
             if (behaviour == null) return;
-            behaviour.RemoveFromLayerIfHasScript(ExecutionLayer.EarlyUpdate, ExecutionStack);
-            behaviour.RemoveFromLayerIfHasScript(ExecutionLayer.Update, ExecutionStack);
-            behaviour.RemoveFromLayerIfHasScript(ExecutionLayer.LateUpdate, ExecutionStack);
-
+            behaviour.RemoveFromStackLayer(ExecutionLayer.EarlyUpdate, ExecutionStack);
+            behaviour.RemoveFromStackLayer(ExecutionLayer.Update, ExecutionStack);
+            behaviour.RemoveFromStackLayer(ExecutionLayer.LateUpdate, ExecutionStack);
         }
 
         public override int Priority => 10;

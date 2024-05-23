@@ -1,0 +1,68 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: a86b55f234307694fb6e73d963038437, type: 3}
+  m_Name: swole_kat_avatar
+  m_EditorClassIdentifier: 
+  rigContainer: swole_kat_rig
+  bones:
+  - root
+  - pelvis
+  - spine
+  - spine.001
+  - spine.002
+  - neck
+  - head
+  - ear.L
+  - nose
+  - ear.R
+  - shoulder.L
+  - arm.L
+  - forearm.L
+  - wrist.L
+  - hand.L
+  - finger.B.L
+  - finger.B.L.001
+  - finger.C.L
+  - finger.C.L.001
+  - finger.A.L
+  - finger.A.L.001
+  - thumb.L
+  - thumb.L.001
+  - thumb.L.002
+  - shoulder.R
+  - arm.R
+  - forearm.R
+  - wrist.R
+  - hand.R
+  - finger.B.R
+  - finger.B.R.001
+  - finger.C.R
+  - finger.C.R.001
+  - finger.A.R
+  - finger.A.R.001
+  - thumb.R
+  - thumb.R.001
+  - thumb.R.002
+  - hip.L
+  - leg.L
+  - calf.L
+  - foot.L
+  - hip.R
+  - leg.R
+  - calf.R
+  - foot.R
+  - tail
+  - tail.001
+  - tail.002
+  - tail.003
+  remappings: []
+  poseable: {fileID: 11400000, guid: 274e03a304174464ab03cdae328f4ec6, type: 2}

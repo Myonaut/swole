@@ -17,24 +17,27 @@ namespace Swole.API.Unity
 
         public const string _defaultFallbackCodeEditorResourcePath = "Scripting/DefaultCodeEditor";
 
-        public UIResizeableWindow window;
+        protected UIResizeableWindow window;
+        public UIResizeableWindow Window => window;
 
         public string codeEditorResourcePath = "";
         public string fallbackCodeEditorResourcePath = "";
 
-        protected virtual void Awake()
+        protected ICodeEditor editor;
+        public ICodeEditor Editor
         {
-
-            if (string.IsNullOrEmpty(fallbackCodeEditorResourcePath)) fallbackCodeEditorResourcePath = _defaultFallbackCodeEditorResourcePath;
-
-            if (window == null) window = GetComponentInParent<UIResizeableWindow>();
-
+            get
+            {
+                if (editor == null) Initialize();       
+                return editor;
+            }
         }
-
-        protected virtual void Start()
+        protected virtual void Initialize()
         {
+            if (string.IsNullOrEmpty(fallbackCodeEditorResourcePath)) fallbackCodeEditorResourcePath = _defaultFallbackCodeEditorResourcePath;
+            if (window == null) window = GetComponentInParent<UIResizeableWindow>(true);
 
-            if (window == null || window.contentContainer == null) return;
+            if (window == null || window.contentContainer == null || editor != null) return;
 
             if (string.IsNullOrEmpty(codeEditorResourcePath)) codeEditorResourcePath = fallbackCodeEditorResourcePath;
             if (string.IsNullOrEmpty(codeEditorResourcePath)) return;
@@ -52,7 +55,7 @@ namespace Swole.API.Unity
                 var instanceRT = instance.GetComponent<RectTransform>();
                 instanceRT.SetAnchor(AnchorPresets.StretchAll, 0, 0);
 
-                var editor = instance.GetComponentInChildren<ICodeEditor>();
+                editor = instance.GetComponentInChildren<ICodeEditor>();
                 if (editor != null)
                 {
 
@@ -73,7 +76,10 @@ namespace Swole.API.Unity
                 }
 
             }
-
+        }
+        protected virtual void Start()
+        {
+            Initialize();
         }
 
     }

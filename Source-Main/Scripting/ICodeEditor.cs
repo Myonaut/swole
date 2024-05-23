@@ -26,13 +26,15 @@ namespace Swole.Script
 
         public delegate void CodeEditCallback(string code);
 
-        public void ListenForChanges(CodeEditCallback callback);
+        public void ClearAllListeners();
 
+        public void ListenForChanges(CodeEditCallback callback);
         public bool StopListeningForChanges(CodeEditCallback callback);
+        public void ClearChangeListeners();
 
         public void ListenForClosure(CodeEditCallback callback);
-
         public bool StopListeningForClosure(CodeEditCallback callback);
+        public void ClearClosureListeners();
 
     }
 

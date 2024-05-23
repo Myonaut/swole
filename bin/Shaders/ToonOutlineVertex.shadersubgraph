@@ -110,7 +110,11 @@
         }
     ],
     "m_GroupDatas": [],
-    "m_StickyNoteDatas": [],
+    "m_StickyNoteDatas": [
+        {
+            "m_Id": "716ed42e283e4376b42b98a201938cbf"
+        }
+    ],
     "m_Edges": [
         {
             "m_OutputSlot": {
@@ -1817,6 +1821,26 @@
     "m_PreviewMode": 0,
     "m_CustomColors": {
         "m_SerializableColors": []
+    }
+}
+
+{
+    "m_SGVersion": 0,
+    "m_Type": "UnityEditor.ShaderGraph.StickyNoteData",
+    "m_ObjectId": "716ed42e283e4376b42b98a201938cbf",
+    "m_Title": "DeltaNormals",
+    "m_Content": "used when the default normals for the model have been altered for shading reasons. Delta normals are applied to put the normals back to their 'correct' orientation, so that outlines can protrude properly.",
+    "m_TextSize": 0,
+    "m_Theme": 0,
+    "m_Position": {
+        "serializedVersion": "2",
+        "x": -3010.0,
+        "y": -1085.0,
+        "width": 200.0,
+        "height": 160.0
+    },
+    "m_Group": {
+        "m_Id": ""
     }
 }
 

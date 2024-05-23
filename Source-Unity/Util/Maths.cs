@@ -253,7 +253,63 @@ namespace Swole
 
             return (Color)(Vector4)(math.pow((float4)linearColor, _exp_LinearTosRGB));
 
-        } 
+        }
+
+        public static float NormalizeAngle(float angle)
+        {
+            angle = angle % 360;
+            if (angle < 0) angle += 360;
+            return angle;
+        }
+        public static float GetMinDeltaAngle(float ang1, float ang2)
+        {
+            ang1 = NormalizeAngle(ang1);
+            ang2 = NormalizeAngle(ang2);
+
+            float delta = ang2 - ang1;
+            if (math.abs(delta) > 180)
+            {
+                delta = math.sign(delta) >= 0 ? (delta - 360) : (delta + 360);
+
+            }
+
+            return delta;
+        }
+
+        public static float AngleOffsetAroundAxis(Vector3 v, Vector3 forward, Vector3 axis)
+        {
+            Vector3 right = Vector3.Cross(axis, forward);//.normalized;
+            forward = Vector3.Cross(right, axis);//.normalized;
+            return Mathf.Atan2(Vector3.Dot(v, right), Vector3.Dot(v, forward)) * Mathf.Rad2Deg;
+        }
+        public static Vector2 RotateByArc(Vector2 Center, Vector2 A, float arc)
+        {
+            //calculate radius
+            float radius = Vector2.Distance(Center, A);
+            //calculate angle from arc
+            float angle = arc / radius;
+            Vector2 B = RotateByRadians(Center, A, angle);
+            return B;
+        }
+        public static Vector2 RotateByArc(Vector2 Center, Vector2 A, float arc, float radius)
+        {
+            //calculate angle from arc
+            float angle = arc / radius;
+            Vector2 B = RotateByRadians(Center, A, angle);
+            return B;
+        }
+        public static Vector2 RotateByRadians(Vector2 Center, Vector2 A, float angle)
+        {
+            //Move calculation to 0,0
+            Vector2 v = A - Center;
+            //rotate x and y
+            float x = v.x * Mathf.Cos(angle) + v.y * Mathf.Sin(angle);
+            float y = v.y * Mathf.Cos(angle) - v.x * Mathf.Sin(angle);
+            //move back to center
+            Vector2 B = new Vector2(x, y) + Center;
+            return B;
+        }
+        public static Vector2 RotateByDegrees(Vector2 Center, Vector2 A, float angle) => RotateByRadians(Center, A, Mathf.Deg2Rad * angle);
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static float2 Rotate(this float2 v, float radians)
@@ -278,6 +334,115 @@ namespace Swole
 
             return new Vector2(cos * tx - sin * ty, sin * tx + cos * ty);
         }
+
+        public static float InverseSafe(float f)
+        {
+            if (Mathf.Abs(f) > Vector3.kEpsilon)
+                return 1.0F / f;
+            else
+                return 0.0F;
+        }
+
+        public static Vector3 InverseSafe(Vector3 v)
+        {
+            return new Vector3(InverseSafe(v.x), InverseSafe(v.y), InverseSafe(v.z));
+        }
+
+        public static Matrix4x4 GetWorldRotationAndScale(EngineInternal.ITransform transform)
+        {
+            Matrix4x4 ret = new Matrix4x4();
+            ret.SetTRS(new Vector3(0, 0, 0), UnityEngineHook.AsUnityQuaternion(transform.localRotation), UnityEngineHook.AsUnityVector(transform.localScale));
+            if (transform.parent != null)
+            {
+                Matrix4x4 parentTransform = GetWorldRotationAndScale(transform.parent);
+                ret = parentTransform * ret;
+            }
+            return ret;
+        }
+
+        public static Vector3 CalcNormal(Vector3 v1, Vector3 v2, Vector3 v3) => Vector3.Cross((v2 - v1), (v3 - v1));
+
+        public static void QuaternionToMatrix(Quaternion q, ref Matrix4x4 m)
+        {
+            float x = q.x * 2.0F;
+            float y = q.y * 2.0F;
+            float z = q.z * 2.0F;
+            float xx = q.x * x;
+            float yy = q.y * y;
+            float zz = q.z * z;
+            float xy = q.x * y;
+            float xz = q.x * z;
+            float yz = q.y * z;
+            float wx = q.w * x;
+            float wy = q.w * y;
+            float wz = q.w * z;
+
+            m[0] = 1.0f - (yy + zz);
+            m[1] = xy + wz;
+            m[2] = xz - wy;
+            m[3] = 0.0F;
+
+            m[4] = xy - wz;
+            m[5] = 1.0f - (xx + zz);
+            m[6] = yz + wx;
+            m[7] = 0.0F;
+
+            m[8] = xz + wy;
+            m[9] = yz - wx;
+            m[10] = 1.0f - (xx + yy);
+            m[11] = 0.0F;
+
+            m[12] = 0.0F;
+            m[13] = 0.0F;
+            m[14] = 0.0F;
+            m[15] = 1.0F;
+        }
+
+        /// <summary>
+        /// source: https://forum.unity.com/threads/shortest-rotation-between-two-quaternions.812346/
+        /// </summary>
+        public static Quaternion ShortestRotationLocal(Quaternion a, Quaternion b)
+        {
+            if (Quaternion.Dot(a, b) < 0)
+            {
+                return a * Quaternion.Inverse(Multiply(b, -1));
+            }
+            else return a * Quaternion.Inverse(b);
+        }
+        public static Quaternion ShortestRotationGlobal(Quaternion a, Quaternion b)
+        {
+            if (Quaternion.Dot(b, a) < 0)
+            {
+                return Quaternion.Inverse(Multiply(a, -1)) * b;
+            }
+            else return Quaternion.Inverse(a) * b;
+        }
+        public static Quaternion Multiply(Quaternion input, float scalar)
+        {
+            return new Quaternion(input.x * scalar, input.y * scalar, input.z * scalar, input.w * scalar);
+        }
+
+        #region Mirroring
+        public static Quaternion ReflectX(this Quaternion quat)
+        {
+            return new Quaternion(quat.x,
+                -quat.y,
+                -quat.z,
+                quat.w);
+        }
+        public static quaternion ReflectX(this quaternion quat)
+        {
+            return new quaternion(quat.value.x,
+                -quat.value.y,
+                -quat.value.z,
+                quat.value.w);
+        }
+        public static void MirrorPositionAndRotationX(Vector3 position, Quaternion rotation, out Vector3 outputPosition, out Quaternion outputRotation)
+        {
+            outputPosition = new Vector3(-position.x, position.y, position.z);
+            outputRotation = rotation.ReflectX();
+        }
+        #endregion     
 
     }
 

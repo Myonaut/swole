@@ -1,8 +1,9 @@
 #if (UNITY_STANDALONE || UNITY_EDITOR)
 
+using System;
 using UnityEngine;
 
-namespace Swole.UI
+namespace Swole.Depracated
 {
 
     /// Source: https://gist.github.com/FlaShG/ac3afac0ef65d98411401f2b4d8a43a5
@@ -17,6 +18,8 @@ namespace Swole.UI
     /// </example>
     public static class CanvasPositioningExtensions
     {
+
+        [Obsolete]
         public static Vector3 WorldToCanvasPosition(this Canvas canvas, Vector3 worldPosition, Camera camera = null)
         {
             if (camera == null)
@@ -27,14 +30,19 @@ namespace Swole.UI
             return canvas.ViewportToCanvasPosition(viewportPosition);
         }
 
+        /// <summary>
+        /// Use Extensions.ScreenToCanvasSpace instead.
+        /// </summary>
+        [Obsolete("Use Extensions.ScreenToCanvasSpace instead.")]
         public static Vector3 ScreenToCanvasPosition(this Canvas canvas, Vector3 screenPosition)
         {
             var viewportPosition = new Vector3(screenPosition.x / Screen.width,
                                                screenPosition.y / Screen.height,
                                                0);
-            return canvas.ViewportToCanvasPosition(viewportPosition);
+            return canvas.ViewportToCanvasPosition(viewportPosition); 
         }
 
+        [Obsolete]
         public static Vector3 ViewportToCanvasPosition(this Canvas canvas, Vector3 viewportPosition)
         {
             var centerBasedViewPortPosition = viewportPosition - new Vector3(0.5f, 0.5f, 0);

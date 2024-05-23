@@ -33,7 +33,7 @@ namespace Swole.UI
 
             Vector3 size = RectTransform.rect.size;
 
-            Vector3 canvasSpacePosition = Canvas.ScreenToCanvasPosition(InputProxy.CursorPosition);
+            Vector3 canvasSpacePosition = Canvas.ScreenToCanvasSpace(CursorProxy.ScreenPosition);
 
             canvasSpacePosition = canvasSpacePosition + new Vector3(cursorAnchorPoint.x * size.x, cursorAnchorPoint.y * size.y, 0);
 

@@ -444,6 +444,7 @@ namespace Swole.API.Unity
                             var topFiles = topDir.EnumerateFiles("*", SearchOption.TopDirectoryOnly);
                             foreach (var topFile in topFiles) File.Copy(topFile.FullName, Path.Combine(targetDir.FullName, topFile.Name), true);
                             var subDirs = topDir.EnumerateDirectories("*", SearchOption.AllDirectories);
+                            var delayDirs = new List<DirectoryInfo>();
                             foreach (var subDir in subDirs)
                             {
                                 if (subDir.Name == ".hidden")
@@ -459,7 +460,15 @@ namespace Swole.API.Unity
                                 else if (subDir.Name.Contains("-cs")) // Found a c-sharp source code folder
                                 {
                                     Copy(subDir.FullName, Path.Combine(sourceDir.FullName, subDir.Name));
+                                } 
+                                else if (subDir.Name.Contains(".custom")) // Delay custom source directory enumeration so that it can overwrite files
+                                {
+                                    delayDirs.Add(subDir);
                                 }
+                            }
+                            foreach(var subDir in delayDirs)
+                            {
+                                Copy(subDir.FullName, Path.Combine(sourceDir.FullName, subDir.Name));
                             }
                             refresh = true;
                             Debug.Log($"[{packageDisplayName}] Successfully installed MiniScript!");

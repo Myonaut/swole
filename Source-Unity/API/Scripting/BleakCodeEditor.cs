@@ -38,13 +38,14 @@ namespace Swole.API.Unity
         public InputField inputField;
         public TMP_InputField inputFieldTMP;
 
+        private static readonly char[] _newLineArray = Environment.NewLine.ToCharArray();
         public string Code { get => (inputFieldTMP != null ? inputFieldTMP.text : (inputField == null ? "" : inputField.text)); 
             
             set 
             {
-
-                inputField?.SetTextWithoutNotify(value);
-                inputFieldTMP?.SetTextWithoutNotify(value);
+                string source = string.IsNullOrWhiteSpace(value) ? string.Empty : value.TrimEnd(_newLineArray);  
+                inputField?.SetTextWithoutNotify(source);
+                inputFieldTMP?.SetTextWithoutNotify(source);
 
             } 
         
@@ -372,6 +373,32 @@ namespace Swole.API.Unity
 
         }
 
+        public void ClearAllListeners()
+        {
+            ClearChangeListeners();
+            ClearClosureListeners();
+        }
+
+        public void ClearChangeListeners()
+        {
+            if (inputFieldTMP != null)
+            {
+                inputFieldTMP.onValueChanged?.RemoveAllListeners();
+                inputFieldTMP.onSubmit?.RemoveAllListeners();
+                inputFieldTMP.onEndEdit?.RemoveAllListeners();
+            }
+            if (inputField != null)
+            {
+                inputField.onValueChanged?.RemoveAllListeners();
+                inputField.onSubmit?.RemoveAllListeners();
+                inputField.onEndEdit?.RemoveAllListeners();
+            }
+        }
+
+        public void ClearClosureListeners()
+        {
+            onEditorClose?.RemoveAllListeners();
+        }
     }
 
 }

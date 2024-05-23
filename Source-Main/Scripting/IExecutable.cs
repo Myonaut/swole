@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 
 namespace Swole.Script
 {
@@ -12,9 +13,17 @@ namespace Swole.Script
 
         public bool Enabled { get; set; }
 
-        public ExecutionResult Execute(ExecutionLayer layer, float timeOut = 0.01f);
+        public void Restart(ExecutionLayer layer);
 
-        public ExecutionResult ExecuteToCompletion(ExecutionLayer layer, float timeOut = 0.1f);
+        public void SetHostData(IRuntimeHost hostData);
+
+        public ExecutionResult Execute(ExecutionLayer layer, float timeOut = 0.01f, SwoleLogger logger = null);
+
+        public ExecutionResult ExecuteToCompletion(ExecutionLayer layer, float timeOut = 0.1f, SwoleLogger logger = null);
+
+        public ICollection<PackageIdentifier> Dependencies { get; }
+
+        public void Recompile(ExecutionLayer layer, string source, bool isPreParsed = false, string topAuthor = null, int autoIndentation = SwoleScriptSemantics.ssDefaultAutoIndentation, int startIndentation = SwoleScriptSemantics.ssDefaultStartIndentation, ICollection<SourceScript> localScripts = null);
 
     }
 

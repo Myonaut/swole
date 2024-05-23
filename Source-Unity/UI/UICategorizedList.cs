@@ -1,0 +1,478 @@
+#if (UNITY_STANDALONE || UNITY_EDITOR)
+
+using System;
+using System.Collections;
+using System.Collections.Generic;
+
+using UnityEngine;
+using UnityEngine.Events;
+
+using UnityEngine.UI;
+using TMPro;
+
+using Swole.API.Unity;
+
+namespace Swole.UI
+{
+    public class UICategorizedList : MonoBehaviour
+    {
+
+        public RectTransform categoryPrototype;
+        public RectTransform listMemberPrototype;
+
+        public RectTransform layoutTransform;
+
+        public bool allowCategoryCollapse = true;
+
+        public bool usePrefabPool = true;
+        private PrefabPool prefabPool;
+
+        [NonSerialized]
+        private bool initialized=false;
+
+        protected void Awake()
+        {
+            if (!initialized) Reinitialize();
+        }
+
+        public void Reinitialize()
+        {
+            initialized = false;
+
+            Clear();
+
+            if (usePrefabPool)
+            {
+                if (prefabPool == null)
+                {
+                    prefabPool = gameObject.AddOrGetComponent<PrefabPool>();
+                    prefabPool.Reinitialize(listMemberPrototype.gameObject, PoolGrowthMethod.Incremental, 1, 1, 2048);
+                }
+            }
+            categoryPrototype.gameObject.SetActive(false);
+            listMemberPrototype.gameObject.SetActive(false);
+
+            if (layoutTransform == null) layoutTransform = gameObject.GetComponent<RectTransform>();
+
+            initialized = true;
+        }
+
+        public class Member
+        {
+            public string name;
+            public RectTransform rectTransform;
+            public GameObject gameObject;
+        }
+
+        public class Category
+        { 
+
+            public string name;
+            public RectTransform rectTransform;
+            public GameObject gameObject;
+            public bool expanded;
+            public List<Member> members = new List<Member>();
+
+            public int MemberCount => members == null ? 0 : members.Count;
+            public Member GetMember(int memberIndex) => members == null ? null : members[memberIndex];
+            public Member this[int memberIndex] => GetMember(memberIndex);
+
+            public void SortByIndex()
+            {
+                if (members == null) return;
+
+                var containerTransform = rectTransform.parent;
+                for (int i = members.Count - 1; i >= 0; i--)
+                {
+                    var mem = members[i];
+                    if (mem.gameObject == null || mem.rectTransform == null) continue;
+                    mem.gameObject.SetActive(true);
+                    int index = rectTransform.GetSiblingIndex() + 1;
+                    if (index >= containerTransform.childCount)
+                    {
+                        mem.rectTransform.SetAsLastSibling();
+                    }
+                    else
+                    {
+                        mem.rectTransform.SetSiblingIndex(index);
+                    }
+                }
+            }
+
+            public void Expand()
+            {
+                expanded = true;
+                if (rectTransform == null || members == null) return;
+
+                SortByIndex();
+
+                var exp = rectTransform.FindDeepChildLiberal("expand");
+                if (exp != null) exp.gameObject.SetActive(false);
+                var ret = rectTransform.FindDeepChildLiberal("retract");
+                if (ret != null) ret.gameObject.SetActive(true);
+            }
+            public void Retract()
+            {
+                expanded = false;
+                if (members == null) return;
+
+                foreach (var mem in members) 
+                {
+                    if (mem.gameObject == null) continue;
+                    mem.gameObject.SetActive(false); 
+                }
+
+                var exp = rectTransform.FindDeepChildLiberal("expand");
+                if (exp != null) exp.gameObject.SetActive(true);
+                var ret = rectTransform.FindDeepChildLiberal("retract");
+                if (ret != null) ret.gameObject.SetActive(false);
+            }
+            public void Toggle()
+            {
+                if (expanded) Retract(); else Expand();
+            }
+
+        }
+
+        public void Clear(bool includeCategories=true)
+        {
+            if (categories == null) categories = new List<Category>();
+            foreach (var cat in categories)
+            {
+                if (cat == null || cat.members == null) continue;
+
+                foreach (var mem in cat.members)
+                {
+                    if (mem == null || mem.gameObject == null) continue;
+
+                    if (prefabPool == null)
+                    {
+                        GameObject.Destroy(mem.gameObject);
+                    }
+                    else
+                    {
+                        prefabPool.Release(mem.gameObject);
+                    }
+                }
+
+                cat.members.Clear();
+                if (includeCategories && cat.gameObject != null) GameObject.Destroy(cat.gameObject);
+            }
+            if (includeCategories) categories.Clear();
+        }
+
+        private List<Category> categories = new List<Category>();
+
+        public int CategoryCount => categories == null ? 0 : categories.Count;
+        public Category GetCategory(int categoryIndex) => categories == null ? null : categories[categoryIndex];
+        public Category this[int categoryIndex] => GetCategory(categoryIndex);
+
+        public Category AddNewCategory(string categoryName, Sprite categoryIcon=null)
+        {
+            if (!initialized) Reinitialize();
+            var inst = GameObject.Instantiate(categoryPrototype.gameObject);
+            inst.name = categoryName;
+            inst.SetActive(true);
+            var rt = inst.AddOrGetComponent<RectTransform>();
+            rt.SetParent(layoutTransform, false);
+            rt.SetAsLastSibling();
+
+            Category category = new Category() { gameObject=inst, name=categoryName, rectTransform=rt };
+            categories.Add(category);
+
+            var text = inst.GetComponentInChildren<Text>();
+            var textTMP = inst.GetComponentInChildren<TMP_Text>();
+            if (text != null)
+            {
+                text.text = categoryName;
+            }
+            if (textTMP != null)
+            {
+                textTMP.SetText(categoryName);
+            }
+
+            if (categoryIcon != null)
+            {
+                var iconObj = rt.FindDeepChildLiberal("icon");
+                if (iconObj != null)
+                {
+                    var iconImg = iconObj.GetComponent<Image>();
+                    if (iconImg != null)
+                    {
+                        iconImg.sprite = categoryIcon;
+                    }
+                }
+            }
+
+            if (allowCategoryCollapse)
+            {
+
+                var button = inst.GetComponentInChildren<Button>();
+                var tabButton = inst.GetComponentInChildren<UITabButton>();
+
+                if (button != null)
+                {
+                    if (button.onClick == null) button.onClick = new Button.ButtonClickedEvent();
+                    button.onClick.RemoveAllListeners();
+                    button.onClick.AddListener(category.Toggle);
+                }
+                if (tabButton != null)
+                {
+                    if (tabButton.OnClick == null) tabButton.OnClick = new UnityEvent();
+                    tabButton.OnClick.RemoveAllListeners();
+                    tabButton.OnClick.AddListener(category.Toggle);
+                }
+
+            }
+
+            return category;
+        }
+        public Category AddOrGetCategory(string categoryName, Sprite categoryIcon = null)
+        {
+            if (!initialized) Reinitialize();
+            foreach (var category in categories) if (category.name.AsID() == categoryName.AsID()) return category;
+            return AddNewCategory(categoryName, categoryIcon);
+        }
+        public Category FindCategory(string categoryName)
+        {
+            if (!initialized) return null;
+            categoryName = categoryName.AsID();
+            foreach (var category in categories) if (category.name.AsID() == categoryName) return category;
+            return null;
+        }
+
+        protected GameObject GetNewListMemberInstance(string memberName)
+        {
+            if (!prefabPool.TryGetNewInstance(out GameObject inst)) return null;
+
+            inst.name = memberName;
+
+            var text = inst.GetComponentInChildren<Text>(true);
+            var textTMP = inst.GetComponentInChildren<TMP_Text>(true);
+            if (text != null)
+            {
+                text.text = memberName;
+            }
+            if (textTMP != null)
+            {
+                textTMP.SetText(memberName);
+            }
+            return inst;
+        }
+        public Member AddNewListMember(string memberName, string category, UnityAction onClick=null, Sprite categoryIcon=null)
+        {
+            if (!initialized) Reinitialize();
+            GameObject inst = GetNewListMemberInstance(memberName);
+            if (inst == null) return null;
+
+            return AddNewListMember(inst, AddOrGetCategory(category, categoryIcon), onClick);
+        }
+
+        public Member AddNewListMember(string memberName, Category category, UnityAction onClick = null)
+        {
+            if (!initialized) Reinitialize();
+            GameObject inst = GetNewListMemberInstance(memberName);
+            if (inst == null) return null;
+
+            return AddNewListMember(inst, category, onClick);
+        }
+
+        protected Member AddNewListMember(GameObject inst, Category category, UnityAction onClick = null)
+        {
+            if (onClick != null)
+            {
+                var button = inst.GetComponent<Button>();
+                var tabButton = inst.GetComponent<UITabButton>();
+
+                if (button == null && tabButton == null)
+                {
+                    button = inst.GetComponentInChildren<Button>(false);
+                    if (button == null) tabButton = inst.GetComponentInChildren<UITabButton>(false);
+                }
+
+                if (button != null)
+                {
+                    if (button.onClick == null) button.onClick = new Button.ButtonClickedEvent();
+                    button.onClick.RemoveAllListeners();
+                    button.onClick.AddListener(onClick);
+                }
+                if (tabButton != null)
+                {
+                    if (tabButton.OnClick == null) tabButton.OnClick = new UnityEvent();
+                    tabButton.OnClick.RemoveAllListeners();
+                    tabButton.OnClick.AddListener(onClick);
+                }
+            }
+
+            Member member = new Member() { gameObject = inst, name = inst.name, rectTransform = inst.GetComponent<RectTransform>() };
+
+            category.members.Add(member);
+
+            member.rectTransform.SetParent(layoutTransform, false);
+            int index = category.rectTransform.GetSiblingIndex() + 1;
+            if (index >= layoutTransform.childCount)
+            {
+                member.rectTransform.SetAsLastSibling();
+            }
+            else
+            {
+                member.rectTransform.SetSiblingIndex(index);
+            }
+
+            if (allowCategoryCollapse)
+            {
+                member.gameObject.SetActive(category.expanded);
+                if (category.expanded) category.SortByIndex();
+            }
+            else
+            {
+                member.gameObject.SetActive(true);
+                category.SortByIndex();
+            }
+
+            return member;
+        }
+
+        public bool RemoveListMember(Member member)
+        {
+            if (!initialized) return false;
+            if (member == null) return false;
+
+            bool flag = false;
+            foreach(var category in categories)
+            {
+                if (category == null || category.members == null) continue;
+                int removed = category.members.RemoveAll(i => i == member);
+                flag = flag || removed > 0;
+            }
+
+            if (member.gameObject != null) prefabPool?.Release(member.gameObject);
+
+            return flag;
+        }
+        public bool RemoveListMember(string memberName, string category=null)
+        {
+            if (!initialized) return false;
+            if (string.IsNullOrEmpty(memberName)) return false;
+
+            bool removed = false;
+            if (string.IsNullOrEmpty(category))
+            {
+                bool flag = false;
+                foreach(var c in categories)
+                {
+                    if (c == null || c.members == null) continue;
+                    flag = true;
+                    while (flag)
+                    {
+                        flag = false;
+                        for(int i = 0; i < c.members.Count; i++)
+                        {
+                            var mem = c.members[i];
+                            if (mem == null || mem.name == memberName)
+                            {
+                                flag = true;
+                                removed = true;
+                                c.members.RemoveAt(i);
+                                prefabPool?.Release(mem.gameObject);
+                            }
+                        }
+                    }
+                }
+                return removed;
+            }
+
+            var cat = FindCategory(category);
+            if (cat != null && cat.members != null)
+            {
+                bool flag = true;
+                while (flag)
+                {
+                    flag = false;
+                    for (int i = 0; i < cat.members.Count; i++)
+                    {
+                        var mem = cat.members[i];
+                        if (mem == null || mem.name == memberName)
+                        {
+                            flag = true;
+                            removed = true;
+                            cat.members.RemoveAt(i);
+                            prefabPool?.Release(mem.gameObject);
+                        }
+                    }
+                }
+            }
+
+            return removed;
+        }
+
+        public bool DeleteCategory(string categoryName)
+        {
+            if (!initialized) return false;
+            if (string.IsNullOrEmpty(categoryName)) return false;
+
+            categoryName = categoryName.AsID();
+
+            int index = -1;
+            for(int i = 0; i < categories.Count;i++)
+            {
+                var category = categories[i];
+                if (category.name.AsID() == categoryName)
+                {
+                    index = i;
+                    break;
+                }
+            }
+
+            return DeleteCategory(index);
+        }
+        public bool DeleteCategory(Category category)
+        {
+            if (!initialized) return false;
+            if (category == null) return false;
+
+            return DeleteCategory(categories.IndexOf(category));
+        }
+        public bool DeleteCategory(int index)
+        {
+            if (index >= 0)
+            {
+                var category = categories[index];
+                categories.RemoveAt(index);
+
+                if (category != null)
+                {
+                    if (category.members != null)
+                    {
+                        if (prefabPool != null)
+                        {
+                            foreach (var member in category.members)
+                            {
+                                prefabPool.Release(member.gameObject);
+                            }
+                        }
+                        else
+                        {
+                            foreach (var member in category.members)
+                            {
+                                if (member.gameObject != null) GameObject.Destroy(member.gameObject);
+                            }
+                        }
+                        category.members.Clear();
+                    }
+                    if (category.gameObject != null)
+                    {
+                        GameObject.Destroy(category.gameObject);
+                    }
+                }
+
+                return true;
+            }
+
+            return false;
+        }
+
+    }
+}
+
+#endif

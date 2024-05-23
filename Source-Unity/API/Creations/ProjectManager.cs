@@ -13,8 +13,10 @@ using TMPro;
 
 using Swole.UI;
 
+using static Swole.API.Unity.CustomEditorUtils; 
+
 namespace Swole.API.Unity
-{ 
+{
 
     public class ProjectManager : MonoBehaviour
     {
@@ -33,8 +35,8 @@ namespace Swole.API.Unity
         [Header("Views")]
         public PackageViewer packageViewer;
 
-        [Header("Prototypes")]
-        public GameObject listMemberPrototype;
+        [Header("Pools")]
+        public PrefabPool listMemberPool;
 
         [Header("Icons")]
         public Sprite ico_Project;
@@ -51,15 +53,16 @@ namespace Swole.API.Unity
         protected virtual void Awake()
         {
 
-            if (localProjectsLayout != null) localProjectsLayoutTransform = localProjectsLayout.GetComponent<RectTransform>(); else
+            if (localProjectsLayout != null) localProjectsLayoutTransform = localProjectsLayout.GetComponent<RectTransform>();
+            else
             {
                 swole.DefaultLogger.LogError($"localProjectsLayout field not set on ProjectManager '{name}'");
                 enabled = false;
                 return;
             }
-            if (externalPackagesLayout != null) 
-            { 
-                externalPackagesLayoutTransform = externalPackagesLayout.GetComponent<RectTransform>(); 
+            if (externalPackagesLayout != null)
+            {
+                externalPackagesLayoutTransform = externalPackagesLayout.GetComponent<RectTransform>();
             }
             else
             {
@@ -77,17 +80,17 @@ namespace Swole.API.Unity
         {
             if (!enabled) return;
             bool reload = !ContentManager.Initialize(false); // Reload packages if the content manager has already been initialized.
-             
+
             RefreshLists(reload);
         }
 
         protected RectTransform CreateNewListMemberFromPackage(string name, ContentPackage package, RectTransform listTransform, bool isLocal)
         {
-            if (package == null || listMemberPrototype == null) return null;
+            if (package == null || listMemberPool == null) return null;
 
             package = isLocal ? ContentManager.FindLocalPackage(package.Name) : ContentManager.FindExternalPackage(package.Name); // Find latest version of package
-              
-            GameObject member = Instantiate(listMemberPrototype);
+
+            if (!listMemberPool.TryGetNewInstance(out GameObject member)) return null;
             member.name = name;
             RectTransform transform = member.GetComponent<RectTransform>();
             transform.SetParent(listTransform, false);
@@ -128,8 +131,8 @@ namespace Swole.API.Unity
                     int count = ContentManager.GetNumberOfPackagesInProject(ContentManager.GetProjectIdentifier(package));
                     if (tmpText != null) tmpText.SetText($"{count} PACKAGE{(count == 1 ? string.Empty : "S")}");
                     if (text != null) text.text = $"{count}  PACKAGE{(count == 1 ? string.Empty : "S")}";
-                } 
-                else 
+                }
+                else
                 {
                     int count = ContentManager.GetNumberOfExternalPackageVersions(package.Name);
                     if (tmpText != null) tmpText.SetText($"{count} VERSION{(count == 1 ? string.Empty : "S")}");
@@ -142,7 +145,7 @@ namespace Swole.API.Unity
             {
                 if (button.OnClick == null) button.OnClick = new UnityEvent();
                 button.OnClick.AddListener(new UnityAction(() => { packageViewer?.SetActivePackage(package, isLocal); }));
-                tabGroup.Add(button); 
+                tabGroup.Add(button);
             }
 
             member.SetActive(true);
@@ -188,6 +191,7 @@ namespace Swole.API.Unity
 
         protected virtual Coroutine RefreshList(RefreshDelegate refreshDelegate, Flag stateFlag, GameObject messageObject, RefreshDelegate reloadContent, List<RectTransform> listMembers, bool reload = false)
         {
+
             if (stateFlag) return null;
             stateFlag.value = true;
 
@@ -200,10 +204,10 @@ namespace Swole.API.Unity
 
                 if (reload) reloadContent();
 
-                foreach (var member in listMembers) if (member != null) 
+                foreach (var member in listMembers) if (member != null)
                     {
                         tabGroup?.Remove(member.gameObject);
-                        Destroy(member.gameObject); 
+                        listMemberPool.Release(member.gameObject);
                     }
                 listMembers.Clear();
 
@@ -234,18 +238,19 @@ namespace Swole.API.Unity
                 for (int a = 0; a < ContentManager.LocalPackageCount; a++)
                 {
                     var package = ContentManager.GetLocalPackage(a);
-                    if (package.instance == null) continue;
+                    if (package == null || package.Content == null) continue;
                     string projName = ContentManager.GetProjectIdentifier(package);
                     if (_tempNames.Contains(projName.AsID())) continue;
-                    var member = CreateNewListMemberFromPackage(projName, package.instance, localProjectsLayoutTransform, true);
-                    if (member != null) 
+                    var member = CreateNewListMemberFromPackage(projName, package.Content, localProjectsLayoutTransform, true);
+                    if (member != null)
                     {
                         _tempNames.Add(projName.AsID());
-                        localListMembers.Add(member); 
+                        localListMembers.Add(member);
                     }
                 }
 
             }
+
             return RefreshList(Refresh, refreshingLocalProjects, reloadingLocalProjectsMessage, ContentManager.ReloadLocalPackages, localListMembers, reload);
         }
 
@@ -263,12 +268,12 @@ namespace Swole.API.Unity
                 for (int a = 0; a < ContentManager.ExternalPackageCount; a++)
                 {
                     var package = ContentManager.GetExternalPackage(a);
-                    if (package.instance == null || _tempNames.Contains(package.instance.Name.AsID())) continue;
-                    var member = CreateNewListMemberFromPackage(package.instance.Name, package.instance, externalPackagesLayoutTransform, false);
-                    if (member != null) 
+                    if (package.content == null || _tempNames.Contains(package.content.Name.AsID())) continue;
+                    var member = CreateNewListMemberFromPackage(package.content.Name, package.content, externalPackagesLayoutTransform, false);
+                    if (member != null)
                     {
-                        _tempNames.Add(package.instance.Name.AsID());
-                        externalListMembers.Add(member); 
+                        _tempNames.Add(package.content.Name.AsID());
+                        externalListMembers.Add(member);
                     }
                 }
 
@@ -284,6 +289,7 @@ namespace Swole.API.Unity
         {
             // TODO: Add filtering
         }
+
         public virtual void ClearFilterTagsExternalPackages()
         {
 
@@ -291,30 +297,6 @@ namespace Swole.API.Unity
         public virtual void FilterExternalPackages(Swole.UI.FilterMode filterMode)
         {
             // TODO: Add filtering
-        }
-
-        public static void SetInputFieldText(Transform rootObject, string text) => SetInputFieldText(rootObject.gameObject, text);
-        public static void SetInputFieldText(GameObject rootObject, string text)
-        {
-            if (rootObject == null) return;
-
-            InputField input = rootObject.GetComponentInChildren<InputField>();
-            if (input != null) input.text = text;
-            TMP_InputField tmpInput = rootObject.GetComponentInChildren<TMP_InputField>();
-            if (tmpInput != null) tmpInput.text = text;
-        }
-
-        public static string GetInputFieldText(Transform rootObject) => GetInputFieldText(rootObject.gameObject);
-        public static string GetInputFieldText(GameObject rootObject)
-        {
-            if (rootObject == null) return string.Empty;
-
-            TMP_InputField tmpInput = rootObject.GetComponentInChildren<TMP_InputField>();
-            if (tmpInput != null) return tmpInput.text;
-            InputField input = rootObject.GetComponentInChildren<InputField>();
-            if (input != null) return input.text;
-
-            return string.Empty;
         }
 
         public const string _id_URL = "URL";
@@ -341,7 +323,6 @@ namespace Swole.API.Unity
             Transform desc = creatorWindow.transform.FindDeepChildLiberal(_id_description);
 
             SetInputFieldText(projUrl, string.Empty);
-            SetInputFieldText(projName, _defaultProjectName);
             SetInputFieldText(projName, _defaultProjectName);
             SetInputFieldText(pkgName, _defaultPackageName);
             SetInputFieldText(version, _defaultVersionString);
@@ -398,9 +379,9 @@ namespace Swole.API.Unity
 
         public static bool ValidatePackageName(string value, UIPopupMessageFadable errorMessage = null)
         {
-            if (string.IsNullOrEmpty(value) || value.Length < ContentManager.charCount_PackageName)
+            if (string.IsNullOrEmpty(value) || value.Length < ContentManager.minCharCount_PackageName)
             {
-                errorMessage?.SetMessageAndShow($"Package name must be at least {ContentManager.charCount_PackageName} characters in length.");
+                errorMessage?.SetMessageAndShow($"Package name must be at least {ContentManager.minCharCount_PackageName} characters in length.");
                 return false;
             }
             if (!value.IsPackageString())
@@ -418,6 +399,7 @@ namespace Swole.API.Unity
         public static bool ValidateNewPackageName(string packageName, string versionString, UIPopupMessageFadable errorMessage = null)
         {
             if (!ValidatePackageName(packageName, errorMessage)) return false;
+            if (!ValidateVersionString(versionString, errorMessage)) return false;
             if (ContentManager.CheckIfLocalPackageExists(packageName, versionString))
             {
                 string existingProject = ContentManager.GetProjectIdentifier(packageName);
@@ -447,6 +429,21 @@ namespace Swole.API.Unity
             return true;
         }
 
+        public static bool ValidateCreatorName(string creator, UIPopupMessageFadable errorMessage = null)
+        {
+            if (string.IsNullOrEmpty(creator))
+            {
+                errorMessage?.SetMessageAndShow("Creator name cannot be empty.");
+                return false;
+            }
+            if (creator.Length > ContentManager.maxCharCount_CuratorName)
+            {
+                errorMessage?.SetMessageAndShow($"Creator name exceeds {ContentManager.maxCharCount_CuratorName} character limit.");
+                return false;
+            }
+            return true;
+        }
+
         public static bool ValidateTags(string value, UIPopupMessageFadable errorMessage = null)
         {
             if (!string.IsNullOrEmpty(value) && !value.IsTagsString())
@@ -462,9 +459,57 @@ namespace Swole.API.Unity
             return true;
         }
 
-        public void CreateNewProject(GameObject creatorWindow)
+        public static bool ValidateDescription(string desc, UIPopupMessageFadable errorMessage = null)
         {
-            if (creatorWindow == null) return;
+            if (!string.IsNullOrEmpty(desc) && desc.Length > ContentManager.maxCharCount_Description)
+            {
+                if (errorMessage != null)
+                {
+                    errorMessage
+                        .SetMessageAndShow($"Description exceeds the {desc} characters limit.")
+                        .SetDisplayTime(errorMessage.DefaultDisplayTime);
+                }
+                return false;
+            }
+            return true;
+        }
+
+        public static bool ValidateContentName(string contentName, UIPopupMessageFadable errorMessage = null)
+        {
+            if (string.IsNullOrEmpty(contentName))
+            {
+                errorMessage?.SetMessageAndShow("Content name cannot be empty.");
+                return false;
+            }
+            if (contentName.Length > ContentManager.maxCharCount_ContentName)
+            {
+                errorMessage?.SetMessageAndShow($"Creator name exceeds {ContentManager.maxCharCount_ContentName} character limit.");
+                return false;
+            }
+            return true;
+        }
+
+        public static List<string> SeparateTags(string tagString, List<string> tagsList = null)
+        {
+            if (tagsList == null) tagsList = new List<string>();
+
+            string[] tags = tagString.IndexOf(',') >= 0 ? tagString.Split(',') : new string[] { tagString };
+            if (tags != null)
+            {
+                for (int a = 0; a < Mathf.Min(tags.Length, ContentManager.maximum_PackageManifestTags); a++)
+                {
+                    tags[a] = tags[a].Trim().AsTagsString();
+                    if (!string.IsNullOrEmpty(tags[a])) tagsList.Add(tags[a]);
+                }
+            }
+
+            return tagsList;
+        }
+
+        public static bool CreateNewProjectFromWindow(GameObject creatorWindow, out PackageManifest manifest)
+        {
+            manifest = default;
+            if (creatorWindow == null) return false;
 
             UIPopupMessageFadable errorMessage = creatorWindow.GetComponentInChildren<UIPopupMessageFadable>(true);
 
@@ -484,16 +529,18 @@ namespace Swole.API.Unity
             string combinedTags = GetInputFieldText(tgs).Trim();
             string description = GetInputFieldText(desc);
 
-            if (!ValidateProjectURL(url, errorMessage)) return;
-            if (!ValidateNewProjectName(projectName, errorMessage)) return;
-            if (!ValidateNewPackageName(packageName, versionString, errorMessage)) return;
-            if (!ValidateVersionString(versionString, errorMessage)) return;
-            if (!ValidateTags(combinedTags, errorMessage)) return;
+            if (!ValidateProjectURL(url, errorMessage)) return false;
+            if (!ValidateNewProjectName(projectName, errorMessage)) return false;
+            if (!ValidateNewPackageName(packageName, versionString, errorMessage)) return false;
+            if (!ValidateVersionString(versionString, errorMessage)) return false;
+            if (!ValidateCreatorName(creator, errorMessage)) return false;
+            if (!ValidateTags(combinedTags, errorMessage)) return false;
+            if (!ValidateDescription(description, errorMessage)) return false;
 
             // > Create the project
 
             string path = Path.Combine(ContentManager.LocalPackageDirectoryPath, projectName);
-            if (Directory.Exists(path))
+            /*if (Directory.Exists(path))
             {
                 if (errorMessage != null)
                 {
@@ -502,25 +549,12 @@ namespace Swole.API.Unity
                         .SetDisplayTime(errorMessage.DefaultDisplayTime * 2.5f);
                 }
                 return;
-            }
+            }*/ // Just use the existing folder
             Directory.CreateDirectory(path);
 
-            #region Tag Extraction
+            List<string> validTags = SeparateTags(combinedTags);
 
-            string[] tags = combinedTags.IndexOf(',') >= 0 ? combinedTags.Split(',') : null;
-            List<string> validTags = new List<string>();
-            if (tags != null) 
-            {
-                for (int a = 0; a < Mathf.Min(tags.Length, ContentManager.maximum_PackageManifestTags); a++) 
-                { 
-                    tags[a] = tags[a].Trim().AsTagsString();
-                    if (!string.IsNullOrEmpty(tags[a])) validTags.Add(tags[a]);
-                }
-            }
-
-            #endregion
-
-            PackageManifest manifest = new PackageManifest()
+            manifest = new PackageManifest()
             {
 
                 info = new PackageInfo()
@@ -543,6 +577,12 @@ namespace Swole.API.Unity
 
             creatorWindow.SetActive(false);
 
+            return true;
+        }
+        public void CreateNewProject(GameObject creatorWindow)
+        {
+            CreateNewProjectFromWindow(creatorWindow, out PackageManifest manifest);
+
             IEnumerator Reload()
             {
 
@@ -561,11 +601,11 @@ namespace Swole.API.Unity
                 {
                     foreach (var member in localListMembers)
                     {
-                        if (member != null && member.name == projectName)
+                        if (member != null && member.name == manifest.Name)
                         {
-                            var button = member.GetComponentInChildren<UITabButton>();
+                            var button = member.GetComponentInChildren<UITabButton>(); 
                             if (button != null) tabGroup.ToggleButtons(button);
-                            if (packageViewer != null) packageViewer.SetActiveLocalPackage(packageName, versionString);
+                            if (packageViewer != null) packageViewer.SetActiveLocalPackage(manifest.Name, manifest.VersionString);
                             break;
                         }
                     }
@@ -574,11 +614,8 @@ namespace Swole.API.Unity
             }
 
             StartCoroutine(Reload());
-
         }
-
     }
-
 }
 
 #endif

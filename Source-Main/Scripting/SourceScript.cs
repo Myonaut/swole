@@ -22,7 +22,7 @@ namespace Swole.Script
             public ContentInfo contentInfo; 
             public string source;
 
-            public SourceScript AsOriginalType(PackageInfo packageInfo = default) => new SourceScript(this);
+            public SourceScript AsOriginalType(PackageInfo packageInfo = default) => new SourceScript(this, packageInfo);
             public string AsJSON(bool prettyPrint = false) => swole.Engine.ToJson(this, prettyPrint);
 
             public object AsNonserializableObject(PackageInfo packageInfo = default) => AsOriginalType(packageInfo);
@@ -125,7 +125,7 @@ namespace Swole.Script
             bool isLocalPackage = this.HasPackage() && packageInfo.GetIdentityString() == workingPackage.GetIdentityString();
             if (!isLocalPackage && this.HasPackage())
             {
-                if (swole.FindPackage(packageInfo.name, packageInfo.version, out var pkg, out _) == PackageActionResult.Success)
+                if (swole.FindSourcePackage(packageInfo.name, packageInfo.version, out var pkg, out _) == PackageActionResult.Success)
                 {
                     workingPackage = pkg.Manifest;
                     if (localScripts == null) localScripts = new List<SourceScript>();
@@ -343,8 +343,9 @@ namespace Swole.Script
             source = standaloneSource;
 
             if (string.IsNullOrEmpty(contentInfo.lastEditDate)) contentInfo.lastEditDate = contentInfo.creationDate;
-
         }
+
+        public IContent CreateCopyAndReplaceContentInfo(ContentInfo info) => new SourceScript(info, source, packageInfo);
 
     }
 

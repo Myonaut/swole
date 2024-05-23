@@ -22,6 +22,21 @@ namespace Swole
         public UnityEvent OnExit;
         public UnityEvent OnMove;
 
+        [Header("Left Click")]
+        public UnityEvent OnLeftClick;
+        public UnityEvent OnLeftDown;
+        public UnityEvent OnLeftUp;
+
+        [Header("Middle Click")]
+        public UnityEvent OnMiddleClick;
+        public UnityEvent OnMiddleDown;
+        public UnityEvent OnMiddleUp;
+
+        [Header("Right Click")]
+        public UnityEvent OnRightClick;
+        public UnityEvent OnRightDown;
+        public UnityEvent OnRightUp;
+
         public delegate void PointerDelegate(PointerEventData eventData);
 
         public event PointerDelegate OnClickEvent;
@@ -31,71 +46,108 @@ namespace Swole
         public event PointerDelegate OnExitEvent;
         public event PointerDelegate OnMoveEvent;
 
+        public event PointerDelegate OnLeftClickEvent;
+        public event PointerDelegate OnLeftDownEvent;
+        public event PointerDelegate OnLeftUpEvent;
+
+        public event PointerDelegate OnMiddleClickEvent;
+        public event PointerDelegate OnMiddleDownEvent;
+        public event PointerDelegate OnMiddleUpEvent;
+
+        public event PointerDelegate OnRightClickEvent;
+        public event PointerDelegate OnRightDownEvent;
+        public event PointerDelegate OnRightUpEvent;
+
         public void OnPointerClick(PointerEventData eventData)
         {
-
             RefreshMasking();
-
             OnClick?.Invoke();
-
             OnClickEvent?.Invoke(eventData);
 
+            if (eventData.button == PointerEventData.InputButton.Left)
+            {
+                OnLeftClick?.Invoke();
+                OnLeftClickEvent?.Invoke(eventData);
+            }
+            else if (eventData.button == PointerEventData.InputButton.Middle)
+            {
+                OnMiddleClick?.Invoke();
+                OnMiddleClickEvent?.Invoke(eventData);
+            }
+            else if (eventData.button == PointerEventData.InputButton.Right)
+            {
+                OnRightClick?.Invoke();
+                OnRightClickEvent?.Invoke(eventData);
+            }
         }
 
         public void OnPointerDown(PointerEventData eventData)
         {
-
             OnDown?.Invoke();
-
             OnDownEvent?.Invoke(eventData);
 
+            if (eventData.button == PointerEventData.InputButton.Left)
+            {
+                OnLeftDown?.Invoke();
+                OnLeftDownEvent?.Invoke(eventData);
+            }
+            else if (eventData.button == PointerEventData.InputButton.Middle)
+            {
+                OnMiddleDown?.Invoke();
+                OnMiddleDownEvent?.Invoke(eventData);
+            }
+            else if (eventData.button == PointerEventData.InputButton.Right)
+            {
+                OnRightDown?.Invoke();
+                OnRightDownEvent?.Invoke(eventData);
+            }
         }
 
         public void OnPointerUp(PointerEventData eventData)
         {
-
             OnUp?.Invoke();
-
             OnUpEvent?.Invoke(eventData);
 
+            if (eventData.button == PointerEventData.InputButton.Left)
+            {
+                OnLeftUp?.Invoke();
+                OnLeftUpEvent?.Invoke(eventData);
+            }
+            else if (eventData.button == PointerEventData.InputButton.Middle)
+            {
+                OnMiddleUp?.Invoke();
+                OnMiddleUpEvent?.Invoke(eventData);
+            }
+            else if (eventData.button == PointerEventData.InputButton.Right)
+            {
+                OnRightUp?.Invoke();
+                OnRightUpEvent?.Invoke(eventData);
+            }
         }
 
         public void OnPointerEnter(PointerEventData eventData)
         {
-
             RefreshMasking();
-
             OnEnter?.Invoke();
-
             OnEnterEvent?.Invoke(eventData);
-
         }
 
         public void OnPointerExit(PointerEventData eventData)
         {
-
             RefreshMasking();
-
             OnExit?.Invoke();
-
             OnExitEvent?.Invoke(eventData);
-
         }
 
         public void OnPointerMove(PointerEventData eventData)
         {
-
             OnMove?.Invoke();
-
             OnMoveEvent?.Invoke(eventData);
-
         }
 
         protected void OnDisable()
         {
-
             OnPointerExit(null);
-
         }
 
         protected RectTransform rectTransform;

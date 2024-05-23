@@ -16,11 +16,15 @@ namespace Swole.UI
     public class UIPannable : UIFocusable
     {
 
+        public bool disableInput;
+        public bool disableScrollHor;
+        public bool disableScrollVer;
+
         //public bool constrainSizeToContentSize;
 
         public float panningSpeedMultiplier = 1;
 
-        public float scollSpeedMultiplier = 1;
+        public float scrollSpeedMultiplier = 1;
 
         /// <summary>
         /// The normalized starting horizontal scroll position.
@@ -75,7 +79,7 @@ namespace Swole.UI
             Vector2 contentSize = content.sizeDelta;
 
             float sizeX = localSize.x == 0 ? 1 : (contentSize.x / localSize.x); // Prevent divide by zero
-            float sizeY = localSize.x == 0 ? 1 : (contentSize.y / localSize.y); // Prevent divide by zero
+            float sizeY = localSize.y == 0 ? 1 : (contentSize.y / localSize.y); // Prevent divide by zero
 
             if (scrollbarHor != null)
             {
@@ -95,11 +99,11 @@ namespace Swole.UI
 
             }
 
-            prevCursorState = InputProxy.CursorLockState;
+            prevCursorState = CursorProxy.LockState;
 
             lockedCursor = false;
 
-            cursorVisible = InputProxy.IsCursorVisible;
+            cursorVisible = CursorProxy.Visible;
 
         }
 
@@ -138,85 +142,90 @@ namespace Swole.UI
 
             if (content == null) return;
 
-            if (lockedCursor && (!InputProxy.Panning || !InputProxy.CursorPrimaryButton))
+            if (!disableInput)
             {
 
-                InputProxy.CursorLockState = prevCursorState;
-
-                InputProxy.CursorPosition = cursorLockPosition;
-
-                InputProxy.IsCursorVisible = cursorVisible;
-
-                lockedCursor = false;
-
-            }
-
-            if (IsInFocus || lockedCursor/* || CursorProxy.ObjectsUnderCursor.IsInHierarchy(transform)*/)
-            {
-
-                if (InputProxy.Panning && InputProxy.CursorPrimaryButton)
+                if (lockedCursor && (!InputProxy.Panning || !InputProxy.CursorPrimaryButton))
                 {
 
-                    if (InputProxy.CursorLockState != CursorLockMode.Locked)
-                    {
+                    CursorProxy.LockState = prevCursorState;
 
-                        cursorLockPosition = InputProxy.CursorPosition;
+                    CursorProxy.ScreenPosition = cursorLockPosition;
 
-                        prevCursorState = InputProxy.CursorLockState;
+                    CursorProxy.Visible = cursorVisible;
 
-                        InputProxy.CursorLockState = CursorLockMode.Locked;
-
-                        cursorVisible = InputProxy.IsCursorVisible;
-
-                        InputProxy.IsCursorVisible = false;
-
-                        lockedCursor = true;
-
-                    }
-
-                    if (scrollbarHor != null)
-                    {
-
-                        scrollbarHor.value = Mathf.Clamp01(scrollbarHor.value + InputProxy.CursorAxisX * panningSpeedMultiplier * InputProxy.PanningSpeed * (invertHor ? 1 : -1));
-
-                    }
-
-                    if (scrollbarVer != null)
-                    {
-
-                        scrollbarVer.value = Mathf.Clamp01(scrollbarVer.value + InputProxy.CursorAxisY * panningSpeedMultiplier * InputProxy.PanningSpeed * (invertVer ? 1 : -1));
-
-                    }
+                    lockedCursor = false;
 
                 }
 
-                if (scrollbarVer != null && scrollbarHor != null)
+                if (IsInFocus || lockedCursor/* || CursorProxy.ObjectsUnderCursor.IsInHierarchy(transform)*/)
                 {
 
-                    if (InputProxy.ItemCombineKey)
+                    if (InputProxy.Panning && InputProxy.CursorPrimaryButton)
                     {
 
-                        scrollbarHor.value = Mathf.Clamp01(scrollbarHor.value + InputProxy.Scroll * scollSpeedMultiplier * InputProxy.ScrollSpeed * (invertHor ? 1 : -1));
+                        if (CursorProxy.LockState != CursorLockMode.Locked)
+                        {
+
+                            cursorLockPosition = CursorProxy.ScreenPosition;
+
+                            prevCursorState = CursorProxy.LockState;
+
+                            CursorProxy.LockState = CursorLockMode.Locked;
+
+                            cursorVisible = CursorProxy.Visible;
+
+                            CursorProxy.Visible = false;
+
+                            lockedCursor = true;
+
+                        }
+
+                        if (scrollbarHor != null)
+                        {
+
+                            scrollbarHor.value = Mathf.Clamp01(scrollbarHor.value + CursorProxy.AxisX * panningSpeedMultiplier * InputProxy.PanningSpeed * (invertHor ? 1 : -1));
+
+                        }
+
+                        if (scrollbarVer != null)
+                        {
+
+                            scrollbarVer.value = Mathf.Clamp01(scrollbarVer.value + CursorProxy.AxisY * panningSpeedMultiplier * InputProxy.PanningSpeed * (invertVer ? 1 : -1));
+
+                        }
 
                     }
-                    else
+
+                    if (scrollbarVer != null && scrollbarHor != null)
                     {
 
-                        scrollbarVer.value = Mathf.Clamp01(scrollbarVer.value + InputProxy.Scroll * scollSpeedMultiplier * InputProxy.ScrollSpeed * (invertVer ? -1 : 1));
+                        if (InputProxy.Modding_ModifyActionKey)
+                        {
+
+                            if (!disableScrollHor) scrollbarHor.value = Mathf.Clamp01(scrollbarHor.value + InputProxy.Scroll * scrollSpeedMultiplier * InputProxy.ScrollSpeed * (invertHor ? 1 : -1));
+
+                        }
+                        else
+                        {
+
+                            if (!disableScrollVer) scrollbarVer.value = Mathf.Clamp01(scrollbarVer.value + InputProxy.Scroll * scrollSpeedMultiplier * InputProxy.ScrollSpeed * (invertVer ? -1 : 1));
+
+                        }
 
                     }
+                    else if (scrollbarVer != null)
+                    {
 
-                }
-                else if (scrollbarVer != null)
-                {
+                        if (!disableScrollVer) scrollbarVer.value = Mathf.Clamp01(scrollbarVer.value + InputProxy.Scroll * scrollSpeedMultiplier * InputProxy.ScrollSpeed * (invertVer ? -1 : 1));
 
-                    scrollbarVer.value = Mathf.Clamp01(scrollbarVer.value + InputProxy.Scroll * scollSpeedMultiplier * InputProxy.ScrollSpeed * (invertVer ? -1 : 1));
+                    }
+                    else if (scrollbarHor != null)
+                    {
 
-                }
-                else if (scrollbarHor != null)
-                {
+                        if (!disableScrollHor) scrollbarHor.value = Mathf.Clamp01(scrollbarHor.value + InputProxy.Scroll * scrollSpeedMultiplier * InputProxy.ScrollSpeed * (invertHor ? 1 : -1));
 
-                    scrollbarHor.value = Mathf.Clamp01(scrollbarHor.value + InputProxy.Scroll * scollSpeedMultiplier * InputProxy.ScrollSpeed * (invertHor ? 1 : -1));
+                    }
 
                 }
 
@@ -330,6 +339,15 @@ namespace Swole.UI
 
             content.localPosition = content.localPosition + (target - current);
 
+        }
+
+        public void SetPanPositionHor(float pos)
+        {
+            if (scrollbarHor != null) scrollbarHor.value = pos;
+        }
+        public void SetPanPositionVer(float pos)
+        {
+            if (scrollbarVer != null) scrollbarVer.value = pos;
         }
 
     }

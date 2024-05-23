@@ -1,11 +1,17 @@
 #if (UNITY_EDITOR || UNITY_STANDALONE)
+
 #define FOUND_UNITY
 using UnityEngine;
+using Swole.API.Unity;
 #endif
 
 using System;
 using System.Collections;
 using System.Collections.Generic;
+
+using Swole.Animation;
+using Swole.Script;
+using Swole.API.Unity.Animation;
 
 namespace Swole
 {
@@ -29,21 +35,27 @@ namespace Swole
 
         #region Conversions | Swole -> Bulk Out!
 
-        public static Tile AsBulkOutTile(EngineInternal.Tile tile)
+        public static Tile AsBulkOutTile(ITile tile)
         {
-            if (tile.instance is Tile boTile) return boTile;
+            if (tile.Instance is Tile boTile) return boTile;
             return null;
         }
 
-        public static TileSet AsBulkOutTileSet(EngineInternal.TileSet tileSet)
+        public static TileSet AsBulkOutTileSet(ITileSet tileSet)
         {
-            if (tileSet.instance is TileSet boTileSet) return boTileSet;
+            if (tileSet.Instance is TileSet boTileSet) return boTileSet;
             return null;
         }
 
         public static TileInstance AsBulkOutTileInstance(EngineInternal.TileInstance tileInstance)
         {
             if (tileInstance.instance is TileInstance boTileInstance) return boTileInstance;
+            return null;
+        }
+
+        public static CreationBehaviour AsBulkOutCreationInstance(EngineInternal.CreationInstance creationInstance)
+        {
+            if (creationInstance.instance is CreationBehaviour boCreationInstance) return boCreationInstance;
             return null;
         }
 
@@ -54,19 +66,25 @@ namespace Swole
         public static EngineInternal.Tile AsSwoleTile(Tile tile)
         {
             if (tile == null) return default;
-            return new EngineInternal.Tile(tile, tile.name, tile.isDynamic, AsSwoleVector(tile.positionOffset), AsSwoleVector(tile.initialRotationEuler), AsSwoleVector(tile.initialScale));
+            return new EngineInternal.Tile(tile); 
         }
 
         public static EngineInternal.TileSet AsSwoleTileSet(TileSet tileSet)
         {
             if (tileSet == null) return default;
-            return new EngineInternal.TileSet(tileSet, tileSet.name, tileSet.mesh == null ? "" : tileSet.mesh.name, tileSet.material == null ? "" : tileSet.material.name);
+            return new EngineInternal.TileSet(tileSet);
         }
 
         public static EngineInternal.TileInstance AsSwoleTileInstance(TileInstance tileInstance)
         {
             if (tileInstance == null) return default;
-            return new EngineInternal.TileInstance(tileInstance, tileInstance.tileSetName, tileInstance.tileIndex, AsSwoleGameObject(tileInstance.rootInstance));
+            return new EngineInternal.TileInstance(tileInstance);
+        }
+
+        public static EngineInternal.CreationInstance AsSwoleCreationInstance(CreationBehaviour creationInstance)
+        {
+            if (creationInstance == null) return default;
+            return new EngineInternal.CreationInstance(creationInstance); 
         }
 
         #endregion
@@ -108,12 +126,12 @@ namespace Swole
         {
             var tileSet = AsTileSet(boObject);
             if (tileSet == null) return default;
-            return AsSwoleTile(tileSet[tileIndex]);
+            return AsSwoleTile((Tile)tileSet[tileIndex]);
         }
+        public override EngineInternal.TileSet GetTileSet(string tileSetId, string tileCollectionId = null, bool caseSensitive = false) => AsSwoleTileSet(ResourceLib.FindTileSet(tileSetId, tileCollectionId, caseSensitive));
 
-        public override EngineInternal.TileInstance CreateNewTileInstance(EngineInternal.TileSet tileSet, int tileIndex, EngineInternal.Vector3 rootWorldPosition, EngineInternal.Quaternion rootWorldRotation, EngineInternal.Vector3 positionInRoot, EngineInternal.Quaternion rotationInRoot, EngineInternal.Vector3 scaleInRoot)
+        public override EngineInternal.TileInstance CreateNewTileInstance(EngineInternal.TileSet tileSet, int tileIndex, EngineInternal.Vector3 rootWorldPosition, EngineInternal.Quaternion rootWorldRotation, EngineInternal.Vector3 positionInRoot, EngineInternal.Quaternion rotationInRoot, EngineInternal.Vector3 localScale)
         {
-
             var tile = tileSet[tileIndex];
 
             var boTileSet = AsBulkOutTileSet(tileSet);
@@ -121,36 +139,36 @@ namespace Swole
 
             if (boTileSet == null || boTile == null) return default;
 
-            TileInstance tileInstance = new TileInstance(boTileSet.name, tileIndex);
-
+            Transform tileTransform = null;
             if (!boTile.RenderOnly)
             {
-
-                tileInstance.rootInstance = boTileSet.CreateNewTileInstance(tileIndex);
-
-                if (tileInstance.rootInstance != null)
-                {
-
-                    Transform tileTransform = tileInstance.rootInstance.transform;
-
-                    tileTransform.position = AsUnityVector(rootWorldPosition + (rootWorldRotation * positionInRoot));
-                    tileTransform.rotation = AsUnityQuaternion(rootWorldRotation * rotationInRoot);
-                    tileTransform.localScale = AsUnityVector(scaleInRoot);
-
-                    GameObject tileProxy = new GameObject("tile");
-                    Transform tileProxyTransform = tileProxy.transform;
-
-                    tileProxyTransform.SetParent(tileTransform, false);
-                    tileProxyTransform.localPosition = boTile.positionOffset;
-                    tileProxyTransform.localRotation = Quaternion.Euler(boTile.initialRotationEuler);
-                    tileProxyTransform.localScale = boTile.initialScale;
-
-                }
-
+                var tileGO = boTileSet.CreateNewTileInstance(tileIndex);
+                tileTransform = tileGO == null ? null : tileGO.transform;
             }
 
-            return AsSwoleTileInstance(tileInstance);
+            TileInstance tileInstance = new TileInstance(boTileSet, tileIndex, tileTransform);
+            tileInstance.SetPositionAndRotation(rootWorldPosition + (rootWorldRotation * positionInRoot), rootWorldRotation * rotationInRoot);
+            tileInstance.localScale = localScale;
 
+            tileInstance.baseRenderingMatrix = Matrix4x4.TRS(boTile.positionOffset, Quaternion.Euler(boTile.initialRotationEuler), boTile.initialScale);
+            tileInstance.ReevaluateRendering();
+
+            return AsSwoleTileInstance(tileInstance);
+        }
+         
+        public override EngineInternal.CreationInstance CreateNewCreationInstance(Creation creation, bool useRealTransformsOnly, EngineInternal.Vector3 rootWorldPosition, EngineInternal.Quaternion rootWorldRotation, EngineInternal.Vector3 positionInRoot, EngineInternal.Quaternion rotationInRoot, EngineInternal.Vector3 localScale, bool autoInitialize = true, SwoleLogger logger = null)
+        {
+            if (creation == null) return default;
+            
+            CreationBehaviour instance = CreationBehaviour.New(creation, useRealTransformsOnly, AsUnityVector(rootWorldPosition + (rootWorldRotation * positionInRoot)), AsUnityQuaternion(rootWorldRotation * rotationInRoot), null, autoInitialize, 0, logger == null ? swole.DefaultLogger : logger);
+            if (instance != null)
+            {
+                var transform = instance.Root.transform;
+                transform.localScale = localScale;
+                return AsSwoleCreationInstance(instance);
+            }
+
+            return default;
         }
 
 #else

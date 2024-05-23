@@ -2,18 +2,34 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
-using System.Text;
 using System.Threading.Tasks;
 
 using Swole.Script;
 
+#if BULKOUT_ENV
+using Swole.API.Unity;
+using Swole.API.Unity.Animation;
+#endif
+
 namespace Swole
 {
+
+    [Serializable]
+    public enum PackageType
+    {
+        Both, Local, External
+    }
+
+    public interface IPackage
+    {
+        public ContentPackage Content { get; }
+    }
 
     public class ContentManager : SingletonBehaviour<ContentManager>
     {
 
         // >> SEARCH FOR KEYWORD "ContentTypes" TO FIND SECTIONS OF CODE THAT MUST BE REFACTORED WHEN NEW CONTENT TYPES ARE INTRODUCED
+        // >> DO THE SAME IN PackageViewer.cs
 
         // disable execution
         public override bool ExecuteInStack => false;
@@ -29,24 +45,34 @@ namespace Swole
         private static readonly List<ContentPackage> _tempPackageList = new List<ContentPackage>();
 
         public const int maximum_PackageManifestTags = 16;
-        public const int charCount_PackageName = 3;
+        public const int minCharCount_PackageName = 3;
+        public const int maxCharCount_CuratorName = 16;
+        public const int maxCharCount_ContentName = 32;
+        public const int maxCharCount_Description = 1024;
 
         public const string folderNames_Packages = "packages";
         public const string folderNames_LocalPackages = "local";
         public const string folderNames_CachedPackages = "cache";
+
+        public const string folderNames_Editors = "editors";
+        public const string folderNames_AnimationEditor = "animation";
+        public const string folderNames_Sessions = "sessions";
 
         public const string tags_Temporary = ".TEMP";
 
         public const string commonFiles_Manifest = "manifest.json";
         public const string commonFiles_Projects = "projects.json";
 
+        public const string fileExtension_Generic = "swldat";
         public const string fileExtension_ZIP = "zip";
         public const string fileExtension_JSON = "json";
         public const string fileExtension_Default = fileExtension_JSON;
         public const string fileExtension_Package = "swole";
         public const string fileExtension_Script = "swlscr";
         public const string fileExtension_Creation = "swlobj";
-        public const string fileExtension_Animation = "swlanim";
+        public const string fileExtension_Animation = "swlani";
+        public const string fileExtension_GameplayExperience = "swlexp";
+        public const string fileExtension_Image = "swlimg"; 
 
         public static bool HasValidFileExtension(string fileName)
         {
@@ -59,6 +85,8 @@ namespace Swole
             if (fileName.EndsWith(fileExtension_Script)) return true;
             if (fileName.EndsWith(fileExtension_Creation)) return true;
             if (fileName.EndsWith(fileExtension_Animation)) return true;
+            if (fileName.EndsWith(fileExtension_GameplayExperience)) return true;
+            if (fileName.EndsWith(fileExtension_Image)) return true;
             #endregion
 
             return false;
@@ -85,9 +113,9 @@ namespace Swole
                 {
                     embeddedPackage = await LoadPackageFromRawAsync(string.Empty, path, await File.ReadAllBytesAsync(path), null, null, logger, !path.EndsWith(fileExtension_ZIP));
                 }
-                if (embeddedPackage.instance != null)
+                if (embeddedPackage.content != null)
                 {
-                    logger?.Log($"Loaded embedded package '{embeddedPackage.instance}' from '{embeddedPackage.cachedPath}'");
+                    logger?.Log($"Loaded embedded package '{embeddedPackage.content}' from '{embeddedPackage.cachedPath}'");
                 }
             }
             #region elseif { ContentTypes }
@@ -101,10 +129,23 @@ namespace Swole
                 byte[] data = sync ? File.ReadAllBytes(path) : await File.ReadAllBytesAsync(path);
                 content = LoadContent<Creation>(packageInfo, data, logger);
             }
+            else if (path.EndsWith(fileExtension_GameplayExperience))
+            {
+                byte[] data = sync ? File.ReadAllBytes(path) : await File.ReadAllBytesAsync(path);
+                content = LoadContent<GameplayExperience>(packageInfo, data, logger);
+            }
+#if BULKOUT_ENV
             else if (path.EndsWith(fileExtension_Animation))
             {
-                // Not implemented yet
+                byte[] data = sync ? File.ReadAllBytes(path) : await File.ReadAllBytesAsync(path);
+                content = LoadContent<CustomAnimation>(packageInfo, data, logger);
             }
+            else if (path.EndsWith(fileExtension_Image))
+            {
+                byte[] data = sync ? File.ReadAllBytes(path) : await File.ReadAllBytesAsync(path);
+                content = LoadContent<ImageAsset>(packageInfo, data, logger);
+            }
+#endif
             #endregion
 
             if (content != null) ContentExtensions.SetOriginPathAndUpdateRelativePath(ref content, path); 
@@ -113,10 +154,15 @@ namespace Swole
         }
         public static T LoadContent<T>(PackageInfo packageInfo, byte[] rawData, SwoleLogger logger = null) where T : IContent
         {
+            TryLoadType<T>(out T output, packageInfo, rawData, logger);
+            return output;
+        }
+        public static bool TryLoadType<T>(out T output, PackageInfo packageInfo, byte[] rawData, SwoleLogger logger = null)
+        {
+            output = default;
+            if (rawData == null) return false;
 
-            if (rawData == null) return default;
-             
-            Type t = typeof(T); 
+            Type t = typeof(T);
 
             try
             {
@@ -131,11 +177,12 @@ namespace Swole
                     {
                         json = DefaultJsonSerializer.StringEncoder.GetString(rawData);
                         object obj = swole.Engine.FromJson(json, interfaceType.GetGenericArguments()[1]);
-                        if (obj == null) return default;
+                        if (obj == null) return false;
                         ISerializableContainer container = (ISerializableContainer)obj;
                         obj = container.AsNonserializableObject(packageInfo);
-                        if (obj == null) return default;
-                        return (T)obj; 
+                        if (obj == null) return false;
+                        output = (T)obj;
+                        return true; 
                     }
                 }
 
@@ -143,19 +190,20 @@ namespace Swole
                 json = DefaultJsonSerializer.StringEncoder.GetString(rawData);
                 if (string.IsNullOrEmpty(json)) return default;
 
-                return swole.Engine.FromJson<T>(json);
+                output = swole.Engine.FromJson<T>(json);
+                return true;
                 //
 
-            } 
-            catch(Exception ex)
+            }
+            catch (Exception ex)
             {
 
-                logger?.LogError($"Error while attempting to load content{(packageInfo.NameIsValid ? $" from package '{packageInfo.name}'" : "")} with type '{typeof(T).FullName}'");
-                logger?.LogError($"[{ex.GetType().Name}]: {ex.Message}");
+                logger?.LogError($"Error while attempting to load data{(packageInfo.NameIsValid ? $" from package '{packageInfo.name}'" : "")} with type '{typeof(T).FullName}'");
+                logger?.LogError(ex);
 
             }
 
-            return default;
+            return false;
         }
          
         public static bool SaveContent(DirectoryInfo dir, IContent content, SwoleLogger logger = null) => SaveContent(dir.FullName, content, logger);
@@ -176,15 +224,12 @@ namespace Swole
 
                 string fullPath = "";
                 byte[] bytes = null;
-
+                #region ContentTypes
                 if (content is SourceScript script)
                 {
-
                     string json = script.AsJSON(true);
                     bytes = DefaultJsonSerializer.StringEncoder.GetBytes(json);
                     fullPath = Path.Combine(directoryPath, $"{script.Name}.{fileExtension_Script}");
-                    return true;
-
                 }
                 else if (content is Creation creation)
                 {
@@ -194,6 +239,33 @@ namespace Swole
                     fullPath = Path.Combine(directoryPath, $"{creation.Name}.{fileExtension_Creation}");
 
                 }
+                else if (content is GameplayExperience exp)
+                {
+
+                    string json = exp.AsJSON(true);
+                    bytes = DefaultJsonSerializer.StringEncoder.GetBytes(json);
+                    fullPath = Path.Combine(directoryPath, $"{exp.Name}.{fileExtension_GameplayExperience}");
+
+                }
+                else if (content is IImageAsset img)
+                {
+
+                    string json = img.AsJSON(true);
+                    bytes = DefaultJsonSerializer.StringEncoder.GetBytes(json); 
+                    fullPath = Path.Combine(directoryPath, $"{img.Name}.{fileExtension_Image}");
+
+                }
+#if BULKOUT_ENV
+                else if (content is CustomAnimation anim)
+                {
+
+                    string json = anim.AsJSON(true);
+                    bytes = DefaultJsonSerializer.StringEncoder.GetBytes(json);
+                    fullPath = Path.Combine(directoryPath, $"{anim.Name}.{fileExtension_Animation}");
+
+                }
+#endif
+                #endregion
 
                 if (string.IsNullOrEmpty(fullPath)) fullPath = Path.Combine(directoryPath, $"{content.Name}.{fileExtension_Default}");
 
@@ -216,13 +288,41 @@ namespace Swole
             }
             return false;
         }
+        public delegate void PackageEditContentDelegate(ContentPackage oldContent, ContentPackage newContent);
         [Serializable]
-        public struct LocalPackage
+        public class LocalPackage : IPackage
         {
             public DirectoryInfo workingDirectory;
-            public ContentPackage instance;
+            protected ContentPackage content;
 
-            public static implicit operator ContentPackage(LocalPackage pkg) => pkg.instance;
+            public ContentPackage Content
+            {
+                get => content;
+                set 
+                {
+                    try
+                    {
+                        OnEditContents?.Invoke(content, value);
+                    }
+                    catch(Exception ex)
+                    {
+                        swole.LogError($"Encountered exception while notifying listeners about the content in package '{GetIdentityString()}' being edited");
+                        swole.LogError(ex);
+                    }
+                    content = value;
+                }
+            }
+
+            public event PackageEditContentDelegate OnEditContents;
+            public void ClearListeners()
+            {
+                OnEditContents = null;
+            }
+
+            public static implicit operator ContentPackage(LocalPackage pkg) => pkg.content; 
+
+            public PackageIdentifier GetIdentity() => content == null ? default : content.GetIdentity();
+            public string GetIdentityString() => content == null ? default : content.GetIdentityString();
         }
 
         public static bool DirectoryIsPackage(DirectoryInfo directory) => DirectoryIsPackage(directory == null ? string.Empty : directory.FullName);
@@ -295,7 +395,7 @@ namespace Swole
             if (instance == null) return default;
             for (int a = 0; a < instance.localPackages.Count; a++) if (instance.localPackages[a].workingDirectory.FullName == packageDirectory.FullName) 
                 {
-                    logger?.LogWarning($"Tried to load local package from '{packageDirectory.FullName}' — but it was already loaded.");
+                    logger?.LogWarning($"Tried to load local package from '{packageDirectory.FullName}' — but it was already loaded."); 
                     return default;// instance.localPackages[a]; 
                 }
 
@@ -324,7 +424,7 @@ namespace Swole
             // Load valid files and ignore the rest
             List<IContent> content = new List<IContent>();
             if (sync) LoadContent(packageDirectory, manifest, content, logger); else await LoadContentAsync(packageDirectory, manifest, content, logger);
-            package.instance = new ContentPackage(manifest, content);
+            package.Content = new ContentPackage(manifest, content);
             //
 
             AddLocalPackage(package);
@@ -342,7 +442,6 @@ namespace Swole
                     SetProjectIdentifier(manifest, packageDirectory.Name.Substring(0, end), SaveMethod.Immediate);
                 }
             }
-             
             return package;
         } 
 
@@ -442,7 +541,22 @@ namespace Swole
                         {
                             fileTypes[index] = typeof(Creation);
                         }
-                        #endregion
+
+                        else if (fileDesc.fileName.EndsWith(fileExtension_GameplayExperience))
+                        {
+                            fileTypes[index] = typeof(GameplayExperience);
+                        }
+#if BULKOUT_ENV
+                        else if (fileDesc.fileName.EndsWith(fileExtension_Animation))
+                        {
+                            fileTypes[index] = typeof(CustomAnimation);
+                        }
+                        else if (fileDesc.fileName.EndsWith(fileExtension_Image))
+                        {
+                            fileTypes[index] = typeof(ImageAsset);
+                        }
+#endif
+#endregion
                     }
                 }
             }
@@ -514,7 +628,7 @@ namespace Swole
                 return default;
             }
 
-            for (int a = 0; a < instance.externalPackages.Count; a++) if (instance.externalPackages[a].instance != null && instance.externalPackages[a].instance.GetIdentityString() == manifest.GetIdentityString())
+            for (int a = 0; a < instance.externalPackages.Count; a++) if (instance.externalPackages[a].content != null && instance.externalPackages[a].content.GetIdentityString() == manifest.GetIdentityString())
                 {
                     logger?.LogWarning($"Tried to load external package '{manifest}' from '{(string.IsNullOrEmpty(cachedPath) ? sourcePath : cachedPath)}' — but it was already loaded.");
                     return default;// instance.externalPackages[a];
@@ -561,9 +675,9 @@ namespace Swole
                         {
                             embeddedPackage = await LoadPackageFromRawAsync(string.Empty, $"{cachedPath}@embedded", fileData, embeddedPackageFileDescs, embeddedPackageFileData, logger, false);
                         }
-                        if (embeddedPackage.instance != null)
+                        if (embeddedPackage.content != null)
                         {
-                            logger?.Log($"Loaded embedded package '{embeddedPackage.instance}' from '{embeddedPackage.cachedPath}'");
+                            logger?.Log($"Loaded embedded package '{embeddedPackage.content}' from '{embeddedPackage.cachedPath}'");
                         }
                     }
                     #region elseif { ContentTypes }
@@ -575,6 +689,20 @@ namespace Swole
                     {
                         contentObj = LoadContent<Creation>(manifest, fileData, logger);
                     }
+                    else if (fileType == typeof(GameplayExperience))
+                    {
+                        contentObj = LoadContent<GameplayExperience>(manifest, fileData, logger);
+                    }
+#if BULKOUT_ENV
+                    else if (fileType == typeof(CustomAnimation))
+                    {
+                        contentObj = LoadContent<CustomAnimation>(manifest, fileData, logger);
+                    }
+                    else if (fileType == typeof(ImageAsset))
+                    {
+                        contentObj = LoadContent<ImageAsset>(manifest, fileData, logger); 
+                    }
+#endif
                     #endregion
 
                     if (contentObj == null) continue;
@@ -586,7 +714,7 @@ namespace Swole
                 }
             }
 
-            package.instance = new ContentPackage(manifest, content);
+            package.content = new ContentPackage(manifest, content);
             // <
 
             AddExternalPackage(package);
@@ -594,12 +722,12 @@ namespace Swole
             return package;
         }
 
-        public static bool SavePackage(LocalPackage package, SwoleLogger logger = null) => SavePackage(package.workingDirectory, package.instance, logger);
+        public static bool SavePackage(LocalPackage package, SwoleLogger logger = null) => SavePackage(package.workingDirectory, package.Content, logger);
         public static bool SavePackage(DirectoryInfo dir, ContentPackage package, SwoleLogger logger = null) => SavePackage(dir == null ? "" : dir.FullName, package, logger);
         public static bool SavePackage(ContentPackage package, SwoleLogger logger = null) => SavePackage(Path.Combine(LocalPackageDirectoryPath, package == null ? "null" : package.GetIdentityString()), package, logger);
         public static bool SavePackage(string path, ContentPackage package, SwoleLogger logger = null) => SavePackageInternal(true, path, package, logger).GetAwaiter().GetResult();
 
-        public static Task<bool> SavePackageAsync(LocalPackage package, SwoleLogger logger = null) => SavePackageAsync(package.workingDirectory, package.instance, logger);
+        public static Task<bool> SavePackageAsync(LocalPackage package, SwoleLogger logger = null) => SavePackageAsync(package.workingDirectory, package.Content, logger);
         public static Task<bool> SavePackageAsync(DirectoryInfo dir, ContentPackage package, SwoleLogger logger = null) => SavePackageAsync(dir == null ? "" : dir.FullName, package, logger);
         public static Task<bool> SavePackageAsync(ContentPackage package, SwoleLogger logger = null) => SavePackageAsync(Path.Combine(LocalPackageDirectoryPath, package == null ? "null" : package.GetIdentityString()), package, logger);
         public static Task<bool> SavePackageAsync(string path, ContentPackage package, SwoleLogger logger = null) => SavePackageInternal(false, path, package, logger);
@@ -696,16 +824,19 @@ namespace Swole
         }
 
         [Serializable]
-        public struct ExternalPackage
+        public struct ExternalPackage : IPackage
         {
 
             public string sourcePath;
             public string cachedPath;
 
-            public ContentPackage instance;
+            public ContentPackage content;
+            public ContentPackage Content => content;
 
-            public static implicit operator ContentPackage(ExternalPackage pkg) => pkg.instance;
+            public static implicit operator ContentPackage(ExternalPackage pkg) => pkg.content; 
 
+            public PackageIdentifier GetIdentity() => content == null ? default : content.GetIdentity();
+            public string GetIdentityString() => content == null ? default : content.GetIdentityString();
         }
 
         protected readonly List<LocalPackage> localPackages = new List<LocalPackage>();
@@ -734,20 +865,28 @@ namespace Swole
         {
             var instance = Instance;
             if (instance == null) return false;
-            if (package.instance == null) return false;
-            if (FindLocalPackage(package.instance.GetIdentity()).instance != null) return false;
-            instance.localPackages.Add(package);
-            LoadSource(package.instance);
+            if (package == null || package.Content == null) return false;
+            var existing = FindLocalPackage(package.GetIdentity());
+            if (existing != null && existing.Content != null) return false;
+            if (existing == null) 
+            { 
+                instance.localPackages.Add(package); 
+            } 
+            else
+            {
+                existing.Content = package.Content;
+            }
+            LoadSource(package.Content); 
             return true;
         }
         protected static bool AddExternalPackage(ExternalPackage package)
         {
             var instance = Instance;
             if (instance == null) return false;
-            if (package.instance == null) return false;
-            if (FindExternalPackage(package.instance.GetIdentity()).instance != null) return false;
+            if (package.content == null) return false;
+            if (FindExternalPackage(package.content.GetIdentity()).content != null) return false;
             instance.externalPackages.Add(package);
-            LoadSource(package.instance);
+            LoadSource(package.content);
             return true;
         }
 
@@ -776,15 +915,15 @@ namespace Swole
             for (int a = 0; a < instance.localPackages.Count; a++)
             {
                 var pkg = instance.localPackages[a];
-                if (pkg.instance == null) continue;
-                if ((useLiberalNames ? pkg.instance.Name.AsID() : pkg.instance.Name) != packageName || (!fetchLatest && pkg.instance.VersionString != version)) continue;
+                if (pkg == null || pkg.Content == null) continue;
+                if ((useLiberalNames ? pkg.Content.Name.AsID() : pkg.Content.Name) != packageName || (!fetchLatest && pkg.Content.VersionString != version)) continue;
                 if (!fetchLatest) 
                 { 
                     return pkg; 
                 }
                 else
                 {
-                    var ver = pkg.instance.Version;
+                    var ver = pkg.Content.Version;
                     if (ver.CompareTo(latestVersion) > 0)
                     {
                         latestVersion = ver;
@@ -792,7 +931,7 @@ namespace Swole
                     }
                 }
             }
-            if (latestPackage.instance != null) return latestPackage;
+            if (latestPackage != null && latestPackage.Content != null) return latestPackage;
 
             if (tryLiberalApproachOnFail)
             {
@@ -806,7 +945,7 @@ namespace Swole
         public static bool TryFindLocalPackage(out LocalPackage package, string packageName, string version = null, bool tryLiberalApproachOnFail = true, bool useLiberalNames = false)
         {
             package = FindLocalPackage(packageName, version, tryLiberalApproachOnFail, useLiberalNames);
-            return package.instance != null;
+            return package != null && package.Content != null;
         }
         public static bool CheckIfLocalPackageExists(PackageIdentifier id, bool tryLiberalApproachOnFail = true, bool useLiberalNames = false) => TryFindLocalPackage(id, out _, tryLiberalApproachOnFail, useLiberalNames);
         public static bool CheckIfLocalPackageExists(string packageName, string version = null, bool tryLiberalApproachOnFail = true, bool useLiberalNames = false) => TryFindLocalPackage(out _, packageName, version, tryLiberalApproachOnFail, useLiberalNames);
@@ -821,8 +960,8 @@ namespace Swole
             for (int a = 0; a < instance.localPackages.Count; a++)
             {
                 var pkg = instance.localPackages[a];
-                if (pkg.instance == null) continue;
-                if ((useLiberalNames ? pkg.instance.Name.AsID() : pkg.instance.Name) != packageName) continue;
+                if (pkg == null || pkg.Content == null) continue;
+                if ((useLiberalNames ? pkg.Content.Name.AsID() : pkg.Content.Name) != packageName) continue;
                 list.Add(pkg);
             }
 
@@ -839,8 +978,8 @@ namespace Swole
             for (int a = 0; a < instance.localPackages.Count; a++)
             {
                 var pkg = instance.localPackages[a];
-                if (pkg.instance == null) continue;
-                if ((useLiberalNames ? pkg.instance.Name.AsID() : pkg.instance.Name) != packageName) continue;
+                if (pkg == null || pkg.Content == null) continue;
+                if ((useLiberalNames ? pkg.Content.Name.AsID() : pkg.Content.Name) != packageName) continue;
                 list.Add(pkg);
             }
 
@@ -863,15 +1002,15 @@ namespace Swole
             for (int a = 0; a < instance.externalPackages.Count; a++)
             {
                 var pkg = instance.externalPackages[a];
-                if (pkg.instance == null) continue;
-                if ((useLiberalNames ? pkg.instance.Name.AsID() : pkg.instance.Name) != packageName || (!fetchLatest && pkg.instance.VersionString != version)) continue;
+                if (pkg.content == null) continue;
+                if ((useLiberalNames ? pkg.content.Name.AsID() : pkg.content.Name) != packageName || (!fetchLatest && pkg.content.VersionString != version)) continue;
                 if (!fetchLatest)
                 {
                     return pkg;
                 }
                 else
                 {
-                    var ver = pkg.instance.Version;
+                    var ver = pkg.content.Version;
                     if (ver.CompareTo(latestVersion) > 0)
                     {
                         latestVersion = ver;
@@ -879,7 +1018,7 @@ namespace Swole
                     }
                 }
             }
-            if (latestPackage.instance != null) return latestPackage;
+            if (latestPackage.content != null) return latestPackage;
 
             if (tryLiberalApproachOnFail)
             {
@@ -894,7 +1033,7 @@ namespace Swole
         public static bool TryFindExternalPackage(out ExternalPackage package, string packageName, string version = null, bool tryLiberalApproachOnFail = true, bool useLiberalNames = false)
         {
             package = FindExternalPackage(packageName, version, tryLiberalApproachOnFail, useLiberalNames);
-            return package.instance != null;
+            return package.content != null;
         }
         public static bool CheckIfExternalPackageExists(PackageIdentifier id, bool tryLiberalApproachOnFail = true, bool useLiberalNames = false) => TryFindExternalPackage(id, out _, tryLiberalApproachOnFail, useLiberalNames);
         public static bool CheckIfExternalPackageExists(string packageName, string version = null, bool tryLiberalApproachOnFail = true, bool useLiberalNames = false) => TryFindExternalPackage(out _, packageName, version, tryLiberalApproachOnFail, useLiberalNames);
@@ -909,8 +1048,8 @@ namespace Swole
             for (int a = 0; a < instance.externalPackages.Count; a++)
             {
                 var pkg = instance.externalPackages[a];
-                if (pkg.instance == null) continue;
-                if ((useLiberalNames ? pkg.instance.Name.AsID() : pkg.instance.Name) != packageName) continue;
+                if (pkg.content == null) continue;
+                if ((useLiberalNames ? pkg.content.Name.AsID() : pkg.content.Name) != packageName) continue;
                 list.Add(pkg);
             }
 
@@ -927,8 +1066,8 @@ namespace Swole
             for (int a = 0; a < instance.externalPackages.Count; a++)
             {
                 var pkg = instance.externalPackages[a];
-                if (pkg.instance == null) continue;
-                if ((useLiberalNames ? pkg.instance.Name.AsID() : pkg.instance.Name) != packageName) continue;
+                if (pkg.content == null) continue;
+                if ((useLiberalNames ? pkg.content.Name.AsID() : pkg.content.Name) != packageName) continue;
                 list.Add(pkg);
             }
 
@@ -951,15 +1090,15 @@ namespace Swole
             for (int a = 0; a < instance.localPackages.Count; a++)
             {
                 var pkg = instance.localPackages[a];
-                if (pkg.instance == null) continue;
-                if ((useLiberalNames ? pkg.instance.Name.AsID() : pkg.instance.Name) != packageName || (!fetchLatest && pkg.instance.VersionString != version)) continue;
+                if (pkg == null || pkg.Content == null) continue;
+                if ((useLiberalNames ? pkg.Content.Name.AsID() : pkg.Content.Name) != packageName || (!fetchLatest && pkg.Content.VersionString != version)) continue;
                 if (!fetchLatest)
                 {
                     return pkg;
                 }
                 else
                 {
-                    var ver = pkg.instance.Version;
+                    var ver = pkg.Content.Version;
                     if (ver.CompareTo(latestVersion) > 0)
                     {
                         latestVersion = ver;
@@ -970,15 +1109,15 @@ namespace Swole
             for (int a = 0; a < instance.externalPackages.Count; a++)
             {
                 var pkg = instance.externalPackages[a];
-                if (pkg.instance == null) continue;
-                if ((useLiberalNames ? pkg.instance.Name.AsID() : pkg.instance.Name) != packageName || (!fetchLatest && pkg.instance.VersionString != version)) continue;
+                if (pkg.content == null) continue;
+                if ((useLiberalNames ? pkg.content.Name.AsID() : pkg.content.Name) != packageName || (!fetchLatest && pkg.content.VersionString != version)) continue;
                 if (!fetchLatest)
                 {
                     return pkg;
                 }
                 else
                 {
-                    var ver = pkg.instance.Version;
+                    var ver = pkg.content.Version;
                     if (ver.CompareTo(latestVersion) > 0)
                     {
                         latestVersion = ver;
@@ -1015,15 +1154,15 @@ namespace Swole
             for (int a = 0; a < instance.localPackages.Count; a++)
             {
                 var pkg = instance.localPackages[a];
-                if (pkg.instance == null) continue;
-                if ((useLiberalNames ? pkg.instance.Name.AsID() : pkg.instance.Name) != packageName) continue;
+                if (pkg == null || pkg.Content == null) continue;
+                if ((useLiberalNames ? pkg.Content.Name.AsID() : pkg.Content.Name) != packageName) continue;
                 list.Add(pkg);
             }
             for (int a = 0; a < instance.externalPackages.Count; a++)
             {
                 var pkg = instance.externalPackages[a];
-                if (pkg.instance == null) continue;
-                if ((useLiberalNames ? pkg.instance.Name.AsID() : pkg.instance.Name) != packageName) continue;
+                if (pkg.content == null) continue;
+                if ((useLiberalNames ? pkg.content.Name.AsID() : pkg.content.Name) != packageName) continue;
                 list.Add(pkg);
             }
 
@@ -1033,6 +1172,120 @@ namespace Swole
         /// Get all packages with specified name. List will be ordered alphabetically then by version in descending order.
         /// </summary>
         public static List<ContentPackage> FindPackagesOrdered(string packageName, List<ContentPackage> list = null, bool useLiberalNames = true) => FindPackages(packageName, list, useLiberalNames).OrderByDescending(i => i.GetIdentityString()).ToList();
+        
+        #region Query Content
+
+        public static T FindContent<T>(string assetName, PackageIdentifier package, PackageType packageType = PackageType.Both, bool tryLiberalApproachOnFail = true, bool useLiberalNames = false) where T : IContent
+        { 
+            return FindContent<T>(assetName, package.name, package.version, packageType, tryLiberalApproachOnFail, useLiberalNames); 
+        }
+        public static T FindContent<T>(string assetName, string packageName, string packageVersion = null, PackageType packageType = PackageType.Both, bool tryLiberalApproachOnFail = true, bool useLiberalNames = false) where T : IContent
+        {
+            if (TryFindContent<T>(out T content, assetName, packageName, packageVersion, packageType, tryLiberalApproachOnFail, useLiberalNames)) return content;
+            return default;
+        }
+        public static bool TryFindContent<T>(string assetName, PackageIdentifier package, out T content, PackageType packageType = PackageType.Both, bool tryLiberalApproachOnFail = true, bool useLiberalNames = false) where T : IContent
+        {
+            return TryFindContent<T>(out content, assetName, package.name, package.version, packageType, tryLiberalApproachOnFail, useLiberalNames);
+        }
+        public static bool TryFindContent<T>(out T content, string assetName, string packageName, string packageVersion = null, PackageType packageType = PackageType.Both, bool tryLiberalApproachOnFail = true, bool useLiberalNames = false) where T : IContent
+        {
+            content = default;
+            if (string.IsNullOrEmpty(assetName) || string.IsNullOrEmpty(packageName)) return false;
+
+            switch (packageType)
+            {
+                case PackageType.Both:
+                    if (TryFindPackage(out ContentPackage package, packageName, packageVersion, tryLiberalApproachOnFail, useLiberalNames))
+                    {
+                        if (package.TryFind<T>(out content, assetName, !useLiberalNames)) return true;
+                        if (tryLiberalApproachOnFail && package.TryFind<T>(out content, assetName, false)) return true;
+                    }
+                    break;
+
+                case PackageType.Local:
+                    if (TryFindLocalPackage(out LocalPackage localPackage, packageName, packageVersion, tryLiberalApproachOnFail, useLiberalNames))
+                    {
+                        if (localPackage.Content.TryFind<T>(out content, assetName, !useLiberalNames)) return true;
+                        if (tryLiberalApproachOnFail && localPackage.Content.TryFind<T>(out content, assetName, false)) return true;
+                    }
+                    break;
+
+                case PackageType.External:
+                    if (TryFindExternalPackage(out ExternalPackage externalPackage, packageName, packageVersion, tryLiberalApproachOnFail, useLiberalNames))
+                    {
+                        if (externalPackage.content.TryFind<T>(out content, assetName, !useLiberalNames)) return true;
+                        if (tryLiberalApproachOnFail && externalPackage.Content.TryFind<T>(out content, assetName, false)) return true; 
+                    }
+                    break;
+            }
+
+            return false;
+        }
+        public static bool CheckIfContentExists<T>(string assetName, PackageIdentifier id, PackageType packageType = PackageType.Both, bool tryLiberalApproachOnFail = true, bool useLiberalNames = false) where T : IContent
+        { 
+            return TryFindContent<T>(assetName, id, out _, packageType, tryLiberalApproachOnFail, useLiberalNames);
+        }
+        public static bool CheckIfContentExists<T>(string assetName, string packageName, string version = null, PackageType packageType = PackageType.Both, bool tryLiberalApproachOnFail = true, bool useLiberalNames = false) where T : IContent
+        { 
+            return TryFindContent<T>(out _, assetName, packageName, version, packageType, tryLiberalApproachOnFail, useLiberalNames); 
+        }
+
+
+        public static T FindLocalContent<T>(string assetName, PackageIdentifier package, bool tryLiberalApproachOnFail = true, bool useLiberalNames = false) where T : IContent
+        {
+            return FindLocalContent<T>(assetName, package.name, package.version,  tryLiberalApproachOnFail, useLiberalNames);
+        }
+        public static T FindLocalContent<T>(string assetName, string packageName, string packageVersion = null, bool tryLiberalApproachOnFail = true, bool useLiberalNames = false) where T : IContent
+        {
+            if (TryFindLocalContent<T>(out T content, assetName, packageName, packageVersion, tryLiberalApproachOnFail, useLiberalNames)) return content;
+            return default;
+        }
+        public static bool TryFindLocalContent<T>(string assetName, PackageIdentifier package, out T content, bool tryLiberalApproachOnFail = true, bool useLiberalNames = false) where T : IContent
+        {
+            return TryFindLocalContent<T>(out content, assetName, package.name, package.version, tryLiberalApproachOnFail, useLiberalNames);
+        }
+        public static bool TryFindLocalContent<T>(out T content, string assetName, string packageName, string packageVersion = null, bool tryLiberalApproachOnFail = true, bool useLiberalNames = false) where T : IContent
+        {
+            return TryFindContent<T>(out content, assetName, packageName, packageVersion, PackageType.Local, tryLiberalApproachOnFail, useLiberalNames);
+        }
+        public static bool CheckIfLocalContentExists<T>(string assetName, PackageIdentifier id, bool tryLiberalApproachOnFail = true, bool useLiberalNames = false) where T : IContent
+        {
+            return TryFindLocalContent<T>(assetName, id, out _, tryLiberalApproachOnFail, useLiberalNames);
+        }
+        public static bool CheckIfLocalContentExists<T>(string assetName, string packageName, string version = null, bool tryLiberalApproachOnFail = true, bool useLiberalNames = false) where T : IContent
+        {
+            return TryFindLocalContent<T>(out _, assetName, packageName, version, tryLiberalApproachOnFail, useLiberalNames);
+        }
+
+
+        public static T FindExternalContent<T>(string assetName, PackageIdentifier package, bool tryLiberalApproachOnFail = true, bool useLiberalNames = false) where T : IContent
+        {
+            return FindExternalContent<T>(assetName, package.name, package.version, tryLiberalApproachOnFail, useLiberalNames);
+        }
+        public static T FindExternalContent<T>(string assetName, string packageName, string packageVersion = null, bool tryLiberalApproachOnFail = true, bool useLiberalNames = false) where T : IContent
+        {
+            if (TryFindExternalContent<T>(out T content, assetName, packageName, packageVersion, tryLiberalApproachOnFail, useLiberalNames)) return content;
+            return default;
+        }
+        public static bool TryFindExternalContent<T>(string assetName, PackageIdentifier package, out T content, bool tryLiberalApproachOnFail = true, bool useLiberalNames = false) where T : IContent
+        {
+            return TryFindExternalContent<T>(out content, assetName, package.name, package.version, tryLiberalApproachOnFail, useLiberalNames);
+        }
+        public static bool TryFindExternalContent<T>(out T content, string assetName, string packageName, string packageVersion = null, bool tryLiberalApproachOnFail = true, bool useLiberalNames = false) where T : IContent
+        {
+            return TryFindContent<T>(out content, assetName, packageName, packageVersion, PackageType.External, tryLiberalApproachOnFail, useLiberalNames);
+        }
+        public static bool CheckIfExternalContentExists<T>(string assetName, PackageIdentifier id, bool tryLiberalApproachOnFail = true, bool useLiberalNames = false) where T : IContent
+        {
+            return TryFindExternalContent<T>(assetName, id, out _, tryLiberalApproachOnFail, useLiberalNames);
+        }
+        public static bool CheckIfExternalContentExists<T>(string assetName, string packageName, string version = null, bool tryLiberalApproachOnFail = true, bool useLiberalNames = false) where T : IContent
+        {
+            return TryFindExternalContent<T>(out _, assetName, packageName, version, tryLiberalApproachOnFail, useLiberalNames);
+        }
+
+        #endregion
 
         public static string PackageDirectoryPath => Path.Combine(swole.AssetDirectory.FullName, folderNames_Packages);
         public static string LocalPackageDirectoryPath => Path.Combine(PackageDirectoryPath, folderNames_LocalPackages);
@@ -1052,7 +1305,7 @@ namespace Swole
             {
                 try
                 {
-                    swole.UnloadPackage(sourcePackage, out _);
+                    swole.UnloadSourcePackage(sourcePackage, out _);
                 }
                 catch (Exception ex)
                 {
@@ -1069,7 +1322,7 @@ namespace Swole
             {
                 try
                 {
-                    var result = swole.LoadPackage(sourcePackage, out string resultInfo);
+                    var result = swole.LoadSourcePackage(sourcePackage, out string resultInfo);
                     if (result != swole.PackageActionResult.Success)
                     {
                         if (result == swole.PackageActionResult.PackageAlreadyLoaded)
@@ -1161,19 +1414,47 @@ namespace Swole
 
         private void ReloadLocalPackagesLocal()
         {
-            foreach (var package in localPackages) UnloadSource(package.instance);
+            foreach (var package in localPackages) if (package != null) 
+                {
+                    package.ClearListeners();
+                    UnloadSource(package.Content); 
+                }
             localPackages.Clear();
-
-            // TODO: Add support for local packges that have been imported and are not stored in the default directory
 
             localPackageDirectory = Directory.CreateDirectory(LocalPackageDirectoryPath);
             LoadPackagesLocally(localPackageDirectory);
 
-            ReloadProjectIdentifiers();
+            ReloadProjectInfo();
+            if (projects != null)
+            {
+                void LoadDirectoryIfNotLocal(string projectName, string path)
+                {
+                    try
+                    {
+                        if (string.IsNullOrEmpty(path) || !SwoleUtil.IsValidPath(path) || SwoleUtil.IsSubPathOf(path, localPackageDirectory.FullName)) return;
+                        LoadPackagesLocally(path);
+                    }
+                    catch(Exception ex)
+                    {
+                        swole.DefaultLogger?.LogError($"Encountered an error while attempting to load local packages from directory '{path}'.{(string.IsNullOrEmpty(projectName) ? string.Empty : $" (Project: {projectName})")}");
+                        swole.DefaultLogger?.LogError($"[{ex.GetType().Name}]: {ex.Message}");
+                    } 
+                }
+                foreach(Project proj in projects)
+                {
+                    LoadDirectoryIfNotLocal(proj.name, proj.primaryPath);
+                    if (proj.externalPaths != null)
+                    {
+                        foreach (string externalPath in proj.externalPaths) LoadDirectoryIfNotLocal(proj.name, externalPath);
+                    }
+                }
+            }
+
+            ReloadProjectInfo();
         }
         private void ReloadExternalPackagesLocal()
         {
-            foreach (var package in externalPackages) UnloadSource(package.instance);
+            foreach (var package in externalPackages) UnloadSource(package.content);
             externalPackages.Clear();
 
             localPackageDirectory = Directory.CreateDirectory(LocalPackageDirectoryPath);
@@ -1185,9 +1466,13 @@ namespace Swole
         public void ReloadAllPackagesLocal()
         {
 
-            foreach (var package in localPackages) UnloadSource(package.instance);
+            foreach (var package in localPackages) if (package != null) 
+                {
+                    package.ClearListeners();
+                    UnloadSource(package.Content); 
+                }
             localPackages.Clear();
-            foreach (var package in externalPackages) UnloadSource(package.instance);
+            foreach (var package in externalPackages) UnloadSource(package.content);
             externalPackages.Clear();
 
             ReloadLocalPackagesLocal();
@@ -1221,29 +1506,39 @@ namespace Swole
         public static string ProjectIdentifiersFilePath => Path.Combine(swole.AssetDirectory.FullName, commonFiles_Projects);
 
         [Serializable]
+        public struct Project
+        {
+            public string name;
+            public string primaryPath;
+            public string[] externalPaths;
+        }
+
+        [Serializable]
         public struct ProjectIdentifier 
         {
             public string packageName;
             public string projectName;
         }
         [Serializable]
-        public struct SerializableProjectIdentifiers
+        public struct SerializableProjectInfo
         {
+            public Project[] projects;
             //public Dictionary<string, string> identifiers; // Not compatible with Unity JSON serialization
             public ProjectIdentifier[] identifiers;
         }
 
+        private List<Project> projects;
         private Dictionary<string, string> projectIdentifiers = null; 
-        private static SerializableProjectIdentifiers ProjectIdentifiersSerializable
+        private static SerializableProjectInfo ProjectIdentifiersSerializable
         {
             get
             {
                 /*var instance = Instance;
                 if (instance == null) return default;
-                return new SerializableProjectIdentifiers() { identifiers = instance.projectIdentifiers };*/ // Not compatible with Unity JSON serialization
+                return new SerializableProjectInfo() { projects = instance.projects, identifiers = instance.projectIdentifiers };*/ // Not compatible with Unity JSON serialization
 
                 var instance = Instance;
-                if (instance == null || instance.projectIdentifiers == null) return new SerializableProjectIdentifiers();
+                if (instance == null || instance.projectIdentifiers == null) return new SerializableProjectInfo();
                 ProjectIdentifier[] array = new ProjectIdentifier[instance.projectIdentifiers.Count];
                 int i = 0;
                 foreach(var set in instance.projectIdentifiers)
@@ -1251,22 +1546,65 @@ namespace Swole
                     array[i] = new ProjectIdentifier() { packageName = set.Key, projectName = set.Value };
                     i++;
                 }
-                return new SerializableProjectIdentifiers() { identifiers = array };
+                return new SerializableProjectInfo() { projects = instance.projects.ToArray(), identifiers = array };
             }
         }
-        private static void Deserialize(SerializableProjectIdentifiers serializedProjectIdentifiers)
+        private static void Deserialize(SerializableProjectInfo serializedProjectInfo)
         {
             /*var instance = Instance;
             if (instance == null) return;
             instance.projectIdentifiers = serializedProjectIdentifiers.identifiers;*/ // Not compatible with Unity JSON serialization
 
-            if (serializedProjectIdentifiers.identifiers == null) return;
+            if (serializedProjectInfo.identifiers == null && serializedProjectInfo.projects == null) return;
             var instance = Instance;
             if (instance == null) return;
             if (instance.projectIdentifiers == null) instance.projectIdentifiers = new Dictionary<string, string>();
             instance.projectIdentifiers.Clear();
-            foreach (var identifier in serializedProjectIdentifiers.identifiers) instance.projectIdentifiers[identifier.packageName] = identifier.projectName;
-            
+            foreach (var identifier in serializedProjectInfo.identifiers) instance.projectIdentifiers[identifier.packageName] = identifier.projectName;
+
+            if (instance.projects == null) instance.projects = new List<Project>();
+            instance.projects.Clear();
+            if (serializedProjectInfo.projects != null) instance.projects.AddRange(serializedProjectInfo.projects);
+        }
+
+        public static int IndexOfProject(string projectName)
+        {
+            var instance = Instance;
+            if (instance == null || string.IsNullOrEmpty(projectName)) return -1;
+            if (instance.projectIdentifiers == null || instance.projects == null)
+            {
+                ContentManager.ReloadProjectInfo();
+                if (instance.projectIdentifiers == null || instance.projects == null) return -1;
+            }
+            for (int a = 0; a < instance.projects.Count; a++) if (instance.projects[a].name == projectName) return a;
+            projectName = projectName.AsID();
+            for (int a = 0; a < instance.projects.Count; a++) if (instance.projects[a].name.AsID() == projectName) return a;
+            return -1;
+        }
+        public static bool CheckIfProjectExists(string projectName) => IndexOfProject(projectName) >= 0;
+        public static bool TryFindProject(string projectName, out Project project) => TryFindProject(projectName, out project, out _);
+        public static bool TryFindProject(string projectName, out Project project, out int index)
+        {
+            index = -1;
+            project = default;
+            var instance = Instance;
+            if (instance == null) return false;
+
+            index = IndexOfProject(projectName);
+            if (index < 0) return false;
+
+            project = instance.projects[index];
+            return true;
+        }
+        public static void SetProjectPrimaryPath(string projectName, string path)
+        {
+            var instance = Instance;
+            if (instance == null) return;
+
+            if (!TryFindProject(projectName, out Project project, out int index)) return;
+
+            project.primaryPath = path;
+            instance.projects[index] = project;
         }
 
         public static void SetProjectIdentifier(SourcePackage package, string projectName, SaveMethod saveMethod = SaveMethod.InBackground) => SetProjectIdentifier(package == null ? string.Empty : package.Name, projectName, saveMethod);
@@ -1279,21 +1617,45 @@ namespace Swole
             if (instance == null) return;
             if (instance.projectIdentifiers == null)
             {
-                ReloadProjectIdentifiers();
+                ReloadProjectInfo();
                 if (instance.projectIdentifiers == null) instance.projectIdentifiers = new Dictionary<string, string>();
             }
             instance.projectIdentifiers[packageName] = projectName;
+            if (!CheckIfProjectExists(projectName))
+            {
+                string projectNameID = projectName.AsID();
+                string primaryPath = Path.Combine(LocalPackageDirectoryPath, projectName);
+                FindLocalPackages(packageName, _tempLocalPackageList);
+                foreach(var localPkg in _tempLocalPackageList)
+                {
+                    if (localPkg == null || localPkg.Content == null || localPkg.workingDirectory == null || !localPkg.workingDirectory.Exists) continue;
+                    if (localPkg.workingDirectory.Name.AsID() == projectNameID)
+                    {
+                        primaryPath = localPkg.workingDirectory.FullName;
+                        break;
+                    }
+                    DirectoryInfo parent = localPkg.workingDirectory.Parent;
+                    if (parent != null && parent.Name.AsID() == projectNameID)
+                    {
+                        primaryPath = parent.FullName;
+                        break;
+                    }
+                }
+                 
+                Project project = new Project() { name = projectName, primaryPath = primaryPath };
+                instance.projects.Add(project);
+            }
             switch (saveMethod)
             {
                 default:
                     break;
 
                 case SaveMethod.Immediate:
-                    SaveProjectIdentifiers();
+                    SaveProjectInfo();
                     break;
 
                 case SaveMethod.InBackground:
-                    SaveProjectIdentifiersAsync();
+                    SaveProjectInfoAsync();
                     break;
             }
         }
@@ -1302,16 +1664,26 @@ namespace Swole
         public static string GetProjectIdentifier(PackageInfo info) => GetProjectIdentifier(info.name);
         public static string GetProjectIdentifier(string packageName)
         {
-            if (string.IsNullOrEmpty(packageName)) return string.Empty;
-            var instance = Instance;
-            if (instance == null) return packageName;
-            if (instance.projectIdentifiers == null) 
-            {
-                ReloadProjectIdentifiers();
-                if (instance.projectIdentifiers == null) return packageName; 
-            }
-            if (instance.projectIdentifiers.TryGetValue(packageName, out string projectName)) return projectName;
+            if (TryGetProjectIdentifier(packageName, out string projectName)) return projectName;
             return packageName;
+        }
+
+        public static bool TryGetProjectIdentifier(SourcePackage package, out string projectName) => TryGetProjectIdentifier(package == null ? string.Empty : package.Name, out projectName);
+        public static bool TryGetProjectIdentifier(ContentPackage package, out string projectName) => TryGetProjectIdentifier(package == null ? string.Empty : package.Name, out projectName);
+        public static bool TryGetProjectIdentifier(PackageInfo info, out string projectName) => TryGetProjectIdentifier(info.name, out projectName);
+        public static bool TryGetProjectIdentifier(string packageName, out string projectName)
+        {
+            projectName = string.Empty;
+            if (string.IsNullOrEmpty(packageName)) return false;
+            var instance = Instance;
+            if (instance == null) return false;
+            if (instance.projectIdentifiers == null)
+            {
+                ReloadProjectInfo();
+                if (instance.projectIdentifiers == null) return false;
+            }
+
+            return instance.projectIdentifiers.TryGetValue(packageName, out projectName);
         }
 
         public static bool HasProjectIdentifier(SourcePackage package) => HasProjectIdentifier(package == null ? string.Empty : package.Name);
@@ -1324,19 +1696,19 @@ namespace Swole
             if (instance == null) return false;
             if (instance.projectIdentifiers == null)
             {
-                ReloadProjectIdentifiers();
+                ReloadProjectInfo();
                 if (instance.projectIdentifiers == null) return false;
             }
             return instance.projectIdentifiers.ContainsKey(packageName);
         }
 
-        private static bool savingIdentifiers; 
-        public static void SaveProjectIdentifiers() => SaveProjectIdentifiers(true).GetAwaiter().GetResult();
-        public static Task SaveProjectIdentifiersAsync() => SaveProjectIdentifiers(false);
-        async private static Task SaveProjectIdentifiers(bool sync)
+        private static bool savingProjectInfo; 
+        public static void SaveProjectInfo() => SaveProjectInfo(true).GetAwaiter().GetResult();
+        public static Task SaveProjectInfoAsync() => SaveProjectInfo(false);
+        async private static Task SaveProjectInfo(bool sync)
         {
-            if (savingIdentifiers) return;
-            savingIdentifiers = true;
+            if (savingProjectInfo) return;
+            savingProjectInfo = true;
             try
             {
                 if (Instance == null) return;
@@ -1346,46 +1718,102 @@ namespace Swole
             }
             catch(Exception ex)
             {
-                swole.DefaultLogger?.LogError("Encountered an error while saving project identifiers.");
-                swole.DefaultLogger?.LogError($"[{ex.GetType().Name}]: {ex.Message}");
+                swole.LogError("Encountered an error while saving project info.");
+                swole.LogError(ex);
             }
-            savingIdentifiers = false;
+            savingProjectInfo = false;
         }
 
-        public static void ReloadProjectIdentifiers() => ReloadProjectIdentifiers(true).GetAwaiter().GetResult();
-        public static Task ReloadProjectIdentifiersAsync() => ReloadProjectIdentifiers(false);
-        async private static Task ReloadProjectIdentifiers(bool sync)
+        public static void ReloadProjectInfo() => ReloadProjectInfo(true).GetAwaiter().GetResult();
+        public static Task ReloadProjectInfoAsync() => ReloadProjectInfo(false);
+        async private static Task ReloadProjectInfo(bool sync)
         {
-            if (savingIdentifiers) return;
+            if (savingProjectInfo) return;
             try
             {
                 if (Instance == null) return;
                 string filePath = ProjectIdentifiersFilePath;
                 if (!File.Exists(filePath)) return;
-                Deserialize(swole.Engine.FromJson<SerializableProjectIdentifiers>(DefaultJsonSerializer.StringEncoder.GetString(sync ? File.ReadAllBytes(filePath) : await File.ReadAllBytesAsync(filePath))));
+                Deserialize(swole.Engine.FromJson<SerializableProjectInfo>(DefaultJsonSerializer.StringEncoder.GetString(sync ? File.ReadAllBytes(filePath) : await File.ReadAllBytesAsync(filePath))));
             }
             catch (Exception ex)
             {
-                swole.DefaultLogger?.LogError("Encountered an error while loading project identifiers.");
-                swole.DefaultLogger?.LogError($"[{ex.GetType().Name}]: {ex.Message}");
+                swole.LogError("Encountered an error while loading project info.");
+                swole.LogError(ex);
             }
         }
 
-        public static bool CheckIfProjectExists(string projectName)
+        /// <summary>
+        /// Remove empty projects.
+        /// </summary>
+        public static void CleanProjectInfo() => CleanProjectInfo(true).GetAwaiter().GetResult();
+        /// <summary>
+        /// Remove empty projects.
+        /// </summary>
+        public static Task CleanProjectInfoAsync() => CleanProjectInfo(false);
+        private static readonly List<string> cleanerList1 = new List<string>();
+        private static readonly List<string> cleanerList2 = new List<string>();
+        private static readonly List<string> cleanerList3 = new List<string>();
+        async private static Task CleanProjectInfo(bool sync)
         {
-            if (string.IsNullOrEmpty(projectName)) return false;
-            var instance = Instance;
-            if (instance == null) return false;
-            if (instance.projectIdentifiers == null)
+            if (savingProjectInfo) return;
+            try
             {
-                ContentManager.ReloadProjectIdentifiers();
-                if (instance.projectIdentifiers == null) return false;
+                var instance = Instance;
+                if (instance == null) return;
+                if (instance.projectIdentifiers == null || instance.projects == null)
+                {
+                    if (sync) ReloadProjectInfo(); else await ReloadProjectInfoAsync();
+                    if (instance.projectIdentifiers == null || instance.projects == null) return;
+                }
+                cleanerList1.Clear();
+                cleanerList2.Clear();
+                cleanerList3.Clear();
+                foreach (var set in instance.projectIdentifiers)
+                {
+                    var pkg = FindLocalPackage(set.Key);
+                    if ((pkg == null || pkg.Content == null) && !cleanerList2.Contains(set.Value))
+                    {
+                        cleanerList1.Add(set.Key);
+                    } 
+                    else if (pkg != null && pkg.Content != null)
+                    {
+                        cleanerList2.Add(set.Value);
+                        cleanerList1.RemoveAll(i => (instance.projectIdentifiers.ContainsKey(i) && instance.projectIdentifiers[i] == set.Value));
+                    }
+                }
+                foreach (var key in cleanerList1)
+                {
+                    instance.projectIdentifiers.Remove(key);
+                }
+                for(int a = 0; a < instance.projects.Count; a++)
+                {
+                    var proj = instance.projects[a];
+                    if (!cleanerList2.Contains(proj.name))
+                    {
+                        cleanerList3.Add(proj.name);
+                        if (!string.IsNullOrEmpty(proj.primaryPath))
+                        {
+                            DirectoryInfo dir = new DirectoryInfo(proj.primaryPath);
+                            if (dir.IsEmpty())
+                            {
+                                if (dir.Exists) dir.Delete();
+                            }
+                        }
+                    }
+                }
+                foreach (string projName in cleanerList3) instance.projects.RemoveAll(i => i.name == projName);
+                cleanerList1.Clear();
+                cleanerList2.Clear();
+                cleanerList3.Clear();
+
+                if (sync) SaveProjectInfo(); else await SaveProjectInfoAsync();
             }
-
-            projectName = projectName.AsID();
-            foreach (var set in instance.projectIdentifiers) if (set.Value.AsID() == projectName) return true;
-
-            return false;
+            catch (Exception ex)
+            {
+                swole.LogError("Encountered an error while cleaning project identifiers.");
+                swole.LogError(ex);
+            }
         }
 
         public static int GetNumberOfExternalPackageVersions(string packageName)
@@ -1399,8 +1827,8 @@ namespace Swole
 
                 foreach (var pkg in instance.externalPackages)
                 {
-                    if (pkg.instance == null) continue;
-                    if (pkg.instance.Name.AsID() == packageName) count++;
+                    if (pkg.content == null) continue;
+                    if (pkg.content.Name.AsID() == packageName) count++;
                 }
             }
             return count;
@@ -1415,16 +1843,16 @@ namespace Swole
             {
                 projectName = projectName.AsID();
 
-                if (instance.projectIdentifiers == null) ReloadProjectIdentifiers();
+                if (instance.projectIdentifiers == null) ReloadProjectInfo();
 
                 foreach (var pkg in instance.localPackages)
                 {
-                    if (pkg.instance == null) continue;
-                    if (GetProjectIdentifier(pkg.instance).AsID() == projectName) count++;
+                    if (pkg == null || pkg.Content == null) continue;
+                    if (GetProjectIdentifier(pkg.Content).AsID() == projectName) count++;
                 }
             }
             return count;
-        }
+        } 
 
         /// <summary>
         /// Get a list of packages in a project ordered alphabetically and then by version in descending order.
@@ -1440,7 +1868,7 @@ namespace Swole
                 projectName = projectName.AsID();
                 _tempLocalPackageList.Clear();
 
-                if (instance.projectIdentifiers == null) ReloadProjectIdentifiers();
+                if (instance.projectIdentifiers == null) ReloadProjectInfo();
 
                 if (instance.projectIdentifiers != null)
                 {
@@ -1455,13 +1883,14 @@ namespace Swole
 
                 foreach (var pkg in instance.localPackages)
                 {
+                    if (pkg == null || pkg.Content == null) continue;
                     bool contains = false;
-                    foreach(var mem in _tempLocalPackageList) if (mem.instance.GetIdentityString() == pkg.instance.GetIdentityString())
+                    foreach(var mem in _tempLocalPackageList) if (mem.Content != null && mem.Content.GetIdentityString() == pkg.Content.GetIdentityString())
                         {
                             contains = true;
                             break;
                         }
-                    if (!contains && pkg.instance.Name.AsID() == projectName) _tempLocalPackageList.Add(pkg);
+                    if (!contains && pkg.Content.Name.AsID() == projectName) _tempLocalPackageList.Add(pkg);
                 }
 
                 for (int a = 0; a < _tempLocalPackageList.Count; a++) list.Add(_tempLocalPackageList[a]);
@@ -1498,6 +1927,8 @@ namespace Swole
             if (initialized && !force) return false;
 
             ReloadAllPackagesLocal();
+            CleanProjectInfo();
+
             initialized = true;
             return true;
 

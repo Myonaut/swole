@@ -4,6 +4,9 @@ using System.Collections.Generic;
 namespace Swole.Script
 {
 
+    /// <summary>
+    /// A collection of executable actions organized into layers and sorted by priority.
+    /// </summary>
     public class ExecutionStack : IDisposable
     {
 
@@ -15,7 +18,7 @@ namespace Swole.Script
         public void Insert(ExecutionLayer layer, IExecutable exe)
         {
 
-            if (!IsValid || layer != ExecutionLayer.EarlyUpdate && layer != ExecutionLayer.Update && layer != ExecutionLayer.LateUpdate || exe == null || !exe.IsValid) return;
+            if (!IsValid || (layer != ExecutionLayer.EarlyUpdate && layer != ExecutionLayer.Update && layer != ExecutionLayer.LateUpdate) || exe == null || !exe.IsValid) return;
             if (!layers.TryGetValue(layer, out List<IExecutable> exes))
             {
                 exes = new List<IExecutable>();
@@ -33,7 +36,7 @@ namespace Swole.Script
         public bool RemoveAll(ExecutionLayer layer, IExecutable exe)
         {
 
-            if (!IsValid || layer != ExecutionLayer.EarlyUpdate && layer != ExecutionLayer.Update && layer != ExecutionLayer.LateUpdate || exe == null) return false;
+            if (!IsValid || (layer != ExecutionLayer.EarlyUpdate && layer != ExecutionLayer.Update && layer != ExecutionLayer.LateUpdate) || exe == null) return false;
             if (!layers.TryGetValue(layer, out List<IExecutable> exes)) return false;
 
             return exes.RemoveAll(i => i == exe) > 0;

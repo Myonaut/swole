@@ -22,19 +22,26 @@ namespace Swole.Script
         {
 
             packageName = packageString;
-            packageVersion = "";
+            packageVersion = string.Empty;
 
-            int versionPrefix = packageString.IndexOf(ssVersionPrefix);
+            if (packageString == null)
+            {
+                packageName = string.Empty;
+                return;
+            }
+
+            int versionPrefix = packageString.IndexOf(ssVersionPrefix); 
             if (versionPrefix >= 0)
             {
 
-                if (versionPrefix + ssVersionPrefix.Length + 1 < packageName.Length) packageVersion = packageName.Substring(versionPrefix + ssVersionPrefix.Length + 1);
-                packageName = packageString.Substring(versionPrefix);
+                if (versionPrefix + ssVersionPrefix.Length < packageName.Length) packageVersion = packageString.Substring(versionPrefix + ssVersionPrefix.Length);
+                packageName = packageString.Substring(0, versionPrefix); 
 
             }
 
         }
 
+        public const int ssDefaultStartIndentation = 0;
         public const int ssDefaultAutoIndentation = 2;
         public const string ssNewLine = "\n";
 

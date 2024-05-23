@@ -53,12 +53,14 @@ namespace Swole.UI
 
     public static class UIExtensions
     {
-
-        public static void SetAnchor(this RectTransform source, AnchorPresets allign, int anchoredPositionOffsetX = 0, int anchoredPositionOffsetY = 0)
+         
+        public static void SetAnchor(this RectTransform source, AnchorPresets align, float anchoredPositionX, float anchoredPositionY) => source.SetAnchor(align, false, new Vector2(anchoredPositionX, anchoredPositionY));
+        public static void SetAnchor(this RectTransform source, AnchorPresets align, Vector2 anchoredPosition) => source.SetAnchor(align, false, anchoredPosition);
+        public static void SetAnchor(this RectTransform source, AnchorPresets align, bool preservePosition = true, Vector2 anchoredPosition = default)
         {
-            //source.anchoredPosition = new Vector3(offsetX, offsetY, 0);
+            Vector3 prevPos = source.position;
 
-            switch (allign)
+            switch (align)
             {
                 case (AnchorPresets.TopLeft):
                     {
@@ -164,8 +166,14 @@ namespace Swole.UI
 
             }
 
-            source.anchoredPosition = new Vector3(anchoredPositionOffsetX, anchoredPositionOffsetY, 0);
-
+            if (preservePosition)
+            {
+                source.position = prevPos;
+            }
+            else
+            {
+                source.anchoredPosition = anchoredPosition;
+            }
         }
 
         public static void SetPivot(this RectTransform source, PivotPresets preset)

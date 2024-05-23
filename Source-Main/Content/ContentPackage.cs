@@ -190,6 +190,50 @@ namespace Swole
         public int ContentCount => content == null ? 0 : content.Length;
         public IContent GetContent(int index) => index < 0 || index >= ContentCount ? default : content[index];
         public IContent this[int index] => GetContent(index);
+        public int IndexOf(string contentName, Type contentType, bool caseSensitive = false)
+        {
+            if (string.IsNullOrEmpty(contentName) || contentType == null) return -1;
+            if (!caseSensitive) contentName = contentName.ToLower();
+            for (int a = 0; a < ContentCount; a++)
+            {
+                var c = GetContent(a);
+                if (c == null || !contentType.IsAssignableFrom(c.GetType())) continue;
+                string cname = c.Name;
+                if (!caseSensitive) cname = cname.ToLower();
+                if (cname == contentName) return a;
+            }
+            return -1;
+        }
+        public bool Contains(string contentName, Type contentType, bool caseSensitive = false) => IndexOf(contentName, contentType, caseSensitive) >= 0;
+        public bool TryFind<T>(out T contentObj, string contentName, bool caseSensitive = false) where T : IContent
+        {
+            contentObj = default;
+            if (TryFind(out var content, contentName, typeof(T), caseSensitive))
+            {
+                if (content is T)
+                {
+                    contentObj = (T)content;  
+                    return true;
+                }
+            }
+
+            return false;
+        }
+        public bool TryFind(out IContent contentObj, string contentName, System.Type type, bool caseSensitive = false)
+        {
+            contentObj = null;
+            if (!typeof(IContent).IsAssignableFrom(type)) return false; 
+
+            contentObj = default;
+            int ind = IndexOf(contentName, type, caseSensitive);
+            if (ind >= 0)
+            {
+                contentObj = content[ind];
+                return true;
+            }
+
+            return false;
+        }
 
         public int DependencyCount => Manifest.DependencyCount;
         public PackageIdentifier GetDependency(int index) => Manifest.GetDependency(index);

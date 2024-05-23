@@ -187,7 +187,7 @@ namespace Swole.UI
 
                 panelRectTransform.SetSiblingIndex(panelSiblingIndex);
 
-                panelRectTransform.SetAnchor(AnchorPresets.StretchAll);
+                panelRectTransform.SetAnchor(AnchorPresets.StretchAll, false);
 
                 panelRectTransform.SetPivot(PivotPresets.MiddleCenter);
 
@@ -211,7 +211,7 @@ namespace Swole.UI
 
                 content.SetParent(panelRectTransform, false);
 
-                content.SetAnchor(AnchorPresets.MiddleCenter);
+                content.SetAnchor(AnchorPresets.MiddleCenter, false);
 
                 content.SetPivot(PivotPresets.MiddleCenter);
 
@@ -394,7 +394,7 @@ namespace Swole.UI
 
                 member.SetParent(content, false);
 
-                member.SetAnchor(memberAnchor);
+                member.SetAnchor(memberAnchor, false);
                 member.SetPivot(memberAlignment);
 
                 member.anchorMax = member.anchorMin;

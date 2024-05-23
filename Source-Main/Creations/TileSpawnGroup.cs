@@ -1,63 +1,29 @@
 ﻿using System;
 using System.Collections.Generic;
 
-using static Swole.EngineInternal;
-
 namespace Swole
 {
 
-    public class TileSpawnGroup : SwoleObject<TileSpawnGroup, TileSpawnGroup.Serialized>
+    public class TileSpawnGroup : ObjectSpawnGroup
     {
 
-        #region Serialization
-
-        public override string AsJSON(bool prettyPrint = false) => AsSerializableStruct().AsJSON(prettyPrint);
-
-        [Serializable]
-        public struct Serialized : ISerializableContainer<TileSpawnGroup, TileSpawnGroup.Serialized>
+        public TileSpawnGroup(string tileSetId, ICollection<ObjectSpawner> tileSpawns, string tileCollectionId = null) : base(new ObjectSpawnGroup.Serialized() { assetStringMain = tileSetId, assetStringSecondary = tileCollectionId })
         {
-
-            public string tileSetName;
-            public TileSpawner[] tileSpawns;
-
-            public TileSpawnGroup AsOriginalType(PackageInfo packageInfo = default) => new TileSpawnGroup(this);
-            public string AsJSON(bool prettyPrint = false) => swole.Engine.ToJson(this, prettyPrint);
-
-            public object AsNonserializableObject(PackageInfo packageInfo = default) => AsOriginalType(packageInfo);
-        }
-
-        public static implicit operator Serialized(TileSpawnGroup obj) => new TileSpawnGroup.Serialized() { tileSetName = obj.tileSetName, tileSpawns = obj.tileSpawns };
-
-        public override TileSpawnGroup.Serialized AsSerializableStruct() => this;
-
-        public TileSpawnGroup(TileSpawnGroup.Serialized serializable) : base(serializable)
-        {
-
-            this.tileSetName = serializable.tileSetName;
-            this.tileSpawns = serializable.tileSpawns;
-
-        }
-
-        #endregion
-
-        public TileSpawnGroup(string tileSetName, ICollection<TileSpawner> tileSpawns) : base(default)
-        {
-            this.tileSetName = tileSetName;
             if (tileSpawns != null)
             {
-                this.tileSpawns = new TileSpawner[tileSpawns.Count];
+                this.objectSpawns = new ObjectSpawner[tileSpawns.Count];
                 int i = 0;
                 foreach (var spawn in tileSpawns)
                 {
-                    this.tileSpawns[i] = spawn;
+                    this.objectSpawns[i] = spawn;
                     i++;
                 }
-            } else this.tileSpawns = null;
+            } else this.objectSpawns = null; 
 
         }
 
-        protected readonly string tileSetName;
-        public string TileSetName => tileSetName;
+        public string TileSetId => AssetStringMain;
+        public string TileCollectionId => AssetStringSecondary;
 
         [NonSerialized]
         protected EngineInternal.TileSet cachedTileSet;
@@ -65,33 +31,36 @@ namespace Swole
         {
             get
             {
-                if (cachedTileSet == null) cachedTileSet = swole.Engine.GetTileSet(TileSetName);
+                if (cachedTileSet == null) 
+                {
+                    cachedTileSet = swole.Engine.GetTileSet(TileSetId, TileCollectionId);
+                }
                 return cachedTileSet;
             }
         }
 
-        protected readonly TileSpawner[] tileSpawns;
-
-        public void Spawn(Transform environmentRoot, List<EngineInternal.TileInstance> tileInstanceOutputList = null)
+        public override void Spawn(EngineInternal.ITransform environmentRoot, bool useRealTransforms) => Spawn(environmentRoot, useRealTransforms, null); 
+        public void Spawn(EngineInternal.ITransform environmentRoot, bool useRealTransforms, List<EngineInternal.TileInstance> tileInstanceOutputList)
         {
+            if (TileSet == null || objectSpawns == null) return;
 
-            if (TileSet == null || tileSpawns == null) return;
-
-            foreach (var spawner in tileSpawns)
+            foreach (var spawner in objectSpawns)
             {
-
-                var instance = spawner.CreateNewInstance(cachedTileSet, environmentRoot);
-
-                if (tileInstanceOutputList != null && instance != null) tileInstanceOutputList.Add(instance);
-
+                var instance = spawner.CreateNewTileInstance(cachedTileSet, environmentRoot, useRealTransforms);
+                if (tileInstanceOutputList != null) tileInstanceOutputList.Add(instance); 
             }
-
         }
-
-        public string ToJSON()
+        public override void SpawnIntoList(EngineInternal.ITransform environmentRoot, bool useRealTransforms, List<EngineInternal.ITransform> instanceOutputList)
         {
-            throw new NotImplementedException();
+            if (TileSet == null || objectSpawns == null) return; 
+
+            foreach (var spawner in objectSpawns)
+            {
+                var instance = spawner.CreateNewTileInstance(cachedTileSet, environmentRoot, useRealTransforms);
+                if (instanceOutputList != null) instanceOutputList.Add(instance);
+            }
         }
+
     }
 
 }

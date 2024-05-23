@@ -66,7 +66,7 @@ namespace Swole.UI
 
             tooltipInstance.gameObject.SetActive(true);
 
-            cursorPosition = tooltipInstance.Canvas.ScreenToCanvasPosition(CursorProxy.Position);
+            cursorCanvasPosition = tooltipInstance.Canvas.ScreenToCanvasSpace(CursorProxy.ScreenPosition);
 
         }
 
@@ -85,7 +85,7 @@ namespace Swole.UI
 
         public float autoHideDistance;
 
-        protected Vector3 cursorPosition;
+        protected Vector3 cursorCanvasPosition;
 
         protected virtual void Update()
         {
@@ -97,7 +97,7 @@ namespace Swole.UI
             if (autoHideDistance > 0 && showing)
             {
 
-                if (Vector3.Distance(tooltipInstance.Canvas.ScreenToCanvasPosition(CursorProxy.Position), cursorPosition) >= autoHideDistance) HideTooltip();
+                if (Vector3.Distance(tooltipInstance.Canvas.ScreenToCanvasSpace(CursorProxy.ScreenPosition), cursorCanvasPosition) >= autoHideDistance) HideTooltip();
 
             }
 

@@ -6,6 +6,9 @@ using System.Reflection;
 namespace Swole.Script
 {
 
+    /// <summary>
+    /// A proxy that can be used to set or get the value of a field or property of an object using reflection.
+    /// </summary>
     public class SwoleVarLinkedInstance<T> : SwoleVarLinked<T>
     {
 
@@ -38,8 +41,8 @@ namespace Swole.Script
             bool invalid = false;
             foreach(var memberName in memberNameChain)
             {
-                MemberInfo memInfo = memberType.GetField(memberName);
-                if (memInfo == null) memInfo = memberType.GetProperty(memberName);
+                MemberInfo memInfo = memberType.GetField(memberName); // Includes public static and public instance, and is case-sensitive.
+                if (memInfo == null) memInfo = memberType.GetProperty(memberName); // Includes public static and public instance, and is case-sensitive.
 
                 if (memInfo == null) 
                 {

@@ -1,14 +1,14 @@
 namespace Swole
 {
 
-    public interface ISwoleSerialization<TMain, TSerialized> : ISwoleSerialization, ISwoleSerializable where TSerialized : struct, ISerializableContainer<TMain, TSerialized>
+    public interface ISwoleSerialization<TMain, TSerialized> : ISwoleSerialization where TSerialized : struct, ISerializableContainer<TMain, TSerialized>
     {
 
         public TSerialized AsSerializableStruct();
 
     }
 
-    public interface ISwoleSerialization
+    public interface ISwoleSerialization : ISwoleSerializable
     {
 
         public object AsSerializableObject();

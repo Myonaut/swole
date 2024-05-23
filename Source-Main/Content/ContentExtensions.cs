@@ -82,17 +82,28 @@ namespace Swole
             return relativePath;
         }
 
+        private static readonly CultureInfo _cultureInfo = new CultureInfo("en-us");
+        public static bool TryConvertDateStringToDateTime(string dateString, out DateTime date)
+        {
+            date = default;
+            if (!string.IsNullOrEmpty(dateString) && DateTime.TryParse(dateString, _cultureInfo, DateTimeStyles.None, out date)) return true;
+            return false;
+        }
+        public static DateTime ConvertDateStringToDateTime(string dateString)
+        {
+            if (TryConvertDateStringToDateTime(dateString, out DateTime date)) return date;
+            return default;
+        }
         public static DateTime LastEditDate(this IContent content)
         {
 
             if (content == null) return default;
 
-            if (!string.IsNullOrEmpty(content.LastEditDate) && DateTime.TryParse(content.LastEditDate, new CultureInfo("en-us"), DateTimeStyles.None, out DateTime date)) return date;
+            if (TryConvertDateStringToDateTime(content.LastEditDate, out DateTime date)) return date;
 
             return content.CreationDate();
 
         }
-
         public static DateTime CreationDate(this IContent content)
         {
 
@@ -100,7 +111,7 @@ namespace Swole
 
             DateTime date = DateTime.Now;
 
-            if (!string.IsNullOrEmpty(content.CreationDate) && DateTime.TryParse(content.CreationDate, new CultureInfo("en-us"), DateTimeStyles.None, out DateTime result)) date = result;
+            if (TryConvertDateStringToDateTime(content.CreationDate, out DateTime result)) date = result;
 
             return date;
 

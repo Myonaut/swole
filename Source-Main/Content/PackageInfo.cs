@@ -1,5 +1,4 @@
 using System;
-using System.Collections.Generic;
 
 using static Swole.swole;
 using static Swole.Script.SwoleScriptSemantics;
@@ -12,6 +11,8 @@ namespace Swole
     {
 
         public static explicit operator string(PackageInfo info) => info.GetIdentityString();
+
+        public static implicit operator PackageIdentifier(PackageInfo info) => info.GetIdentity();
 
         public PackageInfo(string name, Version version, string curator, string description,string url = null, string[] tags = null) : this(name, version == null ? "" : version.ToString(), curator, description, url, tags) { }
         public PackageInfo(string name, string version, string curator, string description, string url = null, string[] tags = null)

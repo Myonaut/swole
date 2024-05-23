@@ -11,14 +11,25 @@ using Swole.Script;
 namespace Swole.API.Unity
 {
 
-    public class SwolePackage : ScriptableObject
+    /// <summary>
+    /// A wrapper used to edit a content package. Use SwolePackage.Create to create one.
+    /// </summary>
+    public class SwolePackage// : ScriptableObject
     {
 
         public static SwolePackage Create(PackageManifest manifest, ICollection<IContent> content = null, bool ensureDependencies = true)
         {
 
-            SwolePackage package = ScriptableObject.CreateInstance<SwolePackage>();
+            SwolePackage package = new SwolePackage();//ScriptableObject.CreateInstance<SwolePackage>();
             package.immutable = new ContentPackage(manifest, content, ensureDependencies);
+            return package;
+
+        }
+        public static SwolePackage Create(ContentPackage contentPackage)
+        {
+
+            SwolePackage package = new SwolePackage();//ScriptableObject.CreateInstance<SwolePackage>();
+            package.immutable = contentPackage;
             return package;
 
         }
@@ -80,6 +91,30 @@ namespace Swole.API.Unity
 
         }
 
+        public void Replace(IContent toReplace, IContent newContent, bool ensureDependencies = true)
+        {
+
+            if (immutable != null)
+            {
+
+                contentViewer.Clear();
+                immutable.AsList(contentViewer);
+                for (int a = 0; a < contentViewer.Count; a++)
+                {
+                    var content = contentViewer[a];
+                    if (content != null && (ReferenceEquals(toReplace, content) || (content.Name == toReplace.Name && content.GetType() == toReplace.GetType())))
+                    {
+                        contentViewer[a] = newContent;
+                        break;
+                    }
+                }
+
+                immutable = new ContentPackage(immutable.Manifest, contentViewer, ensureDependencies);
+
+            }
+
+        }
+
         public bool Remove(IContent content, bool updateDependencies = true)
         {
 
@@ -92,7 +127,7 @@ namespace Swole.API.Unity
                 contentViewer.Clear();
                 immutable.AsList(contentViewer);
 
-                if (contentViewer.RemoveAll(i => i == null || (i.Name == content.Name && i.GetType() == content.GetType())) > 0)
+                if (contentViewer.RemoveAll(i => i == null || (ReferenceEquals(i, content) || (content.Name == i.Name && content.GetType() == i.GetType()))) > 0)
                 {
                     immutable = new ContentPackage(manifest, contentViewer, updateDependencies);
                     return true;
@@ -121,7 +156,7 @@ namespace Swole.API.Unity
                 foreach(var cont in content)
                 {
                     if (cont == null) continue;
-                    if (contentViewer.RemoveAll(i => i == null || (i.Name == cont.Name && i.GetType() == cont.GetType())) > 0) removed = true;
+                    if (contentViewer.RemoveAll(i => i == null || (ReferenceEquals(i, cont) || (cont.Name == i.Name && cont.GetType() == i.GetType()))) > 0) removed = true;
                 }
 
                 if (removed) 
@@ -148,7 +183,7 @@ namespace Swole.API.Unity
         public void UpdateManifest(PackageManifest manifest, bool ensureDependencies = true)
         {
 
-            if (manifest == Manifest) return;
+            //if (manifest == Manifest) return; // Manifests with different urls and descriptions are still considered "equal" if they have the same name, version, and curator - so don't check for equality here.
 
             contentViewer.Clear();
             immutable.AsList(contentViewer);
@@ -172,6 +207,8 @@ namespace Swole.API.Unity
 
         }
 
+        public static implicit operator ContentPackage(SwolePackage pkg) => pkg.Immutable;
+
         public SourcePackage SourcePackage => immutable == null ? null : immutable.AsSourcePackage();
 
         public PackageManifest Manifest => immutable == null ? default : immutable.Manifest;
@@ -180,15 +217,15 @@ namespace Swole.API.Unity
         public bool NameIsValid => immutable == null ? false : immutable.NameIsValid;
         public bool VersionIsValid => immutable == null ? false : immutable.VersionIsValid;
 
-        public string URL => immutable == null ? "" : immutable.URL;
-        public string Name => immutable == null ? "" : immutable.Name;
+        public string URL => immutable == null ? string.Empty : immutable.URL;
+        public string Name => immutable == null ? string.Empty : immutable.Name;
         public Version Version => immutable == null ? null : immutable.Version;
-        public string VersionString => immutable == null ? "" : immutable.VersionString;
-        public string GetIdentityString() => immutable == null ? "" : immutable.GetIdentityString();
+        public string VersionString => immutable == null ? string.Empty : immutable.VersionString;
+        public string GetIdentityString() => immutable == null ? string.Empty : immutable.GetIdentityString();
         public PackageIdentifier GetIdentity() => immutable == null ? default : immutable.GetIdentity();
 
-        public string Curator => immutable == null ? "" : immutable.Curator;
-        public string Description => immutable == null ? "" : immutable.Description;
+        public string Curator => immutable == null ? string.Empty : immutable.Curator;
+        public string Description => immutable == null ? string.Empty : immutable.Description;
 
         public int ContentCount => immutable == null ? 0 : immutable.ContentCount;
         public IContent GetContent(int index) => index < 0 || index >= ContentCount ? default : immutable[index];

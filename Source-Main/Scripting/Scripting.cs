@@ -8,12 +8,29 @@ using System.Reflection;
 using Miniscript;
 
 using static Swole.EngineInternal;
-
+ 
 namespace Swole.Script
 {
 
     public static class Scripting
     {
+
+        private static string[] executionLayerNames = Enum.GetNames(typeof(ExecutionLayer));
+        public static bool TryParseExecutionLayer(string layerName, out ExecutionLayer layer)
+        {
+            layer = ExecutionLayer.Initialization;
+            if (string.IsNullOrWhiteSpace(layerName)) return false;
+
+            layerName = layerName.AsID();
+
+            foreach(var _layerName in executionLayerNames) if (_layerName.AsID() == layerName)
+                {
+                    layer = Enum.Parse<ExecutionLayer>(_layerName);
+                    return true;
+                }
+
+            return false;
+        }
 
         #region MiniScript
 
@@ -27,6 +44,94 @@ namespace Swole.Script
 
             return AsValueMS(variable.GetValueType(), variable.Value, null, previousValueInstance);
 
+        }
+
+        public static bool TryCastAsMSType<T>(this Value value, out T result) where T : Value
+        {
+            result = default;
+            if (value is T)
+            {
+                result = (T)value;
+            }
+            else if (value is ValMap _map)
+            {
+                _map.TryGetValue(ValString.magicIsA.value, out Value parent);
+                while (parent != null)
+                {
+                    if (parent is T)
+                    {
+                        result = (T)parent;
+                        break;
+                    }
+                    else if (parent is ValMap)
+                    {
+                        _map = (ValMap)parent;
+                        if (!_map.TryGetValue(ValString.magicIsA.value, out parent)) break;
+                    }
+                }
+            }
+
+            return result != null;
+        }
+        public static Type GetRealType(this Value msValue) 
+        {
+            if (msValue == null) return null;
+
+            string valueStr = msValue.ToString();
+            if (valueStr == null) valueStr = string.Empty;
+            valueStr = valueStr.AsID();
+
+            Type type = null;
+
+            SwoleScriptType sst = null;
+            if (msValue is ValString str)
+            {
+                foreach (var _sst in SwoleScriptType.allTypes)
+                {
+                    if (_sst == null) continue;
+                    if (_sst.Name.AsID() == valueStr)
+                    {
+                        sst = _sst;
+                        break;
+                    }
+                }
+            }
+            else if (msValue is SwoleScriptType)
+            {
+                sst = (SwoleScriptType)msValue;
+            }
+            else if (msValue is ValMap map)
+            {
+                if (map.TryCastAsMSType<SwoleScriptType>(out var _temp)) sst = _temp;
+            }
+            
+            if (sst != null)
+            {
+                return sst.RealType;
+            }
+            else if (msValue is ValNumber || valueStr == "number")
+            {
+                return typeof(float);
+            }
+            else if (msValue is ValString || valueStr == "string")
+            {
+                return typeof(string);
+            }
+            else if (msValue is ValVector || valueStr == "vector")
+            {
+                return typeof(EngineInternal.Vector4);
+            }
+            else if (msValue is ValQuaternion || valueStr == "quaternion")
+            {
+                return typeof(EngineInternal.Quaternion);
+            }
+
+            return type;
+        }
+        public static bool TryGetRealType(Value msValue, out Type type)
+        {
+            type = GetRealType(msValue);
+            return type != null;
         }
 
         private const string keyStr_X = "x";
@@ -57,21 +162,21 @@ namespace Swole.Script
         /// <summary>
         /// Try to convert a C# type to a MiniScript value.
         /// </summary>
-        public static Value AsValueMS(Type valueType, object value, object parent = null, Value previousValueInstance = null)
+        public static Value AsValueMS(Type valueType, object value, object parent = null, Value previousValueInstance = null, int recursionMax = 8, int recursionLevel = 0)
         {
 
-            if (value == null || value == parent) return null;
+            if (recursionLevel > recursionMax || value == null || value == parent) return null;
 
             if (valueType.IsNumeric()) 
-            { 
-                
+            {
+
                 if (previousValueInstance != null && previousValueInstance is ValNumber num)
                 {
-                    num.value = (double)value;
+                    num.value = Convert.ToDouble(value);//(double)value;
                     return num;
                 }
 
-                return new ValNumber((double)value); 
+                return new ValNumber(Convert.ToDouble(value)/*(double)value*/); 
             
             }
 
@@ -80,11 +185,24 @@ namespace Swole.Script
 
                 if (previousValueInstance != null && previousValueInstance is ValNumber num)
                 {
-                    num.value = ((bool)value) ? 1 : 0;
+                    num.value = Convert.ToBoolean(value) ? 1 : 0;
                     return num;
                 }
 
-                return new ValNumber(((bool)value) ? 1 : 0);
+                return new ValNumber(Convert.ToBoolean(value) ? 1 : 0);
+
+            }
+
+            if (typeof(string).IsAssignableFrom(valueType))
+            {
+
+                if (previousValueInstance != null && previousValueInstance is ValString str)
+                {
+                    str.value = Convert.ToString(value);
+                    return str;
+                }
+
+                return new ValString((string)value);
 
             }
 
@@ -92,6 +210,7 @@ namespace Swole.Script
             {
                 Vector3 val = (Vector3)value;
 
+                /*
                 ValMap internalVal;
                 if (previousValueInstance is ValMap) internalVal = (ValMap)previousValueInstance; else internalVal = new ValMap();
 
@@ -104,10 +223,33 @@ namespace Swole.Script
                 x.value = val.x;
                 y.value = val.y;
                 z.value = val.z;
+                */
+                ValVector internalVal;
+                if (previousValueInstance is ValVector) internalVal = (ValVector)previousValueInstance; else internalVal = new ValVector(val.x, val.y, val.z);
+
+                if (internalVal.x != null) internalVal.x.value = val.x;
+                if (internalVal.y != null) internalVal.y.value = val.y;
+                if (internalVal.z != null) internalVal.z.value = val.z;
 
                 return internalVal;
             }
 
+            if (valueType == typeof(Quaternion))
+            {
+                Quaternion val = (Quaternion)value;
+
+                ValQuaternion internalVal;
+                if (previousValueInstance is ValQuaternion) internalVal = (ValQuaternion)previousValueInstance; else internalVal = new ValQuaternion(val.x, val.y, val.z, val.w);
+
+                if (internalVal.x != null) internalVal.x.value = val.x;
+                if (internalVal.y != null) internalVal.y.value = val.y;
+                if (internalVal.z != null) internalVal.z.value = val.z;
+                if (internalVal.w != null) internalVal.w.value = val.w;
+
+                return internalVal;
+            }
+
+            /*
             if (valueType == typeof(Quaternion) || valueType == typeof(Vector4))
             {
                 Vector4 val = (Vector4)value;
@@ -128,11 +270,13 @@ namespace Swole.Script
 
                 return internalVal;
             }
+            */
 
             if (valueType == typeof(Vector2))
             {
                 Vector2 val = (Vector2)value;
 
+                /*
                 ValMap internalVal;
                 if (previousValueInstance is ValMap) internalVal = (ValMap)previousValueInstance; else internalVal = new ValMap();
 
@@ -143,6 +287,27 @@ namespace Swole.Script
 
                 x.value = val.x;
                 y.value = val.y;
+                */
+                ValVector internalVal;
+                if (previousValueInstance is ValVector) internalVal = (ValVector)previousValueInstance; else internalVal = new ValVector(val.x, val.y);
+
+                if (internalVal.x != null) internalVal.x.value = val.x;
+                if (internalVal.y != null) internalVal.y.value = val.y;
+
+                return internalVal;
+            }
+
+            if (valueType == typeof(Vector4))
+            {
+                Vector4 val = (Vector4)value;
+
+                ValVector internalVal;
+                if (previousValueInstance is ValVector) internalVal = (ValVector)previousValueInstance; else internalVal = new ValVector(val.x, val.y, val.z, val.w);
+
+                if (internalVal.x != null) internalVal.x.value = val.x;
+                if (internalVal.y != null) internalVal.y.value = val.y;
+                if (internalVal.z != null) internalVal.z.value = val.z;
+                if (internalVal.w != null) internalVal.w.value = val.w;
 
                 return internalVal;
             }
@@ -151,6 +316,7 @@ namespace Swole.Script
             {
                 Matrix4x4 val = (Matrix4x4)value;
 
+                /*
                 ValMap internalVal;
                 if (previousValueInstance is ValMap) internalVal = (ValMap)previousValueInstance; else internalVal = new ValMap();
 
@@ -199,6 +365,38 @@ namespace Swole.Script
                 m31.value = val.m31;
                 m32.value = val.m32;
                 m33.value = val.m33;
+                */
+                ValMatrix internalVal;
+                if (previousValueInstance is ValMatrix) internalVal = (ValMatrix)previousValueInstance; else internalVal = new ValMatrix(val.m00, val.m01, val.m02, val.m03, val.m10, val.m11, val.m12, val.m13, val.m20, val.m21, val.m22, val.m23, val.m30, val.m31, val.m32, val.m33);
+
+                if (internalVal.c0 != null)
+                {
+                    if (internalVal.c0.x != null) internalVal.c0.x.value = val.m00;
+                    if (internalVal.c0.y != null) internalVal.c0.y.value = val.m01;
+                    if (internalVal.c0.z != null) internalVal.c0.z.value = val.m02;
+                    if (internalVal.c0.w != null) internalVal.c0.w.value = val.m03;
+                }
+                if (internalVal.c1 != null)
+                {
+                    if (internalVal.c1.x != null) internalVal.c1.x.value = val.m10;
+                    if (internalVal.c1.y != null) internalVal.c1.y.value = val.m11;
+                    if (internalVal.c1.z != null) internalVal.c1.z.value = val.m12;
+                    if (internalVal.c1.w != null) internalVal.c1.w.value = val.m13;
+                }
+                if (internalVal.c2 != null)
+                {
+                    if (internalVal.c2.x != null) internalVal.c2.x.value = val.m20;
+                    if (internalVal.c2.y != null) internalVal.c2.y.value = val.m21;
+                    if (internalVal.c2.z != null) internalVal.c2.z.value = val.m22;
+                    if (internalVal.c2.w != null) internalVal.c2.w.value = val.m23;
+                }
+                if (internalVal.c3 != null)
+                {
+                    if (internalVal.c3.x != null) internalVal.c3.x.value = val.m30;
+                    if (internalVal.c3.y != null) internalVal.c3.y.value = val.m31;
+                    if (internalVal.c3.z != null) internalVal.c3.z.value = val.m32;
+                    if (internalVal.c3.w != null) internalVal.c3.w.value = val.m33;
+                }
 
                 return internalVal;
             }
@@ -231,7 +429,7 @@ namespace Swole.Script
                                         {
                                             string key = (string)keyProp.GetValue(element);
                                             internalVal.TryGetValue(key, out Value existingVal);
-                                            internalVal[key] = AsValueMS(genArgs[1], valueProp.GetValue(element), value, existingVal);
+                                            internalVal[key] = AsValueMS(genArgs[1], valueProp.GetValue(element), value, existingVal, recursionMax, recursionLevel + 1);
                                         }
                                         return internalVal;
                                     }
@@ -248,11 +446,11 @@ namespace Swole.Script
                             if (i < internalList.values.Count)
                             {
                                 existingVal = internalList.values[i];
-                                internalList.values[i] = AsValueMS(genType, element, value, existingVal);
+                                internalList.values[i] = AsValueMS(genType, element, value, existingVal, recursionMax, recursionLevel + 1);
                             } 
                             else
                             {
-                                internalList.values.Add(AsValueMS(genType, element, value));
+                                internalList.values.Add(AsValueMS(genType, element, value, null, recursionMax, recursionLevel + 1));
                             }
                             i++;
                         }
@@ -263,6 +461,92 @@ namespace Swole.Script
 
             return null;
 
+        }
+
+        /// <summary>
+        /// Try to convert a MiniScript value to C# type.
+        /// </summary>
+        public static object FromValueMS(Value value)
+        {
+            if (value is ValNumber num)
+            {
+                return num.value; 
+            } 
+            else if (value is ValString str)
+            {
+                return str.value;
+            }
+            else if (value is ValList list)
+            {
+                return list.values;
+            }
+            else if (value is ValMap map)
+            {
+                return map.map;
+            }
+            else if (value is ValVector vec)
+            {
+                int compCount = vec.ComponentCount;
+                if (compCount <= 2)
+                {
+                    return new Vector2(vec.x == null ? 0 : (float)vec.x.value, vec.y == null ? 0 : (float)vec.y.value);
+                }
+                else if (compCount == 3)
+                {
+                    return new Vector3(vec.x == null ? 0 : (float)vec.x.value, vec.y == null ? 0 : (float)vec.y.value, vec.z == null ? 0 : (float)vec.z.value);
+                }
+                else if (compCount >= 4)
+                {
+                    return new Vector4(vec.x == null ? 0 : (float)vec.x.value, vec.y == null ? 0 : (float)vec.y.value, vec.z == null ? 0 : (float)vec.z.value, vec.w == null ? 0 : (float)vec.w.value);
+                }
+            }
+            else if (value is ValQuaternion quat)
+            {
+                return new Quaternion(quat.x == null ? 0 : (float)quat.x.value, quat.y == null ? 0 : (float)quat.y.value, quat.z == null ? 0 : (float)quat.z.value, quat.w == null ? 0 : (float)quat.w.value);
+            }
+            else if (value is ValMatrix matrix)
+            {
+                float m00, m01, m02, m03, m10, m11, m12, m13, m20, m21, m22, m23, m30, m31, m32, m33;
+                m00 = m01 = m02 = m03 = m10 = m11 = m12 = m13 = m20 = m21 = m22 = m23 = m30 = m31 = m32 = m33 = 0;
+                if (matrix.c0 != null)
+                {
+                    m00 = matrix.c0.x == null ? 0 : (float)matrix.c0.x.value;
+                    m01 = matrix.c0.y == null ? 0 : (float)matrix.c0.y.value;
+                    m02 = matrix.c0.z == null ? 0 : (float)matrix.c0.z.value;
+                    m03 = matrix.c0.w == null ? 0 : (float)matrix.c0.w.value;
+
+                    if (matrix.c1 != null)
+                    {
+                        m10 = matrix.c1.x == null ? 0 : (float)matrix.c1.x.value;
+                        m11 = matrix.c1.y == null ? 0 : (float)matrix.c1.y.value;
+                        m12 = matrix.c1.z == null ? 0 : (float)matrix.c1.z.value;
+                        m13 = matrix.c1.w == null ? 0 : (float)matrix.c1.w.value;
+
+                        if (matrix.c2 != null)
+                        {
+                            m20 = matrix.c2.x == null ? 0 : (float)matrix.c2.x.value;
+                            m21 = matrix.c2.y == null ? 0 : (float)matrix.c2.y.value;
+                            m22 = matrix.c2.z == null ? 0 : (float)matrix.c2.z.value;
+                            m23 = matrix.c2.w == null ? 0 : (float)matrix.c2.w.value;
+
+                            if (matrix.c3 != null)
+                            {
+                                m30 = matrix.c3.x == null ? 0 : (float)matrix.c3.x.value;
+                                m31 = matrix.c3.y == null ? 0 : (float)matrix.c3.y.value;
+                                m32 = matrix.c3.z == null ? 0 : (float)matrix.c3.z.value;
+                                m33 = matrix.c3.w == null ? 0 : (float)matrix.c3.w.value;
+                            }
+                        }
+                    }
+                } 
+                return new Matrix4x4(new Vector4(m00, m01, m02, m03), new Vector4(m10, m11, m12, m13), new Vector4(m20, m21, m22, m23), new Vector4(m30, m31, m32, m33));
+            } 
+            else if (value is SwoleScriptIntrinsics.ValReference valRef)
+            {
+                return valRef.Reference; 
+            }
+
+            return null;
         }
 
         #endregion

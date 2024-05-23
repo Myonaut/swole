@@ -16,6 +16,11 @@ namespace Swole
             this.version = version;
         }
 
+        public PackageIdentifier(string packageString)
+        {
+            SplitFullPackageString(packageString, out name, out version);
+        }
+
         public string name;
 
         public string version;
@@ -23,6 +28,7 @@ namespace Swole
         public bool VersionIsValid => ValidateVersionString(version);
 
         public static implicit operator string(PackageIdentifier dep) => GetFullPackageString(dep.name, dep.version);
+        public static implicit operator PackageIdentifier(string str) => new PackageIdentifier(str);
         public override string ToString() => this;
 
         public bool Equals(PackageIdentifier other)

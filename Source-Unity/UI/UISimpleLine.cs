@@ -47,6 +47,33 @@ namespace Swole.UI
             this.thickness = thickness;
             SetEndPoint(pointEnd);
         }
+
+        private Transform parent;
+        public virtual void SetWorldStartPoint(Vector3 pointStartWorld)
+        {
+            if (parent == null) parent = rectTransform.parent;
+            if (parent != null) pointStartWorld = parent.InverseTransformPoint(pointStartWorld);
+
+            SetStartPoint(pointStartWorld);
+        }
+        public virtual void SetWorldEndPoint(Vector3 pointEndWorld)
+        {
+            if (parent == null) parent = rectTransform.parent;
+            if (parent != null) pointEndWorld = parent.InverseTransformPoint(pointEndWorld);
+
+            SetEndPoint(pointEndWorld);
+        }
+        public virtual void SetWorldStartPointAndThickness(Vector3 pointStartWorld, float thickness)
+        {
+            this.thickness = thickness;
+            SetWorldStartPoint(pointStartWorld);
+        }
+        public virtual void SetWorldEndPointAndThickness(Vector3 pointEndWorld, float thickness)
+        {
+            this.thickness = thickness;
+            SetWorldEndPoint(pointEndWorld);
+        }
+
         public virtual void SetPoints(Vector3 pointStart, Vector3 pointEnd)
         {
             this.pointStart = pointStart;
@@ -57,6 +84,23 @@ namespace Swole.UI
         {
             this.thickness = thickness;
             SetPoints(pointStart, pointEnd);
+        }
+
+        public virtual void SetWorldPoints(Vector3 pointStartWorld, Vector3 pointEndWorld)
+        {
+            if (parent == null) parent = rectTransform.parent;
+            if (parent != null)
+            {
+                pointStart = parent.InverseTransformPoint(pointStartWorld);
+                pointEnd = parent.InverseTransformPoint(pointEndWorld);
+            }
+
+            Refresh();
+        }
+        public virtual void SetWorldPointsAndThickness(Vector3 pointStart, Vector3 pointEnd, float thickness)
+        {
+            this.thickness = thickness;
+            SetWorldPoints(pointStart, pointEnd);
         }
 
         protected Image image;
@@ -74,6 +118,8 @@ namespace Swole.UI
             }
 
         }
+
+        public void SetRaycastTarget(bool isRaycastTarget) => Image.raycastTarget = isRaycastTarget;
 
         public Color Color { get { return Image.color; } set { Image.color = value; } }
 
@@ -105,25 +151,28 @@ namespace Swole.UI
 
         public virtual void Refresh()
         {
+            if (pointStart == pointEnd || float.IsNaN(pointStart.x) || float.IsNaN(pointStart.y) || float.IsNaN(pointEnd.x) || float.IsNaN(pointEnd.y)) 
+            {
+                Image.enabled = false;
+                return;
+            }
 
-            if (pointStart == pointEnd) return;
+            Image.enabled = true; 
 
             Vector3 min = pointStart;
             Vector3 max = pointEnd;
 
-            rectTransform.localPosition = (min + max) / 2; 
+            RectTransform.localPosition = (min + max) / 2; 
 
             Vector3 dif = max - min;
 
             float mag = dif.magnitude;
 
-            if (dif.x == 0) return;
-
             rectTransform.SetSizeWithCurrentAnchors(RectTransform.Axis.Horizontal, mag);
             rectTransform.SetSizeWithCurrentAnchors(RectTransform.Axis.Vertical, thickness);
 
-            rectTransform.localRotation = Quaternion.Euler(new Vector3(0, 0, 180 * Mathf.Atan(dif.y / dif.x) / Mathf.PI));
-
+            rectTransform.localRotation = Quaternion.Euler(new Vector3(0, 0, dif.x == 0 ? 90 : (180 * Mathf.Atan(dif.y / dif.x) / Mathf.PI)));
+             
         }
 
 #if UNITY_EDITOR

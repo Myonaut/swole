@@ -5,7 +5,6 @@ using System.Collections.Generic;
 
 using UnityEngine;
 using UnityEngine.EventSystems;
-using UnityEngine.UI;
 
 namespace Swole
 {
@@ -27,100 +26,121 @@ namespace Swole
             raycasters = null;
 
             objectsUnderCursor?.Clear();
-            objectsUnderCursor = null;
+            objectsUnderCursor = null; 
 
             base.OnDestroyed();
 
         }
+         
+        public static Vector3 ScreenPosition { get => UnityEngineHook.AsUnityVector(InputProxy.CursorScreenPosition); set => InputProxy.CursorScreenPosition = UnityEngineHook.AsSwoleVector(value); }
+        public static Vector3 WorldPosition { get => UnityEngineHook.AsUnityVector(InputProxy.CursorWorldPositionMainCameraNCP); }
 
-        public static Vector3 Position { get => InputProxy.CursorPosition; set => InputProxy.CursorPosition = value; }
-        public static CursorLockMode LockState => InputProxy.CursorLockState;
-        public static bool Visible => InputProxy.IsCursorVisible;
+        public static CursorLockMode LockState
+        {
+            get => InputProxy.CursorLockState;
+            set => InputProxy.CursorLockState = value;
+        }
+        public static bool Visible
+        {
+            get => InputProxy.IsCursorVisible;
+            set => InputProxy.IsCursorVisible = value;
+        }
+
+        public static float AxisX => InputProxy.CursorAxisX;
+        public static float AxisY => InputProxy.CursorAxisY;
 
         protected List<BaseRaycaster> raycasters;
-
         public List<BaseRaycaster> RaycastersList
         {
-
             get
             {
-
                 if (raycasters == null) UpdateRaycasterList();
-
                 return raycasters;
-
             }
-
         }
 
         public static List<BaseRaycaster> Raycasters => Instance.RaycastersList;
 
         public void UpdateRaycasterListLocal()
         {
-
             if (raycasters == null) raycasters = new List<BaseRaycaster>();
-
             raycasters.Clear();
 
             raycasters.AddRange(GameObject.FindObjectsOfType<BaseRaycaster>());
-
         }
 
         public static void UpdateRaycasterList()
         {
-
             Instance.UpdateRaycasterListLocal();
-
         }
 
         protected List<GameObject> objectsUnderCursor = new List<GameObject>();
-
         public static List<GameObject> ObjectsUnderCursor => GetObjectsUnderCursor();
+        public static GameObject FirstObjectUnderCursor
+        {
+            get
+            {
+                var list = ObjectsUnderCursor;
+                if (list == null || list.Count <= 0) return null;
+                return list[0];
+            }
+        }
 
-        protected List<RaycastResult> results = new List<RaycastResult>();
+        protected readonly List<RaycastResult> results = new List<RaycastResult>();
 
         protected int lastQueryFrame;
 
-        public List<GameObject> GetObjectsUnderCursorLocal()
+        public List<GameObject> GetObjectsUnderCursorLocal(List<GameObject> appendList = null, bool forceQuery = false, bool updateRaycasters = false)
         {
-
             int frame = Time.frameCount;
 
-            if (lastQueryFrame == frame || IsQuitting()) return objectsUnderCursor;
+            if ((lastQueryFrame == frame && !forceQuery) || IsQuitting()) 
+            {
+                if (appendList != null)
+                {
+                    appendList.AddRange(objectsUnderCursor);
+                    return appendList;
+                }
+                return objectsUnderCursor;       
+            }
 
             lastQueryFrame = frame;
 
             if (objectsUnderCursor == null) objectsUnderCursor = new List<GameObject>();
-
             objectsUnderCursor.Clear();
 
             EventSystem system = EventSystem.current;
 
             if (system == null) return objectsUnderCursor;
 
-            var eventData = new PointerEventData(system) { position = Position };
+            var eventData = new PointerEventData(system) { position = ScreenPosition };
 
             results.Clear();
 
+            if (updateRaycasters) UpdateRaycasterListLocal();
             foreach (var raycaster in RaycastersList)
             {
                 raycaster.Raycast(eventData, results);
             }
 
-            foreach (var result in results)
+            results.Sort((RaycastResult x, RaycastResult y) => (int)Mathf.Sign(y.depth - x.depth));
+
+            foreach(var result in results)
             {
                 if (result.gameObject != null) objectsUnderCursor.Add(result.gameObject);
             }
 
+            if (appendList != null)
+            {
+                appendList.AddRange(objectsUnderCursor);
+                return appendList;
+            }
             return objectsUnderCursor;
-
         }
 
-        public static List<GameObject> GetObjectsUnderCursor()
+        public static List<GameObject> GetObjectsUnderCursor(List<GameObject> appendList = null, bool forceQuery = false, bool updateRaycasters = false)
         {
-
-            return Instance.GetObjectsUnderCursorLocal();
-
+            return Instance.GetObjectsUnderCursorLocal(appendList, forceQuery, updateRaycasters);
         }
 
     }

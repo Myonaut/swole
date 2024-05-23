@@ -5,7 +5,7 @@ using System.Globalization;
 namespace Swole
 {
 
-    public interface IContent : IPackageDependent
+    public interface IContent : ISwoleAsset, IPackageDependent
     {
 
         public const string dateFormat = "MM/dd/yyyy";
@@ -14,7 +14,7 @@ namespace Swole
 
         public ContentInfo ContentInfo { get; }
 
-        public string Name { get; }
+        public IContent CreateCopyAndReplaceContentInfo(ContentInfo info);
 
         public string Author { get; }
 

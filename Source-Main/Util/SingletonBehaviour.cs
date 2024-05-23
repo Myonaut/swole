@@ -49,12 +49,13 @@ namespace Swole
         {
             instance = newInstance;
             if (!instance.DestroyOnLoad) DontDestroyOnLoad(instance.gameObject);
-            if (initialize) instance.OnInit();
+            if (initialize) instance.Init();
         }
 
-        private void Awake() {}
+        private void Awake() { OnAwake(); }
+        protected virtual void OnAwake() {}
 
-        protected virtual void OnInit()
+        private void Init()
         {
             if (instance == null)
             {
@@ -69,6 +70,11 @@ namespace Swole
             }
 
             if (ExecuteInStack) SingletonCallStack.Insert(this);
+
+            OnInit();
+        }
+        protected virtual void OnInit()
+        {
         }
 
         public virtual bool ExecuteInStack => true;
@@ -76,6 +82,7 @@ namespace Swole
         public virtual int Priority => 0;
 
         public int CompareTo(ISingletonBehaviour other) => other == null ? 1 : Priority.CompareTo(other.Priority);
+        public int CompareTo(IExecutableBehaviour other) => other == null ? 1 : Priority.CompareTo(other.Priority);
 
         public abstract void OnUpdate();
         public abstract void OnLateUpdate();
@@ -143,7 +150,7 @@ namespace Swole
             if (instance != null)
             {
                 instance.OnAwake();
-                instance.OnInit();
+                instance.Init();
                 if (instance.ExecuteInOrder) SingletonCallStack.Insert(instance);
             }
         }
@@ -152,6 +159,10 @@ namespace Swole
         {
         }
 
+        private void Init() 
+        {
+            OnInit();
+        }
         protected virtual void OnInit()
         {
         }
@@ -161,6 +172,7 @@ namespace Swole
         public virtual int Priority => 0;
 
         public int CompareTo(ISingletonBehaviour other) => other == null ? 1 : Priority.CompareTo(other.Priority);
+        public int CompareTo(IExecutableBehaviour other) => other == null ? 1 : Priority.CompareTo(other.Priority);
 
         public abstract void OnUpdate();
         public abstract void OnLateUpdate();
@@ -198,22 +210,24 @@ namespace Swole
     }
 #endif
 
-    public interface ISingletonBehaviour : IComparable<ISingletonBehaviour>
+    public interface IExecutableBehaviour : IComparable<IExecutableBehaviour>
     {
-
         /// <summary>
         /// Used for order of execution in the call stack, if using it. Lower values are called sooner.
         /// </summary>
         public int Priority { get; }
 
-        /// <summary>
-        /// Does this behaviour use the call stack? (default: true) If it doesn't, the behaviour must be updated manually or by the engine.
-        /// </summary>
-        public bool ExecuteInStack { get; }
-
         public void OnUpdate();
         public void OnLateUpdate();
         public void OnFixedUpdate();
+    }
+    public interface ISingletonBehaviour : IExecutableBehaviour, IComparable<ISingletonBehaviour>
+    {
+
+        /// <summary>
+        /// Does this behaviour use the call stack? (default: true) If it doesn't, the behaviour must be updated manually or by the engine.
+        /// </summary>
+        public bool ExecuteInStack { get; } 
 
     }
 
@@ -223,9 +237,9 @@ namespace Swole
         public override bool ExecuteInStack => false;
         public override bool DestroyOnLoad => false;
 
-        protected List<ISingletonBehaviour> behaviours = new List<ISingletonBehaviour>();
+        protected List<IExecutableBehaviour> behaviours = new List<IExecutableBehaviour>();
 
-        public bool InsertLocal(ISingletonBehaviour behaviour)
+        public bool InsertLocal(IExecutableBehaviour behaviour)
         {
             if (behaviour == null || behaviours == null || ReferenceEquals(behaviour, this)) return false;
             if (behaviours.Contains(behaviour)) return false;
@@ -233,10 +247,10 @@ namespace Swole
             behaviours.Add(behaviour);
             behaviours.Sort(); // Recalculate execution order.
 
-            return true;
+            return true; 
         }
 
-        public static bool Insert(ISingletonBehaviour behaviour)
+        public static bool Insert(IExecutableBehaviour behaviour)
         {
 
             var instance = Instance;
@@ -245,13 +259,13 @@ namespace Swole
 
         }
 
-        public bool RemoveLocal(ISingletonBehaviour behaviour)
+        public bool RemoveLocal(IExecutableBehaviour behaviour)
         {
             if (behaviour == null || behaviours == null) return false;
             return behaviours.RemoveAll(i => ReferenceEquals(i, behaviour)) > 0;
         }
 
-        public static bool Remove(ISingletonBehaviour behaviour)
+        public static bool Remove(IExecutableBehaviour behaviour)
         {
 
             var instance = Instance;

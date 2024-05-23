@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 
 namespace Swole
@@ -34,6 +35,12 @@ namespace Swole
         {
             AddEntry(error);
             LogErrorInternal(error);
+        }
+
+        public void LogError(Exception exception, bool stackTrace=true, bool skipMessage = false) 
+        { 
+            if (!skipMessage) LogError($"[{exception.GetType().ToString()}]: {exception.Message}");
+            if (stackTrace) LogError(exception.StackTrace);
         }
 
         protected virtual void LogInternal(string message) { }

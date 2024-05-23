@@ -1,0 +1,380 @@
+#if (UNITY_STANDALONE || UNITY_EDITOR)
+
+using System;
+using System.Collections;
+using System.Collections.Generic;
+
+using UnityEngine;
+
+using Unity.Mathematics;
+
+namespace Swole.API.Unity.Animation
+{
+    [Serializable]
+    public class PropertyLinearCurve : SwoleObject<PropertyLinearCurve, PropertyLinearCurve.Serialized>, IPropertyCurve, ICloneable
+    {
+
+        public bool HasKeyframes
+        {
+            get
+            {
+                if (frames != null && frames.Length > 0) return true;
+
+                return false;
+            }
+        }
+        public float GetClosestKeyframeTime(float referenceTime, int framesPerSecond, bool includeReferenceTime = true, IntFromDecimalDelegate getFrameIndex = null)
+        {
+            float closestTime = 0;
+            float minDiff = -1;
+            int frameIndex = getFrameIndex == null ? 0 : getFrameIndex((decimal)referenceTime);
+
+            void GetClosestKeyframeTimeFromCurve(IPropertyCurve.Frame[] frames)
+            {
+                if (frames == null) return;
+
+                for (int a = 0; a < frames.Length; a++)
+                {
+                    var key = frames[a];
+                    float keyTime = (key.timelinePosition / (float)framesPerSecond);
+                    float diff = referenceTime - keyTime;
+                    if (diff < 0 || (diff > minDiff && minDiff >= 0) || (!includeReferenceTime && (diff == 0 || (getFrameIndex != null && key.timelinePosition == frameIndex)))) continue;
+                    closestTime = keyTime;
+                    minDiff = diff;
+                }
+            }
+
+            GetClosestKeyframeTimeFromCurve(frames);
+
+            return closestTime;
+        }
+
+        public object Clone() => Duplicate();
+        public PropertyLinearCurve Duplicate()
+        {
+
+            var clone = ShallowCopy();
+
+            if (frames != null)
+            {
+                clone.frames = new IPropertyCurve.Frame[frames.Length];
+                for (int a = 0; a < frames.Length; a++)
+                {
+                    var frame = frames[a];
+                    var cloneFrame = new IPropertyCurve.Frame();
+
+                    cloneFrame.timelinePosition = frame.timelinePosition;
+                    cloneFrame.value = frame.value;
+                    if (frame.interpolationCurve != null) cloneFrame.interpolationCurve = frame.interpolationCurve.AsSerializableStruct();
+                    clone.frames[a] = cloneFrame;
+                }
+            }
+
+            return clone;
+
+        }
+        public PropertyLinearCurve ShallowCopy()
+        {
+            PropertyLinearCurve copy = new PropertyLinearCurve();
+            copy.name = name;
+            copy.preWrapMode = preWrapMode;
+            copy.postWrapMode = postWrapMode;
+
+            copy.frames = frames;
+
+            return copy;
+        }
+
+        #region Serialization
+
+        public override string AsJSON(bool prettyPrint = false) => AsSerializableStruct().AsJSON(prettyPrint);
+
+        [Serializable]
+        public struct Serialized : ISerializableContainer<PropertyLinearCurve, PropertyLinearCurve.Serialized>
+        {
+
+            public string name;
+
+            public int preWrapMode;
+            public int postWrapMode;
+
+            public IPropertyCurve.Frame.Serialized[] frames;
+
+            public PropertyLinearCurve AsOriginalType(PackageInfo packageInfo = default) => new PropertyLinearCurve(this);
+            public string AsJSON(bool prettyPrint = false) => swole.Engine.ToJson(this, prettyPrint);
+
+            public object AsNonserializableObject(PackageInfo packageInfo = default) => AsOriginalType(packageInfo);
+        }
+
+        public static implicit operator Serialized(PropertyLinearCurve inst)
+        {
+            if (inst == null) return default;
+            var s = new Serialized() { name = inst.name, preWrapMode = (int)inst.preWrapMode, postWrapMode = (int)inst.postWrapMode };
+            if (inst.frames != null)
+            {
+                s.frames = new IPropertyCurve.Frame.Serialized[inst.frames.Length];
+                for (int a = 0; a < s.frames.Length; a++) s.frames[a] = inst.frames[a];
+            }
+            return s;
+        }
+
+        public override PropertyLinearCurve.Serialized AsSerializableStruct() => this;
+
+        public PropertyLinearCurve(PropertyLinearCurve.Serialized serializable) : base(serializable)
+        {
+            this.name = serializable.name;
+            this.preWrapMode = (WrapMode)serializable.preWrapMode;
+            this.postWrapMode = (WrapMode)serializable.postWrapMode;
+            if (serializable.frames != null)
+            {
+                this.frames = new IPropertyCurve.Frame[serializable.frames.Length];
+                for (int a = 0; a < serializable.frames.Length; a++) this.frames[a] = serializable.frames[a].AsOriginalType();
+            }
+        }
+
+        #endregion
+
+        public PropertyLinearCurve() : base(default) { }
+
+        public string name;
+
+        public string PropertyString => name;
+
+        public WrapMode preWrapMode;
+        public WrapMode postWrapMode;
+
+        public IPropertyCurve.Frame[] frames;
+
+        public void AddFrame(IPropertyCurve.Frame frame, bool addTimeZeroKeyframeIfEmpty = false, bool useSeparateDataForTimeZeroKey = false, IPropertyCurve.Frame timeZeroFrame = default)
+        {
+            if (frame == null) return;
+            if (frames == null) frames = new IPropertyCurve.Frame[0];
+
+            int pos = frames.Length;
+            bool replace = false;
+            for (int a = 0; a < frames.Length; a++)
+            {
+                var frame_ = frames[a];
+
+                if (frame_.timelinePosition == frame.timelinePosition)
+                {
+                    pos = a;
+                    replace = true;
+                    break;
+                }
+                else if (frame_.timelinePosition > frame.timelinePosition)
+                {
+                    pos = a - 1;
+                    break;
+                }
+            }
+            pos = Mathf.Max(0, pos);
+
+            if (replace)
+            {
+                frames[pos] = frame;
+            }
+            else
+            {
+                if (frames.Length <= 0 && addTimeZeroKeyframeIfEmpty && frame.timelinePosition != 0)
+                {
+                    if (useSeparateDataForTimeZeroKey && timeZeroFrame == null) timeZeroFrame = new IPropertyCurve.Frame();
+                    var kfzero = useSeparateDataForTimeZeroKey ? timeZeroFrame : frame.Duplicate();
+                    kfzero.timelinePosition = 0;
+                    frames = (IPropertyCurve.Frame[])frames.Add(kfzero, 0);
+                    pos++;
+                }
+                frames = (IPropertyCurve.Frame[])frames.Add(frame, pos);
+            }
+        }
+
+        public IPropertyCurve.Frame GetOrCreateKeyframe(int timelinePosition, bool addTimeZeroKeyframeIfEmpty = false, bool useSeparateDataForTimeZeroKey = false, IPropertyCurve.Frame timeZeroFrame = default)
+        {
+            List<IPropertyCurve.Frame> newFrames = frames == null ? new List<IPropertyCurve.Frame>() : new List<IPropertyCurve.Frame>(frames);
+            if (newFrames.Count <= 0 && addTimeZeroKeyframeIfEmpty && useSeparateDataForTimeZeroKey)
+            {
+                if (timeZeroFrame == null) timeZeroFrame = new IPropertyCurve.Frame();
+                timeZeroFrame.timelinePosition = 0;
+                newFrames.Add(timeZeroFrame);
+            }
+            newFrames.Sort((x, y) => (int)Mathf.Sign(x.timelinePosition - y.timelinePosition));
+
+            IPropertyCurve.Frame frame = null;
+
+            IPropertyCurve.Frame frameA, frameB;
+            frameA = frameB = null;
+            frameB = null;
+
+            for (int a = 0; a < frames.Length; a++)
+            {
+                var fr = frames[a];
+
+                if (fr.timelinePosition > timelinePosition)
+                {
+                    if (a == 0)
+                    {
+                        frameA = fr;
+                        break;
+                    }
+                    else
+                    {
+                        frameA = frames[a - 1];
+                        frameB = frames[a];
+                        break;
+                    }
+                }
+                else if (fr.timelinePosition == timelinePosition)
+                {
+                    return fr;
+                }
+            }
+
+            if (frameA == null && frameB == null)
+            {
+                if (frames.Length <= 0)
+                {
+                    frame = new IPropertyCurve.Frame();
+                    frame.timelinePosition = timelinePosition;
+                }
+                else
+                {
+                    frame = frames[frames.Length - 1].Duplicate();
+                    frame.timelinePosition = timelinePosition;
+                }
+            }
+            else if (frameA != null)
+            {
+                frame = frameA.Duplicate();
+                frame.timelinePosition = timelinePosition;
+            }
+            else if (frameB != null)
+            {
+                frame = frameB.Duplicate();
+                frame.timelinePosition = timelinePosition;
+            }
+            else
+            {
+                frame = frameA.Lerp(frameB, (timelinePosition - frameA.timelinePosition) / (float)(frameB.timelinePosition - frameA.timelinePosition));
+                frame.timelinePosition = timelinePosition;
+            }
+
+            if (frame != null)
+            {
+                if (newFrames.Count <= 0 && addTimeZeroKeyframeIfEmpty && !useSeparateDataForTimeZeroKey && frame.timelinePosition != 0)
+                {
+                    var kfzero = frame.Duplicate();
+                    kfzero.timelinePosition = 0;
+                    newFrames.Add(kfzero);
+                }
+                newFrames.Add(frame);
+            }
+
+            newFrames.Sort((x, y) => (int)Mathf.Sign(x.timelinePosition - y.timelinePosition));
+            frames = newFrames.ToArray();
+
+            return frame;
+        }
+
+        private static readonly List<IPropertyCurve.Frame> tempFrames = new List<IPropertyCurve.Frame>();
+        public void DeleteFramesAt(int frameIndex)
+        {
+            tempFrames.Clear();
+            tempFrames.AddRange(frames);
+
+            tempFrames.RemoveAll(i => i.timelinePosition == frameIndex);
+
+            frames = tempFrames.ToArray();
+        }
+        public int FrameLength => frames == null || frames.Length == 0 ? 0 : frames[frames.Length - 1].timelinePosition;
+
+        public float Evaluate(float normalizedTime)
+        {
+
+            if (frames == null || frames.Length == 0) return default;
+
+            normalizedTime = CustomAnimation.WrapNormalizedTime(normalizedTime, preWrapMode, postWrapMode);
+
+            float timelinePosition = normalizedTime * FrameLength;
+
+            int startFrameIndex = 0;
+            int endFrameIndex = 0;
+            for (int a = 0; a < frames.Length; a++)
+            {
+
+                var frame = frames[a];
+
+                startFrameIndex = a - 1;
+                endFrameIndex = a;
+
+                if (frame.timelinePosition > timelinePosition) break;
+
+            }
+
+            startFrameIndex = math.max(0, startFrameIndex);
+            var startFrame = frames[startFrameIndex];
+            var endFrame = frames[endFrameIndex];
+
+            float timeRange = endFrame.timelinePosition - startFrame.timelinePosition;
+
+            if (timeRange <= 0) return startFrame.value;
+
+            return startFrame.LerpData(endFrame, math.min(1, (timelinePosition - startFrame.timelinePosition) / timeRange));
+
+        }
+
+        [NonSerialized]
+        private float m_cachedLength = -1;
+        public float CachedLengthInSeconds
+        {
+
+            get
+            {
+
+                if (m_cachedLength <= 0) RefreshCachedLength(CustomAnimation.DefaultFrameRate);
+
+                return m_cachedLength;
+
+            }
+
+        }
+        public void RefreshCachedLength(int framesPerSecond) => m_cachedLength = GetLengthInSeconds(framesPerSecond);
+
+        public float GetLengthInSeconds(int framesPerSecond)
+        {
+
+            if (frames == null || frames.Length <= 0) return 0;
+
+            m_cachedLength = frames[frames.Length - 1].timelinePosition / (float)framesPerSecond;
+            return m_cachedLength;
+
+        }
+
+        public int GetMaxFrameCountInTimeSlice(int framesPerSecond, float sampleLength = 1)
+        {
+            if (frames == null) return 0;
+
+            int maxFrameCount = 0;
+            for (int a = 0; a < frames.Length; a++)
+            {
+                var frame = frames[a];
+                float frameTime = frame.timelinePosition / (float)framesPerSecond;
+                int count = 1;
+                for (int b = a + 1; b < frames.Length; b++)
+                {
+                    var frame2 = frames[b];
+                    float frameTime2 = frame2.timelinePosition / (float)framesPerSecond;
+
+                    if (frameTime2 - frameTime > sampleLength) break;
+
+                    count++;
+                }
+                maxFrameCount = Mathf.Max(count, maxFrameCount);
+            }
+
+            return maxFrameCount;
+        }
+
+    }
+}
+
+#endif

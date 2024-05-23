@@ -35,13 +35,14 @@ namespace Swole
         }
          
         private static readonly object[] castParams = new object[1];
-        public static T Cast<T>(this object obj)
+        public static T CastAs<T>(this object obj)
         {
             if (obj == null) return default;
 
             Type from = obj.GetType();
             Type to = typeof(T);
-            if (to.IsAssignableFrom(from)) return (T)obj; 
+            if (to.IsAssignableFrom(from)) return (T)obj;
+            if (from.IsPrimitive) return (T)Convert.ChangeType(obj, to);
 
             if (from.TryGetImplicitConversion(from, to, out var conversionMethod)) 
             {

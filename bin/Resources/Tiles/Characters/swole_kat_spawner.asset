@@ -1,0 +1,28 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 50250451f4bea9640b59cba8e1cc67bd, type: 3}
+  m_Name: swole_kat_spawner
+  m_EditorClassIdentifier: 
+  id: swole_kat_spawner
+  sourcePath: 
+  mesh: {fileID: 0}
+  material: {fileID: 0}
+  tiles:
+  - name: swole_kat
+    previewTexture: {fileID: 2800000, guid: 63153a8497ff1f246a2a71c2d5ae71d9, type: 3}
+    subModelId: 0
+    isGameObject: 0
+    positionOffset: {x: 0, y: 0, z: 0}
+    initialRotationEuler: {x: 0, y: 0, z: 0}
+    initialScale: {x: 0, y: 0, z: 0}
+    prefabBase: {fileID: 6174151131643442810, guid: 2d74ab72eb8e5354a89045ac1d537e9d,
+      type: 3}

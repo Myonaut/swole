@@ -1,0 +1,219 @@
+#if (UNITY_STANDALONE || UNITY_EDITOR)
+
+using System;
+using System.Collections;
+using System.Collections.Generic;
+
+using UnityEngine;
+
+using Unity.Mathematics;
+
+namespace Swole.API.Unity.Animation
+{ 
+    [Serializable]
+    public class PropertyCurve : SwoleObject<PropertyCurve, PropertyCurve.Serialized>, IPropertyCurve, ICloneable
+    {
+
+        public bool HasKeyframes
+        {
+            get
+            {
+                if (propertyValueCurve != null && propertyValueCurve.length > 0) return true;
+
+                return false;
+            }
+        }
+        public float GetClosestKeyframeTime(float referenceTime, int framesPerSecond, bool includeReferenceTime = true, IntFromDecimalDelegate getFrameIndex = null)
+        {
+            float closestTime = 0;
+            float minDiff = -1;
+            int frameIndex = getFrameIndex == null ? 0 : getFrameIndex((decimal)referenceTime);
+
+            void GetClosestKeyframeTimeFromCurve(AnimationCurve curve)
+            {
+                if (curve == null) return;
+
+                for (int a = 0; a < curve.length; a++)
+                {
+                    var key = curve[a];
+                    float diff = referenceTime - key.time;
+                    if (diff < 0 || (diff > minDiff && minDiff >= 0) || (!includeReferenceTime && (diff == 0 || (getFrameIndex != null && getFrameIndex((decimal)key.time) == frameIndex)))) continue;
+                    closestTime = key.time;
+                    minDiff = diff;
+                }
+            }
+
+            GetClosestKeyframeTimeFromCurve(propertyValueCurve);
+
+            return closestTime;
+        }
+
+        public object Clone() => Duplicate();
+        public PropertyCurve Duplicate()
+        {
+
+            var clone = ShallowCopy();
+
+            if (propertyValueCurve != null) clone.propertyValueCurve = propertyValueCurve.AsSerializableStruct();
+
+            return clone;
+
+        }
+        public PropertyCurve ShallowCopy()
+        {
+            PropertyCurve copy = new PropertyCurve();
+            copy.name = name;
+            copy.preWrapMode = preWrapMode;
+            copy.postWrapMode = postWrapMode;
+
+            copy.propertyValueCurve = propertyValueCurve;
+
+            return copy;
+        }
+
+        #region Serialization
+
+        public override string AsJSON(bool prettyPrint = false) => AsSerializableStruct().AsJSON(prettyPrint);
+
+        [Serializable]
+        public struct Serialized : ISerializableContainer<PropertyCurve, PropertyCurve.Serialized>
+        {
+
+            public string name;
+
+            public int preWrapMode;
+            public int postWrapMode;
+
+            public SerializedAnimationCurve propertyValueCurve;
+
+            public PropertyCurve AsOriginalType(PackageInfo packageInfo = default) => new PropertyCurve(this);
+            public string AsJSON(bool prettyPrint = false) => swole.Engine.ToJson(this, prettyPrint);
+
+            public object AsNonserializableObject(PackageInfo packageInfo = default) => AsOriginalType(packageInfo);
+        }
+
+        public static implicit operator Serialized(PropertyCurve inst)
+        {
+            if (inst == null) return default;
+            var s = new Serialized()
+            {
+                name = inst.name,
+                preWrapMode = (int)inst.preWrapMode,
+                postWrapMode = (int)inst.postWrapMode,
+
+                propertyValueCurve = inst.propertyValueCurve
+
+            };
+            return s;
+        }
+
+        public override PropertyCurve.Serialized AsSerializableStruct() => this;
+
+        public PropertyCurve(PropertyCurve.Serialized serializable) : base(serializable)
+        {
+            this.name = serializable.name;
+            this.preWrapMode = (WrapMode)serializable.preWrapMode;
+            this.postWrapMode = (WrapMode)serializable.postWrapMode;
+
+            propertyValueCurve = serializable.propertyValueCurve;
+        }
+
+        #endregion
+
+        public PropertyCurve() : base(default) { }
+
+        public static PropertyCurve NewInstance
+        {
+            get
+            {
+                PropertyCurve instance = new PropertyCurve();
+
+                instance.name = "new_property_curve";
+                instance.preWrapMode = WrapMode.Clamp;
+                instance.postWrapMode = WrapMode.Clamp;
+
+                instance.propertyValueCurve = new AnimationCurve();
+                instance.propertyValueCurve.preWrapMode = instance.preWrapMode;
+                instance.propertyValueCurve.postWrapMode = instance.postWrapMode;
+
+                return instance;
+            }
+        }
+
+        public string name;
+
+        public string PropertyString => name;
+
+        public WrapMode preWrapMode;
+        public WrapMode postWrapMode;
+
+        public AnimationCurve propertyValueCurve;
+
+        [NonSerialized]
+        private float m_cachedLength = -1;
+        public float CachedLengthInSeconds
+        {
+
+            get
+            {
+
+                if (m_cachedLength <= 0) RefreshCachedLength(CustomAnimation.DefaultFrameRate);
+
+                return m_cachedLength;
+
+            }
+
+        }
+        public void RefreshCachedLength(int framesPerSecond) => m_cachedLength = GetLengthInSeconds(framesPerSecond);
+
+        public float Evaluate(float normalizedTime)
+        {
+
+            normalizedTime = CustomAnimation.WrapNormalizedTime(normalizedTime, preWrapMode, postWrapMode);
+            normalizedTime = normalizedTime * CachedLengthInSeconds;
+
+            return propertyValueCurve == null || propertyValueCurve.length <= 0 ? 0 : propertyValueCurve.Evaluate(normalizedTime);
+
+        }
+
+        public float GetLengthInSeconds(int framesPerSecond)
+        {
+
+            float length = 0;
+
+            if (propertyValueCurve != null && propertyValueCurve.length > 0) length = math.max(length, propertyValueCurve[propertyValueCurve.length - 1].time);
+
+            return length;
+
+        }
+
+        public int GetMaxFrameCountInTimeSlice(int framesPerSecond, float sampleLength = 1)
+        {
+            int maxFrameCount = 0;
+            void GetMaxFrameCountFromCurve(AnimationCurve curve)
+            {
+                if (curve == null) return;
+
+                for (int a = 0; a < curve.length; a++)
+                { 
+                    var key = curve[a];
+                    int count = 1;
+                    for (int b = a + 1; b < curve.length; b++)
+                    {
+                        var key2 = curve[b];
+                        if (key2.time - key.time > sampleLength) break;
+                        count++;
+                    }
+                    maxFrameCount = Mathf.Max(count, maxFrameCount);
+                }
+            }
+
+            GetMaxFrameCountFromCurve(propertyValueCurve);
+
+            return maxFrameCount;
+        }
+
+    }
+}
+
+#endif

@@ -7,7 +7,7 @@ namespace Swole
     public enum MouseButtonMask
     {
 
-        None = 0, LeftMouseButton = 1, RightMouseButton = 2, MiddleMouseButton = 4
+        None = 0, LeftMouseButton = 1, RightMouseButton = 2, MiddleMouseButton = 4, All = LeftMouseButton | RightMouseButton | MiddleMouseButton
 
     }
 

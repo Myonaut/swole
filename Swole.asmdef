@@ -10,7 +10,8 @@
         "LeanTween",
         "Miniscript",
         "RLD",
-        "lzip"
+        "lzip",
+        "Unity.RenderPipelines.Universal.Runtime"
     ],
     "includePlatforms": [],
     "excludePlatforms": [],

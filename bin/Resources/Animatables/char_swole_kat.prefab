@@ -1,0 +1,674 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!1001 &6444532783823178539
+PrefabInstance:
+  m_ObjectHideFlags: 0
+  serializedVersion: 2
+  m_Modification:
+    m_TransformParent: {fileID: 0}
+    m_Modifications:
+    - target: {fileID: -8679921383154817045, guid: e251fe3bad6c7024aa99bc3f1c05461a,
+        type: 3}
+      propertyPath: m_RootOrder
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: -8679921383154817045, guid: e251fe3bad6c7024aa99bc3f1c05461a,
+        type: 3}
+      propertyPath: m_LocalPosition.x
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: -8679921383154817045, guid: e251fe3bad6c7024aa99bc3f1c05461a,
+        type: 3}
+      propertyPath: m_LocalPosition.y
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: -8679921383154817045, guid: e251fe3bad6c7024aa99bc3f1c05461a,
+        type: 3}
+      propertyPath: m_LocalPosition.z
+      value: 2.33
+      objectReference: {fileID: 0}
+    - target: {fileID: -8679921383154817045, guid: e251fe3bad6c7024aa99bc3f1c05461a,
+        type: 3}
+      propertyPath: m_LocalRotation.w
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: -8679921383154817045, guid: e251fe3bad6c7024aa99bc3f1c05461a,
+        type: 3}
+      propertyPath: m_LocalRotation.x
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: -8679921383154817045, guid: e251fe3bad6c7024aa99bc3f1c05461a,
+        type: 3}
+      propertyPath: m_LocalRotation.y
+      value: 1
+      objectReference: {fileID: 0}
+    - target: {fileID: -8679921383154817045, guid: e251fe3bad6c7024aa99bc3f1c05461a,
+        type: 3}
+      propertyPath: m_LocalRotation.z
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: -8679921383154817045, guid: e251fe3bad6c7024aa99bc3f1c05461a,
+        type: 3}
+      propertyPath: m_LocalEulerAnglesHint.x
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: -8679921383154817045, guid: e251fe3bad6c7024aa99bc3f1c05461a,
+        type: 3}
+      propertyPath: m_LocalEulerAnglesHint.y
+      value: 180
+      objectReference: {fileID: 0}
+    - target: {fileID: -8679921383154817045, guid: e251fe3bad6c7024aa99bc3f1c05461a,
+        type: 3}
+      propertyPath: m_LocalEulerAnglesHint.z
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 919132149155446097, guid: e251fe3bad6c7024aa99bc3f1c05461a,
+        type: 3}
+      propertyPath: m_Name
+      value: swole_kat
+      objectReference: {fileID: 0}
+    - target: {fileID: 5866666021909216657, guid: e251fe3bad6c7024aa99bc3f1c05461a,
+        type: 3}
+      propertyPath: m_Controller
+      value: 
+      objectReference: {fileID: 9100000, guid: 3666a2ff106498841aa8f1621ef71e4b, type: 2}
+    m_RemovedComponents:
+    - {fileID: 5866666021909216657, guid: e251fe3bad6c7024aa99bc3f1c05461a, type: 3}
+  m_SourcePrefab: {fileID: 100100000, guid: e251fe3bad6c7024aa99bc3f1c05461a, type: 3}
+--- !u!4 &746699410681529334 stripped
+Transform:
+  m_CorrespondingSourceObject: {fileID: -3228136158189238051, guid: e251fe3bad6c7024aa99bc3f1c05461a,
+    type: 3}
+  m_PrefabInstance: {fileID: 6444532783823178539}
+  m_PrefabAsset: {fileID: 0}
+--- !u!4 &3471044543562320651 stripped
+Transform:
+  m_CorrespondingSourceObject: {fileID: -1638126145608826848, guid: e251fe3bad6c7024aa99bc3f1c05461a,
+    type: 3}
+  m_PrefabInstance: {fileID: 6444532783823178539}
+  m_PrefabAsset: {fileID: 0}
+--- !u!1 &4159983468789196108 stripped
+GameObject:
+  m_CorrespondingSourceObject: {fileID: -2245978446225297817, guid: e251fe3bad6c7024aa99bc3f1c05461a,
+    type: 3}
+  m_PrefabInstance: {fileID: 6444532783823178539}
+  m_PrefabAsset: {fileID: 0}
+--- !u!114 &1631971122
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 4159983468789196108}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 8b926eb37fed1d748b80e3b4756bc569, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  dataHash: -843149922
+  dataVersion: 7
+  teamData:
+    colliderList: []
+    penetrationIgnoreColliderList: []
+    mergeAvatarCollider: 1
+  userBlendWeight: 1
+  updateMode: 0
+  cullingMode: 0
+  skinningMode: 1
+  clothParams:
+    algorithm: 1
+    radius:
+      startValue: 0.015
+      endValue: 0.023
+      useEndValue: 1
+      curveValue: 0
+      useCurveValue: 0
+    mass:
+      startValue: 5
+      endValue: 1
+      useEndValue: 1
+      curveValue: 0
+      useCurveValue: 0
+    useGravity: 1
+    gravity:
+      startValue: 0
+      endValue: -4.59
+      useEndValue: 1
+      curveValue: 0
+      useCurveValue: 0
+    gravityDirection: {x: 0, y: 1, z: 0}
+    useDrag: 1
+    drag:
+      startValue: 0.03
+      endValue: 0.02
+      useEndValue: 1
+      curveValue: 0
+      useCurveValue: 0
+    useMaxVelocity: 1
+    maxVelocity:
+      startValue: 3
+      endValue: 3
+      useEndValue: 0
+      curveValue: 0
+      useCurveValue: 0
+    influenceTarget: {fileID: 0}
+    maxMoveSpeed: 2
+    maxRotationSpeed: 720
+    worldMoveInfluence:
+      startValue: 0.7
+      endValue: 0.5
+      useEndValue: 0
+      curveValue: 0
+      useCurveValue: 0
+    worldRotationInfluence:
+      startValue: 0.8
+      endValue: 0.5
+      useEndValue: 0
+      curveValue: 0
+      useCurveValue: 0
+    massInfluence: 0.3
+    depthInfluence:
+      startValue: 0.1
+      endValue: 1
+      useEndValue: 1
+      curveValue: 0.5
+      useCurveValue: 1
+    windInfluence: 1
+    windRandomScale: 0.7
+    windSynchronization: 0.6
+    useDistanceDisable: 0
+    disableReferenceObject: {fileID: 0}
+    disableDistance: 20
+    disableFadeDistance: 5
+    useResetTeleport: 0
+    teleportDistance: 0.2
+    teleportRotation: 45
+    teleportMode: 0
+    resetStabilizationTime: 0.1
+    useClampDistanceRatio: 1
+    clampDistanceMinRatio: 0.7
+    clampDistanceMaxRatio: 1.1
+    clampDistanceVelocityInfluence: 0.2
+    useClampPositionLength: 0
+    clampPositionLength:
+      startValue: 0.03
+      endValue: 0.2
+      useEndValue: 1
+      curveValue: 0
+      useCurveValue: 0
+    clampPositionRatioX: 1
+    clampPositionRatioY: 1
+    clampPositionRatioZ: 1
+    clampPositionVelocityInfluence: 0.5
+    useClampRotation: 1
+    clampRotationAngle:
+      startValue: 6
+      endValue: 40
+      useEndValue: 1
+      curveValue: 0
+      useCurveValue: 0
+    clampRotationAngle2:
+      startValue: 6
+      endValue: 40
+      useEndValue: 1
+      curveValue: 0
+      useCurveValue: 0
+    clampRotationVelocityLimit: 1
+    clampRotationVelocityInfluence: 0.2
+    restoreDistanceVelocityInfluence: 1
+    structDistanceStiffness:
+      startValue: 1
+      endValue: 1
+      useEndValue: 0
+      curveValue: 0
+      useCurveValue: 0
+    useBendDistance: 0
+    bendDistanceMaxCount: 2
+    bendDistanceStiffness:
+      startValue: 0.5
+      endValue: 0.5
+      useEndValue: 0
+      curveValue: 0
+      useCurveValue: 0
+    useNearDistance: 0
+    nearDistanceMaxCount: 3
+    nearDistanceMaxDepth: 1
+    nearDistanceLength:
+      startValue: 0.05
+      endValue: 0.05
+      useEndValue: 1
+      curveValue: 0
+      useCurveValue: 0
+    nearDistanceStiffness:
+      startValue: 0.3
+      endValue: 0.3
+      useEndValue: 0
+      curveValue: 0
+      useCurveValue: 0
+    useRestoreRotation: 1
+    restoreRotation:
+      startValue: 0.11
+      endValue: 0.02
+      useEndValue: 1
+      curveValue: 0
+      useCurveValue: 0
+    restoreRotation2:
+      startValue: 0.1
+      endValue: 0.02
+      useEndValue: 1
+      curveValue: 0
+      useCurveValue: 0
+    restoreRotationVelocityInfluence: 0.2
+    restoreRotationVelocityInfluence2: 0.2
+    useSpring: 0
+    springPower: 0.017
+    springRadius: 0.1
+    springScaleX: 1
+    springScaleY: 1
+    springScaleZ: 1
+    springIntensity: 1
+    springDirectionAtten:
+      startValue: 1
+      endValue: 0
+      useEndValue: 1
+      curveValue: 0.234
+      useCurveValue: 1
+    springDistanceAtten:
+      startValue: 1
+      endValue: 0
+      useEndValue: 1
+      curveValue: 0.395
+      useCurveValue: 1
+    adjustMode: 0
+    adjustRotationPower: 0
+    useTriangleBend: 0
+    triangleBend:
+      startValue: 0.03
+      endValue: 0.03
+      useEndValue: 1
+      curveValue: 0
+      useCurveValue: 0
+    triangleBend2:
+      startValue: 0.03
+      endValue: 0.03
+      useEndValue: 1
+      curveValue: 0
+      useCurveValue: 0
+    useTwistCorrection: 0
+    twistRecoveryPower: 0.2
+    useVolume: 0
+    maxVolumeLength: 0.1
+    volumeStretchStiffness:
+      startValue: 0.5
+      endValue: 0.5
+      useEndValue: 1
+      curveValue: 0
+      useCurveValue: 0
+    volumeShearStiffness:
+      startValue: 0.5
+      endValue: 0.5
+      useEndValue: 1
+      curveValue: 0
+      useCurveValue: 0
+    useCollision: 1
+    friction: 0.05
+    staticFriction: 0.03
+    usePenetration: 0
+    penetrationMode: 0
+    penetrationAxis: 5
+    penetrationMaxDepth: 1
+    penetrationConnectDistance:
+      startValue: 0.1
+      endValue: 0.2
+      useEndValue: 1
+      curveValue: 0
+      useCurveValue: 0
+    penetrationDistance:
+      startValue: 0.02
+      endValue: 0.05
+      useEndValue: 1
+      curveValue: 0
+      useCurveValue: 0
+    penetrationRadius:
+      startValue: 0.3
+      endValue: 1
+      useEndValue: 1
+      curveValue: 0
+      useCurveValue: 0
+    useLineAvarageRotation: 1
+    useFixedNonRotation: 0
+  clothParamDataHashList: 000000000000000000000000000000000000000000000000f61b993700000000ec37326f00000000ec37326f00000000000000000000000000000000000000000000000000000000000000000000000000000000f61b993700000000
+  clothData: {fileID: 533205652}
+  clothDataHash: -866024646
+  clothDataVersion: 5
+  clothSelection: {fileID: 937047025}
+  clothSelectionHash: -1419591201
+  clothSelectionVersion: 2
+  cullRendererList: []
+  meshData: {fileID: 90043053}
+  meshDataHash: 600315604
+  meshDataVersion: 2
+  clothTarget:
+    rootList:
+    - {fileID: 3471044543562320651}
+    - {fileID: 746699410681529334}
+    - {fileID: 9036297500454468246}
+    - {fileID: 8907392964214359714}
+    connection: 0
+    sameSurfaceAngle: 80
+  useTransformList:
+  - {fileID: 3471044543562320651}
+  - {fileID: 746699410681529334}
+  - {fileID: 9036297500454468246}
+  - {fileID: 8907392964214359714}
+  useTransformPositionList:
+  - {x: -7.808238e-18, y: 0.21537632, z: -0.10735756}
+  - {x: -2.4651903e-32, y: 0.12866381, z: -0.000000009480573}
+  - {x: -7.157208e-33, y: 0.12866382, z: -0.0000000069994712}
+  - {x: -0, y: 0.12866385, z: -0.00000002644083}
+  useTransformRotationList:
+  - {x: -0.6793914, y: -2.4455575e-21, z: 1.6902005e-17, w: 0.7337761}
+  - {x: -0.0000000072905095, y: 5.169879e-25, z: -8.2718056e-25, w: 1}
+  - {x: 0.00000023163739, y: 2.1658921e-32, z: -9.107462e-32, w: 1}
+  - {x: -0.00000023165194, y: 2.1624287e-32, z: -1.8055593e-35, w: 1}
+  useTransformScaleList:
+  - {x: 1, y: 1, z: 1}
+  - {x: 1, y: 1, z: 1}
+  - {x: 1, y: 1, z: 1}
+  - {x: 1, y: 1, z: 1}
+--- !u!1 &6174151131643442810 stripped
+GameObject:
+  m_CorrespondingSourceObject: {fileID: 919132149155446097, guid: e251fe3bad6c7024aa99bc3f1c05461a,
+    type: 3}
+  m_PrefabInstance: {fileID: 6444532783823178539}
+  m_PrefabAsset: {fileID: 0}
+--- !u!114 &916860267
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 6174151131643442810}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 045106760e632054ebacff5982066890, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  defaultController: {fileID: 0}
+  avatar: {fileID: 11400000, guid: d4358f550173a804788913ec06f80a14, type: 2}
+  useDynamicBindPose: 0
+  disableMultithreading: 0
+  overrideUpdateCalls: 0
+  forceFinalTransformUpdate: 0
+  OnPreUpdate:
+    m_PersistentCalls:
+      m_Calls: []
+  OnPostUpdate:
+    m_PersistentCalls:
+      m_Calls: []
+  OnPreLateUpdate:
+    m_PersistentCalls:
+      m_Calls: []
+  OnPostLateUpdate:
+    m_PersistentCalls:
+      m_Calls: []
+--- !u!4 &8907392964214359714 stripped
+Transform:
+  m_CorrespondingSourceObject: {fileID: 2518355350586674569, guid: e251fe3bad6c7024aa99bc3f1c05461a,
+    type: 3}
+  m_PrefabInstance: {fileID: 6444532783823178539}
+  m_PrefabAsset: {fileID: 0}
+--- !u!4 &9036297500454468246 stripped
+Transform:
+  m_CorrespondingSourceObject: {fileID: -6626777611509599811, guid: e251fe3bad6c7024aa99bc3f1c05461a,
+    type: 3}
+  m_PrefabInstance: {fileID: 6444532783823178539}
+  m_PrefabAsset: {fileID: 0}
+--- !u!114 &90043053
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 2b8ed8fdca875474bbc1b8d6dcfb79bc, type: 3}
+  m_Name: BoneClothMeshData_tail
+  m_EditorClassIdentifier: 
+  dataHash: 600315604
+  dataVersion: 2
+  isSkinning: 0
+  vertexCount: 4
+  vertexInfoList: 00000010010000100200001003000010
+  vertexWeightList: []
+  vertexHashList: 
+  uvList: []
+  lineCount: 3
+  lineList: 000000000100000001000000020000000200000003000000
+  triangleCount: 0
+  triangleList: 
+  boneCount: 0
+  vertexToTriangleInfoList: 
+  vertexToTriangleIndexList: 
+  childDataList: []
+  baseScale: {x: 0, y: 0, z: 0}
+--- !u!114 &533205652
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 0548f9dc46468d94c96cbbd1e5c05f74, type: 3}
+  m_Name: BoneClothData_tail
+  m_EditorClassIdentifier: 
+  dataHash: -866024646
+  dataVersion: 5
+  triangleBendAlgorithm: 1
+  restoreRotationAlgorithm: 1
+  clampRotationAlgorithm: 1
+  useVertexList: 00000000010000000200000003000000
+  selectionData: 02000000010000000100000001000000
+  maxLevel: 4
+  vertexFlagLevelList: 01000000020000000300000004000100
+  vertexDepthList:
+  - 0
+  - 0.33333334
+  - 0.6666667
+  - 1
+  rootList: ffffffff000000000000000000000000
+  parentList: ffffffff000000000100000002000000
+  structDistanceDataList:
+  - vertexIndex: 0
+    targetVertexIndex: 1
+    length: 0.12866378
+  - vertexIndex: 1
+    targetVertexIndex: 0
+    length: 0.12866378
+  - vertexIndex: 1
+    targetVertexIndex: 2
+    length: 0.12866378
+  - vertexIndex: 2
+    targetVertexIndex: 1
+    length: 0.12866378
+  - vertexIndex: 2
+    targetVertexIndex: 3
+    length: 0.12866402
+  - vertexIndex: 3
+    targetVertexIndex: 2
+    length: 0.12866402
+  structDistanceReferenceList:
+  - startIndex: 0
+    count: 1
+  - startIndex: 1
+    count: 2
+  - startIndex: 3
+    count: 2
+  - startIndex: 5
+    count: 1
+  bendDistanceDataList: []
+  bendDistanceReferenceList: []
+  nearDistanceDataList: []
+  nearDistanceReferenceList: []
+  rootDistanceDataList:
+  - vertexIndex: 1
+    targetVertexIndex: 0
+    length: 0.12866378
+  - vertexIndex: 2
+    targetVertexIndex: 0
+    length: 0.25732756
+  - vertexIndex: 3
+    targetVertexIndex: 0
+    length: 0.3859916
+  rootDistanceReferenceList:
+  - startIndex: 0
+    count: 0
+  - startIndex: 0
+    count: 1
+  - startIndex: 1
+    count: 1
+  - startIndex: 2
+    count: 1
+  clampDistance2DataList: []
+  clampDistance2RootInfoList: []
+  restoreRotationDataList: []
+  restoreRotationReferenceList: []
+  clampRotationDataList: []
+  clampRotationRootInfoList: []
+  compositeRotationDataList:
+  - vertexIndex: 1
+    parentVertexIndex: 0
+    localPos:
+      x: -1.8843645e-25
+      y: 1.0000001
+      z: -0.00000003707828
+    localRot:
+      value:
+        x: 0
+        y: 8.27181e-25
+        z: -8.271809e-25
+        w: 1.0000001
+  - vertexIndex: 2
+    parentVertexIndex: 1
+    localPos:
+      x: 1.744424e-23
+      y: 1.0000001
+      z: -0.0000009635987
+    localRot:
+      value:
+        x: 0.0000002528811
+        y: -8.271788e-25
+        z: -8.2717903e-25
+        w: 1.0000001
+  - vertexIndex: 3
+    parentVertexIndex: 2
+    localPos:
+      x: -9.92617e-24
+      y: 1.0000001
+      z: -0.00000010972144
+    localRot:
+      value:
+        x: -0.0000002528811
+        y: 8.271788e-25
+        z: 8.2717903e-25
+        w: 1.0000001
+  compositeRotationRootInfoList:
+  - startIndex: 0
+    dataLength: 3
+  twistDataList: []
+  twistReferenceList: []
+  adjustRotationDataList: []
+  triangleBendDataList: []
+  triangleBendReferenceList: []
+  triangleBendWriteBufferCount: 0
+  volumeDataList: []
+  volumeReferenceList: []
+  volumeWriteBufferCount: 0
+  lineRotationDataList:
+  - vertexIndex: 0
+    childCount: 1
+    childStartDataIndex: 1
+    localPos:
+      x: 0
+      y: 0
+      z: 0
+    localRot:
+      value:
+        x: 0
+        y: 0
+        z: 0
+        w: 1
+  - vertexIndex: 1
+    childCount: 1
+    childStartDataIndex: 2
+    localPos:
+      x: -2.424496e-26
+      y: 0.1286638
+      z: -0.0000000047700865
+    localRot:
+      value:
+        x: 0
+        y: 8.27181e-25
+        z: -8.271809e-25
+        w: 1.0000001
+  - vertexIndex: 2
+    childCount: 1
+    childStartDataIndex: 3
+    localPos:
+      x: 2.2444418e-24
+      y: 0.1286638
+      z: -0.00000012397938
+    localRot:
+      value:
+        x: 0.0000002528811
+        y: -8.271788e-25
+        z: -8.2717903e-25
+        w: 1.0000001
+  - vertexIndex: 3
+    childCount: 0
+    childStartDataIndex: 0
+    localPos:
+      x: -1.2771409e-24
+      y: 0.12866403
+      z: -0.000000014117177
+    localRot:
+      value:
+        x: -0.0000002528811
+        y: 8.271788e-25
+        z: 8.2717903e-25
+        w: 1.0000001
+  lineRotationRootInfoList:
+  - startIndex: 0
+    dataLength: 4
+  triangleRotationDataList: []
+  triangleRotationIndexList: 
+  edgeCollisionDataList: []
+  edgeCollisionReferenceList: []
+  edgeCollisionWriteBufferCount: 0
+  penetrationDataList: []
+  penetrationReferenceList: []
+  penetrationDirectionDataList: []
+  penetrationMode: 0
+  baseSkinningDataList: []
+  baseSkinningBindPoseList: []
+  initScale: {x: 1, y: 0.9999998, z: 0.9999998}
+--- !u!114 &937047025
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 5479bb56a42b7f94bbae5d75fe03f75d, type: 3}
+  m_Name: SelectionData_tail
+  m_EditorClassIdentifier: 
+  dataHash: -1419591201
+  dataVersion: 2
+  selectionList:
+  - selectData: 02000000010000000100000001000000
+    vertexHashList: 0000000000000000000000000000000000000000000000000000000000000000

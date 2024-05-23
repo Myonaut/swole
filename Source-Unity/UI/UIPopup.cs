@@ -34,15 +34,26 @@ namespace Swole.UI
         [Tooltip("How long to wait after being pressed before the element can be dragged.")]
         public float dragDelay;
         protected float dragCooldown;
+        public bool disableChildDrag;
         public bool freeze;
+
+        public bool destroyOnClose;
 
         public RectTransform root;
 
         public UnityEvent OnClick = new UnityEvent();
+        public UnityEvent OnClickRelease = new UnityEvent();
         public UnityEvent OnClose = new UnityEvent();
         public UnityEvent OnDragStart = new UnityEvent();
         public UnityEvent OnDragStep = new UnityEvent();
         public UnityEvent OnDragStop = new UnityEvent();
+
+        public UnityEvent OnLeftClick = new UnityEvent();
+        public UnityEvent OnLeftClickRelease = new UnityEvent();
+        public UnityEvent OnMiddleClick = new UnityEvent();
+        public UnityEvent OnMiddleClickRelease = new UnityEvent();
+        public UnityEvent OnRightClick = new UnityEvent();
+        public UnityEvent OnRightClickRelease = new UnityEvent();
 
         public void Close()
         {
@@ -58,7 +69,15 @@ namespace Swole.UI
             OnDragStep?.RemoveAllListeners();
             OnDragStop?.RemoveAllListeners();
 
-            GameObject.Destroy(gameObject);
+            if (destroyOnClose)
+            {
+                GameObject.Destroy(gameObject);
+            }
+            else
+            {
+                gameObject.SetActive(false);
+
+            }
 
         }
 
@@ -73,6 +92,7 @@ namespace Swole.UI
             OnClose.RemoveAllListeners();
 
             OnDragStart?.RemoveAllListeners();
+            OnDragStep?.RemoveAllListeners();
             OnDragStop?.RemoveAllListeners();
 
             base.OnDestroy();
@@ -125,8 +145,12 @@ namespace Swole.UI
 #endif
             if (dragCooldown > 0 && this.IsPressed()) 
             { 
-                dragCooldown -= Time.deltaTime;
-                if (dragCooldown <= 0) OnDragStart?.Invoke();
+                dragCooldown -= Time.unscaledDeltaTime;
+                if (dragCooldown <= 0) 
+                {
+                    ForceRefreshPrevCursorPosition();
+                    OnDragStart?.Invoke();
+                }
             }
             if (closeConditions != null)
             {
@@ -147,6 +171,16 @@ namespace Swole.UI
         protected RectTransform rectTransform;
 
         private Canvas canvas;
+        protected bool CheckCanvas()
+        {
+            if (canvas == null)
+            {
+                canvas = GetComponentInParent<Canvas>();
+                if (canvas != null) canvasRect = canvas.GetComponent<RectTransform>(); else return false;
+            }
+
+            return true;
+        }
 
         protected RectTransform canvasRect;
 
@@ -160,18 +194,7 @@ namespace Swole.UI
 
             if (root == null) root = rectTransform;
 
-            if (canvas == null) canvas = GetComponentInParent<Canvas>();
-
-            if (canvas == null)
-            {
-
-                GameObject.Destroy(gameObject);
-
-                return;
-
-            }
-
-            canvasRect = canvas.GetComponent<RectTransform>();
+            CheckCanvas();
 
             base.Awake();
 
@@ -200,7 +223,7 @@ namespace Swole.UI
 
         public virtual void Elevate()
         {
-
+            if (!CheckCanvas()) return;
             if (elevationMethod != ElevationMethod.None)
             {
                 if (elevationMethod.HasFlag(ElevationMethod.OverrideSorting)) // Move in front by using a canvas that overrides sorting. Only works while the element is being dragged.
@@ -247,10 +270,19 @@ namespace Swole.UI
 
         }
 
+        private void ForceRefreshPrevCursorPosition()
+        {
+            if (!CheckCanvas()) return;
+            prevCursorPosition = canvas.ScreenToCanvasSpace(CursorProxy.ScreenPosition);
+        }
+
         public override void OnPointerDown(PointerEventData eventData)
         {
-
+            if (!CheckCanvas()) return;
             OnClick?.Invoke();
+            if (eventData.button == PointerEventData.InputButton.Left) OnLeftClick?.Invoke();
+            if (eventData.button == PointerEventData.InputButton.Middle) OnMiddleClick?.Invoke();
+            if (eventData.button == PointerEventData.InputButton.Right) OnRightClick?.Invoke();
 
             dragCooldown = dragDelay;
             preDragLocalPosition = rectTransform.localPosition;
@@ -263,31 +295,45 @@ namespace Swole.UI
             // Handles moving the element in front of its peers when clicked.
             Elevate();
 
-            if (dragDelay <= 0) OnDragStart?.Invoke();
+            if (dragDelay <= 0) OnDragStart?.Invoke(); 
+            
 
         } 
 
         public override void OnPointerUp(PointerEventData eventData) 
         {
 
+            OnClickRelease?.Invoke();
+            if (eventData.button == PointerEventData.InputButton.Left) OnLeftClickRelease?.Invoke();
+            if (eventData.button == PointerEventData.InputButton.Middle) OnMiddleClickRelease?.Invoke();
+            if (eventData.button == PointerEventData.InputButton.Right) OnRightClickRelease?.Invoke();
+
             base.OnPointerUp(eventData);
 
             // Move element back to previous level of elevation if necessary.
             Delevate();
-             
+
             if (dragCooldown <= 0) OnDragStop?.Invoke();
+
             dragCooldown = 0; 
 
         }
-
         public void OnDrag(PointerEventData eventData)
         {
             if (freeze || dragCooldown > 0) return;
-            OnDragStep?.Invoke();
+            if (!CheckCanvas()) return;
+            if (disableChildDrag)
+            {
+                var dragObj = eventData.rawPointerPress;
+                if (dragObj == null) dragObj = eventData.lastPress;
+                if (dragObj != null && dragObj != gameObject) return;
+            }
+
             var cursorPos = canvas.ScreenToCanvasSpace(eventData.position);
             Move(rectTransform, root, canvasRect, cursorPos - prevCursorPosition);
             prevCursorPosition = cursorPos;
 
+            OnDragStep?.Invoke();
         }
 
     }

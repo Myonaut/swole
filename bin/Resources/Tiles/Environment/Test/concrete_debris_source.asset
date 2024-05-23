@@ -1,0 +1,18 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 069823c73f50b084e89d81e786a0b461, type: 3}
+  m_Name: concrete_debris_source
+  m_EditorClassIdentifier: 
+  sourceMeshes:
+  - {fileID: 8371104237943500899, guid: 2a1fe1f7c8c13b642a116507c1a5a14f, type: 3}
+  - {fileID: 2193141623540314208, guid: 2a1fe1f7c8c13b642a116507c1a5a14f, type: 3}
+  - {fileID: -8841107185640036998, guid: 2a1fe1f7c8c13b642a116507c1a5a14f, type: 3}

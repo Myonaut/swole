@@ -1,0 +1,93 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!1 &76723186329354629
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 8232187704341579704}
+  - component: {fileID: 7246822779392129362}
+  m_Layer: 0
+  m_Name: test_cracks_tileset_create
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!4 &8232187704341579704
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 76723186329354629}
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: -11.1998205, y: 2.205175, z: -1.0890284}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 0}
+  m_RootOrder: 0
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!114 &7246822779392129362
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 76723186329354629}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 59439b596f6006a4aa34a6db256de8f1, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  apply: 0
+  source: {fileID: 11400000, guid: c1267c94ea193b644a5b125ac78c1142, type: 2}
+  material: {fileID: 0}
+  outlineMaterial: {fileID: 0}
+  tiles:
+  - name: cracks_1
+    previewTexture: {fileID: 0}
+    subModelId: 0
+    isGameObject: 1
+    canToggleOffGameObject: 0
+    positionOffset: {x: 0, y: 0, z: 0}
+    initialRotationEuler: {x: 0, y: 0, z: 0}
+    initialScale: {x: 1, y: 1, z: 1}
+    prefabBase: {fileID: 1275822537417442517, guid: 7b404d6f54b94254e83aeb929e35290f,
+      type: 3}
+  - name: cracks_2
+    previewTexture: {fileID: 0}
+    subModelId: 0
+    isGameObject: 1
+    canToggleOffGameObject: 0
+    positionOffset: {x: 0, y: 0, z: 0}
+    initialRotationEuler: {x: 0, y: 0, z: 0}
+    initialScale: {x: 1, y: 1, z: 1}
+    prefabBase: {fileID: 1682221309284210810, guid: f16c0d953c9623d49a05e91b9052c879,
+      type: 3}
+  - name: cracks_3
+    previewTexture: {fileID: 0}
+    subModelId: 0
+    isGameObject: 1
+    canToggleOffGameObject: 0
+    positionOffset: {x: 0, y: 0, z: 0}
+    initialRotationEuler: {x: 0, y: 0, z: 0}
+    initialScale: {x: 1, y: 1, z: 1}
+    prefabBase: {fileID: 5917103006032680617, guid: 76bfb8cf5282d7f4b9f40e020406ddff,
+      type: 3}
+  lookAndFeel:
+    _canBeDisplayed: 1
+    _isExpanded: 1
+    _bkColor: {r: 0.32156864, g: 0.32156864, b: 0.32156864, a: 0.2588}
+    _previewWidth: 90
+    _previewHeight: 90
+    _lightIntensity: 1
+  path: SwoleScript/bin/Resources/Tiles/Environment/Test
+  fileName: concrete_cracks
+  incrementIfExists: 0
+  forceRefreshTilePreviews: 1
+  output: {fileID: 0}

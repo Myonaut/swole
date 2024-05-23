@@ -36,7 +36,7 @@ namespace Swole.Script
             set
             {
 
-                if (value != null) SetValue(value.Cast<T>());
+                if (value != null) SetValue(value.CastAs<T>());
                  
             }
 
@@ -46,7 +46,6 @@ namespace Swole.Script
         public virtual T GetValue() => value;
         public virtual void SetValue(T val)
         {
-            prevValue = val;
             value = val;
         }
 

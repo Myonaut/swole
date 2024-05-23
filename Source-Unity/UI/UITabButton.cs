@@ -233,9 +233,13 @@ namespace Swole.UI
 
         protected void OnEnable()
         {
-#if SWOLE_ENV
-            LeanTween.delayedCall(0.01f, UpdateGraphic);
-#endif
+            IEnumerator DelayedUpdate()
+            {
+                yield return null;
+                UpdateGraphic();
+            }
+
+            StartCoroutine(DelayedUpdate());
         }
 
         protected void OnDisable()

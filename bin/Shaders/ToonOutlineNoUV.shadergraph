@@ -98,7 +98,11 @@
         }
     ],
     "m_GroupDatas": [],
-    "m_StickyNoteDatas": [],
+    "m_StickyNoteDatas": [
+        {
+            "m_Id": "b0b980b358d44984b0823f61fa64e4f6"
+        }
+    ],
     "m_Edges": [
         {
             "m_OutputSlot": {
@@ -1770,6 +1774,26 @@
         "m_SerializableColors": []
     },
     "m_SerializedDescriptor": "VertexDescription.Position"
+}
+
+{
+    "m_SGVersion": 0,
+    "m_Type": "UnityEditor.ShaderGraph.StickyNoteData",
+    "m_ObjectId": "b0b980b358d44984b0823f61fa64e4f6",
+    "m_Title": "DeltaNormals",
+    "m_Content": "If delta normals haven't been stored in UV3, then the output of this shader will be a mess. Use a different one.",
+    "m_TextSize": 0,
+    "m_Theme": 0,
+    "m_Position": {
+        "serializedVersion": "2",
+        "x": -1789.0,
+        "y": 330.0,
+        "width": 200.0,
+        "height": 160.0
+    },
+    "m_Group": {
+        "m_Id": ""
+    }
 }
 
 {

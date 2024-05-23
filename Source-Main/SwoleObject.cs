@@ -4,7 +4,7 @@ namespace Swole
     public abstract class SwoleObject<TMain, TSerialized> : ISwoleSerialization<TMain, TSerialized> where TSerialized : struct, ISerializableContainer<TMain, TSerialized>
     {
 
-        public SwoleObject(TSerialized serializable) { }
+        protected SwoleObject(TSerialized serializable) { }
 
         public abstract TSerialized AsSerializableStruct();
         public object AsSerializableObject() => AsSerializableStruct();

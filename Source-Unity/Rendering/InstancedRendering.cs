@@ -16,7 +16,8 @@ namespace Swole
     public class InstancedRendering : SingletonBehaviour<InstancedRendering>
     {
 
-        public override int Priority => 90;
+        public const int _priority = 99999;
+        public override int Priority => _priority;
 
         public static RenderParams GetDefaultRenderParams()
         {
@@ -45,13 +46,13 @@ namespace Swole
         public static bool CheckRenderParamsEquality(RenderParams paramsA, RenderParams paramsB)
         {
 
+            if (paramsA.material != paramsB.material) return false;
             if (paramsA.layer != paramsB.layer) return false;
             if (paramsA.renderingLayerMask != paramsB.renderingLayerMask) return false;
             if (paramsA.rendererPriority != paramsB.rendererPriority) return false;
             if (paramsA.camera != paramsB.camera) return false;
             if (paramsA.motionVectorMode != paramsB.motionVectorMode) return false;
             if (paramsA.reflectionProbeUsage != paramsB.reflectionProbeUsage) return false;
-            if (paramsA.material != paramsB.material) return false;
             if (paramsA.shadowCastingMode != paramsB.shadowCastingMode) return false;
             if (paramsA.receiveShadows != paramsB.receiveShadows) return false;
             if (paramsA.lightProbeUsage != paramsB.lightProbeUsage) return false;
@@ -67,7 +68,7 @@ namespace Swole
 
             public T defaultValue;
 
-            protected IList values;
+            protected IList values; // IList is required, because MaterialPropertyBlock.SetFloatArray and MaterialPropertyBlock.SetVectorArray etc take in typed lists
             public int Count => values.Count;
 
             public MaterialPropertyOverride(string propertyName, T defaultValue)
@@ -108,13 +109,13 @@ namespace Swole
             public bool Override(MaterialPropertyBlock block)
             {
 
-                if (string.IsNullOrEmpty(propertyName) || values == null) return true;
+                if (string.IsNullOrEmpty(propertyName) || values == null) return true; // ignore this override
 
                 if (typeof(T) == typeof(float))
                 {
 
                     var existingArray = block.GetFloatArray(propertyName);
-                    if (existingArray != null && existingArray.Length < values.Count) return false;
+                    if (existingArray != null && existingArray.Length < values.Count) return false; // array length is wrong, so start from scratch. (Array length can't be changed once set)
 
                     block.SetFloatArray(propertyName, (List<float>)values);
 
@@ -126,7 +127,7 @@ namespace Swole
 
                     var existingArray = block.GetFloatArray(propertyName);
 
-                    if (existingArray != null && existingArray.Length < values.Count) return false;
+                    if (existingArray != null && existingArray.Length < values.Count) return false; // array length is wrong, so start from scratch. (Array length can't be changed once set)
 
                     block.SetVectorArray(propertyName, (List<Vector4>)values);
 
@@ -156,8 +157,9 @@ namespace Swole
 
         }
 
-        public const int _maxInstancesPerCall = 1023;
-
+        /// <summary>
+        /// A sequence of meshes rendered using the same render parameters.
+        /// </summary>
         public class RenderSequence
         {
 
@@ -166,22 +168,22 @@ namespace Swole
 
             public SubRenderSequence this[int index] => index < 0 || index >= subSequences.Count ? null : subSequences[index];
 
-            public void FindNextSequenceSlotIndex(out int subSequenceIndex, out int index)
+            public void FindNextSubSequenceSlotIndex(out int subSequenceIndex, out int indexInSubsequence)
             {
 
                 subSequenceIndex = -1;
-                index = 0;
+                indexInSubsequence = 0;
 
                 for (int a = 0; a < subSequences.Count; a++)
                 {
 
                     var sequence = subSequences[a];
                     int count = sequence.Count;
-                    if (count < _maxInstancesPerCall)
+                    if (count < batchSize)
                     {
 
                         subSequenceIndex = a;
-                        index = count;
+                        indexInSubsequence = count;
 
                         return;
 
@@ -191,21 +193,21 @@ namespace Swole
 
             }
 
-            public void FindNextSequenceSlot(out SubRenderSequence sequence, out int index)
+            public void FindNextSubSequenceSlot(out SubRenderSequence subSequence, out int indexInSubsequence)
             {
 
-                FindNextSequenceSlotIndex(out int subIndex, out index);
+                FindNextSubSequenceSlotIndex(out int subIndex, out indexInSubsequence);
 
                 if (subIndex < 0)
                 {
 
                     subIndex = subSequences.Count;
                     subSequences.Add(new SubRenderSequence(this, subIndex, renderParams));
-                    index = 0;
+                    indexInSubsequence = 0;
 
                 }
 
-                sequence = subSequences[subIndex];
+                subSequence = subSequences[subIndex];
 
             }
 
@@ -239,12 +241,15 @@ namespace Swole
             public List<MaterialPropertyInstanceOverride<Vector4>> globalVectorPropertyOverrides;
             public List<MaterialPropertyInstanceOverride<Color>> globalColorPropertyOverrides;
 
-            public RenderSequence(RenderParams renderParams)
+            private int batchSize;
+
+            public RenderSequence(RenderParams renderParams, int batchSize)
             {
 
                 subSequences = new List<SubRenderSequence>() { new SubRenderSequence(this, 0, renderParams) };
 
                 this.renderParams = renderParams;
+                this.batchSize = batchSize;
 
             }
 
@@ -291,9 +296,12 @@ namespace Swole
 
             public int2 GetSubIndex(int index)
             {
-
-                if (index < 0 || index >= Count) return -1;
-
+                //Debug.Log("fetching sub index of local index " + index + " : subCount " + SubSequenceCount + " : sequence length " + Count);
+                if (index < 0 || index >= Count)
+                {
+                    //Debug.Log($"invalid index ({index}) - Count: {Count}");
+                    return -1; 
+                }
                 int i = 0;
                 for (int a = 0; a < SubSequenceCount; a++)
                 {
@@ -303,14 +311,14 @@ namespace Swole
                     if (index < i + sequence.Count)
                     {
 
-                        return new int2(a, index - i);
+                        return new int2(a, index - i); 
 
                     }
 
                     i += sequence.Count;
 
-                }
-
+                } 
+                //Debug.Log("invalid sub index"); 
                 return -1;
 
             }
@@ -318,11 +326,11 @@ namespace Swole
             public int2 AddMember(ICollection<MaterialPropertyInstanceOverride<float>> instanceFloatPropertyOverrides = null, ICollection<MaterialPropertyInstanceOverride<Color>> instanceColorPropertyOverrides = null, ICollection<MaterialPropertyInstanceOverride<Vector4>> instanceVectorPropertyOverrides = null)
             {
 
-                FindNextSequenceSlot(out var sequence, out int index);
+                FindNextSubSequenceSlot(out var subSequence, out int indexInSubsequence);
 
-                index = sequence.AddMember(instanceFloatPropertyOverrides, instanceColorPropertyOverrides, instanceVectorPropertyOverrides);
+                indexInSubsequence = subSequence.AddMember(instanceFloatPropertyOverrides, instanceColorPropertyOverrides, instanceVectorPropertyOverrides);
 
-                return new int2(sequence.Index, index);
+                return new int2(subSequence.Index, indexInSubsequence);
 
             }
 
@@ -330,7 +338,7 @@ namespace Swole
             {
 
                 int2 subIndex = GetSubIndex(index);
-                if (subIndex.x < 0 || subSequences[subIndex.x].Count >= _maxInstancesPerCall) return AddMember(instanceFloatPropertyOverrides, instanceColorPropertyOverrides, instanceVectorPropertyOverrides);
+                if (subIndex.x < 0 || subSequences[subIndex.x].Count >= batchSize) return AddMember(instanceFloatPropertyOverrides, instanceColorPropertyOverrides, instanceVectorPropertyOverrides);
 
                 subSequences[subIndex.x].InsertMember(subIndex.y, instanceFloatPropertyOverrides, instanceColorPropertyOverrides, instanceVectorPropertyOverrides);
                 return subIndex;
@@ -355,22 +363,26 @@ namespace Swole
                 subSequences[subIndex.x].ResetMaterialPropertyOverrides(subIndex.y);
             }
 
-            public void RemoveMember(int index)
+            public void RemoveMember(int indexInSequence)
             {
 
-                int2 subIndex = GetSubIndex(index);
+                int2 subSequenceIndex = GetSubIndex(indexInSequence);
 
-                RemoveMember(subIndex);
+                RemoveMember(subSequenceIndex);
 
             }
 
-            public void RemoveMember(int2 index)
+            public void RemoveMember(int2 subSequenceIndex)
             {
 
-                if (index.x < 0 || index.x >= SubSequenceCount) return;
+                if (subSequenceIndex.x < 0 || subSequenceIndex.x >= SubSequenceCount) 
+                {
+                    Debug.LogError($"Tried to remove out of range index ({subSequenceIndex.x}, {subSequenceIndex.y}) - SubSequenceCount: {SubSequenceCount} - Length: {Count}");
+                    return; 
+                }
 
-                var sequence = subSequences[index.x];
-                sequence.RemoveMember(index.y);
+                var sequence = subSequences[subSequenceIndex.x];
+                sequence.RemoveMember(subSequenceIndex.y);
 
             }
 
@@ -450,11 +462,12 @@ namespace Swole
             public int AddMember(ICollection<MaterialPropertyInstanceOverride<float>> instanceFloatPropertyOverrides = null, ICollection<MaterialPropertyInstanceOverride<Color>> instanceColorPropertyOverrides = null, ICollection<MaterialPropertyInstanceOverride<Vector4>> instanceVectorPropertyOverrides = null)
             {
 
+                // Resize existing overrides
                 foreach (var override_ in floatPropertyOverrides) override_.Value.SetCount(Count);
-                foreach (var override_ in vectorPropertyOverrides) override_.Value.SetCount(Count);
+                foreach (var override_ in vectorPropertyOverrides) override_.Value.SetCount(Count); // Color overrides are stored as vector4 overrides
 
                 if (instanceFloatPropertyOverrides != null) foreach (var prop in instanceFloatPropertyOverrides) GetOverrideFloat(prop.propertyName, renderParams.material.GetFloat(prop.propertyName))?.Add(prop.value);
-                if (instanceColorPropertyOverrides != null) foreach (var prop in instanceColorPropertyOverrides) GetOverrideVector(prop.propertyName, renderParams.material.GetColor(prop.propertyName).AsLinearColorVector())?.Add(prop.value.AsLinearColorVector());
+                if (instanceColorPropertyOverrides != null) foreach (var prop in instanceColorPropertyOverrides) GetOverrideVector(prop.propertyName, renderParams.material.GetColor(prop.propertyName).AsLinearColorVector())?.Add(prop.value.AsLinearColorVector()); // Color overrides are stored as vector4 overrides
                 if (instanceVectorPropertyOverrides != null) foreach (var prop in instanceVectorPropertyOverrides) GetOverrideVector(prop.propertyName, renderParams.material.GetVector(prop.propertyName))?.Add(prop.value);
                 SetDirty();
                 count++;
@@ -464,11 +477,12 @@ namespace Swole
             public void InsertMember(int index, ICollection<MaterialPropertyInstanceOverride<float>> instanceFloatPropertyOverrides = null, ICollection<MaterialPropertyInstanceOverride<Color>> instanceColorPropertyOverrides = null, ICollection<MaterialPropertyInstanceOverride<Vector4>> instanceVectorPropertyOverrides = null)
             {
 
+                // Resize existing overrides
                 foreach (var override_ in floatPropertyOverrides) override_.Value.SetCount(Count);
-                foreach (var override_ in vectorPropertyOverrides) override_.Value.SetCount(Count);
+                foreach (var override_ in vectorPropertyOverrides) override_.Value.SetCount(Count); // Color overrides are stored as vector4 overrides
 
                 if (instanceFloatPropertyOverrides != null) foreach (var prop in instanceFloatPropertyOverrides) GetOverrideFloat(prop.propertyName, renderParams.material.GetFloat(prop.propertyName))?.Insert(prop.value, index);
-                if (instanceColorPropertyOverrides != null) foreach (var prop in instanceColorPropertyOverrides) GetOverrideVector(prop.propertyName, renderParams.material.GetColor(prop.propertyName).AsLinearColorVector())?.Insert(prop.value.AsLinearColorVector(), index);
+                if (instanceColorPropertyOverrides != null) foreach (var prop in instanceColorPropertyOverrides) GetOverrideVector(prop.propertyName, renderParams.material.GetColor(prop.propertyName).AsLinearColorVector())?.Insert(prop.value.AsLinearColorVector(), index); // Color overrides are stored as vector4 overrides
                 if (instanceVectorPropertyOverrides != null) foreach (var prop in instanceVectorPropertyOverrides) GetOverrideVector(prop.propertyName, renderParams.material.GetVector(prop.propertyName))?.Insert(prop.value, index);
                 SetDirty();
                 count++;
@@ -476,11 +490,12 @@ namespace Swole
             public void SetMaterialPropertyOverrides(int index, ICollection<MaterialPropertyInstanceOverride<float>> instanceFloatPropertyOverrides = null, ICollection<MaterialPropertyInstanceOverride<Color>> instanceColorPropertyOverrides = null, ICollection<MaterialPropertyInstanceOverride<Vector4>> instanceVectorPropertyOverrides = null)
             {
 
+                // Resize existing overrides
                 foreach (var override_ in floatPropertyOverrides) override_.Value.SetCount(Count);
-                foreach (var override_ in vectorPropertyOverrides) override_.Value.SetCount(Count);
+                foreach (var override_ in vectorPropertyOverrides) override_.Value.SetCount(Count); // Color overrides are stored as vector4 overrides
 
                 if (instanceFloatPropertyOverrides != null) foreach (var prop in instanceFloatPropertyOverrides) GetOverrideFloat(prop.propertyName, renderParams.material.GetFloat(prop.propertyName))?.SetValue(index, prop.value);
-                if (instanceColorPropertyOverrides != null) foreach (var prop in instanceColorPropertyOverrides) GetOverrideVector(prop.propertyName, renderParams.material.GetColor(prop.propertyName).AsLinearColorVector())?.SetValue(index, prop.value.AsLinearColorVector());
+                if (instanceColorPropertyOverrides != null) foreach (var prop in instanceColorPropertyOverrides) GetOverrideVector(prop.propertyName, renderParams.material.GetColor(prop.propertyName).AsLinearColorVector())?.SetValue(index, prop.value.AsLinearColorVector()); // Color overrides are stored as vector4 overrides
                 if (instanceVectorPropertyOverrides != null) foreach (var prop in instanceVectorPropertyOverrides) GetOverrideVector(prop.propertyName, renderParams.material.GetVector(prop.propertyName))?.SetValue(index, prop.value);
                 SetDirty();
             }
@@ -508,8 +523,13 @@ namespace Swole
             public void RemoveMember(int index)
             {
 
-                if (index < 0 || index >= Count) return;
+                if (index < 0 || index >= Count) 
+                {
+                    Debug.LogError($"Tried to remove out of range index ({index}) - Count: {count}");
+                    return; 
+                }
 
+                // Remove from existing property overrides
                 foreach (var override_ in floatPropertyOverrides) override_.Value.RemoveAt(index);
                 foreach (var override_ in vectorPropertyOverrides) override_.Value.RemoveAt(index);
                 SetDirty();
@@ -524,7 +544,7 @@ namespace Swole
                 foreach (var property in floatPropertyOverrides) if (!property.Value.Override(block)) return false;
                 foreach (var property in vectorPropertyOverrides) if (!property.Value.Override(block)) return false;
 
-                return sequence.Override(block);
+                return sequence.Override(block); // apply top level overrides after
 
             }
 
@@ -537,6 +557,7 @@ namespace Swole
                 if (!Override(block))
                 {
 
+                    // Something went wrong so start from scratch. (Usually caused by array property overrides needing to resize, which can't be done once they're set)
                     block = new MaterialPropertyBlock();
                     Override(block);
 
@@ -549,7 +570,7 @@ namespace Swole
             public MaterialPropertyOverride<float> GetOverrideFloat(string propertyName, float defaultValue = 0)
             {
 
-                if (string.IsNullOrEmpty(propertyName)) return null;
+                if (string.IsNullOrWhiteSpace(propertyName)) return null;
 
                 if (floatPropertyOverrides.TryGetValue(propertyName, out MaterialPropertyOverride<float> propertyOverride)) return propertyOverride;
 
@@ -563,7 +584,7 @@ namespace Swole
             public MaterialPropertyOverride<Vector4> GetOverrideVector(string propertyName, Vector4 defaultValue = default)
             {
 
-                if (string.IsNullOrEmpty(propertyName)) return null;
+                if (string.IsNullOrWhiteSpace(propertyName)) return null;
 
                 if (vectorPropertyOverrides.TryGetValue(propertyName, out MaterialPropertyOverride<Vector4> propertyOverride)) return propertyOverride;
 
@@ -579,32 +600,46 @@ namespace Swole
         public class RenderingInstance<T> : IDisposable where T : unmanaged
         {
 
-            public RenderingInstance(RenderGroup<T> renderGroup, int index, int subSequenceIndex, int subIndex)
+            public RenderingInstance(RenderGroup<T> renderGroup, int index, int renderSequenceIndex, int subSequenceIndex, int indexInSubsequence)
             {
 
                 this.renderGroup = renderGroup;
                 this.index = index;
+                this.renderSequenceIndex = renderSequenceIndex;
                 this.subSequenceIndex = subSequenceIndex;
-                this.subIndex = subIndex;
+                this.indexInSubsequence = indexInSubsequence;
 
             }
 
             private RenderGroup<T> renderGroup;
 
+            /// <summary>
+            /// The main index used for the instance data list
+            /// </summary>
             public int index;
+
+            private int renderSequenceIndex;
+            public int RenderSequenceIndex => renderSequenceIndex;
 
             private int subSequenceIndex;
             public int SubSequenceIndex => subSequenceIndex;
-            public int subIndex;
+            private int indexInSubsequence;
+            public int IndexInSubsequence
+            {
+                get => indexInSubsequence;
+                set => indexInSubsequence = value;
+            }
 
             public bool Valid => renderGroup != null;
 
-            public void Dispose()
+            public void Dispose() => Dispose(true, true);
+            public void Dispose(bool refreshRenderIndices, bool removeFromRenderGroup)
             {
-                if (!destroyed) Destroy();
+                if (!destroyed) Destroy(refreshRenderIndices, removeFromRenderGroup);
                 index = -1;
+                renderSequenceIndex = -1;
                 subSequenceIndex = -1;
-                subIndex = -1;
+                indexInSubsequence = -1;
                 renderGroup = null;
 
             }
@@ -612,16 +647,25 @@ namespace Swole
             public bool SetData(T data)
             {
                 if (renderGroup == null) return false;
-                return renderGroup.SetInstanceData(this, data);
+                return renderGroup.SetInstanceData(index, data);
+            }
+            public T GetData()
+            {
+                if (renderGroup == null) return default;
+                return renderGroup.GetInstanceData(index);
             }
 
             private bool destroyed;
-            public void Destroy()
+            public void Destroy(bool refreshRenderIndices = true, bool removeFromRenderGroup = true)
             {
-
                 destroyed = true;
-                if (renderGroup != null) renderGroup.DestroyInstance(this); else Dispose();
 
+                if (renderGroup != null)
+                {
+                    if (removeFromRenderGroup) renderGroup.DestroyInstance(this, refreshRenderIndices, false);
+                }
+
+                Dispose(refreshRenderIndices, removeFromRenderGroup);    
             }
 
         }
@@ -705,10 +749,17 @@ namespace Swole
 
         }
 
+        public const int _defaultBatchSize = 511; // Unity default https://docs.unity3d.com/ScriptReference/Graphics.RenderMeshInstanced.html
+        /// <summary>
+        /// A group for rendering the same mesh multiple times using data of type T. Can have multiple internal render sequences with different materials and render parameters.
+        /// </summary>
         public class RenderGroup<T> : IRenderGroup where T : unmanaged
         {
 
             public Type GetInstanceDataType() => typeof(T);
+
+            protected int batchSize;
+            public int BatchSize => batchSize;
 
             protected Mesh mesh;
             public Mesh Mesh => mesh;
@@ -735,7 +786,7 @@ namespace Swole
                 if (renderSequences == null) renderSequences = new List<RenderSequence>();
                 for (int a = 0; a < renderSequences.Count; a++) if (CheckRenderParamsEquality(renderSequences[a].RenderParams, renderParams)) return a;
 
-                renderSequences.Add(new RenderSequence(renderParams));
+                renderSequences.Add(new RenderSequence(renderParams, batchSize));
 
                 return renderSequences.Count - 1;
 
@@ -769,7 +820,7 @@ namespace Swole
                 instanceIndex = startIndex + sequence.Count;
 
                 int2 subIndex = sequence.AddMember(instanceFloatPropertyOverrides, instanceColorPropertyOverrides, instanceVectorPropertyOverrides);
-                var instance = new RenderingInstance<T>(this, instanceIndex, subIndex.x, subIndex.y);
+                var instance = new RenderingInstance<T>(this, instanceIndex, renderSequenceIndex, subIndex.x, subIndex.y);
 
                 if (instanceIndex >= instanceData.Length)
                 {
@@ -778,14 +829,20 @@ namespace Swole
                     instanceData.Add(initialData);
                     indexReferences.Add(instance);
 
+                    //Debug.Log("Add to " + material.name + " : instanceIndex[(" + instanceIndex + ")->(" + instance.index + ")] : renderSequenceIndex[" + renderSequenceIndex + "] : subSequenceIndex[" + subIndex.x + "] : indexInSubSequence[" + subIndex.y + "]");
+
                 }
                 else
                 {
+                     
+                    //Debug.Log("Insert in " + material.name + " : instanceIndex[" + instanceIndex + "] : renderSequenceIndex[" + renderSequenceIndex + "] : subSequenceIndex[" + subIndex.x + "] : indexInSubSequence[" + subIndex.y + "]");
 
-                    instanceData.InsertRangeWithBeginEnd(instanceIndex, instanceIndex + 1);
+                    //var existingData = instanceData[instanceIndex];
+                    instanceData.InsertRangeWithBeginEnd(instanceIndex, instanceIndex + 1); // widen list by 1, beginning at instanceIndex
                     instanceData[instanceIndex] = initialData;
-                    indexReferences.Insert(instanceIndex, instance);
-
+                    //instanceData[instanceIndex + 1] = existingData; // not necessary https://docs.unity3d.com/Packages/com.unity.collections@2.1/api/Unity.Collections.NativeList-1.html#Unity_Collections_NativeList_1_InsertRangeWithBeginEnd_System_Int32_System_Int32_
+                    indexReferences.Insert(instanceIndex, instance); 
+                     
                     if (refreshRenderIndices) RefreshRenderIndices(instanceIndex + 1);
 
                 }
@@ -796,60 +853,99 @@ namespace Swole
 
             public bool SetInstanceData(RenderingInstance<T> instance, T data)
             {
+                if (instance == null) return false;
 
-                if (!instanceData.IsCreated || instance == null || !instance.Valid || instance.index >= instanceData.Length) return false;
+                return SetInstanceData(instance.index, data);
+            }
+            public bool SetInstanceData(int instanceIndex, T data)
+            {
+                if (!instanceData.IsCreated || instanceIndex < 0 || instanceIndex >= instanceData.Length) return false;
 
-                instanceData[instance.index] = data;
-
+                instanceData[instanceIndex] = data;
                 return true;
+            }
+            public T GetInstanceData(RenderingInstance<T> instance)
+            {
+                if (instance == null) return default;
 
+                return GetInstanceData(instance.index);
+            }
+            public T GetInstanceData(int instanceIndex)
+            {
+                if (!instanceData.IsCreated || instanceIndex < 0 || instanceIndex >= instanceData.Length) return default;
+
+                return instanceData[instanceIndex];
             }
 
-            public void DestroyInstance(RenderingInstance<T> instance, bool refreshRenderIndices = true)
+            public void DestroyInstance(RenderingInstance<T> instance, bool refreshRenderIndices = true, bool callDispose = true)
             {
 
-                if (!instanceData.IsCreated || instance == null || !instance.Valid || instance.index >= instanceData.Length) return;
+                if (!instanceData.IsCreated || instance == null || !instance.Valid || instance.index >= instanceData.Length)
+                {
+                    if (refreshRenderIndices) RefreshRenderIndices(0);
+                    return;
+                }
 
                 int sequenceIndex = 0;
-                int instanceIndexRange = 0;
-                int instanceIndexStart = 0;
+                int instanceIndexHead = 0;
+                int indexInSequence = -1;
                 for (int a = 0; a < renderSequences.Count; a++)
                 {
-                    if (instance.index < instanceIndexRange) break;
-                    sequenceIndex = a;
-                    instanceIndexStart = instanceIndexRange;
-                    if (instanceIndexRange == instance.index) break;
-                    instanceIndexRange += renderSequences[a].Count;
+                    var seq = renderSequences[a];
+
+                    int count = seq.Count;
+                    if (instance.index < instanceIndexHead + count)
+                    {
+                        sequenceIndex = a;
+                        indexInSequence = instance.index - instanceIndexHead;
+                        break;
+                    }
+
+                    instanceIndexHead += count;
                 }
 
                 var sequence = renderSequences[sequenceIndex];
 
                 indexReferences.RemoveAt(instance.index);
                 instanceData.RemoveAt(instance.index);
-                sequence.RemoveMember(instance.index - instanceIndexStart);
+                if (indexInSequence >= 0)
+                {
+                    //Debug.Log($"[{sequence.RenderParams.material.name}] Removing {instance.index} : sequence ({sequenceIndex}) : index in sequence ({(indexInSequence)})");
+                    sequence.RemoveMember(indexInSequence);
+                }
+                else
+                {
+                    Debug.LogError($"Tried to remove instance index ({instance.index}) from local sequences, but it was out of range. Sequence Count: {renderSequences.Count} - Combined Length: {instanceIndexHead}");
+                }
 
                 if (refreshRenderIndices) RefreshRenderIndices(instance.index);
 
-                instance.Dispose();
+                if (callDispose) instance.Dispose();
 
             }
 
             public void Dispose()
             {
 
+                if (indexReferences != null)
+                {
+                    foreach (RenderingInstance<T> index in indexReferences) if (index != null && index.Valid) index.Dispose(false, false); // Don't remove, so the list for this loop isn't modified
+                    indexReferences.Clear();
+                }
+                indexReferences = null;
+                
+                renderSequences?.Clear();
+                renderSequences = null;
+                
                 if (instanceData.IsCreated) instanceData.Dispose();
                 instanceData = default;
 
-                if (indexReferences != null)
-                {
-                    foreach (RenderingInstance<T> index in indexReferences) if (index != null && index.Valid) index.Dispose();
-                }
-                indexReferences = null;
-
             }
 
-            public RenderGroup(Mesh mesh, int submeshIndex, List<RenderSequence> renderSequences, NativeList<T> instanceData)
+            public RenderGroup(Mesh mesh, int submeshIndex, List<RenderSequence> renderSequences, NativeList<T> instanceData, int batchSize = _defaultBatchSize)
             {
+
+                this.batchSize = batchSize;
 
                 this.mesh = mesh;
                 this.submeshIndex = submeshIndex;
@@ -860,8 +956,10 @@ namespace Swole
 
             }
 
-            public RenderGroup(Mesh mesh, int submeshIndex, NativeList<T> instanceData)
+            public RenderGroup(Mesh mesh, int submeshIndex, NativeList<T> instanceData, int batchSize = _defaultBatchSize)
             {
+
+                this.batchSize = batchSize;
 
                 this.mesh = mesh;
                 this.submeshIndex = submeshIndex;
@@ -872,8 +970,10 @@ namespace Swole
 
             }
 
-            public RenderGroup(Mesh mesh, int submeshIndex)
+            public RenderGroup(Mesh mesh, int submeshIndex, int batchSize = _defaultBatchSize)
             {
+
+                this.batchSize = batchSize;
 
                 this.mesh = mesh;
                 this.submeshIndex = submeshIndex;
@@ -888,6 +988,7 @@ namespace Swole
             {
 
                 if (indexReferences == null) return;
+
                 startIndex = Mathf.Max(0, startIndex);
                 for (int a = startIndex; a < indexReferences.Count; a++) indexReferences[a].index = a;
 
@@ -921,20 +1022,22 @@ namespace Swole
 
                 }
 
+                //int frame = Time.frameCount;
                 int i = 0;
                 for (int s = 0; s < renderSequences.Count; s++)
                 {
 
                     var sequence = renderSequences[s];
-                    sequence.RefreshIfDirty();
-
+                    sequence.RefreshIfDirty(); 
+                    //Debug.Log($"F ({frame}) Rendering sequence {s} {sequence.RenderParams.material.name}"); 
+                    
                     for (int ss = 0; ss < sequence.SubSequenceCount; ss++)
                     {
-
                         var subSequence = sequence[ss];
-                        int count = Mathf.Clamp(subSequence.Count, 0, _maxInstancesPerCall);
-                        if (count == 0) continue;
-
+                        int count = Mathf.Clamp(subSequence.Count, 0, batchSize);
+                        //Debug.Log($" - ({i}) sub sequence {ss} (Size: {subSequence.Count} - Clamped Size: {count}) Material: {subSequence.RenderParams.material.name}");    
+                        if (count <= 0) continue;
+                         
                         Graphics.RenderMeshInstanced(
                             subSequence.RenderParams,
                             mesh,
@@ -1308,7 +1411,7 @@ namespace Swole
 
         protected List<IRenderGroup> renderGroups = new List<IRenderGroup>();
 
-        public bool TryGetRenderGroupLocal(Mesh mesh, int submeshIndex, out IRenderGroup renderGroup, out int renderGroupIndex)
+        public bool TryGetRenderGroupLocal(out IRenderGroup renderGroup, out int renderGroupIndex, Mesh mesh, int submeshIndex)
         {
 
             renderGroup = null;
@@ -1333,32 +1436,32 @@ namespace Swole
             return false;
 
         }
-        public bool TryGetRenderGroup(Mesh mesh, int submeshIndex, out IRenderGroup renderGroup, out int renderGroupIndex)
+        public static bool TryGetRenderGroup(out IRenderGroup renderGroup, out int renderGroupIndex, Mesh mesh, int submeshIndex)
         {
             renderGroupIndex = -1;
             renderGroup = null;
             var instance = Instance;
             if (instance == null) return false;
-            return instance.TryGetRenderGroupLocal(mesh, submeshIndex, out renderGroup, out renderGroupIndex);
+            return instance.TryGetRenderGroupLocal(out renderGroup, out renderGroupIndex, mesh, submeshIndex);
 
         }
 
-        public bool TryGetRenderGroupLocal(Mesh mesh, int submeshIndex, out IRenderGroup renderGroup)
+        public bool TryGetRenderGroupLocal(out IRenderGroup renderGroup, Mesh mesh, int submeshIndex)
         {
 
-            return TryGetRenderGroupLocal(mesh, submeshIndex, out renderGroup, out _);
+            return TryGetRenderGroupLocal(out renderGroup, out _, mesh, submeshIndex);
 
         }
-        public bool TryGetRenderGroup(Mesh mesh, int submeshIndex, out IRenderGroup renderGroup)
+        public static bool TryGetRenderGroup(out IRenderGroup renderGroup, Mesh mesh, int submeshIndex)
         {
             renderGroup = null;
             var instance = Instance;
             if (instance == null) return false;
-            return instance.TryGetRenderGroupLocal(mesh, submeshIndex, out renderGroup);
+            return instance.TryGetRenderGroupLocal(out renderGroup, mesh, submeshIndex);
 
         }
 
-        public bool TryGetRenderGroupLocal<T>(Mesh mesh, int submeshIndex, out RenderGroup<T> renderGroup, out int renderGroupIndex) where T : unmanaged
+        public bool TryGetRenderGroupLocal<T>(out RenderGroup<T> renderGroup, out int renderGroupIndex, Mesh mesh, int submeshIndex) where T : unmanaged
         {
 
             renderGroup = null;
@@ -1383,37 +1486,37 @@ namespace Swole
             return false;
 
         }
-        public bool TryGetRenderGroup<T>(Mesh mesh, int submeshIndex, out RenderGroup<T> renderGroup, out int renderGroupIndex) where T : unmanaged
+        public static bool TryGetRenderGroup<T>(out RenderGroup<T> renderGroup, out int renderGroupIndex, Mesh mesh, int submeshIndex) where T : unmanaged
         {
             renderGroupIndex = -1;
             renderGroup = null;
             var instance = Instance;
             if (instance == null) return false;
-            return instance.TryGetRenderGroupLocal<T>(mesh, submeshIndex, out renderGroup, out renderGroupIndex);
+            return instance.TryGetRenderGroupLocal<T>(out renderGroup, out renderGroupIndex, mesh, submeshIndex);
 
         }
-        public bool TryGetRenderGroupLocal<T>(Mesh mesh, int submeshIndex, out RenderGroup<T> renderGroup) where T : unmanaged
+        public bool TryGetRenderGroupLocal<T>(out RenderGroup<T> renderGroup, Mesh mesh, int submeshIndex) where T : unmanaged
         {
 
-            return TryGetRenderGroupLocal<T>(mesh, submeshIndex, out renderGroup, out _);
+            return TryGetRenderGroupLocal<T>(out renderGroup, out _, mesh, submeshIndex);
 
         }
-        public bool TryGetRenderGroup<T>(Mesh mesh, int submeshIndex, out RenderGroup<T> renderGroup) where T : unmanaged
+        public static bool TryGetRenderGroup<T>(out RenderGroup<T> renderGroup, Mesh mesh, int submeshIndex) where T : unmanaged
         {
             renderGroup = null;
             var instance = Instance;
             if (instance == null) return false;
-            return instance.TryGetRenderGroupLocal<T>(mesh, submeshIndex, out renderGroup);
+            return instance.TryGetRenderGroupLocal<T>(out renderGroup, mesh, submeshIndex);
 
         }
 
-        public RenderGroup<T> GetRenderGroupLocal<T>(Mesh mesh, int submeshIndex) where T : unmanaged
+        public RenderGroup<T> GetRenderGroupLocal<T>(Mesh mesh, int submeshIndex, int batchSize = _defaultBatchSize) where T : unmanaged
         {
 
             if (mesh == null) return null;
-            if (TryGetRenderGroup<T>(mesh, submeshIndex, out RenderGroup<T> renderGroup)) return renderGroup;
+            if (TryGetRenderGroup<T>(out RenderGroup<T> renderGroup, mesh, submeshIndex)) return renderGroup;
 
-            renderGroup = new RenderGroup<T>(mesh, submeshIndex);
+            renderGroup = new RenderGroup<T>(mesh, submeshIndex, batchSize);
 
             renderGroups.Add(renderGroup);
 
@@ -1421,12 +1524,12 @@ namespace Swole
 
         }
 
-        public static RenderGroup<T> GetRenderGroup<T>(Mesh mesh, int submeshIndex) where T : unmanaged
+        public static RenderGroup<T> GetRenderGroup<T>(Mesh mesh, int submeshIndex, int batchSize = _defaultBatchSize) where T : unmanaged
         {
 
             var instance = Instance;
             if (instance == null) return null;
-            return instance.GetRenderGroupLocal<T>(mesh, submeshIndex);
+            return instance.GetRenderGroupLocal<T>(mesh, submeshIndex, batchSize);
 
         }
 
@@ -1434,9 +1537,9 @@ namespace Swole
         {
 
             if (mesh == null) return null;
-            if (TryGetRenderGroup<InstanceDataMatrixAndMotionVectors>(mesh, submeshIndex, out var renderGroup)) return renderGroup;
+            if (TryGetRenderGroup<InstanceDataMatrixAndMotionVectors>(out var renderGroup, mesh, submeshIndex)) return renderGroup;
 
-            renderGroup = new RenderGroup<InstanceDataMatrixAndMotionVectors>(mesh, submeshIndex);
+            renderGroup = new RenderGroup<InstanceDataMatrixAndMotionVectors>(mesh, submeshIndex, _defaultBatchSize);
 
             renderGroups.Add(renderGroup);
 

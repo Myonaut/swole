@@ -269,13 +269,21 @@ namespace Swole
         /// </summary>
         public static bool AsBool(this double val) => val != 0;
 
+        /// <summary>
+        /// Equivalent to the MiniScript implementation of a boolean
+        /// </summary>
+        public static bool AsBool(this float val) => val != 0;
+
 
         private static List<int> available = new List<int>();
         private static List<int> restricted = new List<int>();
 
-        public delegate int GetIdFromArrayDelegate(int index);
+        public delegate int GetIdInCollectionDelegate(int index);
 
-        public static int GetUniqueId(GetIdFromArrayDelegate getIdInCollection, int count)
+        /// <summary>
+        /// Generates a unique id based on a collection of existing ids.
+        /// </summary>
+        public static int GetUniqueId(GetIdInCollectionDelegate getIdInCollection, int collectionSize)
         {
 
             if (getIdInCollection == null) return -1;
@@ -289,7 +297,7 @@ namespace Swole
                 if (id >= 0 && !restricted.Contains(id)) available.Add(id);
             }
 
-            for (int ind = 0; ind < count; ind++)
+            for (int ind = 0; ind < collectionSize; ind++)
             {
 
                 int id = getIdInCollection(ind);
@@ -313,8 +321,25 @@ namespace Swole
                 return available[0];
             }
 
-            return count;
+            return collectionSize;
 
+        }
+
+        public static bool IsSpaceConvertible(this CreationVariable.Type type)
+        {
+            return
+
+                type == CreationVariable.Type.Vector3 ||
+                type == CreationVariable.Type.PositionLocal || type == CreationVariable.Type.PositionRoot || type == CreationVariable.Type.PositionWorld ||
+                type == CreationVariable.Type.DirectionLocal || type == CreationVariable.Type.DirectionRoot || type == CreationVariable.Type.DirectionWorld ||
+                type == CreationVariable.Type.ScaleLocal ||
+                type == CreationVariable.Type.EulerAngles || type == CreationVariable.Type.RotationEulerLocal || type == CreationVariable.Type.RotationEulerRoot || type == CreationVariable.Type.RotationEulerWorld
+
+                ||
+
+                type == CreationVariable.Type.Vector4 ||
+                type == CreationVariable.Type.TangentLocal || type == CreationVariable.Type.TangentRoot || type == CreationVariable.Type.TangentWorld ||
+                type == CreationVariable.Type.Quaternion;
         }
 
         #region String Extensions
@@ -525,6 +550,35 @@ namespace Swole
         }
 
         /// <summary>
+        /// Source: https://stackoverflow.com/questions/6198392/check-whether-a-path-is-valid
+        /// </summary>
+        public static bool IsValidPath(string path, bool allowRelativePaths = false)
+        {
+            bool isValid = true;
+
+            try
+            {
+                string fullPath = Path.GetFullPath(path);
+
+                if (allowRelativePaths)
+                {
+                    isValid = Path.IsPathRooted(path);
+                }
+                else
+                {
+                    string root = Path.GetPathRoot(path);
+                    isValid = string.IsNullOrEmpty(root.Trim(new char[] { '\\', '/' })) == false;
+                }
+            }
+            catch
+            {
+                isValid = false;
+            }
+
+            return isValid;
+        }
+
+        /// <summary>
         /// Source: https://stackoverflow.com/questions/5617320/given-full-path-check-if-path-is-subdirectory-of-some-other-path-or-otherwise
         /// </summary>
         public static bool IsSubPathOf(this string subPath, string basePath)
@@ -554,6 +608,16 @@ namespace Swole
         public static bool IsIdenticalPathIgnoreCase(this string path, string otherPath) => path.NormalizePathCaseInsensitive() == otherPath.NormalizePathCaseInsensitive();
 
         public static string NormalizeDirectorySeparators(this string path, bool useAltSeparatorChar = true) => path.Replace(useAltSeparatorChar ? Path.DirectorySeparatorChar : Path.AltDirectorySeparatorChar, useAltSeparatorChar ? Path.AltDirectorySeparatorChar : Path.DirectorySeparatorChar);
+
+        public static bool IsEmpty(this DirectoryInfo directory) => IsDirectoryEmpty(directory);
+        public static bool IsDirectoryEmpty(string path) => IsDirectoryEmpty(new DirectoryInfo(path));
+        public static bool IsDirectoryEmpty(DirectoryInfo directory)
+        {
+            if (directory == null || !directory.Exists) return true;
+            if (directory.GetDirectories().Length > 0) return false;
+            if (directory.GetFiles().Length > 0) return false;
+            return true;
+        }
 
         #endregion
 

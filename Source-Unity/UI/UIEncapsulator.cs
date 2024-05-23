@@ -7,6 +7,7 @@ using UnityEngine;
 using UnityEngine.UI;
 
 using TMPro;
+using static PlasticGui.LaunchDiffParameters;
 
 namespace Swole.UI
 {
@@ -22,7 +23,7 @@ namespace Swole.UI
         /// </summary>
         /// <param name="children"></param>
         /// <returns></returns>
-        public static Bounds Encapsulate(List<RectTransform> children, Matrix4x4 toLocal, List<Text> childTexts = null, List<TMP_Text> childTextsTMP = null)
+        public static Bounds Encapsulate(List<RectTransform> children, Matrix4x4 toLocal, List<Text> childTexts = null, List<TMP_Text> childTextsTMP = null, List<Transform> toIgnore = null)
         {
 
             Bounds bound = new Bounds();
@@ -31,6 +32,16 @@ namespace Swole.UI
             {
                 RectTransform child = children[i];
                 if (child == null || !child.gameObject.activeInHierarchy) continue;
+                if (toIgnore != null)
+                {
+                    bool skip = false;
+                    foreach (var ignore in toIgnore) if (ignore != null && child.IsChildOf(ignore)) 
+                        {
+                            skip = true;
+                            break;
+                        }
+                    if (skip) continue;
+                }
                 bool replaceBounds = false;
                 Bounds replacementBounds = default;
                 if (childTexts != null)
@@ -73,7 +84,7 @@ namespace Swole.UI
 
         }
 
-        public static Bounds Encapsulate(RectTransform[] children, Matrix4x4 toLocal, Text[] childTexts = null, TMP_Text[] childTextsTMP = null)
+        public static Bounds Encapsulate(RectTransform[] children, Matrix4x4 toLocal, Text[] childTexts = null, TMP_Text[] childTextsTMP = null, Transform[] toIgnore = null)
         {
 
             Bounds bound = new Bounds();
@@ -82,6 +93,16 @@ namespace Swole.UI
             {
                 RectTransform child = children[i];
                 if (child == null || !child.gameObject.activeInHierarchy) continue;
+                if (toIgnore != null)
+                {
+                    bool skip = false;
+                    foreach (var ignore in toIgnore) if (ignore != null && child.IsChildOf(ignore))
+                        {
+                            skip = true;
+                            break;
+                        }
+                    if (skip) continue;
+                }
                 bool replaceBounds = false;
                 Bounds replacementBounds = default;
                 if (childTexts != null)
@@ -163,6 +184,8 @@ namespace Swole.UI
 
         public RectOffset padding;
 
+        public List<Transform> toIgnore = new List<Transform>(); 
+
         protected List<RectTransform> children = new List<RectTransform>();
         protected List<Text> childTexts;
         protected List<TMP_Text> childTextsTMP;
@@ -197,7 +220,7 @@ namespace Swole.UI
 
             if (targetRectTransform == null) return;
 
-            targetRectTransform.gameObject.GetComponentsInChildren<RectTransform>(true, children);
+            targetRectTransform.gameObject.GetComponentsInChildren<RectTransform>(true, children); 
 
             children.RemoveAll(i => i == null || i == RectTransform || i == targetRectTransform || (Mathf.Max(minChildDepth, maxChildDepth) > 0 ? (i.GetChildDepth(targetRectTransform) > (Mathf.Max(minChildDepth, maxChildDepth) - 1) || i.GetChildDepth(targetRectTransform) < (minChildDepth - 1)) : false));
 
@@ -233,6 +256,15 @@ namespace Swole.UI
 
             FetchChildren();
 
+        }
+
+        protected bool ShouldIgnoreTransform(Transform t, bool includeRootOfIgnore = true)
+        {
+            if (toIgnore != null)
+            {
+                foreach (var ignore in toIgnore) if (ignore != null && ((includeRootOfIgnore && ignore == t) || t.IsChildOf(ignore))) return true;
+            }
+            return false;
         }
 
         public void Recalculate()
@@ -289,6 +321,7 @@ namespace Swole.UI
 
                         }
 
+                        if (ShouldIgnoreTransform(child)) continue;
                         childRects[i] = child.rect;
                         childPositions[i] = child.position;
 
@@ -312,6 +345,7 @@ namespace Swole.UI
 
                         }
 
+                        if (ShouldIgnoreTransform(child)) continue;
                         childRects[i] = child.rect;
                         childPositions[i] = child.position;
 
@@ -321,7 +355,7 @@ namespace Swole.UI
 
             }
 
-            Bounds bounds = Encapsulate(children, targetRectTransform.worldToLocalMatrix, childTexts, childTextsTMP);
+            Bounds bounds = Encapsulate(children, targetRectTransform.worldToLocalMatrix, childTexts, childTextsTMP, toIgnore);
 
             float minX = Mathf.Min(bounds.min.x, bounds.max.x);
             float maxX = Mathf.Max(bounds.min.x, bounds.max.x);
@@ -355,6 +389,7 @@ namespace Swole.UI
                         int i = topLevelChildren[a];
 
                         RectTransform child = children[i];
+                        if (ShouldIgnoreTransform(child)) continue;
 
                         Rect childRect = childRects[i];
 
@@ -373,6 +408,7 @@ namespace Swole.UI
                     {
 
                         RectTransform child = children[i];
+                        if (ShouldIgnoreTransform(child)) continue;
 
                         Rect childRect = childRects[i];
 
