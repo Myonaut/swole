@@ -4231,7 +4231,7 @@ namespace Swole.API.Unity.Animation
                     propertyDropdownList.AddNewMember(prop.displayName, () => SetSelectedComponentPropertyUI(prop.displayName, prop.id));   
                 }
             }
-
+            
             propertyDropdownList.Refresh();
 
             SetComponentTextByName(propertyDropdownListRoot, _currentTextObjName, string.IsNullOrWhiteSpace(selectedPropertyUI) ? "null" : selectedPropertyUI);
