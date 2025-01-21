@@ -9,6 +9,8 @@ using UnityEngine.UI;
 
 using Unity.Mathematics;
 
+using Swole.UI;
+
 namespace Swole
 {
 
@@ -259,18 +261,72 @@ namespace Swole
             }
             return null;
         }
+        public static Transform FindActive(this Transform parent, string name)
+        {
+            if (!parent.gameObject.activeSelf) return null;
+            for (int a = 0; a < parent.childCount; a++) 
+            {
+                var child = parent.GetChild(a);
+                if (child.gameObject.activeSelf && child.name == name) return child; 
+            }
+            for(int a = 0; a < parent.childCount; a++)
+            {
+                var child = parent.GetChild(a);
+                if (!child.gameObject.activeSelf) continue;
+                var res = FindActive(child, name);
+                if (res != null) return res;
+            }
+            return null;
+        }
+        public static Transform FindActiveDeepChild(this Transform aParent, string aName, bool includeSelf = true) 
+        {
+            if (!aParent.gameObject.activeSelf) return null;
+            if (includeSelf) if (aParent.name == aName) return aParent;
 
-        public static Transform FindAny(this Transform aParent, string aName, bool includeSelf = true)
+            var result = aParent.FindActive(aName);
+            if (result != null)
+                return result;
+            foreach (Transform child in aParent)
+            {
+                result = FindActiveDeepChild(child, aName, false);
+                if (result != null)
+                    return result; 
+            }
+            return null;
+        }
+        public static Transform FindActiveDeepChildLiberal(this Transform aParent, string aName, bool includeSelf = true)
         {
 
-            return FindDeepChild(aParent, aName, includeSelf);
+            if (!aParent.gameObject.activeSelf) return null;
+            aName = aName.ToLower().Trim();
+            if (includeSelf) if (aParent.name.ToLower().Trim() == aName) return aParent;
+
+            for (int a = 0; a < aParent.childCount; a++)
+            {
+                var child = aParent.GetChild(a);
+                if (child == null || !child.gameObject.activeSelf) continue;
+                if (child.name.ToLower().Trim() == aName) return child;
+            }
+            foreach (Transform child in aParent)
+            {
+                Transform result = FindActiveDeepChildLiberal(child, aName, false);
+                if (result != null)
+                    return result;
+            }
+            return null;
+        }
+
+        public static Transform FindAny(this Transform aParent, string aName, bool includeSelf = true, bool activeOnly = false)
+        {
+
+            return activeOnly ? FindActiveDeepChild(aParent, aName, includeSelf) : FindDeepChild(aParent, aName, includeSelf);  
 
         }
 
-        public static Transform FindAnyLiberal(this Transform aParent, string aName, bool includeSelf = true)
+        public static Transform FindAnyLiberal(this Transform aParent, string aName, bool includeSelf = true, bool activeOnly = false)
         {
 
-            return FindDeepChildLiberal(aParent, aName, includeSelf);
+            return activeOnly ? FindActiveDeepChild(aParent, aName, includeSelf) : FindDeepChildLiberal(aParent, aName, includeSelf);
 
         }
 
@@ -379,6 +435,37 @@ namespace Swole
 
         }
 
+        public static List<T> Shuffle<T>(this List<T> list)
+        {
+            var count = list.Count;
+            var last = count - 1;
+            for (var i = 0; i < last; ++i)
+            {
+                var r = UnityEngine.Random.Range(i, count);
+                var tmp = list[i];
+                list[i] = list[r];
+                list[r] = tmp;
+            }
+
+            return list;
+        }
+        public static List<T> InsertRandomly<T>(this List<T> list, T element)
+        {   
+            var count = list.Count;
+            var r = UnityEngine.Random.Range(0, count + 1);
+
+            if (r >= count)
+            {
+                list.Add(element);
+            } 
+            else
+            {
+                list.Insert(r, element);
+            }
+
+            return list;
+        }
+
         #region UI
 
         public static bool ContainsWorldPosition(this RectTransform rectTransform, Vector2 worldPosition) => rectTransform != null && rectTransform.rect.Contains(rectTransform.InverseTransformPoint(worldPosition));
@@ -401,6 +488,80 @@ namespace Swole
         {
             RectTransformUtility.ScreenPointToLocalPointInRectangle(rectTransform, screenPos, camera, out Vector2 localPos);
             return localPos;
+        }
+
+        public static Vector2 GetNormalizedPointFromWorldPosition(this RectTransform t, Vector3 worldPos) => GetNormalizedPointFromLocalPosition(t, t.InverseTransformPoint(worldPos));
+        public static Vector2 GetNormalizedPointFromLocalPosition(this RectTransform t, Vector3 localPos) => Rect.PointToNormalized(t.rect, localPos);
+
+        public static Vector3 GetWorldPositionFromNormalizedPoint(this RectTransform t, Vector2 normalizedPoint) => t.TransformPoint(GetLocalPositionFromNormalizedPoint(t, normalizedPoint));
+        public static Vector3 GetLocalPositionFromNormalizedPoint(this RectTransform t, Vector2 normalizedPoint) => Rect.NormalizedToPoint(t.rect, normalizedPoint);  
+
+        public static void ApplyWindowState(this ResizableWindowState state, RectTransform rt, RectTransform canvasRT = null)
+        {
+            if (canvasRT == null)
+            {
+                var canvas = rt.GetComponentInParent<Canvas>();
+                canvasRT = canvas == null ? null : canvas.GetComponent<RectTransform>(); 
+            }
+
+            rt.SetSizeWithCurrentAnchors(RectTransform.Axis.Horizontal, state.width);
+            rt.SetSizeWithCurrentAnchors(RectTransform.Axis.Vertical, state.height);
+            rt.position = canvasRT == null ? UnityEngineHook.AsUnityVector(state.positionInCanvas) : canvasRT.GetWorldPositionFromNormalizedPoint(UnityEngineHook.AsUnityVector(state.positionInCanvas));
+            rt.gameObject.SetActive(state.visible);
+        }
+
+        public static ResizableWindowState AsResizableWindowState(this RectTransform rt, RectTransform canvasRT = null) => AsResizableWindowState(rt, rt.gameObject.activeSelf, canvasRT);
+        public static ResizableWindowState AsResizableWindowState(this RectTransform rt, bool visible, RectTransform canvasRT = null)
+        {
+            if (canvasRT == null)
+            {
+                var canvas = rt.GetComponentInParent<Canvas>();
+                canvasRT = canvas == null ? null : canvas.GetComponent<RectTransform>();
+            }
+
+            var rect = rt.rect;
+            return new ResizableWindowState() { positionInCanvas = canvasRT == null ? UnityEngineHook.AsSwoleVector(rt.position) : UnityEngineHook.AsSwoleVector(canvasRT.GetNormalizedPointFromWorldPosition(rt.position)), width = rect.width, height = rect.height, visible = visible };
+        }
+
+        public static void FitImageInParent(this Image imageRenderer)
+        { 
+            var aspectRatio = imageRenderer.sprite == null || imageRenderer.sprite.texture == null ? 1 : (imageRenderer.sprite.texture.width / (float)imageRenderer.sprite.texture.height);
+
+            var fitter = imageRenderer.GetComponent<AspectRatioFitter>();
+            if (fitter != null)
+            {
+                fitter.aspectRatio = aspectRatio;
+                return;
+            }
+
+            var rt = imageRenderer.GetComponent<RectTransform>();
+            var parentRT = rt.parent.GetComponent<RectTransform>();
+            rt.anchorMin = Vector2.zero;
+            rt.anchorMax = Vector2.one;
+            rt.anchoredPosition3D = Vector3.zero;
+            rt.sizeDelta = Vector2.zero;
+            var rect = rt.rect;
+            var rectParent = parentRT.rect;
+            if (aspectRatio > 1)
+            {
+                float h = rect.width / aspectRatio;
+                float w = rect.width;
+                float resize = Mathf.Max(0, h - rectParent.height);
+                h = h - resize;
+                w = w - resize;
+                rt.SetSizeWithCurrentAnchors(RectTransform.Axis.Horizontal, w);
+                rt.SetSizeWithCurrentAnchors(RectTransform.Axis.Vertical, h);
+            }
+            else
+            {
+                float h = rect.height;
+                float w = rect.height * aspectRatio;
+                float resize = Mathf.Max(0, w - rectParent.width);
+                h = h - resize;
+                w = w - resize;
+                rt.SetSizeWithCurrentAnchors(RectTransform.Axis.Horizontal, w);
+                rt.SetSizeWithCurrentAnchors(RectTransform.Axis.Vertical, h);
+            }
         }
 
         #endregion

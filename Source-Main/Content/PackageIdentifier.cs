@@ -33,12 +33,26 @@ namespace Swole
 
         public bool Equals(PackageIdentifier other)
         {
-
             if (name != other.name) return false;
             if (version != other.version) return false;
 
             return true;
+        }
 
+        public static bool operator ==(PackageIdentifier A, PackageIdentifier B) => A.Equals(B);
+        public static bool operator !=(PackageIdentifier A, PackageIdentifier B) => !A.Equals(B);
+
+        public override int GetHashCode()
+        {
+            return base.GetHashCode();
+        }
+
+        public override bool Equals(object obj)
+        {
+            if (obj is PackageIdentifier other) return this == other;
+            if (obj is PackageInfo info) return this == info.GetIdentity();
+            if (obj is PackageManifest manifest) return this == manifest.GetIdentity();
+            return base.Equals(obj);
         }
 
     }

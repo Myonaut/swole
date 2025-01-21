@@ -23,12 +23,50 @@ namespace Swole.API.Unity
 
         public delegate void ObjectsListDelegate(List<GameObject> objects);
 
+        protected float disableSelectionTimer;
+        protected bool disableSelectionTemp;
+        public void DisableSelectionForTime(float time)
+        {
+            if (disableSelectionTimer <= 0) disableSelectionTemp = disableSelection; 
+
+            disableSelectionTimer = time;    
+            disableSelection = true;   
+        }
+        protected void DisableSelectionForTimeStep()
+        {
+            if (disableSelectionTimer > 0)
+            {
+                disableSelectionTimer -= Time.deltaTime;
+                if (disableSelectionTimer <= 0)
+                {
+                    disableSelection = disableSelectionTemp;
+                }
+                else
+                {
+                    disableSelection = true;
+                }
+            }
+            else disableSelectionTemp = disableSelection;
+        }
         protected bool disableSelection;
         public bool DisableSelection
         {
             get => disableSelection;
             set
             {
+                if (disableSelectionTimer > 0)
+                {
+                    if (!value)
+                    {
+                        disableSelectionTimer = 0; 
+                    }
+                    else
+                    {
+                        disableSelectionTemp = value;
+                        return;
+                    }
+                }
+
                 disableSelection = value;
                 if (isRLD)
                 {
@@ -39,6 +77,77 @@ namespace Swole.API.Unity
                 }
             }
         }
+
+        protected bool disableSelectionBoundingBox;
+        public bool DisableSelectionBoundingBox
+        {
+            get => disableSelectionBoundingBox;
+            set
+            {
+                disableSelectionBoundingBox = value;
+                if (isRLD)
+                {
+#if BULKOUT_ENV
+                    var rtSelection = RTObjectSelection.Get;
+                    if (rtSelection != null) rtSelection.LookAndFeel.DrawHighlight = !disableSelectionBoundingBox;
+#endif
+                }
+            }
+        }
+
+        protected float disableClickSelectTimer;
+        protected bool disableClickSelectTemp;
+        public void DisableClickSelectForTime(float time)
+        {
+            if (disableClickSelectTimer <= 0) disableClickSelectTemp = disableClickSelect;
+
+            disableClickSelectTimer = time;
+            disableClickSelect = true;
+        }
+        protected void DisableClickSelectForTimeStep()
+        {
+            if (disableClickSelectTimer > 0)
+            {
+                disableClickSelectTimer -= Time.deltaTime;
+                if (disableClickSelectTimer <= 0)
+                {
+                    disableClickSelect = disableClickSelectTemp;
+                }
+                else
+                {
+                    disableClickSelect = true;
+                }
+            }
+            else disableClickSelectTemp = disableClickSelect;
+        }
+        protected bool disableClickSelect;
+        public bool DisableClickSelect
+        {
+            get => disableClickSelect;
+            set
+            {
+                if (disableSelectionTimer > 0)
+                {
+                    if (!value)
+                    {
+                        disableClickSelectTimer = 0;
+                    }
+                    else
+                    {
+                        disableClickSelectTemp = value;
+                        return;
+                    }
+                }
+
+                disableClickSelect = value;
+            }
+        }
+#if BULKOUT_ENV
+        protected void CanClickSelect(YesNoAnswer answer)
+        {
+            if (disableClickSelect) answer.No();
+        }
+#endif
 
         protected bool disableCameraControl;
         public bool DisableCameraControl
@@ -109,6 +218,101 @@ namespace Swole.API.Unity
             }
         }
 
+        protected bool disableMultiSelect;
+        public bool DisableMultiSelect
+        {
+            get => disableMultiSelect;
+            set
+            {
+                disableMultiSelect = value;
+                if (isRLD)
+                {
+#if BULKOUT_ENV
+                    var rtSelection = RTObjectSelection.Get;
+                    if (rtSelection != null) rtSelection.Settings.CanMultiSelect = !disableMultiSelect;
+#endif
+                }
+            }
+        }
+
+        protected bool disableSceneUpdates;
+        public bool DisableSceneUpdates
+        {
+            get => disableSceneUpdates;
+            set
+            {
+                disableSceneUpdates = value;
+                if (isRLD)
+                {
+#if BULKOUT_ENV
+                    var rtScene = RTScene.Get;
+                    if (rtScene != null) rtScene.SetEnabled(!disableSceneUpdates); 
+#endif
+                }
+            }
+        }
+
+        protected float cameraSpeed;
+        protected float baseCameraSpeed;
+        protected float baseCameraAlternateSpeed; 
+        public float CameraSpeed
+        {
+            get => cameraSpeed;
+            set
+            {
+                cameraSpeed = value;
+
+#if BULKOUT_ENV
+                if (isRLD)
+                {
+                    var rtCamera = RTFocusCamera.Get;
+                    if (rtCamera != null)
+                    {
+                        rtCamera.MoveSettings.MoveSpeed = baseCameraSpeed * cameraSpeed;
+                        rtCamera.MoveSettings.AlternateMoveSpeed = baseCameraAlternateSpeed * cameraSpeed;
+                    }
+                }
+#endif
+            }
+        }
+
+        protected float cameraFOV;
+        public float CameraFOV
+        {
+            get => cameraFOV;
+            set
+            {
+                cameraFOV = value;
+
+#if BULKOUT_ENV
+                if (isRLD)
+                {
+                    var rtCamera = RTFocusCamera.Get;
+                    if (rtCamera != null)
+                    {
+                        rtCamera.SetFieldOfView(cameraFOV);
+                    }
+                }
+#endif
+            }
+        }
+
+        public Camera EditorCamera
+        {
+            get
+            {
+#if BULKOUT_ENV
+                if (isRLD)
+                {
+                    var rtCamera = RTFocusCamera.Get;
+                    if (rtCamera != null) return rtCamera.TargetCamera;
+                }
+#endif
+
+                return null;
+            }
+        }
+
         public void SetDisabled(bool disable = true)
         {
             if (disable)
@@ -123,23 +327,48 @@ namespace Swole.API.Unity
             }
         }
 
+
         public bool isRLD;
 
-        // TODO: write a custom editor instead of using RLD (maybe)
+        // TODO: consider writing a custom editor instead of using RLD (maybe) (probably not)
 
 #if BULKOUT_ENV
         [SerializeField]
         private RLDApp rld;
 #endif
 
+        public int CurrentGizmoId
+        {
+            get
+            {
+#if BULKOUT_ENV
+                var rtGizmos = RTObjectSelectionGizmos.Get;
+                return rtGizmos.WorkGizmoId;
+#else
+                return 0;
+#endif
+            }
+            set
+            {
+#if BULKOUT_ENV
+                int id = Mathf.Clamp(value, ObjectSelectionGizmoId.None, ObjectSelectionGizmoId.ExtrudeGizmo);
+                RTObjectSelectionGizmos.Get.SetWorkGizmo(id);
+#endif
+            }
+        }
+
         private readonly List<GameObject> activeSelection = new List<GameObject>();
 
         public delegate void SelectionChangeDelegate(List<GameObject> fullSelection, List<GameObject> newlySelected, List<GameObject> deselected);
         public event SelectionChangeDelegate OnSelectionChanged;
 
+#if BULKOUT_ENV
+        private List<Gizmo> allGizmos;
+#endif
         protected void Awake()
         {
-
+            cameraSpeed = baseCameraSpeed = baseCameraAlternateSpeed = 1;
+            cameraFOV = CameraProxy._defaultFieldOfView;
 #if BULKOUT_ENV
             if (rld == null) rld = GameObject.FindFirstObjectByType<RLDApp>(); // Paid Asset Integration https://assetstore.unity.com/packages/tools/modeling/runtime-level-design-52325
             if (rld == null)
@@ -151,10 +380,19 @@ namespace Swole.API.Unity
             { 
                 isRLD = true;
 
+                var rtCamera = RTFocusCamera.Get;
+                if (rtCamera != null)
+                {
+                    baseCameraSpeed = rtCamera.MoveSettings.MoveSpeed;
+                    baseCameraAlternateSpeed = rtCamera.MoveSettings.AlternateMoveSpeed;
+                    if (rtCamera.TargetCamera != null) cameraFOV = rtCamera.TargetCamera.fieldOfView;  
+                }
+
                 var rtSelection = RTObjectSelection.Get;
                 if (rtSelection != null)
                 {
                     activeSelection.AddRange(rtSelection.SelectedObjects);
+                    rtSelection.CanClickSelectDeselect += CanClickSelect;
                     rtSelection.PreSelectCustomize += OnPreSelectCustomizeRT;
                     rtSelection.WillBeDeleted += OnPreDeleteObjects;
                     rtSelection.Changed += OnSelectionChangeRT;
@@ -164,7 +402,7 @@ namespace Swole.API.Unity
                 var rtGizmos = RTObjectSelectionGizmos.Get;
                 if (rtGizmos != null)
                 {
-                    List<Gizmo> allGizmos = RTObjectSelectionGizmos.Get.GetAllGizmos();
+                    allGizmos = RTObjectSelectionGizmos.Get.GetAllGizmos();
                     IEnumerator WaitToRegister()
                     {
                         while(allGizmos == null || allGizmos.Count == 0)
@@ -191,16 +429,22 @@ namespace Swole.API.Unity
 #endif
 
             activeSelection.Clear();
+
+            DisableClickSelectForTime(0.5f); 
         }
 
         protected void Update()
         {
+
+            DisableSelectionForTimeStep();
+            DisableClickSelectForTimeStep();
 
             var eventSystem = EventSystem.current;
             if (eventSystem != null)
             {
                 bool uiHasFocus = eventSystem.currentSelectedGameObject != null;
                 bool uiIsUnderCursor = eventSystem.IsPointerOverGameObject();
+                if (uiIsUnderCursor) DisableClickSelectForTime(0.35f);
 
                 if (isRLD)
                 { // Disable RLD interaction when UI elements have focus
@@ -239,6 +483,11 @@ namespace Swole.API.Unity
             }
 
             return query;
+        }
+        public bool IsSelected(GameObject go)
+        {
+            if (go == null) return false;
+            return activeSelection.Contains(go);
         }
 
         //protected static readonly List<GameObject> emptyList = new List<GameObject>();
@@ -422,16 +671,44 @@ namespace Swole.API.Unity
         }
         private TransformManipulation currentTransformManipulation = default;
         private readonly List<Transform> tempManipTransforms = new List<Transform>();
+
+        private int draggedGizmoCount;
+
 #if BULKOUT_ENV
+        public bool IsDraggingGizmo
+        {
+            get
+            {
+                if (allGizmos == null) return false;
+                foreach(var gizmo in allGizmos) if (gizmo.IsDragged) return true; 
+                return false;
+            }
+        }
+
         private void OnGizmoBeginDrag(Gizmo gizmo, int handleId)
         {
-            currentTransformManipulation = default;
-            currentTransformManipulation.relativeRotation = Quaternion.identity;
-            tempManipTransforms.Clear();
+            //draggedGizmoCount++;
+
+            try
+            {
+                currentTransformManipulation = default;
+                currentTransformManipulation.relativeRotation = Quaternion.identity;
+
+                tempManipTransforms.Clear();
+                foreach (var obj in activeSelection) if (obj != null) tempManipTransforms.Add(obj.transform);
+                OnBeginManipulateTransforms?.Invoke(tempManipTransforms);
+                tempManipTransforms.Clear();
+            } 
+            catch(Exception e)
+            {
+                swole.LogError(e); 
+            }
         }
         private void OnGizmoDrag(Gizmo gizmo, int handleId)
         {
-            GizmoDragChannel dragChannel = gizmo.ActiveDragChannel;
+            tempManipTransforms.Clear();
+
+            GizmoDragChannel dragChannel = gizmo.ActiveDragChannel; 
 
             if (dragChannel == GizmoDragChannel.Offset)
             {
@@ -445,9 +722,14 @@ namespace Swole.API.Unity
             {
                 currentTransformManipulation.relativeScale = currentTransformManipulation.relativeScale + gizmo.RelativeDragScale;
             }
+
+            foreach (var obj in activeSelection) if (obj != null) tempManipTransforms.Add(obj.transform);
+            OnManipulateTransformsStep?.Invoke(tempManipTransforms, gizmo.RelativeDragOffset, gizmo.RelativeDragRotation, gizmo.RelativeDragScale, gizmo.Transform.Position3D, gizmo.Transform.Rotation3D);  
         }
         private void OnGizmoEndDrag(Gizmo gizmo, int handleId)
         {
+            //draggedGizmoCount--;
+
             tempManipTransforms.Clear();
 
             if (currentTransformManipulation.relativeOffset.x == 0 && currentTransformManipulation.relativeOffset.y == 0 && currentTransformManipulation.relativeOffset.z == 0 &&
@@ -455,11 +737,16 @@ namespace Swole.API.Unity
                 currentTransformManipulation.relativeScale.x == 0 && currentTransformManipulation.relativeScale.y == 0 && currentTransformManipulation.relativeScale.z == 0) return; 
 
             foreach (var obj in activeSelection) if (obj != null) tempManipTransforms.Add(obj.transform);
-
-            OnManipulateTransforms?.Invoke(tempManipTransforms, currentTransformManipulation.relativeOffset, currentTransformManipulation.relativeRotation, currentTransformManipulation.relativeScale);
+            OnManipulateTransforms?.Invoke(tempManipTransforms, currentTransformManipulation.relativeOffset, currentTransformManipulation.relativeRotation, currentTransformManipulation.relativeScale, gizmo.Transform.Position3D, gizmo.Transform.Rotation3D);
         }
+#else
+        public bool IsDraggingGizmo => draggedGizmoCount > 0;
 #endif
-        public delegate void ManipulateTransformsDelegate(List<Transform> transforms, Vector3 relativeOffset, Quaternion relativeRotation, Vector3 relativeScale);
+        public delegate void BeginManipulateTransformsDelegate(List<Transform> transforms);
+        public delegate void ManipulateTransformsDelegate(List<Transform> transforms, Vector3 relativeOffsetWorld, Quaternion relativeRotationWorld, Vector3 relativeScale, Vector3 gizmoWorldPosition, Quaternion gizmoWorldRotation);
+
+        public event BeginManipulateTransformsDelegate OnBeginManipulateTransforms;
+        public event ManipulateTransformsDelegate OnManipulateTransformsStep;
         public event ManipulateTransformsDelegate OnManipulateTransforms;
 
         public delegate void SpawnPrefabDelegate(GameObject prefab, GameObject instance);
@@ -500,6 +787,14 @@ namespace Swole.API.Unity
         private void OnPreDeleteObjects(List<GameObject> toDelete)
         {
             OnPreDelete?.Invoke(toDelete);
+        }
+
+        public void SetExternalRootObjects(ICollection<GameObject> roots)
+        {
+#if BULKOUT_ENV
+            var rtScene = RTScene.Get;
+            if (rtScene != null) rtScene.SetExternalRootObjects(roots);
+#endif
         }
 
     }

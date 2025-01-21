@@ -29,7 +29,12 @@ namespace Swole.API.Unity.Animation
 {
     public class CustomAnimatorUpdater : SingletonBehaviour<CustomAnimatorUpdater>
     {
-        public const int ExecutionPriority = 80;
+
+        public static JobHandle FinalAnimationJobHandle => ProxyBoneJobs.OutputDependency;
+        public static int FinalAnimationBehaviourPriority => ProxyTransformSingleton.ExecutionPriority;
+        public static int StartAnimationBehaviourPriority => ExecutionPriority;
+
+        public static int ExecutionPriority => 80;
         public override int Priority => ExecutionPriority;
         public override bool DestroyOnLoad => false;
 
@@ -54,21 +59,60 @@ namespace Swole.API.Unity.Animation
         {
         }
 
+        private readonly List<VoidParameterlessDelegate> postLateUpdateWork = new List<VoidParameterlessDelegate>();
+        public static void AddPostLateUpdateWork(VoidParameterlessDelegate work)
+        {
+            var instance = Instance;
+            if (instance == null) return;
+
+            instance.postLateUpdateWork.Add(work);
+        }
         public override void OnLateUpdate()
         {
             float deltaTime = Time.deltaTime;
-            foreach (var animator in animators) if (animator != null) animator.LateUpdateStep(deltaTime);
-            animators.RemoveAll(i => i == null || i.OverrideUpdateCalls); 
+            foreach (var animator in animators) if (animator != null && animator.enabled) animator.LateUpdateStep(deltaTime);
+            animators.RemoveAll(i => i == null || i.OverrideUpdateCalls);
+
+            foreach (var work in postLateUpdateWork) work?.Invoke();
+            postLateUpdateWork.Clear();
         }
 
+        private readonly List<VoidParameterlessDelegate> postUpdateWork = new List<VoidParameterlessDelegate>();
+        public static void AddPostUpdateWork(VoidParameterlessDelegate work)
+        {
+            var instance = Instance;
+            if (instance == null) return;
+
+            instance.postUpdateWork.Add(work); 
+        }
         public override void OnUpdate()
         {
             float deltaTime = Time.deltaTime;
-            foreach (var animator in animators) if (animator != null) animator.UpdateStep(deltaTime);
+            foreach (var animator in animators) if (animator != null && animator.enabled) animator.UpdateStep(deltaTime);
+
+            foreach (var work in postUpdateWork) work?.Invoke();
+            postUpdateWork.Clear();
         }
     }
     public class CustomAnimator : MonoBehaviour, IAnimator
     {
+
+#if UNITY_EDITOR
+        private void OnValidate()
+        {
+            if (reinitializeBindPose)
+            {
+                reinitializeBindPose = false;
+                if (Bones != null && m_bones.bones != null) 
+                {
+                    preInitializedBindPose = new TransformBindState[m_bones.bones.Length];
+                    for (int a = 0; a < m_bones.bones.Length; a++) preInitializedBindPose[a] = new TransformBindState(m_bones.bones[a]);
+                }
+            }
+        }
+#endif
+
+        public const float boolTruthThreshold = 0.01f;
 
         public Type EngineComponentType => GetType();
 
@@ -90,6 +134,25 @@ namespace Swole.API.Unity.Animation
 
         #endregion
 
+        public void DisableIKControllers()
+        {
+            if (IkManager == null) return;
+            ikManager.DisableAllTogglableControllers(); 
+        }
+        public void EnableIKControllers()
+        {
+            if (IkManager == null) return;
+            ikManager.EnableAllTogglableControllers();
+        }
+        public void ResetIKControllers()
+        {
+            if (IkManager == null) return;
+            ikManager.ResetPositionWeightOfAllTogglableControllers();
+            ikManager.ResetRotationWeightOfAllTogglableControllers();
+            ikManager.ResetBendGoalWeightOfAllTogglableControllers();
+            DisableIKControllers();
+        }
+
         public CustomAnimationController defaultController;
         public IAnimationController DefaultController 
         {
@@ -110,7 +173,7 @@ namespace Swole.API.Unity.Animation
                 }
             }
         }
-        public void Reinitialize()
+        public void ReinitializeControllers()
         {
 
             ClearControllerData();
@@ -208,19 +271,19 @@ namespace Swole.API.Unity.Animation
             return false;
         }
 
-        public void RemoveControllerData(IAnimationController controller)
+        public void RemoveControllerData(IAnimationController controller, bool disposeLayers = true)
         {
 
             if (controller == null) return;
-            RemoveControllerData(controller.Prefix);
+            RemoveControllerData(controller.Prefix, disposeLayers);
 
         }
 
-        public void RemoveControllerData(string prefix)
+        public void RemoveControllerData(string prefix, bool disposeLayers = true)
         {
 
             if (string.IsNullOrEmpty(prefix)) return;
-            RemoveLayersStartingWith(prefix);
+            RemoveLayersStartingWith(prefix, disposeLayers);
             RemoveParametersStartingWith(prefix);
 
         }
@@ -228,15 +291,197 @@ namespace Swole.API.Unity.Animation
         protected void Start()
         {
 
-            Reinitialize();
+            //ReinitializeControllers(); // moved to Awake
 
+        }
+
+        [SerializeField]
+        protected CustomIKManager ikManager;
+        public CustomIKManager IkManager
+        {
+            get
+            {
+                if (ikManager == null) ikManager = gameObject.GetComponentInChildren<CustomIKManager>();
+                return ikManager;
+            }
+        }
+
+        protected class IKOffsetState
+        {
+            public Vector3 offsetPos;
+            public Quaternion offsetRot;
+        }
+        protected IKOffsetState[] ikOffsetStates;
+        protected IKOffsetState GetIKOffsetState(int index)
+        {
+            if (ikOffsetStates == null)
+            {
+                if (Bones != null && m_bones.ikBones != null) ikOffsetStates = new IKOffsetState[m_bones.ikBones.Length]; 
+            }
+
+            return ikOffsetStates == null || index < 0 || index >= ikOffsetStates.Length ? null : ikOffsetStates[index];
+        }
+        public void SyncIKFKOffsets() => SyncIKFKOffsets(true);
+        public void SyncIKFKOffsets(bool onlyEnabledIKControllers)
+        {
+            if (Bones != null && m_bones.ikBones != null)
+            {
+                for (int a = 0; a < m_bones.ikBones.Length; a++)
+                {
+                    var ikBone = m_bones.ikBones[a];
+                    if (ikBone.boneIndex < 0 || ikBone.fkBoneIndex < 0) continue;
+
+                    var bone = m_bones.bones[ikBone.boneIndex];
+                    var fkBone = m_bones.bones[ikBone.fkBoneIndex];
+                    if (bone == null || fkBone == null) continue;
+
+                    if (ikBone.ikController == null && ikBone.boneIndex >= 0 && IkManager != null && ikManager.TryFindAssociatedIKController(bone, out var controller))
+                    {
+                        ikBone.ikController = controller;
+                    }
+
+                    if (onlyEnabledIKControllers && ikBone.ikController != null && !ikBone.ikController.IsActive) continue;
+
+                    var offsetState = GetIKOffsetState(a);
+                    if (offsetState == null && ikOffsetStates != null)
+                    {
+                        offsetState = new IKOffsetState();
+                        ikOffsetStates[a] = offsetState;
+                    }
+
+                    if (offsetState != null)
+                    {
+                        offsetState.offsetPos = fkBone.InverseTransformPoint(bone.position);
+                        offsetState.offsetRot = Quaternion.Inverse(fkBone.rotation) * bone.rotation;
+                    }
+                }
+            }
+        }
+        public void SyncIKFK() => SyncIKFK(true);
+        public void SyncIKFK(bool onlyDisabledIKControllers)
+        {
+            if (Bones != null && m_bones.ikBones != null)
+            {
+                for (int a = 0; a < m_bones.ikBones.Length; a++)
+                {
+                    var ikBone = m_bones.ikBones[a];
+                    if (ikBone.boneIndex < 0 || ikBone.fkBoneIndex < 0) continue;
+
+                    var bone = m_bones.bones[ikBone.boneIndex];
+                    var fkBone = m_bones.bones[ikBone.fkBoneIndex];
+                    if (bone == null || fkBone == null) continue;
+
+                    if (ikBone.ikController == null && ikBone.boneIndex >= 0 && IkManager != null && ikManager.TryFindAssociatedIKController(bone, out var controller))
+                    {
+                        ikBone.ikController = controller;
+                    }
+
+                    if (onlyDisabledIKControllers && ikBone.ikController != null && ikBone.ikController.IsActive) continue;
+                     
+                    var offsetState = GetIKOffsetState(a);
+                    if (offsetState == null && ikOffsetStates != null)
+                    {
+                        offsetState = new IKOffsetState();
+                        offsetState.offsetPos = ikBone.avatarBone.fkOffsetPosition;
+                        offsetState.offsetRot = Quaternion.Euler(ikBone.avatarBone.fkOffsetEulerRotation);
+                        ikOffsetStates[a] = offsetState;
+                    }
+
+                    var offsetPos = ikBone.avatarBone.fkOffsetPosition;
+                    var offsetRot = Quaternion.identity;
+                    if (offsetState != null)
+                    {
+                        offsetPos = offsetState.offsetPos;
+                        offsetRot = offsetState.offsetRot;
+                    }
+                    else
+                    {
+                        offsetRot = Quaternion.Euler(ikBone.avatarBone.fkOffsetEulerRotation);
+                    }
+
+                    //Vector3 currentPos = Vector3.zero;
+                    //Quaternion currentRot = Quaternion.identity;
+                    Vector3 worldPos = Vector3.zero;
+                    Quaternion worldRot = Quaternion.identity;
+                    if (ikBone.avatarBone.usePositionOffsetFK && ikBone.avatarBone.useRotationOffsetFK)
+                    {
+                        //if (outputTransforms != null) bone.GetPositionAndRotation(out currentPos, out currentRot); 
+
+                        worldPos = fkBone.TransformPoint(offsetPos);
+                        worldRot = fkBone.rotation * offsetRot;
+                        bone.SetPositionAndRotation(worldPos, worldRot);
+                    }
+                    else if (ikBone.avatarBone.useRotationOffsetFK)
+                    {
+                        //if (outputTransforms != null) currentRot = bone.rotation;
+
+                        worldRot = fkBone.rotation * offsetRot;
+                        bone.rotation = worldRot;
+                    }
+                    else if (ikBone.avatarBone.usePositionOffsetFK)
+                    {
+                        //if (outputTransforms != null) currentPos = bone.position;
+
+                        worldPos = fkBone.TransformPoint(offsetPos);
+                        bone.position = worldPos;
+                    }
+
+                    /*if (outputTransforms != null)
+                    {
+                        if (currentPos != worldPos || currentRot != worldRot) outputTransforms.Add(bone); 
+                    }*/
+                }
+            }
+        }
+        public bool IsIKControlledBone(Transform bone)
+        {
+            if (IkManager == null || bone == null) return false; 
+
+            for(int a = 0; a < ikManager.ControllerCount; a++)
+            {
+                var controller = ikManager[a];
+                if (!controller.IsActive) continue;
+
+                for(int b = 0; b < controller.ChainLength; b++)
+                {
+                    var chainT = controller[b];
+                    if (chainT == bone) return true;
+                }
+            }
+
+            return false;
+        }
+        public bool IsFKControlledBone(Transform bone)
+        {
+            if (IkManager == null || bone == null) return false;
+
+            for (int a = 0; a < ikManager.ControllerCount; a++)
+            {
+                var controller = ikManager[a];
+                if (controller.IsActive) continue;
+
+                if (controller.Target == bone) return true;
+                if (controller.BendGoal == bone) return true;
+            }
+
+            return false;
         }
 
         public CustomAvatar avatar;
         [NonSerialized]
         protected CustomAvatar lastAvatar;
         public string AvatarName => avatar == null ? null : avatar.name;
+        public string RemapBoneName(string boneName) => avatar == null ? boneName : avatar.Remap(boneName);
 
+        [Serializable]
+        public class IKBone
+        {
+            public CustomAvatar.IkBone avatarBone;
+            public int boneIndex;
+            public int fkBoneIndex;
+            public CustomIKManager.IKController ikController;
+        }
+        public const string rootLevelIdentifier = "%";
         [Serializable]
         public class BoneMapping : IDisposable
         {
@@ -244,23 +489,64 @@ namespace Swole.API.Unity.Animation
             public Transform rigContainer;
 
             public Transform[] bones;
+            public IKBone[] ikBones;
 
-            public BoneMapping(Transform rootTransform, CustomAvatar avatar)
+            public BoneMapping(Transform rootTransform, CustomAvatar avatar, CustomIKManager ikManager)
             {
 
                 if (rootTransform == null || avatar == null) return;
 
                 rigContainer = string.IsNullOrEmpty(avatar.rigContainer) ? rootTransform : rootTransform.FindDeepChild(avatar.rigContainer);
+                if (rigContainer == null) rigContainer = rootTransform;
 
-                bones = new Transform[avatar.bones == null ? 0 : avatar.bones.Length];
+                bones = new Transform[(avatar.bones == null ? 0 : avatar.bones.Length) + (avatar.ikBones == null ? 0 : avatar.ikBones.Length)];
+                ikBones = new IKBone[avatar.ikBones == null ? 0 : avatar.ikBones.Length];
                 for (int a = 0; a < bones.Length; a++)
                 {
+                    string boneName = a >= avatar.bones.Length ? avatar.ikBones[a - avatar.bones.Length].name : avatar.bones[a];
+                    if (string.IsNullOrEmpty(boneName)) continue;
 
-                    if (string.IsNullOrEmpty(avatar.bones[a])) continue;
+                    if (boneName == rootLevelIdentifier)
+                    {
+                        bones[a] = rigContainer;
+                    }
+                    else
+                    {
+                        bones[a] = (a >= avatar.bones.Length ? rootTransform : rigContainer).FindDeepChild(boneName);
+                        if (bones[a] == null) bones[a] = rigContainer.FindDeepChildLiberal(boneName);
+                    }
 
-                    bones[a] = rigContainer.FindDeepChild(avatar.bones[a]);
-                    if (bones[a] == null) bones[a] = rigContainer.FindDeepChildLiberal(avatar.bones[a]);
+                    if (a >= avatar.bones.Length)
+                    {
+                        int i = a - avatar.bones.Length;
+                        ikBones[i] = new IKBone() { avatarBone = avatar.ikBones[i], boneIndex = a, fkBoneIndex = -1 };
+                        if (ikManager != null && ikManager.TryFindAssociatedIKController(bones[a], out var controller))
+                        {
+                            ikBones[i].ikController = controller;
+                        }
+                    }
+                }
 
+                for(int a = 0; a < ikBones.Length; a++)
+                {
+                    var ikBone = ikBones[a];
+
+                    if (string.IsNullOrWhiteSpace(ikBone.avatarBone.fkParent)) continue;
+
+                    string fkParentName = ikBone.avatarBone.fkParent;
+                    if (avatar != null) fkParentName = avatar.Remap(fkParentName); 
+                    fkParentName = fkParentName.AsID();
+
+                    for (int b = 0; b < bones.Length; b++)
+                    {
+                        var bone = bones[b];
+                        if (bone == null) continue;
+                        if (bone.name.AsID() == fkParentName) 
+                        {
+                            ikBone.fkBoneIndex = b; 
+                            break;
+                        }
+                    }
                 }
 
             }
@@ -311,7 +597,7 @@ namespace Swole.API.Unity.Animation
 
                     lastAvatar = avatar;
 
-                    m_bones = new BoneMapping(transform, avatar);
+                    m_bones = new BoneMapping(transform, avatar, IkManager);
 
                 }
 
@@ -319,6 +605,15 @@ namespace Swole.API.Unity.Animation
 
             }
 
+        }
+        public EngineInternal.ITransform RootBone => UnityEngineHook.AsSwoleTransform(RootBoneUnity); 
+        public Transform RootBoneUnity
+        {
+            get
+            {
+                if (Bones == null || m_bones.rigContainer == null) return transform; 
+                return !avatar.containerIsRoot && m_bones.rigContainer.childCount == 1 ? m_bones.rigContainer.GetChild(0) : m_bones.rigContainer; // Determine root bone, which can be different from the rigContainer. If the rigContainer has more than one child, the rigContainer is probably the root bone.
+            }
         }
 
         public int GetBoneIndex(string name)
@@ -330,13 +625,13 @@ namespace Swole.API.Unity.Animation
             {
 
                 if (avatar != null) name = avatar.Remap(name); 
-                name = name.ToLower().Trim();
+                name = name.AsID();
 
                 for (int a = 0; a < m_bones.bones.Length; a++)
                 {
                     var bone = m_bones.bones[a];
                     if (bone == null) continue;
-                    if (bone.name.ToLower().Trim() == name) return a;
+                    if (bone.name.AsID() == name) return a;
 
                 }
 
@@ -365,18 +660,18 @@ namespace Swole.API.Unity.Animation
         /// <summary>
         /// Main method used by animation player to match transform curves with respective transforms in rig
         /// </summary>
-        public Transform FindTransformInHierarchy(string name, bool isBone)
+        public Transform FindTransformInHierarchy(string name/*, bool isBone*/)
         {
 
             if (string.IsNullOrEmpty(name)) return null;
 
-            if (isBone && Bones != null)
+            if (/*isBone && */Bones != null)
             {
 
                 if (m_bones.bones != null)
                 {
 
-                    string liberalName = (avatar == null ? name : avatar.Remap(name));
+                    string liberalName = (avatar == null ? name : avatar.Remap(name)); 
                     if (string.IsNullOrEmpty(liberalName)) return null; 
                     liberalName = liberalName.ToLower().Trim();
 
@@ -384,8 +679,13 @@ namespace Swole.API.Unity.Animation
                     {
                         var bone = m_bones.bones[a];
                         if (bone == null) continue;
-                        if (bone.name.ToLower().Trim() == liberalName) return bone;
-
+                        var libName = bone.name.ToLower().Trim();
+                        if (libName == liberalName) return bone;
+                        if (avatar != null)
+                        {
+                            libName = avatar.Remap(bone.name).ToLower().Trim();
+                            if (libName == liberalName) return bone; 
+                        }
                     }
 
                 }
@@ -453,18 +753,27 @@ namespace Swole.API.Unity.Animation
 
         }
 
+        public bool dontAutoInitialize;
+        public void Initialize()
+        {
+            ResetToPreInitializedBindPose();
+            ResetIKControllers();
+        }
         protected virtual void Awake()
         {
             SetOverrideUpdateCalls(OverrideUpdateCalls); // Force register to updater
+            if (!dontAutoInitialize) Initialize();
+
+            if (defaultController != null)
+            {
+                ReinitializeControllers();
+            }
         }
 
         protected virtual void OnDestroy()
         {
-
             if (!OverrideUpdateCalls) CustomAnimatorUpdater.Unregister(this);
-
             Dispose();
-
         }
 
         [Serializable, StructLayout(LayoutKind.Sequential)]
@@ -571,7 +880,7 @@ namespace Swole.API.Unity.Animation
 
                 state.modifiedLocalPosition = state.modifiedLocalPosition + data.localPosition;
                 state.modifiedLocalRotation = math.mul(state.modifiedLocalRotation, data.localRotation);
-                state.modifiedLocalScale = state.modifiedLocalScale + data.localScale;
+                state.modifiedLocalScale = state.modifiedLocalScale + data.localScale; 
 
                 return state;
 
@@ -583,9 +892,9 @@ namespace Swole.API.Unity.Animation
 
                 var state = this;
 
-                state.modifiedLocalPosition = state.modifiedLocalPosition + data.localPosition * mix;
-                state.modifiedLocalRotation = math.slerp(state.modifiedLocalRotation, math.mul(state.modifiedLocalRotation, data.localRotation), mix);
-                state.modifiedLocalScale = state.modifiedLocalScale + data.localScale * mix;
+                state.modifiedLocalPosition = state.modifiedLocalPosition + data.localPosition * mix;  
+                state.modifiedLocalRotation = math.slerp(state.modifiedLocalRotation, math.mul(state.modifiedLocalRotation, data.localRotation), mix); 
+                state.modifiedLocalScale = state.modifiedLocalScale + data.localScale * mix; 
 
                 return state;
 
@@ -663,16 +972,17 @@ namespace Swole.API.Unity.Animation
 
             }
 
-            public void Reset(Transform transform)
+            public void Reset(Transform transform) => Reset(new TransformBindState(transform));
+            public void Reset(TransformBindState bindState)
             {
 
                 if (m_animator == null) return;
 
                 var state = m_animator.GetTransformState(index);
 
-                state.unmodifiedLocalPosition = transform.localPosition;
-                state.unmodifiedLocalRotation = transform.localRotation;
-                state.unmodifiedLocalScale = transform.localScale;
+                state.unmodifiedLocalPosition = bindState.localPosition;
+                state.unmodifiedLocalRotation = bindState.localRotation;
+                state.unmodifiedLocalScale = bindState.localScale;
 
                 state.modifiedLocalPosition = state.unmodifiedLocalPosition;
                 state.modifiedLocalRotation = state.unmodifiedLocalRotation;
@@ -770,6 +1080,8 @@ namespace Swole.API.Unity.Animation
 
             public MemberInfo info;
 
+            public int index;
+
             public float unmodifiedValue;
 
             public float modifiedValue;
@@ -777,86 +1089,75 @@ namespace Swole.API.Unity.Animation
             public static float GetConvertedValue(MemberInfo info, float value)
             {
 
-                var type = typeof(PropertyInfo).IsAssignableFrom(info.GetType()) ? (((PropertyInfo)info).PropertyType) : (((FieldInfo)info).FieldType);
+                var type = info == null ? typeof(float) : (typeof(PropertyInfo).IsAssignableFrom(info.GetType()) ? (((PropertyInfo)info).PropertyType) : (((FieldInfo)info).FieldType));
                 if (type == typeof(float))
                 {
-
                     return value;
-
                 }
                 else if (type == typeof(int))
                 {
-
                     return (int)value;
-
                 }
                 else if (type == typeof(bool))
                 {
-
-                    return value >= 0.5f ? 1 : 0;
-
+                    return value >= boolTruthThreshold ? 1 : 0; 
                 }
 
                 return 0;
 
             }
 
-            public static float GetValue(MemberInfo info, object instance)
+            public static float GetValue(MemberInfo info, object instance, int index)
             {
-                if (info is PropertyInfo prop)
+
+                if (instance is DynamicAnimationProperties dap)
+                {
+                    return dap.GetValueUnsafe(index);
+                }
+                else if (info is PropertyInfo prop)
                 {
                     var type = prop.PropertyType;
                     if (type == typeof(float))
                     {
-
                         return (float)prop.GetValue(instance);
-
                     }
                     else if (type == typeof(int))
                     {
-
                         return (int)prop.GetValue(instance);
-
                     }
                     else if (type == typeof(bool))
                     {
-
                         return (bool)prop.GetValue(instance) ? 1 : 0;
-
                     }
                 }
-                else
+                else if (info is FieldInfo field)
                 {
-                    FieldInfo field = (FieldInfo)info;
 
                     var type = field.FieldType;
                     if (type == typeof(float))
                     {
-
                         return (float)field.GetValue(instance);
-
                     }
                     else if (type == typeof(int))
                     {
-
                         return (int)field.GetValue(instance);
-
                     }
                     else if (type == typeof(bool))
                     {
-
                         return (bool)field.GetValue(instance) ? 1 : 0;
-
                     }
                 }
 
                 return 0;
             }
 
-            public static void SetValue(MemberInfo info, object instance, float value)
+            public static void SetValue(MemberInfo info, object instance, float value, int index)
             {
-
-                if (info is PropertyInfo prop)
+                if (instance is DynamicAnimationProperties dap)
+                {
+                    dap.SetValueUnsafe(index, value);
+                }
+                else if (info is PropertyInfo prop)
                 {
                     var type = prop.PropertyType;
                     if (type == typeof(float))
@@ -874,13 +1175,12 @@ namespace Swole.API.Unity.Animation
                     else if (type == typeof(bool))
                     {
 
-                        prop.SetValue(instance, value >= 0.5f);
+                        prop.SetValue(instance, value >= boolTruthThreshold/*value >= 0.5f*/);
 
                     }
                 }
-                else
+                else if (info is FieldInfo field)
                 {
-                    FieldInfo field = (FieldInfo)info;
 
                     var type = field.FieldType;
                     if (type == typeof(float))
@@ -898,7 +1198,7 @@ namespace Swole.API.Unity.Animation
                     else if (type == typeof(bool))
                     {
 
-                        field.SetValue(instance, value >= 0.5f);
+                        field.SetValue(instance, value >= boolTruthThreshold/*value >= 0.5f*/);
 
                     }
                 }
@@ -909,7 +1209,7 @@ namespace Swole.API.Unity.Animation
 
                 if (instance == null) return;
 
-                SetValue(info, instance, unmodifiedValue + (GetValue(info, instance) - GetConvertedValue(info, modifiedValue)));
+                SetValue(info, instance, unmodifiedValue + (GetValue(info, instance, index) - GetConvertedValue(info, modifiedValue)), index);
 
             }
 
@@ -918,7 +1218,7 @@ namespace Swole.API.Unity.Animation
 
                 if (instance == null) return;
 
-                SetValue(info, instance, unmodifiedValue);
+                SetValue(info, instance, unmodifiedValue, index);
 
             }
 
@@ -927,14 +1227,14 @@ namespace Swole.API.Unity.Animation
 
                 if (instance == null) return;
 
-                SetValue(info, instance, modifiedValue);
+                SetValue(info, instance, modifiedValue, index);
 
             }
 
             public void Reset(object instance)
             {
 
-                unmodifiedValue = GetValue(info, instance);
+                unmodifiedValue = GetValue(info, instance, index);
 
                 ResetModifiedData();
 
@@ -1054,6 +1354,73 @@ namespace Swole.API.Unity.Animation
         protected Dictionary<string, PropertyState> m_propertyStates = new Dictionary<string, PropertyState>();
         protected Dictionary<string, Component> m_propertyStateBehaviours = new Dictionary<string, Component>();
 
+        [Serializable]
+        public struct TransformBindState
+        {
+            public Transform transform;
+            public float3 localPosition;
+            public float3 localScale;
+            public quaternion localRotation; 
+
+            public TransformBindState(Transform transform)
+            {
+                this.transform = transform;
+                if (transform == null)
+                {
+                    this.localPosition = float3.zero;
+                    this.localRotation = quaternion.identity;
+                    this.localScale = new float3(1, 1, 1);
+                }
+                else
+                {
+                    this.localPosition = transform.localPosition;
+                    this.localRotation = transform.localRotation;
+                    this.localScale = transform.localScale;
+                }
+            }
+
+            public void Apply() => Apply(this.transform);
+            public void Apply(Transform transform)
+            {
+                transform.SetLocalPositionAndRotation(localPosition, localRotation);
+                transform.localScale = localScale;
+            }
+        }
+
+#if UNITY_EDITOR
+        [SerializeField]
+        private bool reinitializeBindPose;
+#endif
+        [SerializeField]
+        private TransformBindState[] preInitializedBindPose;
+        public void ResetToPreInitializedBindPose()
+        {
+            if (preInitializedBindPose == null) return;
+
+            if (IkManager != null) ikManager.ForceInitializeSolvers(); // Make sure ik solvers are initialized before changing pose. If the pose is different from the bind pose, it's typically to add more bend to limbs, so that the ik solvers know how to rotate them.
+
+            foreach (var bindState in preInitializedBindPose) if (bindState.transform != null) 
+                { 
+                    bindState.Apply(); 
+                }
+        }
+        public bool TryGetPreInitializedBindState(Transform transform, out TransformBindState bindState)
+        {
+            if (preInitializedBindPose == null) 
+            {
+                bindState = new TransformBindState(transform);
+                return false; 
+            }
+
+            foreach(var bindState_ in preInitializedBindPose) if (bindState_.transform == transform)
+                {
+                    bindState = bindState_;
+                    return true;
+                }
+
+            bindState = new TransformBindState(transform);
+            return false;
+        }
 
         public TransformStateReference AddOrGetState(Transform transform)
         {
@@ -1082,7 +1449,9 @@ namespace Swole.API.Unity.Animation
 
                 }
 
-                state.Reset(transform);
+                TryGetPreInitializedBindState(transform, out var bindState); // defaults to the current transform state if not found
+                state.Reset(bindState);
+
                 m_transformStateReferences[transform] = state;
             }
 
@@ -1090,11 +1459,15 @@ namespace Swole.API.Unity.Animation
 
         }
 
-        public PropertyState AddOrGetState(string propertyId, MemberInfo info)
+        public PropertyState AddOrGetState(Component component, MemberInfo info)
         {
+
+            string propertyId = GetPropertyId(component, info.Name);
 
             if (!m_propertyStates.TryGetValue(propertyId, out PropertyState state))
             {
+
+                BindComponent(propertyId, component);
 
                 state = new PropertyState();
                 state.info = info;
@@ -1114,9 +1487,30 @@ namespace Swole.API.Unity.Animation
 
             string propertyId = GetPropertyId(component, memberName);
 
-            BindComponent(propertyId, component);
+            if (!m_propertyStates.TryGetValue(propertyId, out PropertyState state))
+            {
 
-            return AddOrGetState(propertyId, GetFieldOrProperty(component, memberName));
+                BindComponent(propertyId, component);
+
+                state = new PropertyState();
+
+                if (component is DynamicAnimationProperties dap)
+                {
+                    state.index = dap.IndexOf(memberName);
+                } 
+                else
+                {
+                    state.info = GetFieldOrProperty(component, memberName);
+                }
+
+
+                m_propertyStates[propertyId] = state;
+
+                if (m_propertyStateBehaviours != null && m_propertyStateBehaviours.TryGetValue(propertyId, out var instance)) state.Reset(instance);
+
+            }
+
+            return state;
         }
 
         public void BindComponent(string propertyId, Component component) => m_propertyStateBehaviours[propertyId] = component;
@@ -1163,19 +1557,19 @@ namespace Swole.API.Unity.Animation
             {
                 if (substrings.Length >= 4)
                 {
-                    objTransform = FindTransformInHierarchy($"{substrings[0]}.{substrings[1]}.{substrings[2]}", false); // In case the transform name includes periods
+                    objTransform = FindTransformInHierarchy($"{substrings[0]}.{substrings[1]}.{substrings[2]}"/*, false*/); // In case the transform name includes periods
                     i = 3;
                 }
                 if (objTransform == null)
                 {
                     if (substrings.Length >= 3)
                     {
-                        objTransform = FindTransformInHierarchy($"{substrings[0]}.{substrings[1]}", false);  // In case the transform name includes periods
+                        objTransform = FindTransformInHierarchy($"{substrings[0]}.{substrings[1]}"/*, false*/);  // In case the transform name includes periods
                         i = 2;
                     }
                     if (objTransform == null)
                     {
-                        objTransform = FindTransformInHierarchy(substrings[0], false);
+                        objTransform = FindTransformInHierarchy(substrings[0]/*, false*/); 
                         i = 1;
                         if (objTransform == null)
                         {
@@ -1679,6 +2073,8 @@ namespace Swole.API.Unity.Animation
 
         [NonSerialized]
         protected List<IAnimationLayer> m_animationLayers;
+        public int LayerCount => m_animationLayers == null ? 0 : m_animationLayers.Count;
+        public IAnimationLayer GetLayer(int layerIndex) => layerIndex < 0 || layerIndex >= LayerCount ? null : m_animationLayers[layerIndex];
         public void AddLayer(IAnimationLayer layer, bool instantiate = true, string prefix = "", List<IAnimationLayer> outList = null, bool onlyOutputNew = false, IAnimationController animationController = null)
         {
 
@@ -1725,7 +2121,6 @@ namespace Swole.API.Unity.Animation
                 RecalculateLayerIndices();
 
             }
-
         }
         public void AddLayers(ICollection<IAnimationLayer> toAdd, bool instantiate = true, string prefix = "", List<IAnimationLayer> outList = null, bool onlyOutputNew = false, IAnimationController animationController = null)
         {
@@ -1768,35 +2163,47 @@ namespace Swole.API.Unity.Animation
             if (l is CustomAnimationLayer cal) return cal;
             return null;
         }
-        public bool RemoveLayer(IAnimationLayer layer)
+        public bool RemoveLayer(IAnimationLayer layer, bool dispose = true)
         {
             if (m_animationLayers == null || layer == null) return false;
-
+            
+            layer.IteratePlayers(CompleteAnimationPlayerJobs);
             if (m_animationLayers.Remove(layer))
             {
-                layer.Dispose();
+                if (dispose) layer.Dispose();
                 RecalculateLayerIndices();
                 return true;
             }
             return false;
 
         }
-        public bool RemoveLayer(int layerIndex)
+        public bool RemoveLayer(int layerIndex, bool dispose = true)
         {
             if (m_animationLayers == null || layerIndex < 0 || layerIndex >= m_animationLayers.Count) return false;
-            return RemoveLayer(m_animationLayers[layerIndex]);
+            return RemoveLayer(m_animationLayers[layerIndex], dispose);
         }
-        public bool RemoveLayer(string layerName)
+        public bool RemoveLayer(string layerName, bool dispose = true)
         {
-            return RemoveLayer(FindLayer(layerName));
+            return RemoveLayer(FindLayer(layerName), dispose);
         }
-        public int RemoveLayersStartingWith(string prefix)
+        public int RemoveLayersStartingWith(string prefix, bool dispose = true)
         {
             if (m_animationLayers == null) return 0;
+            
+            foreach (var layer in m_animationLayers) if (layer != null) layer.IteratePlayers(CompleteAnimationPlayerJobs);           
 
-            prefix = prefix.ToLower().Trim();
-            int i = m_animationLayers.RemoveAll(i => i == null || i.DisposeIfHasPrefix(prefix));
+            prefix = prefix.ToLower().Trim();  
 
+            int i = 0;
+            if (dispose)
+            {
+                i = m_animationLayers.RemoveAll(i => i == null || i.DisposeIfHasPrefix(prefix));
+            } 
+            else
+            {
+                i = m_animationLayers.RemoveAll(i => i == null || i.HasPrefix(prefix));
+            }
+            
             if (i > 0) RecalculateLayerIndices();
 
             return i;
@@ -1807,8 +2214,9 @@ namespace Swole.API.Unity.Animation
 
             if (swapIndex >= 0 && swapIndex < m_animationLayers.Count)
             {
+                var layer = m_animationLayers[layerIndex];
                 var swap = m_animationLayers[swapIndex];
-                m_animationLayers[swapIndex] = m_animationLayers[layerIndex];
+                m_animationLayers[swapIndex] = layer;
                 m_animationLayers[layerIndex] = swap;
             }
             else
@@ -1826,6 +2234,25 @@ namespace Swole.API.Unity.Animation
         public void RearrangeLayerNoRemap(int layerIndex, int swapIndex, bool recalculateIndices = true)
         {
             RearrangeLayerInternal(layerIndex, swapIndex);
+            if (recalculateIndices) RecalculateLayerIndicesNoRemap();
+        }
+        private void MoveLayerInternal(int layerIndex, int newIndex)
+        {
+            if (layerIndex == newIndex || m_animationLayers == null || layerIndex < 0 || layerIndex >= m_animationLayers.Count) return;
+
+            var layer = m_animationLayers[layerIndex];
+            m_animationLayers.RemoveAt(layerIndex);
+            if (newIndex < 0 && m_animationLayers.Count > 0) { m_animationLayers.Insert(0, layer); } else if (newIndex >= m_animationLayers.Count || m_animationLayers.Count <= 0) { m_animationLayers.Add(layer); } else { m_animationLayers.Insert(newIndex, layer); } 
+
+        }
+        public Dictionary<int, int> MoveLayer(int layerIndex, int newIndex, bool recalculateIndices = true)
+        {
+            MoveLayerInternal(layerIndex, newIndex);
+            return recalculateIndices ? null : RecalculateLayerIndices();
+        }
+        public void MoveLayerNoRemap(int layerIndex, int newIndex, bool recalculateIndices = true)
+        {
+            MoveLayerInternal(layerIndex, newIndex);
             if (recalculateIndices) RecalculateLayerIndicesNoRemap();
         }
         public Dictionary<int, int> RecalculateLayerIndices()
@@ -1853,7 +2280,7 @@ namespace Swole.API.Unity.Animation
         {
             if (m_animationLayers == null) return;
 
-            for (int a = 0; a < m_animationLayers.Count; a++) if (m_animationLayers[a] != null)
+            for (int a = 0; a < m_animationLayers.Count; a++)
                 {
                     var layer = m_animationLayers[a];
                     if (layer == null) continue;
@@ -1952,7 +2379,7 @@ namespace Swole.API.Unity.Animation
             OnPreLateUpdate?.Invoke();
 
 
-            m_jobHandle.Complete();
+            m_jobHandle.Complete(); // Required so that code which is dependent on animation completion can run properly
 
 
             OnPostLateUpdate?.Invoke();

@@ -1,8 +1,5 @@
 #if (UNITY_STANDALONE || UNITY_EDITOR)
 
-using System.Collections;
-using System.Collections.Generic;
-
 using UnityEngine;
 using UnityEngine.UI;
 
@@ -12,6 +9,29 @@ namespace Swole.UI
     [ExecuteInEditMode, RequireComponent(typeof(CanvasRenderer))]
     public class UILineRenderer : MaskableGraphic
     {
+
+        [SerializeField]
+        protected Texture2D texture;
+        public override Texture mainTexture => texture == null ? base.mainTexture : texture;
+        public void SetTexture(Texture2D texture)
+        {
+            this.texture = texture;
+            SetMaterialDirty();
+        }
+
+        public bool addStartCap;
+        [Tooltip("Must be at least 3")]
+        public int startCapResolution = 8;
+
+        public bool addEndCap;
+        [Tooltip("Must be at least 3")]
+        public int endCapResolution = 8;
+
+        public bool useEqualUVPortionsPerSegment;
+        public Vector2 uvRangeX = new Vector2(0, 1);
+        public float GetUVX(float t) => (uvRangeX.x) + (uvRangeX.y - uvRangeX.x) * t;
+        public Vector2 uvRangeY = new Vector2(0, 1);
+        public float GetUVY(float t) => (uvRangeY.x) + (uvRangeY.y - uvRangeY.x) * t;
 
         public float sharpAngleThreshold = 75; 
 
@@ -42,6 +62,19 @@ namespace Swole.UI
 
         [SerializeField, HideInInspector]
         protected Vector2[] points;
+
+        public Vector2 this[int index]
+        {
+            get => points == null ? default : points[index];
+            set
+            {
+                if (points == null) return;
+                points[index] = value;
+                SetVerticesDirty();
+            }
+        }
+
+        public int PointCount => points == null ? 0 : points.Length;
 
         public void SetPoints(Vector2[] pointArray)
         {
@@ -147,26 +180,67 @@ namespace Swole.UI
             float px = rT.pivot.x;
             float py = rT.pivot.y;
 
-            UIVertex vertex = UIVertex.simpleVert;
-            vertex.color = color;
-
-            int index = 0;
             Vector2 LocalToContainer(Vector2 point)
             {
                 point.x = (point.x * width) - (width * px);
                 point.y = (point.y * height) - (height * py);
-                if (!isLocal) point = localRT.InverseTransformPoint(rT.TransformPoint(point)); 
+                if (!isLocal) point = localRT.InverseTransformPoint(rT.TransformPoint(point));
                 return point;
             }
+
+            float GetValueOnSegment(Vector3 worldPosition, Vector3 pointA, Vector3 pointB)
+            {
+                Vector3 v = pointB - pointA;
+                Vector3 u = pointA - worldPosition;
+
+                float vu = v.x * u.x + v.y * u.y + v.z * u.z;
+                float vv = v.x * v.x + v.y * v.y + v.z * v.z;
+                float t = -vu / vv;
+
+                return Mathf.Clamp01(t);
+            }
+
+            if (addStartCap) addStartCap = startCapResolution > 2;
+            if (addEndCap) addEndCap = endCapResolution > 2;
+
+            float halfPI = Mathf.PI * 0.5f;
+            float halfThickness = thickness * 0.5f;
+
+            float lineLength = 0;
+            for (int a = 1; a < points.Length; a++) lineLength = lineLength + Vector3.Distance(LocalToContainer(points[a - 1]), LocalToContainer(points[a]));
+            float startCapLength = addStartCap ? (halfThickness/* * startCapThicknessRatio*/) : 0;
+            float endCapLength = addEndCap ? (halfThickness/* * endCapThicknessRatio*/) : 0;
+            float fullLength = startCapLength + lineLength + endCapLength;
+            float endCapLengthRatio = endCapLength / fullLength;
+
+            UIVertex vertex = UIVertex.simpleVert;
+            vertex.color = color;
+
+            int index = 0;
+            float d = startCapLength;
             for (int a = 0; a < points.Length; a++)
             {
 
+                bool isStart = a == 0;
+                bool isEnd = a == points.Length - 1;
+
                 Vector2 p1 = LocalToContainer(points[a == 0 ? a : a - 1]);
-                Vector2 p2 = LocalToContainer(points[a == 0 ? a + 1 : a]);
+                Vector2 p2 = LocalToContainer(points[a == 0 ? a + 1 : a]); 
+
+                float t;
+                if (useEqualUVPortionsPerSegment)
+                {
+                    t = (startCapLength + ((a / (points.Length - 1f)) * lineLength)) / fullLength;
+                }
+                else
+                {
+                    if (a > 0) d = d + (p2 - p1).magnitude;
+                    t = d / fullLength;
+                }
 
                 Vector3 v1_, v2_;
 
-                if (a == 0)
+                if (isStart)
                 {
 
                     GetVertices(p1, p2, out v1_, out v2_);
@@ -175,6 +249,37 @@ namespace Swole.UI
 
                     v1_ = v1_ + offset;
                     v2_ = v2_ + offset;
+
+                    if (addStartCap)
+                    {
+                        Vector3 offsetDir = offset.normalized;
+                        int centerVertexIndex = vh.currentVertCount;
+                        Vector3 centerPos = (v1_ + v2_) * 0.5f;
+                        Vector3 startPos = centerPos + offsetDir * halfThickness;
+                        vertex.position = centerPos; // the center vertex to create points around
+                        vertex.uv0 = new Vector4(GetUVX(t), GetUVY(0.5f), 0, 0);
+                        vh.AddVert(vertex);
+                        index++;
+                        Vector3 tangent = (v1_ - centerPos).normalized;
+                        for (int b = 0; b < startCapResolution; b++)
+                        {
+                            float capT = b / (startCapResolution - 1f);
+                            float signedCenterT = ((capT - 0.5f) * 2);
+                            float centerT = 1 - Mathf.Abs(signedCenterT);
+                            var dir = Vector3.RotateTowards(tangent * -Mathf.Sign(signedCenterT), offsetDir, halfPI * centerT, 0);
+                            var pos = centerPos + dir * halfThickness;
+                            vertex.position = pos;
+                            vertex.uv0 = new Vector4(GetUVX(GetValueOnSegment(pos, startPos, centerPos) * t), GetUVY(GetValueOnSegment(pos, v2_, v1_)), 0, 0);
+                            var vIndex = index;
+                            vh.AddVert(vertex);
+                            index++;
+
+                            if (b > 0)
+                            {
+                                vh.AddTriangle(centerVertexIndex, vIndex, vIndex - 1);
+                            }
+                        }
+                    }
 
                 }
                 else
@@ -192,8 +297,10 @@ namespace Swole.UI
                             vh.AddTriangle(index - 1, index - 2, index);
                             vh.AddTriangle(index + 1, index - 1, index);
                             vertex.position = v1_;
+                            vertex.uv0 = new Vector4(GetUVX(t), GetUVY(1), 0, 0);
                             vh.AddVert(vertex);
                             vertex.position = v2_;
+                            vertex.uv0 = new Vector4(GetUVX(t), GetUVY(0), 0, 0);
                             vh.AddVert(vertex);
 
                             index += 2;
@@ -208,7 +315,7 @@ namespace Swole.UI
                     else
                     {
 
-                        GetVertices(p1, p2, out v1_, out v2_);
+                        GetVertices(p1, p2, out v1_, out v2_); 
 
                     }
 
@@ -221,12 +328,47 @@ namespace Swole.UI
                 }
 
                 vertex.position = v1_;
+                vertex.uv0 = new Vector4(GetUVX(t), GetUVY(1), 0, 0);
                 vh.AddVert(vertex);
 
                 vertex.position = v2_;
+                vertex.uv0 = new Vector4(GetUVX(t), GetUVY(0), 0, 0);
                 vh.AddVert(vertex);
 
                 index += 2;
+
+                if (isEnd && addEndCap)
+                {
+
+                    Vector3 offsetDir = (p2 - p1).normalized;
+                    int centerVertexIndex = vh.currentVertCount;
+                    Vector3 centerPos = (v1_ + v2_) * 0.5f;
+                    Vector3 endPos = centerPos + offsetDir * halfThickness;
+                    vertex.position = centerPos; // the center vertex to create points around
+                    vertex.uv0 = new Vector4(GetUVX(t), GetUVY(0.5f), 0, 0);
+                    vh.AddVert(vertex);
+                    index++;
+                    Vector3 tangent = (v1_ - centerPos).normalized;
+                    for (int b = 0; b < endCapResolution; b++)
+                    {
+                        float capT = b / (endCapResolution - 1f);
+                        float signedCenterT = ((capT - 0.5f) * 2);
+                        float centerT = 1 - Mathf.Abs(signedCenterT);
+                        var dir = Vector3.RotateTowards(tangent * -Mathf.Sign(signedCenterT), offsetDir, halfPI * centerT, 0);
+                        var pos = centerPos + dir * halfThickness;
+                        vertex.position = pos;
+                        vertex.uv0 = new Vector4(GetUVX((GetValueOnSegment(pos, centerPos, endPos) * endCapLengthRatio) + t), GetUVY(GetValueOnSegment(pos, v2_, v1_)), 0, 0);
+                        var vIndex = index;
+                        vh.AddVert(vertex);
+                        index++;
+
+                        if (b > 0)
+                        {
+                            vh.AddTriangle(centerVertexIndex, vIndex - 1, vIndex);
+                        }
+                    }
+
+                }
 
             }
 

@@ -11,6 +11,15 @@ namespace Swole.Script
     public struct SourceScript : IContent, ISwoleSerialization<SourceScript, SourceScript.Serialized>
     {
 
+        public Type AssetType => GetType();
+        public object Asset => this;
+
+        public bool IsInternalAsset { get => false; set { } }
+
+        public bool IsValid => true;
+        public void Dispose() { }
+        public void Delete() => Dispose();
+
         #region Serialization
 
         public string AsJSON(bool prettyPrint = false) => AsSerializableStruct().AsJSON(prettyPrint);
@@ -19,7 +28,8 @@ namespace Swole.Script
         public struct Serialized : ISerializableContainer<SourceScript, SourceScript.Serialized>
         {
 
-            public ContentInfo contentInfo; 
+            public ContentInfo contentInfo;
+            public string SerializedName => nameof(contentInfo.name);
             public string source;
 
             public SourceScript AsOriginalType(PackageInfo packageInfo = default) => new SourceScript(this, packageInfo);
@@ -81,6 +91,7 @@ namespace Swole.Script
         }
 
         public string Name => contentInfo.name;
+        public string SerializedName => Name;
         public bool NameIsValid => ValidateScriptName(Name);
 
         public string Author => contentInfo.author;

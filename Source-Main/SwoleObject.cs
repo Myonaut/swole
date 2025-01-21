@@ -8,6 +8,7 @@ namespace Swole
 
         public abstract TSerialized AsSerializableStruct();
         public object AsSerializableObject() => AsSerializableStruct();
+        public abstract string SerializedName { get; }
 
         public abstract string AsJSON(bool prettyPrint = false);
 

@@ -586,8 +586,11 @@ MonoBehaviour:
   useParentOnGUI: 0
   parentPreOnGUI: 0
   pointerProxies: []
+  disableInput: 0
+  disableScrollHor: 0
+  disableScrollVer: 0
   panningSpeedMultiplier: 1
-  scollSpeedMultiplier: 1
+  scrollSpeedMultiplier: 1
   startHor: 0
   startVer: 0
   contentCenterHor: 0
@@ -1221,6 +1224,11 @@ PrefabInstance:
         type: 3}
       propertyPath: m_Name
       value: CategorizedList
+      objectReference: {fileID: 0}
+    - target: {fileID: 4685439814858277090, guid: ed67f84b6488a454eac9796c94eb8411,
+        type: 3}
+      propertyPath: m_IsActive
+      value: 1
       objectReference: {fileID: 0}
     - target: {fileID: 4685439815220180010, guid: ed67f84b6488a454eac9796c94eb8411,
         type: 3}

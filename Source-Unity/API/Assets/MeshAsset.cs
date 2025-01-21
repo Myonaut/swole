@@ -8,6 +8,27 @@ namespace Swole.API.Unity
     public class MeshAsset : IMeshAsset
     {
 
+        public System.Type AssetType => typeof(Mesh);
+        public object Asset => mesh;
+        public static implicit operator Mesh(MeshAsset asset) => asset.Mesh;
+
+        protected bool isInternalAsset;
+        public bool IsInternalAsset 
+        {
+            get => isInternalAsset;
+            set => isInternalAsset = value;
+        }
+
+        public bool IsValid => mesh != null;
+        public void Dispose()
+        {
+            if (!isInternalAsset && mesh != null)
+            {
+                GameObject.Destroy(mesh);
+            }
+            mesh = null;
+        }
+
         protected Mesh mesh;
         public Mesh Mesh => mesh;
         public object Instance => Mesh;

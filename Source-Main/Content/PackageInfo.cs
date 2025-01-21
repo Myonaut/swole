@@ -57,7 +57,6 @@ namespace Swole
             if (curator != other.curator) return false;
 
             return true;
-
         }
 
         public static bool operator ==(PackageInfo A, PackageInfo B) => A.Equals(B);

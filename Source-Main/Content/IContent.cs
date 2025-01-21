@@ -30,6 +30,8 @@ namespace Swole
         public string RelativePath { get; }
         public IContent SetRelativePath(string path);
 
+        public void Delete();
+
     }
 
 }

@@ -22,11 +22,13 @@ namespace Swole
 
         protected List<IDisposable> disposables = new List<IDisposable>();
 
+        private bool disposing;
         public void Dispose()
         {
 
             if (disposables == null) return;
 
+            disposing = true;
             foreach (IDisposable disposable in disposables) 
             {
                 try
@@ -39,17 +41,19 @@ namespace Swole
                     swole.LogError(ex);
                 }
             }
+            disposing = false;
 
             disposables = null;
 
         }
 
-        public static void Track(IDisposable disposer) 
+        public static bool Track(IDisposable disposer) 
         {
             var instance = Instance;
-            if (instance == null || instance.disposables == null) return;
+            if (instance == null || instance.disposables == null) return false;
 
-            instance.disposables.Add(disposer);  
+            instance.disposables.Add(disposer);
+            return true;
         }
         /// <summary>
         /// NOTE: A disposable struct should be wrapped in a disposable class if you plan on allowing it to be untracked.
@@ -59,7 +63,7 @@ namespace Swole
             var instance = Instance;
             if (instance == null || instance.disposables == null) return false;
 
-            return instance.disposables.RemoveAll(i => ReferenceEquals(i, disposer)) > 0; 
+            return instance.disposing ? true : instance.disposables.RemoveAll(i => ReferenceEquals(i, disposer)) > 0; 
         }
 
         public override void OnDestroyed()

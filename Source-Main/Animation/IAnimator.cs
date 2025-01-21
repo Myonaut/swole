@@ -6,23 +6,28 @@ namespace Swole.Animation
     public interface IAnimator : IDisposable, EngineInternal.IComponent
     {
 
+        public void DisableIKControllers();
+        public void EnableIKControllers();
+        public void ResetIKControllers();
+
         public IAnimationController DefaultController { get; set; }
-        public void Reinitialize();
+        public void ReinitializeControllers();
 
         public void ApplyController(IAnimationController controller, bool usePrefix = true, bool incrementDuplicateParameters = false);
 
         public bool HasControllerData(IAnimationController controller);
         public bool HasControllerData(string prefix);
 
-        public void RemoveControllerData(IAnimationController controller);
+        public void RemoveControllerData(IAnimationController controller, bool disposeLayers = true);
 
-        public void RemoveControllerData(string prefix);
+        public void RemoveControllerData(string prefix, bool disposeLayers = true);
 
         public string AvatarName { get; }
 
         public int GetBoneIndex(string name);
         public int BoneCount { get; }
         public EngineInternal.ITransform GetBone(int index);
+        public EngineInternal.ITransform RootBone { get; }
 
         public void ClearControllerData();
 
@@ -51,15 +56,19 @@ namespace Swole.Animation
         public void AddLayer(IAnimationLayer layer, bool instantiate = true, string prefix = "", List<IAnimationLayer> outList = null, bool onlyOutputNew = false, IAnimationController animationController = null);
         public void InsertLayer(int index, IAnimationLayer layer, bool instantiate = true, string prefix = "", List<IAnimationLayer> outList = null, bool onlyOutputNew = false, IAnimationController animationController = null);
         public void AddLayers(ICollection<IAnimationLayer> toAdd, bool instantiate = true, string prefix = "", List<IAnimationLayer> outList = null, bool onlyOutputNew = false, IAnimationController animationController = null);
+        public int LayerCount { get; }
+        public IAnimationLayer GetLayer(int layerIndex);
         public int FindLayerIndex(string layerName);
         public IAnimationLayer FindLayer(string layerName);
-        public bool RemoveLayer(IAnimationLayer layer);
-        public bool RemoveLayer(int layerIndex);
-        public bool RemoveLayer(string layerName);
-        public int RemoveLayersStartingWith(string prefix);
+        public bool RemoveLayer(IAnimationLayer layer, bool dispose = true);
+        public bool RemoveLayer(int layerIndex, bool dispose = true);
+        public bool RemoveLayer(string layerName, bool dispose = true);
+        public int RemoveLayersStartingWith(string prefix, bool dispose = true);
 
         public Dictionary<int, int> RearrangeLayer(int layerIndex, int swapIndex, bool recalculateIndices = true);
         public void RearrangeLayerNoRemap(int layerIndex, int swapIndex, bool recalculateIndices = true);
+        public Dictionary<int, int> MoveLayer(int layerIndex, int newIndex, bool recalculateIndices = true);
+        public void MoveLayerNoRemap(int layerIndex, int newIndex, bool recalculateIndices = true); 
         public Dictionary<int, int> RecalculateLayerIndices();
         public void RecalculateLayerIndicesNoRemap();
 

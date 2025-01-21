@@ -15,6 +15,8 @@ namespace Swole.API.Unity
     public class MuscularRenderedCharacter : RenderedCharacter
     {
 
+        public MuscularRenderedCharacter parent;
+
         [Serializable]
         public enum MuscularSurfaceState
         {
@@ -200,7 +202,6 @@ namespace Swole.API.Unity
 
                 if (inputCustomSkinnedRenderers != null && inputMuscularCustomSkinnedRendererStates != null)
                 {
-
                     for (int a = 0; a < Mathf.Min(inputCustomSkinnedRenderers.Length, inputMuscularCustomSkinnedRendererStates.Length); a++)
                     {
 
@@ -368,6 +369,14 @@ namespace Swole.API.Unity
 
                 foreach (Material material in m_muscleMaterials) material.SetFloat(m_breastPresenceProperty, m_breastPresence);
 
+                if (children != null)
+                {
+                    foreach(var child in children)
+                    {
+                        if (child is MuscularRenderedCharacter msr) msr.BreastPresence = m_breastPresence;
+                    }
+                }
+
             }
 
         }
@@ -439,9 +448,27 @@ namespace Swole.API.Unity
 
             m_muscleGroupValues[muscleGroupIndex] = values;
 
-            if (updateDependencies && (mass != prevMass || hasUpdated)) UpdateMuscleGroupDependenciesUnsafe(muscleGroupIndex);
+            if (children != null)
+            {
+                foreach (var child in children)
+                {
+                    if (child is MuscularRenderedCharacter msr) msr.SetMuscleGroupMassUnsafe(muscleGroupIndex, mass, false, hasUpdated);
+                }
+            }
 
-            return mass != prevMass;
+            if (updateDependencies && (mass != prevMass || hasUpdated)) UpdateMuscleGroupDependenciesUnsafe(muscleGroupIndex);
+            
+            bool updated = mass != prevMass;
+            try
+            {
+                if (updated && OnMuscleMassChanged != null) OnMuscleMassChanged.Invoke(m_muscleGroupNames[muscleGroupIndex], muscleGroupIndex, values);
+            } 
+            catch(Exception ex)
+            {
+                swole.LogError(ex);
+            }
+
+            return updated;
 
         }
         public bool SetMuscleGroupFlexUnsafe(int muscleGroupIndex, float flex, bool updateDependencies = true, bool hasUpdated = false)
@@ -455,7 +482,25 @@ namespace Swole.API.Unity
 
             m_muscleGroupValues[muscleGroupIndex] = values;
 
+            if (children != null)
+            {
+                foreach (var child in children)
+                {
+                    if (child is MuscularRenderedCharacter msr) msr.SetMuscleGroupFlexUnsafe(muscleGroupIndex, flex, false, hasUpdated);
+                }
+            }
+
             if (updateDependencies && (flex != prevFlex || hasUpdated)) UpdateMuscleGroupDependenciesUnsafe(muscleGroupIndex);
+
+            bool updated = flex != prevFlex;
+            try
+            {
+                if (updated && OnMuscleFlexChanged != null) OnMuscleFlexChanged.Invoke(m_muscleGroupNames[muscleGroupIndex], muscleGroupIndex, values);
+            }
+            catch (Exception ex)
+            {
+                swole.LogError(ex);
+            }
 
             return flex != prevFlex;
 
@@ -471,7 +516,25 @@ namespace Swole.API.Unity
 
             m_muscleGroupValues[muscleGroupIndex] = values;
 
+            if (children != null)
+            {
+                foreach (var child in children)
+                {
+                    if (child is MuscularRenderedCharacter msr) msr.SetMuscleGroupPumpUnsafe(muscleGroupIndex, pump, false, hasUpdated);
+                }
+            }
+
             if (updateDependencies && (pump != prevPump || hasUpdated)) UpdateMuscleGroupDependenciesUnsafe(muscleGroupIndex);
+
+            bool updated = pump != prevPump;
+            try
+            {
+                if (updated && OnMusclePumpChanged != null) OnMusclePumpChanged.Invoke(m_muscleGroupNames[muscleGroupIndex], muscleGroupIndex, values);
+            }
+            catch (Exception ex)
+            {
+                swole.LogError(ex);
+            }
 
             return pump != prevPump;
 
@@ -646,6 +709,17 @@ namespace Swole.API.Unity
 
         protected List<MuscleValueListener>[] muscleListeners;
 
+        public event MuscleValueChangeDelegate OnMuscleMassChanged;
+        public event MuscleValueChangeDelegate OnMuscleFlexChanged;
+        public event MuscleValueChangeDelegate OnMusclePumpChanged;
+
+        public void ClearEventListeners()
+        {
+            OnMuscleMassChanged = null;
+            OnMuscleFlexChanged = null;
+            OnMusclePumpChanged = null;
+        }
+
         public bool Listen(int muscleGroupIndex, EngineInternal.IEngineObject listeningObject, MuscleValueListenerDelegate callback, out MuscleValueListener listener)
         {
             listener = null;
@@ -703,7 +777,7 @@ namespace Swole.API.Unity
 
         }
 
-        protected void UpdateMuscleGroupDependencies(int muscleGroupIndex)
+        public void UpdateMuscleGroupDependencies(int muscleGroupIndex)
         {
 
             if (m_muscleGroupNames == null || muscleGroupIndex < 0 || muscleGroupIndex >= m_muscleGroupNames.Length) return;
@@ -712,7 +786,7 @@ namespace Swole.API.Unity
 
         }
 
-        protected void UpdateMuscleGroupDependenciesUnsafe(int muscleGroupIndex)
+        public void UpdateMuscleGroupDependenciesUnsafe(int muscleGroupIndex)
         {
 
             string property = m_muscleGroupNames[muscleGroupIndex];
@@ -724,7 +798,7 @@ namespace Swole.API.Unity
                 material.SetFloat(m_massMaterialPropertyHeader + property, muscleData.mass);
                 material.SetFloat(m_flexMaterialPropertyHeader + property, muscleData.flex);
                 material.SetFloat(m_pumpMaterialPropertyHeader + property, muscleData.pump);
-
+                
             }
 
             if (muscleDependentBlendShapes != null)
@@ -734,7 +808,10 @@ namespace Swole.API.Unity
                 if (shapes != null)
                 {
 
-                    foreach (var shape in shapes) SetBlendShapeWeight(shape.shapeIndex, shape.GetWeight(muscleData));
+                    foreach (var shape in shapes) 
+                    {
+                        SetBlendShapeWeight(shape.shapeIndex, shape.GetWeight(muscleData)); 
+                    }
 
                 }
 
@@ -754,6 +831,34 @@ namespace Swole.API.Unity
 
             }
 
+            if (children != null)
+            {
+                foreach (var child in children)
+                {
+                    if (child is MuscularRenderedCharacter msr) msr.UpdateMuscleGroupDependenciesUnsafe(muscleGroupIndex);  
+                }
+            }
+
+        }
+        public void UpdateMuscleGroupMaterialPropertiesUnsafe(int muscleGroupIndex)
+        {
+            string property = m_muscleGroupNames[muscleGroupIndex];
+            var muscleData = m_muscleGroupValues[muscleGroupIndex];
+
+            foreach (Material material in m_muscleMaterials)
+            {
+                material.SetFloat(m_massMaterialPropertyHeader + property, muscleData.mass);
+                material.SetFloat(m_flexMaterialPropertyHeader + property, muscleData.flex);
+                material.SetFloat(m_pumpMaterialPropertyHeader + property, muscleData.pump);
+            }
+
+            if (children != null)
+            {
+                foreach (var child in children)
+                {
+                    if (child is MuscularRenderedCharacter msr) msr.UpdateMuscleGroupMaterialPropertiesUnsafe(muscleGroupIndex);
+                }
+            }
         }
 
     }

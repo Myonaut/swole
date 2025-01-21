@@ -245,7 +245,7 @@ PrefabInstance:
     - target: {fileID: 5429207417857990066, guid: 52b5b9af52e4ff047a85e5c8dc3e195d,
         type: 3}
       propertyPath: m_Name
-      value: DynamicScrollingDropDownMenu Variant
+      value: DynamicScrollingDropDownMenu
       objectReference: {fileID: 0}
     - target: {fileID: 5429207417857990070, guid: 52b5b9af52e4ff047a85e5c8dc3e195d,
         type: 3}
@@ -287,8 +287,11 @@ MonoBehaviour:
   useParentOnGUI: 0
   parentPreOnGUI: 0
   pointerProxies: []
+  disableInput: 0
+  disableScrollHor: 0
+  disableScrollVer: 0
   panningSpeedMultiplier: 1
-  scollSpeedMultiplier: 1
+  scrollSpeedMultiplier: 1
   startHor: 0
   startVer: 0
   contentCenterHor: 0

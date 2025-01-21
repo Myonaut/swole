@@ -6,6 +6,16 @@ namespace Swole
     public class GameplayExperience : IContent, ISwoleSerialization<GameplayExperience, GameplayExperience.Serialized>
     {
 
+        public Type AssetType => GetType();
+        public object Asset => this;
+
+        public bool IsInternalAsset { get => false; set { } }
+
+        protected bool invalid;
+        public bool IsValid => !invalid;
+        public void Dispose() { invalid = true; }
+        public void Delete() => Dispose();
+
         #region Serialization
 
         public string AsJSON(bool prettyPrint = false) => AsSerializableStruct().AsJSON(prettyPrint); 
@@ -14,6 +24,7 @@ namespace Swole
         public struct Serialized : ISerializableContainer<GameplayExperience, GameplayExperience.Serialized>
         {
             public ContentInfo contentInfo;
+            public string SerializedName => contentInfo.name;
             public string creationAssetName;
             public string thumbnailAssetName;
             public string[] screenshotAssetNames;
@@ -74,6 +85,7 @@ namespace Swole
 
         public ContentInfo contentInfo;
         public ContentInfo ContentInfo => contentInfo;
+        public string SerializedName => contentInfo.name;
 
         public IContent CreateCopyAndReplaceContentInfo(ContentInfo info)
         {

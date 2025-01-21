@@ -13,6 +13,15 @@ namespace Swole.API.Unity
 
         public Creation asset;
 
+        /// <summary>
+        /// if asset is null, this is used
+        /// </summary>
+        public string packageId;
+        /// <summary>
+        /// if asset is null, this is used
+        /// </summary>
+        public string creationId;
+
     }
 
 }

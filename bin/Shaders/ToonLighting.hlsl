@@ -36,7 +36,7 @@ void ToonBasicLitFragmentShadows_float(half4 inColor, float3 positionWS, float3 
             #pragma multi_compile _ SHADOWS_SHADOWMASK
             #pragma multi_compile _ DYNAMICLIGHTMAP_ON
 
-half3 ComputeRadiance(Light light, half3 normalWS, half alpha)
+half3 ComputeRadiance(Light light, half3 normalWS)
 {
     half NdotL = saturate(dot(normalWS, light.direction));
     half lightAttenuation = light.distanceAttenuation;
@@ -50,7 +50,7 @@ half3 ComputeRadiance(Light light, half3 normalWS, half alpha)
 void ToonBasicLitFragment_float(half4 inColor, float3 positionWS, float3 normalWS, out half4 outColor)
 {
 
-    half3 finalColor = inColor; 
+    half3 finalColor = half3(0, 0, 0); 
 
     //half4 shadowMask = CalculateShadowMask(inputData);
     //float4 shadowCoord = TransformWorldToShadowCoord(positionWS);
@@ -60,7 +60,7 @@ void ToonBasicLitFragment_float(half4 inColor, float3 positionWS, float3 normalW
 
     if (IsMatchingLightLayer(mainLight.layerMask, meshRenderingLayers))
     {
-        finalColor *= ComputeRadiance(mainLight, normalWS, inColor.a);
+        finalColor += ComputeRadiance(mainLight, normalWS);
     }
 
     uint pixelLightCount = GetAdditionalLightsCount();
@@ -71,11 +71,11 @@ void ToonBasicLitFragment_float(half4 inColor, float3 positionWS, float3 normalW
 
         if (IsMatchingLightLayer(light.layerMask, meshRenderingLayers))
         {
-            finalColor += ComputeRadiance(light, normalWS, inColor.a);
+            finalColor += ComputeRadiance(light, normalWS);
         }
     LIGHT_LOOP_END
 
-    outColor = half4(finalColor, inColor.a);
+    outColor = half4(finalColor, 1) * inColor;
 
 }
 
@@ -93,7 +93,7 @@ void ToonBasicLitFragmentShadows_float(half4 inColor, float3 positionWS, float3 
 
     if (IsMatchingLightLayer(mainLight.layerMask, meshRenderingLayers))
     {
-        finalColor *= ComputeRadiance(mainLight, normalWS, inColor.a);
+        finalColor *= ComputeRadiance(mainLight, normalWS);
     }
 
     uint pixelLightCount = GetAdditionalLightsCount();
@@ -103,7 +103,7 @@ void ToonBasicLitFragmentShadows_float(half4 inColor, float3 positionWS, float3 
 
         if (IsMatchingLightLayer(light.layerMask, meshRenderingLayers))
         {
-            finalColor += ComputeRadiance(light, normalWS, inColor.a);
+            finalColor += ComputeRadiance(light, normalWS);
         }
     LIGHT_LOOP_END
 

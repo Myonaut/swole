@@ -7,7 +7,6 @@ using UnityEngine;
 using UnityEngine.UI;
 
 using TMPro;
-using static PlasticGui.LaunchDiffParameters;
 
 namespace Swole.UI
 {

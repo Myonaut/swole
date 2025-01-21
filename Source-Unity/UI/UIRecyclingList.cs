@@ -58,7 +58,7 @@ namespace Swole.UI
                 {
                     var child = t.GetChild(0);
                     toParent.Add(child);
-                    child.SetParent(RectTransform, true);
+                    child.SetParent(RectTransform, false); 
                 }
                 Destroy(layoutGroup.gameObject);
                 layoutGroup = null;
@@ -138,7 +138,9 @@ namespace Swole.UI
             layoutGroup.spacing = Spacing;
 
             var layoutTransform = layoutGroup.GetComponent<RectTransform>();
-            layoutTransform.SetParent(Container);
+            layoutTransform.SetParent(Container, false);
+            layoutTransform.localRotation = Quaternion.identity;
+            layoutTransform.localScale = new Vector3(1, 1, 1);
             layoutTransform.anchorMin = new Vector2(0, 0); 
             layoutTransform.anchorMax = new Vector2(1, 1); 
             layoutTransform.pivot = new Vector2(0.5f, 0.5f);
@@ -148,7 +150,7 @@ namespace Swole.UI
             foreach(var child in toParent)
             {
                 if (child == null) continue;
-                child.SetParent(layoutTransform, true);
+                child.SetParent(layoutTransform, false);
             }
             toParent.Clear();
         }
@@ -292,7 +294,7 @@ namespace Swole.UI
             if (listMemberPrototype == null) return null;
             var inst = Instantiate(listMemberPrototype);
             inst.SetActive(false);
-            inst.transform.SetParent(transform);
+            inst.transform.SetParent(transform, false);
             var lmi = new ListMemberInstance() { gameObject = inst, children = inst.GetComponentsInChildren<UIRecyclingList>(true) };
             if (lmi.children != null && lmi.children.Length == 0) lmi.children = null;
             listMemberInstances.Add(lmi);
@@ -363,6 +365,24 @@ namespace Swole.UI
             public UIRecyclingList[] children;
         }
         private readonly List<ListMemberInstance> listMemberInstances = new List<ListMemberInstance>();
+        public int VisibleMemberInstanceCount => listMemberInstances.Count;
+        public ListMemberInstance GetVisibleMemberInstance(int instanceIndex) => instanceIndex < 0 || instanceIndex >= listMemberInstances.Count ? null : listMemberInstances[instanceIndex];
+        public int IndexOfVisibleMemberInstance(ListMemberInstance inst) => IndexOfVisibleMemberInstance(inst.gameObject);
+        public int IndexOfVisibleMemberInstance(GameObject go)
+        {
+            for(int a = 0; a < listMemberInstances.Count; a++)
+            {
+                var inst = listMemberInstances[a];
+                if (inst.gameObject == go) return a; 
+            }
+
+            return -1;
+        }
+        public int GetMemberIndexFromVisibleIndex(int visibleIndex)
+        {
+            int memberIndex = VisibleRangeStart + visibleIndex;
+            return memberIndex < 0 || memberIndex >= listMembers.Count ? -1 : memberIndex;
+        }
 
         public delegate void OnRefreshMember(MemberData memberData, GameObject instance);
 
@@ -376,6 +396,8 @@ namespace Swole.UI
 
             public OnRefreshMember onRefresh;
             public object storage;
+
+            public bool hidden;
         }
 
         private bool isDirty;
@@ -384,6 +406,24 @@ namespace Swole.UI
 
         private readonly List<MemberData> listMembers = new List<MemberData>();
         public int Count => listMembers.Count;
+
+        private int prevCountForNonHiddenCount;
+        private int nonHiddenCount;
+        public int NonHiddenCount
+        {
+            get
+            {
+                if (prevCountForNonHiddenCount != Count)
+                {
+                    prevCountForNonHiddenCount = Count;
+
+                    nonHiddenCount = 0;
+                    foreach (var mem in listMembers) if (!mem.hidden) nonHiddenCount++;
+                }
+
+                return nonHiddenCount;
+            }
+        }
         protected void RecalculateMemberIndices()
         {
             for(int a = 0; a < listMembers.Count; a++)
@@ -579,6 +619,18 @@ namespace Swole.UI
         private int startIndex = -2, endIndex = -2;
         public int VisibleRangeStart => startIndex;
         public int VisibleRangeEnd => endIndex;
+        public int GetReorderedIndex(int memberIndex)
+        {
+            switch (ordering)
+            {
+                case Ordering.RightToLeft:
+                case Ordering.BottomToTop:
+                    memberIndex = listMembers.Count - 1 - memberIndex;
+                    break;
+            }
+
+            return memberIndex;
+        }
         public void Refresh()
         {
             if (listMemberPrototype == null) return;
@@ -597,7 +649,7 @@ namespace Swole.UI
             }
 
             OnRefresh?.Invoke();
-             
+            
             RefreshAnchoring();
             RefreshLayout();
 
@@ -619,7 +671,7 @@ namespace Swole.UI
                 if (newImg) containerMask.showMaskGraphic = false;
             }
 
-            container.GetWorldCorners(fourCornersArray);
+            container.GetLocalCorners(fourCornersArray);
 
             var min = new Vector2(Mathf.Min(fourCornersArray[0].x, fourCornersArray[1].x, fourCornersArray[2].x, fourCornersArray[3].x), Mathf.Min(fourCornersArray[0].y, fourCornersArray[1].y, fourCornersArray[2].y, fourCornersArray[3].y));
             var max = new Vector2(Mathf.Max(fourCornersArray[0].x, fourCornersArray[1].x, fourCornersArray[2].x, fourCornersArray[3].x), Mathf.Max(fourCornersArray[0].y, fourCornersArray[1].y, fourCornersArray[2].y, fourCornersArray[3].y));
@@ -627,7 +679,7 @@ namespace Swole.UI
             float width = max.x - min.x;
             float height = max.y - min.y;
 
-            float containerSize = 0;
+            float containerSize = 0;  
             float paddingSize = 0;
             switch (ordering)
             {
@@ -650,29 +702,76 @@ namespace Swole.UI
             int visibleMemberCount = Mathf.FloorToInt((containerSize + Spacing) / memberSizePlusSpacing);
             float visibleMargin = containerSize - ((visibleMemberCount * memberSizePlusSpacing) - Spacing);
 
-            float fullListSize = ((listMembers.Count * memberSizePlusSpacing) - Spacing) - paddingSize;
-            bool canScroll = fullListSize >= containerSize;
-            if (scrollbar != null) scrollbar.gameObject.SetActive(canScroll); 
-            
+            float fullListSize = ((NonHiddenCount/*listMembers.Count*/ * memberSizePlusSpacing) - Spacing) - paddingSize;
 
-            int maxIndex = Mathf.Max(0, listMembers.Count - visibleMemberCount);
-            float ClampMemberIndex(float memberIndex)
+            bool canScroll = fullListSize >= containerSize;
+            if (scrollbar != null) scrollbar.gameObject.SetActive(canScroll);
+
+            int maxEndIndex = listMembers.Count - 1;
+            while (maxEndIndex > 0 && listMembers[GetReorderedIndex(maxEndIndex)].hidden)
+            {
+                maxEndIndex--;
+            }
+            int maxIndex = maxEndIndex + 1;// Mathf.Max(0, listMembers.Count - visibleMemberCount);
+            int i = 0;
+            while (maxIndex > 0 && i < visibleMemberCount)
+            {
+                maxIndex--;
+                if (!listMembers[GetReorderedIndex(maxIndex)].hidden) i++;
+            }
+            /*float ClampMemberIndex(float memberIndex)
             {
                 return Mathf.Clamp(memberIndex, 0, maxIndex);
-            }
-
-            float flexibleWindowPos = (maxIndex * memberSizePlusSpacing) - visibleMargin; 
+            }*/
+            int maxNonHiddenIndex = Mathf.Max(0, NonHiddenCount - i);
+            float flexibleWindowPos = (maxNonHiddenIndex * memberSizePlusSpacing) - visibleMargin;//(maxIndex * memberSizePlusSpacing) - visibleMargin; 
             float GetFlexibleWindowPosition(float viewPos)
             {
                 return viewPos * flexibleWindowPos;
             }
+            maxNonHiddenIndex = maxNonHiddenIndex - 1;
+            
+            float windowPosition = GetFlexibleWindowPosition(canScroll ? ViewPosition : 0);
+            //startIndex = (int)ClampMemberIndex(Mathf.FloorToInt(windowPosition / memberSizePlusSpacing));
 
-            float windowPosition = GetFlexibleWindowPosition(canScroll ? ViewPosition : 0); 
-            startIndex = (int)ClampMemberIndex(Mathf.FloorToInt(windowPosition / memberSizePlusSpacing)); 
-            float startWindowPosition = startIndex * memberSizePlusSpacing;
+            int j = Mathf.Min(maxNonHiddenIndex, Mathf.FloorToInt(windowPosition / memberSizePlusSpacing));
+            int k = 0;
+            startIndex = 0;
+            while (startIndex < maxIndex && listMembers[GetReorderedIndex(startIndex)].hidden) startIndex++;  
+            while(startIndex < maxIndex && k < j)
+            {
+                startIndex++;
+                if (!listMembers[GetReorderedIndex(startIndex)].hidden) k++; 
+            }
 
-            endIndex = startIndex + visibleMemberCount + 1;
+            float startWindowPosition = k * memberSizePlusSpacing;
 
+            
+            endIndex = startIndex + visibleMemberCount + 1;  
+            for(int index = startIndex + 1; index <= endIndex; index++)
+            {
+                if (index >= listMembers.Count) break;
+
+                var member = listMembers[GetReorderedIndex(index)];
+                if (member.hidden) 
+                { 
+                    endIndex++;
+                }
+
+                if (endIndex >= listMembers.Count) break;  
+            }
+
+            /*endIndex = startIndex + 1;
+            int l = 0;
+            while(endIndex < listMembers.Count && l < visibleMemberCount)
+            {
+                var member = listMembers[GetReorderedIndex(endIndex)];
+                if (!member.hidden) l++;
+                endIndex++; 
+            }*/
+
+            endIndex = Mathf.Min(listMembers.Count - 1, endIndex);
+            //Debug.Log($"{startIndex} {endIndex} :::: {j} {k}");
             foreach (var mem in listMemberInstances)
             {
                 if (mem.gameObject != null) mem.gameObject.SetActive(false);
@@ -680,14 +779,7 @@ namespace Swole.UI
 
             for (int index = startIndex; index <= endIndex; index++)
             {
-                int dataIndex = index;
-                switch (ordering)
-                {
-                    case Ordering.RightToLeft:
-                    case Ordering.BottomToTop:
-                        dataIndex = listMembers.Count - 1 - index;
-                        break;
-                } 
+                int dataIndex = GetReorderedIndex(index);
                 if (dataIndex < 0 || dataIndex >= listMembers.Count)
                 {
                     continue;
@@ -709,7 +801,7 @@ namespace Swole.UI
                 if (instance == null || instance.gameObject == null) break;
 
                 instance.gameObject.SetActive(true);
-                var instanceTransform = instance.gameObject.GetComponent<RectTransform>();
+                var instanceTransform = instance.gameObject.GetComponent<RectTransform>(); 
 
                 var nameTransform = instanceTransform.FindDeepChildLiberal("name");
                 if (nameTransform == null) nameTransform = instanceTransform;
@@ -720,7 +812,7 @@ namespace Swole.UI
                     if (data.onClick == null && setDisableMemberButtonsWithNoOnClick) CustomEditorUtils.SetButtonInteractable(instanceTransform, false); else CustomEditorUtils.SetButtonOnClickAction(instanceTransform, data.onClick);
                 }
 
-                instanceTransform.SetParent(layoutTransform); 
+                instanceTransform.SetParent(layoutTransform, false); 
                
                 switch (ordering)
                 {
@@ -737,8 +829,15 @@ namespace Swole.UI
                         break;
                 }
 
-                data.onRefresh?.Invoke(data, instance.gameObject); 
-                if (autoRefreshChildLists && instance.children != null) foreach (var child in instance.children) child.Refresh();
+                if (data.hidden)
+                {
+                    instance.gameObject.SetActive(false);
+                }
+                else
+                {
+                    data.onRefresh?.Invoke(data, instance.gameObject);
+                    if (autoRefreshChildLists && instance.children != null) foreach (var child in instance.children) child.Refresh();
+                }
             }
 
             switch (ordering)
@@ -760,7 +859,7 @@ namespace Swole.UI
 
         public bool MemberIsVisible(MemberData data) => MemberIsVisible(data.id);
         public bool MemberIsVisible(MemberID id) => MemberIsVisible(id.index);
-        public bool MemberIsVisible(int memberIndex) => memberIndex >= startIndex && memberIndex <= endIndex;
+        public bool MemberIsVisible(int memberIndex) => memberIndex >= startIndex && memberIndex <= endIndex;// && !listMembers[memberIndex].hidden;
 
         public bool TryGetVisibleMemberInstance(MemberData data, out GameObject instance) => TryGetVisibleMemberInstance(data.id, out instance);
         public bool TryGetVisibleMemberInstance(MemberID id, out GameObject instance) => TryGetVisibleMemberInstance(id == null ? -1 : id.index, out instance);
@@ -792,12 +891,13 @@ namespace Swole.UI
                 Refresh();
             }
         }
+
         protected void LateUpdate()
         {
             if (scrollbar != null && scrollbar.gameObject.activeInHierarchy)
             {
-                if (isInFocus) scrollbar.value = Mathf.Clamp01(scrollbar.value + (InputProxy.Scroll * scrollSpeedMultiplier * InputProxy.ScrollSpeed * (scrollbar.direction == Scrollbar.Direction.TopToBottom || scrollbar.direction == Scrollbar.Direction.RightToLeft ? -1 : 1)) / (1 + (Count * 0.1f)));
-                scrollbar.size = 1f / Mathf.Min(25, Count + 1);  
+                if (isInFocus) scrollbar.value = Mathf.Clamp01(scrollbar.value + (InputProxy.Scroll * scrollSpeedMultiplier * InputProxy.ScrollSpeed * (scrollbar.direction == Scrollbar.Direction.TopToBottom || scrollbar.direction == Scrollbar.Direction.RightToLeft ? -1 : 1)) / (1 + (NonHiddenCount * 0.1f)));
+                scrollbar.size = 1f / Mathf.Min(25, NonHiddenCount + 1); 
             }
         }
 
@@ -808,8 +908,56 @@ namespace Swole.UI
         }
         public void OnPointerExit(PointerEventData eventData)
         {
-            isInFocus = false;
+            isInFocus = false; 
         }
+
+        public void ClearFilters(bool refresh)
+        {
+            for (int a = 0; a < listMembers.Count; a++)
+            {
+                var mem = listMembers[a];
+                mem.hidden = false;
+                listMembers[a] = mem;
+            }
+
+            prevCountForNonHiddenCount = -1;
+            if (refresh) Refresh();
+        }
+
+        public void FilterMembersByStartString(string str, bool caseSensitive = false, bool refresh = true)
+        {
+            if (string.IsNullOrWhiteSpace(str))
+            {
+                ClearFilters(refresh);
+            }
+            else
+            {
+                string originalStr = str;
+                if (!caseSensitive) str = str.ToLower();
+
+                for (int a = 0; a < listMembers.Count; a++)
+                {
+                    var mem = listMembers[a];
+                    string memName = mem.name;
+                    if (!caseSensitive && memName != null) memName = memName.ToLower();
+
+                    if (AssetFiltering.ContainsStartString(memName, str) || AssetFiltering.ContainsCapitalizedWord(mem.name, originalStr))
+                    {
+                        mem.hidden = false;  
+                    }
+                    else
+                    {
+                        mem.hidden = true;
+                    }
+
+                    listMembers[a] = mem; 
+                }
+
+                prevCountForNonHiddenCount = -1;
+                if (refresh) Refresh();
+            }
+        }
+
     }
 }
 

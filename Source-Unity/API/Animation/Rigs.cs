@@ -13,6 +13,8 @@ using Unity.Burst;
 using Unity.Jobs;
 using Unity.Collections.LowLevel.Unsafe;
 
+using Swole.API.Unity.Animation;
+
 namespace Swole.API.Unity
 {
     public class Rigs : SingletonBehaviour<Rigs>
@@ -55,6 +57,7 @@ namespace Swole.API.Unity
                 if (instance.lastOutputDependencyFrame != Time.frameCount)
                 {
 
+                    instance.outputDependency.Complete();
                     instance.lastOutputDependencyFrame = Time.frameCount;
                     instance.outputDependency = new JobHandle();
 
@@ -85,51 +88,62 @@ namespace Swole.API.Unity
 
         }
 
-        public static JobHandle AddOutputDependency(JobHandle dependency)
+        public class ComputeBufferWithStartIndex
         {
+            protected ComputeBuffer buffer;
+            public ComputeBuffer Buffer => buffer;
 
-            var instance = Instance;
+            public int startIndex;
 
-            if (instance.lastOutputDependencyFrame != Time.frameCount)
+            public ComputeBufferWithStartIndex(ComputeBuffer buffer, int startIndex)
             {
-
-                instance.lastOutputDependencyFrame = Time.frameCount;
-                instance.outputDependency = new JobHandle();
-
+                this.buffer = buffer;
+                this.startIndex = startIndex;
             }
+        }
+        public class InstanceBufferWithStartIndex
+        {
+            protected IInstanceBuffer buffer;
+            public IInstanceBuffer Buffer => buffer;
 
-            instance.outputDependency = JobHandle.CombineDependencies(instance.outputDependency, dependency);
+            public int startIndex;
 
-            return instance.outputDependency;
-
+            public InstanceBufferWithStartIndex(IInstanceBuffer buffer, int startIndex)
+            {
+                this.buffer = buffer;
+                this.startIndex = startIndex;
+            }
         }
 
         public class Sampler : IDisposable
         {
 
+            protected int m_instanceId;
+            public virtual string ID => GetHashCode().ToString();
+
             protected bool invalid;
             public bool Valid => !invalid;
 
+            protected static readonly List<Matrix4x4> tempMatrices = new List<Matrix4x4>(); 
             public Sampler(SkinnedMeshRenderer renderer)
             {
 
                 if (renderer != null && renderer.sharedMesh != null)
                 {
+                    m_instanceId = renderer.GetInstanceID();
 
                     m_Renderer = renderer;
 
                     m_RendererBones = renderer.bones;
 
-                    m_Trackers = new NativeArray<int>(m_RendererBones.Length, Allocator.Persistent);
                     m_Pose = new NativeArray<float4x4>(m_RendererBones.Length, Allocator.Persistent);
-                    m_TrackedBones = new NativeList<int>(4, Allocator.Persistent);
 
+                    tempMatrices.Clear();
+                    m_Renderer.sharedMesh.GetBindposes(tempMatrices);
 
-                    Matrix4x4[] bindpose = m_Renderer.sharedMesh.bindposes;
-
-                    m_Bindpose = new NativeArray<float4x4>(bindpose.Length, Allocator.Persistent);
-                    for (int a = 0; a < bindpose.Length; a++) m_Bindpose[a] = (float4x4)bindpose[a];
-
+                    m_Bindpose = new NativeArray<float4x4>(tempMatrices.Count, Allocator.Persistent);
+                    for (int a = 0; a < tempMatrices.Count; a++) m_Bindpose[a] = (float4x4)tempMatrices[a];
+                    tempMatrices.Clear();
                 }
 
             }
@@ -139,18 +153,17 @@ namespace Swole.API.Unity
 
                 if (renderer != null && bindpose != null)
                 {
+                    m_instanceId = renderer.GetInstanceID();
 
                     m_Renderer = renderer;
 
                     m_RendererBones = renderer.bones;
 
-                    m_Trackers = new NativeArray<int>(m_RendererBones.Length, Allocator.Persistent);
                     m_Pose = new NativeArray<float4x4>(m_RendererBones.Length, Allocator.Persistent);
-                    m_TrackedBones = new NativeList<int>(4, Allocator.Persistent);
 
+                    m_ManagedBindPose = bindpose;
                     m_Bindpose = new NativeArray<float4x4>(bindpose.Length, Allocator.Persistent);
                     for (int a = 0; a < bindpose.Length; a++) m_Bindpose[a] = (float4x4)bindpose[a];
-
                 }
 
             }
@@ -163,33 +176,19 @@ namespace Swole.API.Unity
             public Transform GetBone(int index) => m_RendererBones == null ? null : m_RendererBones[index];
             public int BoneCount => m_RendererBones == null ? 0 : m_RendererBones.Length;
 
-            protected TransformAccessArray m_Bones;
-            public TransformAccessArray Bones => m_Bones;
-
-            protected virtual void UpdateTransformAccess()
+            protected Matrix4x4[] m_ManagedBindPose;
+            protected Matrix4x4[] ManagedBindPose
             {
-
-                Dependency.Complete(); 
-
-                if (m_Renderer == null)
+                get
                 {
+                    if (m_ManagedBindPose == null)
+                    {
+                        m_ManagedBindPose = new Matrix4x4[m_Bindpose.Length];
+                        for (int a = 0; a < m_Pose.Length; a++) m_ManagedBindPose[a] = m_Bindpose[a];
+                    }
 
-                    Dispose();
-
-                    return;
-
+                    return m_ManagedBindPose;
                 }
-
-                if (m_Bones.isCreated) m_Bones.Dispose();
-
-                Transform[] transforms = new Transform[m_TrackedBones.Length];
-
-                if (m_RendererBones == null) m_RendererBones = m_Renderer.bones;
-
-                for (int a = 0; a < m_TrackedBones.Length; a++) transforms[a] = m_RendererBones[m_TrackedBones[a]];
-
-                m_Bones = new TransformAccessArray(transforms);
-
             }
 
             protected NativeArray<float4x4> m_Bindpose;
@@ -211,8 +210,6 @@ namespace Swole.API.Unity
 
                     if (lastManagedPoseFrame != frame || m_ManagedPose == null)
                     {
-
-                        Dependency.Complete();
 
                         if (m_ManagedPose == null) m_ManagedPose = new Matrix4x4[m_Pose.Length];
 
@@ -236,233 +233,126 @@ namespace Swole.API.Unity
                 get
                 {
 
-                    UpdateBuffer();
+                    if (m_Buffer == null)
+                    {
+                        if (m_Pose.Length <= 0)
+                        {
+                            swole.LogError($"Tried to create zero length compute buffer for rig sampler {ID}. Aborting...");
+                            return null;
+                        }
+
+                        m_Buffer = new ComputeBuffer(m_Pose.Length, UnsafeUtility.SizeOf(typeof(float4x4)), ComputeBufferType.Structured, ComputeBufferMode.SubUpdates);
+                        WriteToBuffers();
+                    }
 
                     return m_Buffer;
 
                 }
 
             }
-            public void UpdateBuffer()
+
+            protected List<ComputeBufferWithStartIndex> m_Buffers;
+            public void AddWritableBuffer(ComputeBuffer buffer, int startIndex)
             {
+                if (m_Buffers == null) m_Buffers = new List<ComputeBufferWithStartIndex>();
 
-                int frame = Time.frameCount;
+                m_Buffers.Add(new ComputeBufferWithStartIndex(buffer, startIndex));
+            }
+            public void RemoveWritableBuffer(ComputeBuffer buffer)
+            {
+                if (m_Buffers == null) return;
 
-                if (lastBufferFrame != frame || m_Buffer == null)
-                {
+                m_Buffers.RemoveAll(i => i == null || ReferenceEquals(i.Buffer, buffer));
+            }
+            protected List<InstanceBufferWithStartIndex> m_InstanceBuffers;
+            public void AddWritableInstanceBuffer(IInstanceBuffer buffer, int startIndex)
+            {
+                if (m_InstanceBuffers == null) m_InstanceBuffers = new List<InstanceBufferWithStartIndex>();
 
-                    Dependency.Complete();
+                m_InstanceBuffers.Add(new InstanceBufferWithStartIndex(buffer, startIndex));
+            }
+            public void RemoveWritableInstanceBuffer(IInstanceBuffer buffer)
+            {
+                if (m_InstanceBuffers == null) return;
 
-                    if (m_Buffer == null) m_Buffer = new ComputeBuffer(m_Pose.Length, UnsafeUtility.SizeOf(typeof(float4x4)), ComputeBufferType.Structured, ComputeBufferMode.SubUpdates);
-
-                    var tempArray = m_Buffer.BeginWrite<float4x4>(0, m_Pose.Length);
-
-                    m_Pose.CopyTo(tempArray);
-
-                    m_Buffer.EndWrite<float4x4>(m_Pose.Length);
-
-                    lastBufferFrame = frame;
-
-                }
-
+                m_InstanceBuffers.RemoveAll(i => i == null || ReferenceEquals(i.Buffer, buffer));
             }
 
-            protected NativeArray<int> m_Trackers;
+            protected void WriteToBuffers()
+            {
+                if (trackingGroup == null) return;
 
-            protected NativeList<int> m_TrackedBones;
-            public NativeList<int> TrackedBones => m_TrackedBones;
+                if (m_Buffer != null) trackingGroup.CopyIntoBuffer(m_Buffer, 0);
+                if (m_Buffers != null) trackingGroup.CopyIntoBuffers(m_Buffers);
+                if (m_InstanceBuffers != null) trackingGroup.CopyIntoBuffers(m_InstanceBuffers); 
+            }
 
-            public virtual void Dispose()
+            public void Dispose() => Dispose(true);         
+            public virtual void Dispose(bool removeFromActiveSamplers)
             {
 
-                invalid = true;
-                Dependency.Complete();
+                StopTrackingPoseData();
 
-                if (m_Bones.isCreated) m_Bones.Dispose();
+                invalid = true;
+
                 if (m_Bindpose.IsCreated) m_Bindpose.Dispose();
                 if (m_Pose.IsCreated) m_Pose.Dispose();
-                if (m_TrackedBones.IsCreated) m_TrackedBones.Dispose();
-                if (m_Trackers.IsCreated) m_Trackers.Dispose();
 
-                m_Bones = default;
                 m_Bindpose = default;
                 m_Pose = default;
-                m_TrackedBones = default;
-                m_Trackers = default;
 
-                if (m_Buffer != null) m_Buffer.Dispose();
+                if (m_Buffer != null) m_Buffer.Dispose(); 
 
                 m_Buffer = null;
 
+                if (removeFromActiveSamplers)
+                {
+                    var inst = Rigs.InstanceOrNull;
+                    if (inst != null) inst.activeSamplers.Remove(m_instanceId);
+                }
+
             }
 
-            public void Track(int boneIndex)
-            {
+            protected TrackedTransformGroup trackingGroup;
 
+            public void StartTrackingPoseData()
+            {
                 if (!Valid) return;
 
-                Dependency.Complete();
+                if (trackingGroup != null) StopTrackingPoseData();
+                trackingGroup = Rigs.Track(m_RendererBones, Bindpose);
 
-                m_Trackers[boneIndex] = m_Trackers[boneIndex] + 1;
-
-                if (m_TrackedBones.Contains(boneIndex)) return;
-
-                m_TrackedBones.Add(boneIndex);
-
-                UpdateTransformAccess();
-
+                Rigs.ListenForPoseDataChanges(WriteToBuffers);
             }
 
-            public void Untrack(int boneIndex)
+            public void StopTrackingPoseData()
             {
+                if (trackingGroup != null) trackingGroup.UntrackAllTransforms();
+                trackingGroup = null;
 
-                if (!Valid) return;
-
-                Dependency.Complete();
-
-                int trackers = math.max(0, m_Trackers[boneIndex] - 1);
-
-                m_Trackers[boneIndex] = trackers;
-
-                if (trackers <= 0)
-                {
-
-                    int i = m_TrackedBones.IndexOf(boneIndex);
-
-                    if (i >= 0)
-                    {
-
-                        m_TrackedBones.RemoveAt(i);
-
-                        UpdateTransformAccess();
-
-                    }
-
-                }
-
+                Rigs.StopListeningForPoseDataChanges(WriteToBuffers);
             }
 
-            public void TrackAll()
+            protected int users;
+            public int Users => users;
+
+            public void RegisterAsUser()
             {
+                users++;
 
-                if (m_RendererBones == null || !Valid) return;
+                if (users == 1) StartTrackingPoseData();
+            }
+            public void UnregisterAsUser()
+            {
+                users--;
 
-                Dependency.Complete();
-
-                m_TrackedBones.Clear();
-
-                for (int a = 0; a < m_RendererBones.Length; a++)
-                {
-
-                    m_Trackers[a] = m_Trackers[a] + 1;
-
-                    m_TrackedBones.Add(a);
-
-                }
-
-                UpdateTransformAccess();
-
+                if (users <= 1) StopTrackingPoseData();
             }
 
-            public void UntrackAll()
+            public void TryDispose()
             {
-
-                if (!Valid) return;
-
-                Dependency.Complete();
-
-                for (int a = 0; a < m_Trackers.Length; a++)
-                {
-
-                    int trackers = math.max(0, m_Trackers[a] - 1);
-
-                    m_Trackers[a] = trackers;
-
-                    if (trackers <= 0)
-                    {
-
-                        int i = m_TrackedBones.IndexOf(a);
-
-                        if (i >= 0) m_TrackedBones.RemoveAt(i);
-
-                    }
-
-                }
-
-                UpdateTransformAccess();
-
-            }
-
-            /* Moved this behaviour inside the pose update job
-            public float4x4 GetTransformationMatrix(int boneIndex)
-            {
-
-                return math.mul(Pose[boneIndex], Bindpose[boneIndex]);
-
-            }
-            */
-
-            protected int m_LastRefreshFrame;
-            public int LastRefreshFrame => m_LastRefreshFrame;
-
-            protected JobHandle m_JobsHandle = default;
-            public JobHandle Dependency => m_JobsHandle;
-
-            public JobHandle Refresh(JobHandle inputDeps = default, bool force = false)
-            {
-
-                if (!Valid) return Dependency;
-
-                int frame = Time.frameCount;
-
-                if (LastRefreshFrame == frame && !force) return Dependency;
-
-                m_LastRefreshFrame = frame;
-
-                if (m_TrackedBones.Length <= 0) return Dependency;
-
-                Dependency.Complete();
-
-                inputDeps = JobHandle.CombineDependencies(Dependency, inputDeps, InputDependency);
-                m_JobsHandle = new UpdatePoseJob()
-                {
-
-                    poseArray = m_Pose,
-                    trackedBones = m_TrackedBones,
-                    bindpose = m_Bindpose
-
-                }.Schedule(m_Bones, inputDeps);
-
-                AddOutputDependency(Dependency);
-
-                return Dependency;
-
-            }
-
-            [BurstCompile]
-            public struct UpdatePoseJob : IJobParallelForTransform
-            {
-
-                [NativeDisableParallelForRestriction]
-                public NativeArray<float4x4> poseArray;
-
-                [ReadOnly]
-                public NativeArray<int> trackedBones;
-
-                [ReadOnly]
-                public NativeArray<float4x4> bindpose;
-
-                public void Execute(int index, TransformAccess transform)
-                {
-
-                    //poseArray[trackedBones[index]] = (float4x4)transform.localToWorldMatrix;
-
-                    int boneIndex = trackedBones[index];
-
-                    poseArray[boneIndex] = math.mul((float4x4)transform.localToWorldMatrix, bindpose[boneIndex]);
-
-                }
-
+                if (users > 0) return;
+                Dispose();
             }
 
         }
@@ -474,7 +364,7 @@ namespace Swole.API.Unity
         {
 
             protected string m_id;
-            public string ID => m_id;
+            public override string ID => m_id;
 
             public StandaloneSampler(string id, Transform[] bones, Matrix4x4[] bindpose) : base(null)
             {
@@ -483,52 +373,43 @@ namespace Swole.API.Unity
 
                 m_RendererBones = bones;
 
-                m_Trackers = new NativeArray<int>(m_RendererBones.Length, Allocator.Persistent);
                 m_Pose = new NativeArray<float4x4>(m_RendererBones.Length, Allocator.Persistent);
-                m_TrackedBones = new NativeList<int>(4, Allocator.Persistent);
+
+                m_ManagedBindPose = bindpose;
+                m_Bindpose = new NativeArray<float4x4>(bindpose.Length, Allocator.Persistent);
+                for (int a = 0; a < bindpose.Length; a++) m_Bindpose[a] = (float4x4)bindpose[a];
+
+            }
+            public StandaloneSampler(string id, ICollection<Transform> bones, Matrix4x4[] bindpose) : base(null)
+            {
+
+                m_id = id;
+
+                m_RendererBones = new Transform[bones.Count]; 
+                int i = 0;
+                foreach(var bone in bones)
+                {
+                    m_RendererBones[i] = bone;
+                    i++;
+                }
+
+                m_Pose = new NativeArray<float4x4>(m_RendererBones.Length, Allocator.Persistent);
+
+                m_ManagedBindPose = bindpose;
                 m_Bindpose = new NativeArray<float4x4>(bindpose.Length, Allocator.Persistent);
                 for (int a = 0; a < bindpose.Length; a++) m_Bindpose[a] = (float4x4)bindpose[a];
 
             }
 
-            protected override void UpdateTransformAccess()
+            public override void Dispose(bool removeFromActiveSamplers)
             {
+                base.Dispose(removeFromActiveSamplers);
 
-                Dependency.Complete();
-
-                if (m_RendererBones == null)
+                if (removeFromActiveSamplers)
                 {
-
-                    Dispose();
-
-                    return;
-
+                    var inst = Rigs.InstanceOrNull;
+                    if (inst != null) inst.activeStandaloneSamplers.Remove(ID); 
                 }
-
-                if (m_Bones.isCreated) m_Bones.Dispose();
-
-                Transform[] transforms = new Transform[m_TrackedBones.Length];
-
-                for (int a = 0; a < m_TrackedBones.Length; a++)
-                {
-
-                    var bone = m_RendererBones[m_TrackedBones[a]];
-
-                    if (bone == null)
-                    {
-
-                        Dispose();
-
-                        return;
-
-                    }
-
-                    transforms[a] = bone;
-
-                }
-
-                m_Bones = new TransformAccessArray(transforms);
-
             }
 
         }
@@ -536,15 +417,483 @@ namespace Swole.API.Unity
         private Dictionary<int, Sampler> activeSamplers = new Dictionary<int, Sampler>();
         private Dictionary<string, StandaloneSampler> activeStandaloneSamplers = new Dictionary<string, StandaloneSampler>();
 
+        private NativeList<float4x4> globalPoseData;
+        private NativeList<float4x4> globalBindPoseData;
+        private TransformAccessArray globalTrackedTransforms;
+        private readonly List<int> openIndices = new List<int>();
+        private class DummyTransform
+        {
+            public Transform transform;
+            public int currentIndex;
+        }
+        private readonly List<DummyTransform> dummyTransforms = new List<DummyTransform>();
+        private DummyTransform CreateNewDummyTransform()
+        {
+            var dummy = new DummyTransform() { transform = new GameObject($"dummy_{dummyTransforms.Count}").transform, currentIndex = -1 };
+            dummy.transform.SetParent(transform, false);
+            dummyTransforms.Add(dummy);
+            return dummy;
+        }
+        private DummyTransform UseDummyTransform(int trackingIndex)
+        {
+            DummyTransform dummy = null;
+            foreach (var d in dummyTransforms) if (d.currentIndex < 0) dummy = d;
+
+            if (dummy == null) dummy = CreateNewDummyTransform();
+            dummy.currentIndex = trackingIndex;
+            return dummy;
+        }
+        private void ReleaseDummyTransform(Transform transform)
+        {
+            foreach (var dummy in dummyTransforms) if (dummy.transform == transform) dummy.currentIndex = -1;
+        }
+
+        public int GetTrackingIndexLocal(Transform transform)
+        {
+            if (transform == null || !globalTrackedTransforms.isCreated) return -1;
+
+            for (int a = 0; a < globalTrackedTransforms.length; a++) if (transform == globalTrackedTransforms[a]) return a; 
+            return -1;
+        }
+        public static int GetTrackingIndex(Transform transform)
+        {
+            var instance = Instance;
+            if (instance == null) return -1;
+
+            return instance.GetTrackingIndexLocal(transform);
+        }
+
+        public void SortOpenIndicesLocal()
+        {
+            openIndices.Sort();
+        }
+        public static void SortOpenIndices()
+        {
+            var instance = Instance;
+            if (instance == null) return;
+
+            instance.SortOpenIndicesLocal();
+        }
+        public int TrackLocal(Transform transform, Matrix4x4 bindPose)
+        {
+            if (transform == null || !globalTrackedTransforms.isCreated) return -1;
+
+            OutputDependency.Complete();
+
+            int trackingIndex = -1;
+            if (openIndices.Count <= 0)
+            {
+                globalTrackedTransforms.Add(transform);
+                globalBindPoseData.Add(bindPose);
+                globalPoseData.Add(math.mul((float4x4)transform.localToWorldMatrix, bindPose));
+                trackingIndex = globalTrackedTransforms.length - 1;
+            } 
+            else
+            {
+                trackingIndex = openIndices[0];
+                openIndices.RemoveAt(0);
+
+                var removed = globalTrackedTransforms[trackingIndex];
+                globalTrackedTransforms[trackingIndex] = transform;
+                globalBindPoseData[trackingIndex] = bindPose;
+                globalPoseData[trackingIndex] = math.mul((float4x4)transform.localToWorldMatrix, bindPose);
+                ReleaseDummyTransform(removed);
+            }
+
+            return trackingIndex;
+        }
+        public static int Track(Transform transform, Matrix4x4 bindPose)
+        {
+            var instance = Instance;
+            if (instance == null) return -1;
+
+            return instance.TrackLocal(transform, bindPose);
+        }
+
+        public bool UntrackLocal(int trackingIndex)
+        {
+            if (!globalTrackedTransforms.isCreated || trackingIndex < 0 || trackingIndex >= globalTrackedTransforms.length || openIndices.Contains(trackingIndex)) return false;
+
+            var dummy = UseDummyTransform(trackingIndex);
+            openIndices.Add(trackingIndex);
+            globalTrackedTransforms.Add(dummy.transform);
+            globalTrackedTransforms.RemoveAtSwapBack(trackingIndex); 
+
+            return true;
+        }
+        public bool UntrackLocal(Transform transform) => UntrackLocal(GetTrackingIndex(transform));
+        public static bool Untrack(int trackingIndex)
+        {
+            var instance = Instance;
+            if (instance == null) return false;
+
+            return instance.UntrackLocal(trackingIndex);
+        }
+        public static bool Untrack(Transform transform)
+        {
+            var instance = Instance;
+            if (instance == null) return false;
+
+            return instance.UntrackLocal(transform);
+        }
+        public void UntrackNullTransformsLocal()
+        {
+            if (!globalTrackedTransforms.isCreated) return; 
+
+            for (int a = 0; a < globalTrackedTransforms.length; a++) if (globalTrackedTransforms[a] == null) UntrackLocal(a);
+        }
+        public static void UntrackNullTransforms()
+        {
+            var instance = Instance;
+            if (instance == null) return;
+
+            instance.UntrackNullTransformsLocal();
+        }
+
+        public class TrackedTransformGroup
+        {
+
+            internal readonly List<int> trackingIndices = new List<int>();
+            internal bool isSequential;
+
+            public void UntrackAllTransforms()
+            {
+                var inst = Rigs.InstanceOrNull;
+                if (inst != null)
+                {
+                    foreach(var index in trackingIndices) inst.UntrackLocal(index);
+                }
+
+                trackingIndices.Clear();
+            }
+
+            public TrackedTransformGroup(ICollection<Transform> transforms, ICollection<Matrix4x4> bindpose)
+            {
+                var instance = Rigs.InstanceOrNull;
+                if (instance == null) return;
+
+                instance.SortOpenIndicesLocal();
+                isSequential = true;
+                int prevIndex = -1;
+                using(var enu0  = transforms.GetEnumerator())
+                {
+                    using (var enu1 = bindpose.GetEnumerator())
+                    {
+                        while(enu0.MoveNext() && enu1.MoveNext())
+                        {
+                            int ind = instance.TrackLocal(enu0.Current, enu1.Current);
+                            trackingIndices.Add(ind);
+                            if (prevIndex >= 0 && (ind - prevIndex) != 1) isSequential = false;
+                            prevIndex = ind;
+                        }
+                    }
+                }
+
+#if UNITY_EDITOR
+                if (!isSequential)
+                {
+                    Debug.LogWarning($"Created a non-sequential tracked transform group! ({trackingIndices.Count} transforms)"); 
+                }
+#endif
+            } 
+            public TrackedTransformGroup(Transform[] transforms, NativeArray<float4x4> bindpose)
+            {
+                var instance = Rigs.Instance;
+                if (instance == null) return;
+
+                instance.SortOpenIndicesLocal();
+                isSequential = true;
+                int prevIndex = -1; 
+                for (int a = 0; a < transforms.Length; a++)
+                {
+                    int ind = instance.TrackLocal(transforms[a], bindpose[a]);
+                    trackingIndices.Add(ind);
+                    if (prevIndex >= 0 && (ind - prevIndex) != 1) isSequential = false; 
+                    prevIndex = ind;
+
+                }
+
+#if UNITY_EDITOR
+                if (!isSequential)
+                {
+                    Debug.LogWarning($"Created a non-sequential tracked transform group! ({trackingIndices.Count} transforms)");
+                }
+#endif
+            }
+
+            public void CopyIntoArray(NativeArray<float4x4> poseArray, int startIndex)
+            {
+                var instance = Rigs.InstanceOrNull;
+                if (instance == null) return;
+
+                if (isSequential)
+                {
+                    NativeArray<float4x4>.Copy(instance.globalPoseData, trackingIndices[0], poseArray, startIndex, trackingIndices.Count);
+                } 
+                else
+                {
+                    for(int a = 0; a < trackingIndices.Count; a++)
+                    {
+                        var ind = trackingIndices[a];
+                        poseArray[startIndex + a] = instance.globalPoseData[ind];
+                    }
+                }
+            }
+            public void CopyIntoBuffer(ComputeBuffer buffer, int startIndex)
+            {
+                var instance = Rigs.InstanceOrNull;
+                if (instance == null) return;
+
+                var tempArray = buffer.BeginWrite<float4x4>(startIndex, trackingIndices.Count);
+                if (isSequential)
+                {
+                    NativeArray<float4x4>.Copy(instance.globalPoseData, trackingIndices[0], tempArray, 0, trackingIndices.Count);
+                }
+                else
+                {
+                    for (int a = 0; a < trackingIndices.Count; a++)
+                    {
+                        var ind = trackingIndices[a];
+                        tempArray[a] = instance.globalPoseData[ind]; 
+                    }
+                }
+                buffer.EndWrite<float4x4>(trackingIndices.Count); 
+            }
+
+            public void CopyIntoArrays(ICollection<NativeArray<float4x4>> poseArrays, ICollection<int> startIndices)
+            {
+                var instance = Rigs.InstanceOrNull;
+                if (instance == null) return;
+
+                if (isSequential)
+                {
+                    using (var enu0 = poseArrays.GetEnumerator())
+                    {
+                        if (startIndices == null)
+                        {
+                            while (enu0.MoveNext())
+                            {
+                                NativeArray<float4x4>.Copy(instance.globalPoseData, trackingIndices[0], enu0.Current, 0, trackingIndices.Count);
+                            }
+                        }
+                        else
+                        {
+                            using (var enu1 = startIndices.GetEnumerator())
+                            {
+                                while (enu0.MoveNext() && enu1.MoveNext())
+                                {
+                                    NativeArray<float4x4>.Copy(instance.globalPoseData, trackingIndices[0], enu0.Current, enu1.Current, trackingIndices.Count);
+                                }
+                            }
+                        }
+                    }
+                }
+                else
+                {
+                    using (var enu0 = poseArrays.GetEnumerator())
+                    {
+                        if (startIndices == null)
+                        {
+                            while (enu0.MoveNext())
+                            {
+                                var poseArray = enu0.Current;
+                                var startIndex = 0;
+                                for (int a = 0; a < trackingIndices.Count; a++)
+                                {
+                                    var ind = trackingIndices[a];
+                                    poseArray[startIndex + a] = instance.globalPoseData[ind];
+                                }
+                            }
+                        }
+                        else
+                        {
+                            using (var enu1 = startIndices.GetEnumerator())
+                            {
+                                while (enu0.MoveNext() && enu1.MoveNext())
+                                {
+                                    var poseArray = enu0.Current;
+                                    var startIndex = enu1.Current;
+                                    for (int a = 0; a < trackingIndices.Count; a++)
+                                    {
+                                        var ind = trackingIndices[a];
+                                        poseArray[startIndex + a] = instance.globalPoseData[ind];
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            private readonly List<NativeArray<float4x4>> tempArrays = new List<NativeArray<float4x4>>();
+            public void CopyIntoBuffers(ICollection<ComputeBuffer> buffers, ICollection<int> startIndices)
+            {
+                var instance = Rigs.InstanceOrNull;
+                if (instance == null) return;
+
+                tempArrays.Clear();
+                using (var enu0 = buffers.GetEnumerator())
+                {
+                    if (startIndices == null)
+                    {
+                        while (enu0.MoveNext())
+                        {
+                            var tempArray = enu0.Current.BeginWrite<float4x4>(0, trackingIndices.Count); 
+                            tempArrays.Add(tempArray);
+                        }
+                    } 
+                    else
+                    {
+                        using (var enu1 = startIndices.GetEnumerator())
+                        {
+                            while (enu0.MoveNext() && enu1.MoveNext())
+                            {
+                                var tempArray = enu0.Current.BeginWrite<float4x4>(enu1.Current, trackingIndices.Count);
+                                tempArrays.Add(tempArray);
+                            }
+                        }
+                    }
+                }
+
+                CopyIntoArrays(tempArrays, null);
+
+                foreach(var buffer in buffers) buffer.EndWrite<float4x4>(trackingIndices.Count);
+                tempArrays.Clear();
+            }
+            public void CopyIntoBuffers(ICollection<ComputeBufferWithStartIndex> buffers)
+            {
+                var instance = Rigs.InstanceOrNull;
+                if (instance == null) return;
+
+                tempArrays.Clear();
+                foreach (var buffer in buffers)
+                {
+                    var tempArray = buffer.Buffer.BeginWrite<float4x4>(buffer.startIndex, trackingIndices.Count);
+                    tempArrays.Add(tempArray);
+                }
+
+                CopyIntoArrays(tempArrays, null);
+
+                foreach (var buffer in buffers) buffer.Buffer.EndWrite<float4x4>(trackingIndices.Count);
+                tempArrays.Clear();
+            }
+            public void CopyIntoBuffers(ICollection<InstanceBufferWithStartIndex> buffers)
+            {
+                var instance = Rigs.InstanceOrNull;
+                if (instance == null) return;
+
+                tempArrays.Clear();
+                foreach (var buffer in buffers)
+                {
+                    var tempArray = buffer.Buffer.Buffer.BeginWrite<float4x4>(buffer.startIndex, trackingIndices.Count);
+                    tempArrays.Add(tempArray);
+                }
+
+                CopyIntoArrays(tempArrays, null);
+
+                foreach (var buffer in buffers) buffer.Buffer.Buffer.EndWrite<float4x4>(trackingIndices.Count);
+                tempArrays.Clear();
+            }
+        }
+        public static TrackedTransformGroup Track(ICollection<Transform> transforms, ICollection<Matrix4x4> bindpose) => new TrackedTransformGroup(transforms, bindpose);
+        public static TrackedTransformGroup Track(Transform[] transforms, NativeArray<float4x4> bindpose) => new TrackedTransformGroup(transforms, bindpose);
+
+        [BurstCompile]
+        public struct UpdateGlobalPoseDataJob : IJobParallelForTransform
+        {
+
+            [NativeDisableParallelForRestriction]
+            public NativeArray<float4x4> poseData;
+            [ReadOnly]
+            public NativeArray<float4x4> bindPoseData;
+
+            public void Execute(int index, TransformAccess transform)
+            {
+                poseData[index] = math.mul((float4x4)transform.localToWorldMatrix, bindPoseData[index]);
+            }
+
+        }
+        public JobHandle UpdateGlobalPoseData(JobHandle inputDeps = default)
+        {
+            inputDeps = JobHandle.CombineDependencies(inputDeps, InputDependency, CustomAnimatorUpdater.FinalAnimationJobHandle);
+            inputDeps = JobHandle.CombineDependencies(inputDeps, OutputDependency);
+
+            outputDependency = new UpdateGlobalPoseDataJob()
+            {
+                poseData = globalPoseData,
+                bindPoseData = globalBindPoseData,
+            }.Schedule(globalTrackedTransforms, inputDeps);
+
+            return outputDependency;
+        }
+        public event VoidParameterlessDelegate PostUpdateGlobalPoseData;
+        public void ClearListeners()
+        {
+            PostUpdateGlobalPoseData = null;
+        }
+        public void ListenForPoseDataChangesLocal(VoidParameterlessDelegate listener)
+        {
+            PostUpdateGlobalPoseData += listener;
+        }
+        public void StopListeningForPoseDataChangesLocal(VoidParameterlessDelegate listener)
+        {
+            PostUpdateGlobalPoseData -= listener;
+        }
+        public static void ListenForPoseDataChanges(VoidParameterlessDelegate listener)
+        {
+            var instance = Rigs.Instance;
+            if (instance == null) return;  
+
+            instance.ListenForPoseDataChangesLocal(listener);
+        }
+        public static void StopListeningForPoseDataChanges(VoidParameterlessDelegate listener)
+        {
+            var instance = Rigs.InstanceOrNull;
+            if (instance == null) return;
+
+            instance.StopListeningForPoseDataChangesLocal(listener);
+        }
+
+        protected override void OnAwake()
+        {
+            base.OnAwake();
+
+            globalPoseData = new NativeList<float4x4>(0, Allocator.Persistent);
+            globalBindPoseData = new NativeList<float4x4>(0, Allocator.Persistent);
+            globalTrackedTransforms = new TransformAccessArray(0, -1);
+        }
+
         public override void OnDestroyed()
         {
 
-            base.OnDestroyed();
+            try
+            {
+                ClearListeners();
+                base.OnDestroyed();
+            } 
+            catch(Exception ex)
+            {
+#if UNITY_EDITOR
+                Debug.LogError(ex); 
+#endif
+            }
 
             if (activeSamplers != null)
             {
 
-                foreach (var entry in activeSamplers) if (entry.Value != null) entry.Value.Dispose();
+                foreach (var entry in activeSamplers) 
+                {
+                    try
+                    {
+                        if (entry.Value != null) entry.Value.Dispose(false);
+                    }
+                    catch (Exception ex)
+                    {
+#if UNITY_EDITOR
+                        Debug.LogError(ex);
+#endif
+                    }
+                }
 
                 activeSamplers = null;
 
@@ -553,10 +902,67 @@ namespace Swole.API.Unity
             if (activeStandaloneSamplers != null)
             {
 
-                foreach (var entry in activeStandaloneSamplers) if (entry.Value != null) entry.Value.Dispose();
+                foreach (var entry in activeStandaloneSamplers)
+                {
+                    try
+                    {
+                        if (entry.Value != null) entry.Value.Dispose(false);
+                    }
+                    catch (Exception ex)
+                    {
+#if UNITY_EDITOR
+                        Debug.LogError(ex);
+#endif
+                    }
+                }
 
                 activeStandaloneSamplers = null;
 
+            }
+
+            try
+            {
+                if (globalPoseData.IsCreated)
+                {
+                    globalPoseData.Dispose();
+                    globalPoseData = default;
+                }
+            }
+            catch (Exception ex)
+            {
+#if UNITY_EDITOR
+                Debug.LogError(ex);
+#endif
+            }
+
+            try
+            {
+                if (globalBindPoseData.IsCreated)
+                {
+                    globalBindPoseData.Dispose();
+                    globalBindPoseData = default;
+                }
+            }
+            catch (Exception ex)
+            {
+#if UNITY_EDITOR
+                Debug.LogError(ex);
+#endif
+            }
+
+            try
+            {
+                if (globalTrackedTransforms.isCreated)
+                {
+                    globalTrackedTransforms.Dispose();
+                    globalTrackedTransforms = default;
+                }
+            }
+            catch (Exception ex)
+            {
+#if UNITY_EDITOR
+                Debug.LogError(ex);
+#endif
             }
 
         }
@@ -570,11 +976,9 @@ namespace Swole.API.Unity
 
             if (!singleton.activeSamplers.TryGetValue(instanceID, out Sampler sampler))
             {
-
-                sampler = new Sampler(renderer);
-
+                sampler = new Sampler(renderer);             
                 singleton.activeSamplers[instanceID] = sampler;
-
+                //sampler.StartTrackingPoseData();
             }
 
             return sampler;
@@ -583,21 +987,35 @@ namespace Swole.API.Unity
 
         public static bool CreateStandaloneSampler(string id, Transform[] bones, Matrix4x4[] bindpose, out StandaloneSampler sampler)
         {
-
             Rigs singleton = Instance;
 
             if (!singleton.activeStandaloneSamplers.TryGetValue(id, out sampler))
             {
 
                 sampler = new StandaloneSampler(id, bones, bindpose);
-
                 singleton.activeStandaloneSamplers[id] = sampler;
+                //sampler.StartTrackingPoseData();
 
             }
             else return false;
 
             return true;
+        }
+        public static bool CreateStandaloneSampler(string id, ICollection<Transform> bones, Matrix4x4[] bindpose, out StandaloneSampler sampler)
+        {
+            Rigs singleton = Instance;
 
+            if (!singleton.activeStandaloneSamplers.TryGetValue(id, out sampler))
+            {
+
+                sampler = new StandaloneSampler(id, bones, bindpose);
+                singleton.activeStandaloneSamplers[id] = sampler;
+                //sampler.StartTrackingPoseData();
+
+            }
+            else return false;
+
+            return true;
         }
 
         public static bool TryGetStandaloneSampler(string id, out StandaloneSampler sampler)
@@ -611,11 +1029,18 @@ namespace Swole.API.Unity
 
         }
 
-        public override bool ExecuteInStack => false;
+        public override bool ExecuteInStack => true;
+        public static int ExecutionPriority => TransformTracking.ExecutionPriority + 1; // update after animation
+        public override int Priority => ExecutionPriority; 
 
         public override void OnUpdate() { }
 
-        public override void OnLateUpdate() { }
+        public override void OnLateUpdate() 
+        {
+            //UntrackNullTransforms();
+            UpdateGlobalPoseData().Complete();
+            PostUpdateGlobalPoseData?.Invoke(); 
+        }
 
         public override void OnFixedUpdate() { }
 

@@ -1,6 +1,7 @@
 #if (UNITY_STANDALONE || UNITY_EDITOR)
 
 using System;
+using System.IO;
 using System.Collections;
 using System.Collections.Generic;
 
@@ -17,6 +18,22 @@ namespace Swole.API.Unity
         public static string _mainPath = $"{_mainResourcePath}.asset";
 #if UNITY_EDITOR
         public static string _mainPathEditor => $"Assets/Resources/{_mainPath}";
+
+        public static List<InternalResources.Locator> GetResourcesInFolder<T>(string localFolder, bool includeChildFolders, List<InternalResources.Locator> outputList = null) where T : UnityEngine.Object
+        {
+            if (outputList == null) outputList = new List<InternalResources.Locator>();
+
+            var assets = UnityEditor.AssetDatabase.FindAssets($"t:{typeof(T).Name}", new string[] { localFolder });
+            foreach (var asset in assets) if (!string.IsNullOrWhiteSpace(asset))
+                {
+                    string path = UnityEditor.AssetDatabase.GUIDToAssetPath(asset);
+                    if (!includeChildFolders && !Path.GetDirectoryName(path).Equals(localFolder)) continue; 
+                    path = Path.GetRelativePath("Assets/Resources", path);
+                    outputList.Add(new InternalResources.Locator() { id = Path.GetFileNameWithoutExtension(path), path = Path.ChangeExtension(path, null) });
+                }
+
+            return outputList;
+        }
 #endif
 
         [Serializable]

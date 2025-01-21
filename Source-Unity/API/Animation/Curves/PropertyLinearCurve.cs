@@ -11,7 +11,7 @@ using Unity.Mathematics;
 namespace Swole.API.Unity.Animation
 {
     [Serializable]
-    public class PropertyLinearCurve : SwoleObject<PropertyLinearCurve, PropertyLinearCurve.Serialized>, IPropertyCurve, ICloneable
+    public class PropertyLinearCurve : SwoleObject<PropertyLinearCurve, PropertyLinearCurve.Serialized>, IPropertyCurve
     {
 
         public bool HasKeyframes
@@ -94,6 +94,7 @@ namespace Swole.API.Unity.Animation
         {
 
             public string name;
+            public string SerializedName => name;
 
             public int preWrapMode;
             public int postWrapMode;
@@ -137,13 +138,65 @@ namespace Swole.API.Unity.Animation
         public PropertyLinearCurve() : base(default) { }
 
         public string name;
+        public override string SerializedName => name;
 
         public string PropertyString => name;
 
         public WrapMode preWrapMode;
         public WrapMode postWrapMode;
 
+        public WrapMode PreWrapMode 
+        {
+            get => preWrapMode;
+            set => preWrapMode = value;
+        }
+        public WrapMode PostWrapMode
+        {
+            get => postWrapMode;
+            set => postWrapMode = value;
+        }
+
         public IPropertyCurve.Frame[] frames;
+
+        public StateData State
+        {
+            get => new StateData(this);
+            set => value.ApplyTo(this);
+        }
+        [Serializable]
+        public struct StateData
+        {
+            public int preWrapMode;
+            public int postWrapMode;
+
+            public IPropertyCurve.Frame.Serialized[] frames;
+
+            public StateData(PropertyLinearCurve pc)
+            {
+                if (pc != null)
+                {
+                    preWrapMode = (int)pc.preWrapMode;
+                    postWrapMode = (int)pc.postWrapMode;
+
+                    frames = new IPropertyCurve.Frame.Serialized[pc.frames.Length];
+                    for (int a = 0; a < frames.Length; a++) frames[a] = pc.frames[a] == null ? null : pc.frames[a].Duplicate(); 
+                }
+                else
+                {
+                    preWrapMode = postWrapMode = 0;
+                    frames = null;
+                }
+            }
+
+            public void ApplyTo(PropertyLinearCurve curve)
+            {
+                curve.preWrapMode = (WrapMode)preWrapMode;
+                curve.postWrapMode = (WrapMode)postWrapMode;
+
+                curve.frames = frames == null ? null : new IPropertyCurve.Frame[frames.Length];
+                for (int a = 0; a < frames.Length; a++) curve.frames[a] = frames[a].AsOriginalType();
+            }
+        }
 
         public void AddFrame(IPropertyCurve.Frame frame, bool addTimeZeroKeyframeIfEmpty = false, bool useSeparateDataForTimeZeroKey = false, IPropertyCurve.Frame timeZeroFrame = default)
         {
@@ -372,6 +425,29 @@ namespace Swole.API.Unity.Animation
             }
 
             return maxFrameCount;
+        }
+
+        public List<float> GetFrameTimes(int framesPerSecond, List<float> inputList = null)
+        {
+            if (inputList == null) inputList = new List<float>();
+
+            if (frames != null)
+            {
+                for (int a = 0; a < frames.Length; a++) inputList.Add(frames[a].timelinePosition / (float)framesPerSecond);
+            }
+
+            return inputList;
+        }
+        public List<CustomAnimation.FrameHeader> GetFrameTimes(int framesPerSecond, List<CustomAnimation.FrameHeader> inputList)
+        {
+            if (inputList == null) inputList = new List<CustomAnimation.FrameHeader>();
+
+            if (frames != null)
+            {
+                for (int a = 0; a < frames.Length; a++) inputList.Add(new CustomAnimation.FrameHeader() { time = frames[a].timelinePosition / (float)framesPerSecond });
+            }
+
+            return inputList;
         }
 
     }

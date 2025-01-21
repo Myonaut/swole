@@ -11,7 +11,7 @@ using Unity.Mathematics;
 namespace Swole.API.Unity.Animation
 {
     [Serializable]
-    public class TransformLinearCurve : SwoleObject<TransformLinearCurve, TransformLinearCurve.Serialized>, ITransformCurve, ICloneable
+    public class TransformLinearCurve : SwoleObject<TransformLinearCurve, TransformLinearCurve.Serialized>, ITransformCurve
     {
 
         public bool HasKeyframes
@@ -23,7 +23,7 @@ namespace Swole.API.Unity.Animation
                 return false;
             }
         }
-        public float GetClosestKeyframeTime(float referenceTime, int framesPerSecond, bool includeReferenceTime = true, IntFromDecimalDelegate getFrameIndex = null) 
+        public float GetClosestKeyframeTime(float referenceTime, int framesPerSecond, bool includeReferenceTime = true, IntFromDecimalDelegate getFrameIndex = null)
         {
             float closestTime = 0;
             float minDiff = -1;
@@ -58,7 +58,7 @@ namespace Swole.API.Unity.Animation
             if (frames != null)
             {
                 clone.frames = new ITransformCurve.Frame[frames.Length];
-                for(int a= 0; a < frames.Length; a++)
+                for (int a = 0; a < frames.Length; a++)
                 {
                     var frame = frames[a];
                     var cloneFrame = new ITransformCurve.Frame();
@@ -95,6 +95,7 @@ namespace Swole.API.Unity.Animation
         {
 
             public string name;
+            public string SerializedName => name;
 
             public bool isBone;
 
@@ -141,6 +142,7 @@ namespace Swole.API.Unity.Animation
         public TransformLinearCurve() : base(default) { }
 
         public string name;
+        public override string SerializedName => name;
 
         public string TransformName => name;
 
@@ -150,7 +152,58 @@ namespace Swole.API.Unity.Animation
         public WrapMode preWrapMode;
         public WrapMode postWrapMode;
 
+        public WrapMode PreWrapMode
+        {
+            get => preWrapMode;
+            set => preWrapMode = value;
+        }
+        public WrapMode PostWrapMode
+        {
+            get => postWrapMode;
+            set => postWrapMode = value;
+        }
+
         public ITransformCurve.Frame[] frames;
+
+        public StateData State
+        {
+            get => new StateData(this);
+            set => value.ApplyTo(this);
+        }
+        [Serializable]
+        public struct StateData
+        {
+            public int preWrapMode;
+            public int postWrapMode;
+
+            public ITransformCurve.Frame.Serialized[] frames;
+
+            public StateData(TransformLinearCurve tlc)
+            {
+                if (tlc != null)
+                {
+                    preWrapMode = (int)tlc.preWrapMode;
+                    postWrapMode = (int)tlc.postWrapMode;
+
+                    frames = new ITransformCurve.Frame.Serialized[tlc.frames.Length];
+                    for (int a = 0; a < frames.Length; a++) frames[a] = tlc.frames[a] == null ? null : tlc.frames[a].Duplicate();
+                }
+                else
+                {
+                    preWrapMode = postWrapMode = 0;
+                    frames = null;
+                }
+            }
+
+            public void ApplyTo(TransformLinearCurve curve)
+            {
+                curve.preWrapMode = (WrapMode)preWrapMode;
+                curve.postWrapMode = (WrapMode)postWrapMode;
+
+                curve.frames = frames == null ? null : new ITransformCurve.Frame[frames.Length];
+                for (int a = 0; a < frames.Length; a++) curve.frames[a] = frames[a].AsOriginalType();
+            }
+        }
 
         public void AddFrame(ITransformCurve.Frame frame, bool addTimeZeroKeyframeIfEmpty = false, bool useSeparateDataForTimeZeroKey = false, ITransformCurve.Frame timeZeroFrame = default)
         {
@@ -212,7 +265,7 @@ namespace Swole.API.Unity.Animation
             frameA = frameB = null;
             frameB = null;
 
-            for(int a = 0; a < newFrames.Count; a++)
+            for (int a = 0; a < newFrames.Count; a++)
             {
                 var fr = newFrames[a];
 
@@ -222,14 +275,14 @@ namespace Swole.API.Unity.Animation
                     {
                         frameA = fr;
                         break;
-                    } 
+                    }
                     else
                     {
                         frameA = newFrames[a - 1];
                         frameB = newFrames[a];
                         break;
                     }
-                } 
+                }
                 else if (fr.timelinePosition == timelinePosition)
                 {
                     return fr;
@@ -242,13 +295,13 @@ namespace Swole.API.Unity.Animation
                 {
                     frame = new ITransformCurve.Frame();
                     frame.timelinePosition = timelinePosition;
-                } 
+                }
                 else
                 {
                     frame = newFrames[newFrames.Count - 1].Duplicate();
                     frame.timelinePosition = timelinePosition;
                 }
-            } 
+            }
             else if (frameA != null)
             {
                 frame = frameA.Duplicate();
@@ -261,11 +314,11 @@ namespace Swole.API.Unity.Animation
             }
             else
             {
-                frame = frameA.Lerp(frameB, (timelinePosition - frameA.timelinePosition) / (float)(frameB.timelinePosition - frameA.timelinePosition));
+                frame = frameA.Slerp(frameB, (timelinePosition - frameA.timelinePosition) / (float)(frameB.timelinePosition - frameA.timelinePosition));
                 frame.timelinePosition = timelinePosition;
             }
 
-            if (frame != null) 
+            if (frame != null)
             {
                 if (newFrames.Count <= 0 && addTimeZeroKeyframeIfEmpty && !useSeparateDataForTimeZeroKey && frame.timelinePosition != 0)
                 {
@@ -273,7 +326,7 @@ namespace Swole.API.Unity.Animation
                     kfzero.timelinePosition = 0;
                     newFrames.Add(kfzero);
                 }
-                newFrames.Add(frame); 
+                newFrames.Add(frame);
             }
 
             newFrames.Sort((x, y) => (int)Mathf.Sign(x.timelinePosition - y.timelinePosition));
@@ -326,7 +379,7 @@ namespace Swole.API.Unity.Animation
 
             if (timeRange <= 0) return startFrame.data;
 
-            return startFrame.LerpData(endFrame, math.min(1, (timelinePosition - startFrame.timelinePosition) / timeRange));
+            return startFrame.SlerpData(endFrame, math.min(1, (timelinePosition - startFrame.timelinePosition) / timeRange));
 
         }
 
@@ -361,7 +414,7 @@ namespace Swole.API.Unity.Animation
         {
             if (frames == null) return 0;
 
-            int maxFrameCount = 0; 
+            int maxFrameCount = 0;
             for (int a = 0; a < frames.Length; a++)
             {
                 var frame = frames[a];
@@ -386,7 +439,31 @@ namespace Swole.API.Unity.Animation
         public bool4 ValidityRotation => frames != null && frames.Length > 0;
         public bool3 ValidityScale => frames != null && frames.Length > 0;
 
+        public List<float> GetFrameTimes(int framesPerSecond, List<float> inputList = null)
+        {
+            if (inputList == null) inputList = new List<float>();
+
+            if (frames != null)
+            {
+                for (int a = 0; a < frames.Length; a++) inputList.Add(frames[a].timelinePosition / (float)framesPerSecond);
+            }
+
+            return inputList;
+        }
+        public List<CustomAnimation.FrameHeader> GetFrameTimes(int framesPerSecond, List<CustomAnimation.FrameHeader> inputList)
+        {
+            if (inputList == null) inputList = new List<CustomAnimation.FrameHeader>();
+
+            if (frames != null)
+            {
+                for (int a = 0; a < frames.Length; a++) inputList.Add(new CustomAnimation.FrameHeader() { time = frames[a].timelinePosition / (float)framesPerSecond });
+            }
+
+            return inputList;
+        }
+
     }
+
 }
 
 #endif

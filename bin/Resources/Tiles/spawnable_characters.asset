@@ -17,3 +17,5 @@ MonoBehaviour:
   tileSets:
   - id: swole_kat_spawner
     path: Tiles/Characters/swole_kat_spawner
+  - id: candy_spawner
+    path: Tiles/Characters/candy_spawner

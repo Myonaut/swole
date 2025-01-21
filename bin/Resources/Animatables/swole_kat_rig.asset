@@ -12,14 +12,26 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: e30ab12946360124a93822fa8d2aad65, type: 3}
   m_Name: swole_kat_rig
   m_EditorClassIdentifier: 
+  boneGroups:
+  - name: bones
+    color: {r: 0, g: 1, b: 0, a: 1}
+    keyword: 
+    togglable: 1
   fullRig: []
   additiveRig:
   - id:
       name: head
       aliases: []
+    boneGroup: 0
+    defaultChildrenToSameGroup: 0
     dontDrawConnection: 1
+    dontDrawChildConnections: 1
     scale: 1
     childScale: 0.5
+    offset:
+      x: 0
+      y: 0
+      z: 0
   subtractiveRig:
   - name: tail
     aliases: []
@@ -29,3 +41,4 @@ MonoBehaviour:
     aliases: []
   - name: tail.003
     aliases: []
+  auxiliaryRig: []

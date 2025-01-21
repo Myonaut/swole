@@ -19,7 +19,7 @@ namespace Swole
 #if FOUND_BULKOUT
 
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.BeforeSplashScreen)]
-        static void Initialize()
+        new public static void Initialize()
         {
             if (!(typeof(BulkOutHook).IsAssignableFrom(swole.Engine.GetType()))) 
             {

@@ -6,6 +6,8 @@ namespace Swole.API.Unity.UndoSystem
 {
     public struct DeleteGameObject : IRevertableAction
     {
+        public bool ReapplyWhenRevertedTo => false;
+
         public GameObject gameObject;
         public Transform parent;
 

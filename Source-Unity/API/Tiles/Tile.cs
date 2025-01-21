@@ -10,14 +10,34 @@ namespace Swole.API.Unity
     public class Tile : ITile
     {
 
+        public System.Type AssetType => GetType();
+        public object Asset => this;
+
+        public Tile(string name)
+        {
+            this.name = name;
+            isNotInternalAsset = true; 
+        }
+
+        protected bool isNotInternalAsset;
+        public bool IsInternalAsset
+        {
+            get => !isNotInternalAsset;
+            set => isNotInternalAsset = !value;          
+        }
+
+        protected bool invalid;
+        public bool IsValid => !invalid;
+        public void Dispose() { if (!IsInternalAsset) invalid = true; }
+        public void Delete() => Dispose();
+
         #region ICloneable
 
         public object Clone() => Duplicate();
         public Tile Duplicate()
         {
-            var newTile = new Tile();
+            var newTile = new Tile(name);
 
-            newTile.name = name;
             newTile.previewTexture = previewTexture;
             newTile.subModelId = subModelId;
             newTile.isGameObject = isGameObject;

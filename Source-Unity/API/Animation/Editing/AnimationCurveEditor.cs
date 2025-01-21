@@ -3,6 +3,7 @@
 using System;
 using System.Collections;
 using System.Collections.Generic;
+using System.Globalization;
 
 using UnityEngine;
 using UnityEngine.Events;
@@ -450,10 +451,25 @@ namespace Swole.API.Unity.Animation
 
             raycastResults.Clear();
 
-            if (refreshRaycastersList) UpdateRaycasterList();
+            if (refreshRaycastersList)
+            { 
+                UpdateRaycasterList();
+                refreshRaycastersList = false;
+            }
             foreach (var raycaster in Raycasters)
             {
+                if (raycaster == null)
+                {
+                    refreshRaycastersList = true; 
+                    continue;
+                }
+
                 raycaster.Raycast(eventData, raycastResults);
+            }
+            if (refreshRaycastersList)
+            {
+                UpdateRaycasterList();
+                refreshRaycastersList = false;
             }
 
             foreach (var result in raycastResults)
@@ -545,12 +561,12 @@ namespace Swole.API.Unity.Animation
             }
             else
             {
-                rt = draggable.root.GetComponent<RectTransform>();
+                rt = draggable.Root;
             }
             return rt;
         }
         public static float GetValueInRange(float value, Vector2 range) => GetValueInRange(value, range.x, range.y);
-        public static float GetValueInRange(float value, float rangeX, float rangeY) => (value - rangeX) / (rangeY - rangeX);
+        public static float GetValueInRange(float value, float rangeX, float rangeY) => (rangeX == rangeY) ? 0 : (value - rangeX) / (rangeY - rangeX);
         public static float ValueFromRange(float valueInRange, Vector2 range) => ValueFromRange(valueInRange, range.x, range.y);
         public static float ValueFromRange(float valueInRange, float rangeX, float rangeY) => ((rangeY - rangeX) * valueInRange) + rangeX;
 
@@ -579,6 +595,7 @@ namespace Swole.API.Unity.Animation
 
             public static implicit operator Keyframe(KeyframeState state) => state.data;
             public static implicit operator KeyframeTangentSettings(KeyframeState state) => state.tangentSettings;
+            public static implicit operator KeyframeState(Keyframe key) => new KeyframeState() { data = key, tangentSettings = KeyframeTangentSettings.Default };
         }
 
         [Serializable]
@@ -606,6 +623,7 @@ namespace Swole.API.Unity.Animation
 
             public static implicit operator Keyframe(KeyframeStateRaw state) => new Keyframe() { time = state.time, value = state.value, inTangent = state.inTangent, outTangent = state.outTangent, inWeight = state.inWeight, outWeight = state.outWeight, weightedMode = (WeightedMode)state.weightedMode };
             public static implicit operator KeyframeTangentSettings(KeyframeStateRaw state) => new KeyframeTangentSettings() { tangentMode = (TangentMode)state.tangentMode, inTangentMode = (BrokenTangentMode)state.inTangentMode, outTangentMode = (BrokenTangentMode)state.outTangentMode };
+            public static implicit operator KeyframeStateRaw(Keyframe key) => (KeyframeState)key; 
         }
 
         [Serializable]
@@ -1109,7 +1127,7 @@ namespace Swole.API.Unity.Animation
 
         [SerializeField]
         protected AnimationCurve curve;
-        public AnimationCurve Curve
+        public virtual AnimationCurve Curve
         {
             get => curve;
             set => SetCurve(value);
@@ -1158,7 +1176,7 @@ namespace Swole.API.Unity.Animation
 
         [SerializeField]
         protected UIAnimationCurveRenderer curveRenderer;
-        public UIAnimationCurveRenderer CurveRenderer
+        public virtual UIAnimationCurveRenderer CurveRenderer
         {
             get
             {
@@ -1212,14 +1230,14 @@ namespace Swole.API.Unity.Animation
 
         [SerializeField, Header("Settings")]
         protected bool disableNavigation;
-        public bool NavigationEnabled
+        public virtual bool NavigationEnabled
         {
             get => !disableNavigation;
             set => SetNavigation(value);
         }
         [SerializeField]
         protected bool disableInteraction;
-        public bool InteractionEnabled
+        public virtual bool InteractionEnabled
         {
             get => !disableInteraction;
             set => SetInteraction(value);
@@ -2463,13 +2481,15 @@ namespace Swole.API.Unity.Animation
 
             return Mathf.RoundToInt(value / increment);
         }
+
+        private static string DecimalSeparator => CultureInfo.InstalledUICulture.NumberFormat.NumberDecimalSeparator;
         protected float ShiftIncrement(float increment, int count)
         {
             if (count <= 0) return increment;
 
             string val = increment.ToString();
-
-            int dot = val.IndexOf('.');
+            
+            int dot = val.IndexOf(DecimalSeparator);
             if (dot >= 0)
             {
                 string zeros = new string('0', count);
@@ -2479,19 +2499,19 @@ namespace Swole.API.Unity.Animation
             {
                 if (count == val.Length)
                 {
-                    val = "0." + val;
+                    val = $"0{DecimalSeparator}" + val;
                 }
                 else if (count > val.Length)
                 {
                     string zeros = new string('0', count - val.Length);
-                    val = "0." + zeros + val;
+                    val = $"0{DecimalSeparator}" + zeros + val;
                 } 
                 else
                 {
-                    val = val.Substring(0, val.Length - count) + "." + val.Substring(count);  
+                    val = val.Substring(0, val.Length - count) + DecimalSeparator + val.Substring(count);  
                 }
             }
-            return float.Parse(val);
+            return float.Parse(val/*, CultureInfo.InvariantCulture*/);
         }
         public virtual void RedrawGridValueMarkers()
         {
@@ -2863,7 +2883,7 @@ namespace Swole.API.Unity.Animation
                             selectedKeys.Add(b);
                             key.UpdateInUI(keyframeData, timelineTransform, rangeX, rangeY, true, true, unweightedTangentHandleSize);
                         }
-                        else if (key.draggable != null && (key.draggable.gameObject == childGO || (key.draggable.root != null && key.draggable.root.gameObject == childGO)))
+                        else if (key.draggable != null && (key.draggable.gameObject == childGO || (key.draggable.Root != null && key.draggable.Root.gameObject == childGO)))
                         {
                             boxSelection.Add(b);
                             selectedKeys.Add(b);
@@ -2884,7 +2904,7 @@ namespace Swole.API.Unity.Animation
                             selectedKeys.Remove(b);
                             key.UpdateInUI(keyframeData, timelineTransform, rangeX, rangeY, showAllTangents, false, unweightedTangentHandleSize);
                         }
-                        else if ((key.draggable != null && (key.draggable.gameObject == childGO || (key.draggable.root != null && key.draggable.root.gameObject == childGO))) && boxSelection.Contains(b))
+                        else if ((key.draggable != null && (key.draggable.gameObject == childGO || (key.draggable.Root != null && key.draggable.Root.gameObject == childGO))) && boxSelection.Contains(b))
                         {
                             boxSelection.Remove(b);
                             selectedKeys.Remove(b);
@@ -3175,7 +3195,7 @@ namespace Swole.API.Unity.Animation
                 keyData.draggable.dragMouseButtonMask = MouseButtonMask.LeftMouseButton;
                 SetDraggableLogic(keyData.draggable, ClickKey, SelectKeyIfNotSelected, DragKey, StopDragging);
 
-                var instanceTransform = keyData.draggable.root.GetComponent<RectTransform>();
+                var instanceTransform = keyData.draggable.Root;
                 instanceTransform.SetParent(KeyframeContainer, false);
 
                 keyData.draggable.interactable = !disableInteraction;
@@ -3193,14 +3213,14 @@ namespace Swole.API.Unity.Animation
                 {
                     keyData.inTangentLine = AnimationCurveEditorUtils.AddOrGetComponent<UIAnchoredLine>(lineInstance);
                     keyData.inTangentLine.SetRaycastTarget(false);
-                    keyData.inTangentLine.anchorA = keyData.draggable == null ? keyData.instance.GetComponent<RectTransform>() : keyData.draggable.root;
+                    keyData.inTangentLine.anchorA = keyData.draggable == null ? keyData.instance.GetComponent<RectTransform>() : keyData.draggable.Root;
                 }
                 keyData.inTangentDraggable = keyData.inTangentInstance.GetComponent<UIDraggable>();
                 if (keyData.inTangentDraggable != null)
                 {
                     keyData.inTangentDraggable.clickMouseButtonMask = MouseButtonMask.LeftMouseButton | MouseButtonMask.RightMouseButton;
                     keyData.inTangentDraggable.dragMouseButtonMask = MouseButtonMask.LeftMouseButton;
-                    keyData.inTangentLine.anchorB = keyData.inTangentDraggable.root;
+                    keyData.inTangentLine.anchorB = keyData.inTangentDraggable.Root;
                     SetDraggableLogic(keyData.inTangentDraggable, ClickInTangent, SelectKeyAdd, DragInTangent, DragStopInTangent);
 
                     keyData.inTangentDraggable.interactable = !disableInteraction;
@@ -3223,14 +3243,14 @@ namespace Swole.API.Unity.Animation
                 {
                     keyData.outTangentLine = AnimationCurveEditorUtils.AddOrGetComponent<UIAnchoredLine>(lineInstance);
                     keyData.outTangentLine.SetRaycastTarget(false);
-                    keyData.outTangentLine.anchorA = keyData.draggable == null ? keyData.instance.GetComponent<RectTransform>() : keyData.draggable.root;
+                    keyData.outTangentLine.anchorA = keyData.draggable == null ? keyData.instance.GetComponent<RectTransform>() : keyData.draggable.Root;
                 }
                 keyData.outTangentDraggable = keyData.outTangentInstance.GetComponent<UIDraggable>();
                 if (keyData.outTangentDraggable != null)
                 {
                     keyData.outTangentDraggable.clickMouseButtonMask = MouseButtonMask.LeftMouseButton | MouseButtonMask.RightMouseButton;
                     keyData.outTangentDraggable.dragMouseButtonMask = MouseButtonMask.LeftMouseButton;
-                    keyData.outTangentLine.anchorB = keyData.outTangentDraggable.root;
+                    keyData.outTangentLine.anchorB = keyData.outTangentDraggable.Root;
                     SetDraggableLogic(keyData.outTangentDraggable, ClickOutTangent, SelectKeyAdd, DragOutTangent, DragStopOutTangent);
 
                     keyData.outTangentDraggable.interactable = !disableInteraction;
@@ -3251,7 +3271,7 @@ namespace Swole.API.Unity.Animation
         }
 
         /// <summary>
-        /// Rebuilds the mesh used the render the animation curve in the UI
+        /// Rebuilds the mesh used to render the animation curve in the UI
         /// </summary>
         public virtual void RebuildCurveMesh()
         {
@@ -3488,12 +3508,12 @@ namespace Swole.API.Unity.Animation
             return key;
         }
 
-        public static float CalculateWeightedFreeTangent(float tangentValue, float keyTime, float keyValue, float neighborTime, float weight) => ((tangentValue - keyValue) / (neighborTime - keyTime)) / weight;
+        public static float CalculateWeightedFreeTangent(float tangentValue, float keyTime, float keyValue, float neighborTime, float weight) => weight == 0 || neighborTime == keyTime ? 0 : (((tangentValue - keyValue) / (neighborTime - keyTime)) / weight);
         public static float CalculateFreeTangent(Vector2 tangentPos, float keyTime, float keyValue) => CalculateFreeTangent(tangentPos, new Vector2(keyTime, keyValue));
         public static float CalculateFreeTangent(Vector2 tangentPos, Vector2 keyPos) 
         {
             var dir = tangentPos - keyPos;
-            return dir.x == 0 ? float.PositiveInfinity : (dir.y / dir.x);
+            return dir.x == 0 ? 0 : (dir.y / dir.x);
         }
         public static Keyframe CalculateWeightedFreeInTangent(Vector2 tangentPos, Keyframe key, float leftNeighborTime)
         {
@@ -3535,6 +3555,22 @@ namespace Swole.API.Unity.Animation
                 key.outTangent = CalculateFreeTangent(tangentPos, key.time, key.value);
             }
 
+            return key;
+        }
+        /* orig auto tangent
+            float mul = Mathf.Clamp01(Mathf.Abs((GetValueInRange(keyframe.value, leftNeighbor.Value, rightNeighbor.Value) - 0.5f) / 0.5f));
+            mul = 1 - (Mathf.Max(0, mul - (1 - clampedAutoFalloff)) / clampedAutoFalloff);
+            keyframe.inTangent = ((rightNeighbor.Value - leftNeighbor.Value) / (rightNeighbor.Time - leftNeighbor.Time)) * mul;
+         */
+        public static float CalculateAutoTangent(float keyVal, float leftNeighborTime, float leftNeighborVal, float rightNeighborTime, float rightNeighborVal, float clampedAutoFalloff = 1/3f)
+        {
+            float mul = leftNeighborVal == rightNeighborVal ? 0 : Mathf.Clamp01(Mathf.Abs((GetValueInRange(keyVal, leftNeighborVal, rightNeighborVal) - 0.5f) / 0.5f));
+            mul = 1 - (Mathf.Max(0, mul - (1 - clampedAutoFalloff)) / clampedAutoFalloff);
+            return ((rightNeighborVal - leftNeighborVal) / (rightNeighborTime - leftNeighborTime)) * mul;   
+        }
+        public static Keyframe CalculateAutoTangents(Keyframe key, Keyframe leftNeighbor, Keyframe rightNeighbor, float clampedAutoFalloff = 1 / 3f)
+        {
+            key.inTangent = key.outTangent = CalculateAutoTangent(key.value, leftNeighbor.time, leftNeighbor.value, rightNeighbor.time, rightNeighbor.value, clampedAutoFalloff);   
             return key;
         }
         public float GetNonCollidingTime(float time, KeyframeData keyReference = null)
@@ -3668,9 +3704,7 @@ namespace Swole.API.Unity.Animation
                             else
                             {
                                 if (clampedAutoFalloff <= 0) clampedAutoFalloff = 1 / 3f;
-                                float mul = Mathf.Clamp01(Mathf.Abs((GetValueInRange(keyframe.value, leftNeighbor.Value, rightNeighbor.Value) - 0.5f) / 0.5f));
-                                mul = 1 - (Mathf.Max(0, mul - (1 - clampedAutoFalloff)) / clampedAutoFalloff);
-                                keyframe.inTangent = ((rightNeighbor.Value - leftNeighbor.Value) / (rightNeighbor.Time - leftNeighbor.Time)) * mul;
+                                keyframe.inTangent = CalculateAutoTangent(keyframe.value, leftNeighbor.Time, leftNeighbor.Value, rightNeighbor.Time, rightNeighbor.Value, clampedAutoFalloff);
                             }
                             break;
 
@@ -4147,19 +4181,19 @@ namespace Swole.API.Unity.Animation
             UpdateStep(Time.deltaTime);
         } 
 
-        protected void SortKeys(List<KeyframeData> list) 
+        protected virtual void SortKeys(List<KeyframeData> list) 
         {
             if (list == null) return;
             list.Sort((KeyframeData x, KeyframeData y) => (int)Mathf.Sign(x.Time - y.Time));
         }
 
-        private readonly List<KeyframeData> tempKeys = new List<KeyframeData>();
-        private readonly List<KeyframeData> tempKeys2 = new List<KeyframeData>();
+        protected readonly List<KeyframeData> tempKeys = new List<KeyframeData>();
+        protected readonly List<KeyframeData> tempKeys2 = new List<KeyframeData>();
 
         #region State
 
         [Serializable]
-        public struct State
+        public struct State : ICloneable
         {
             public int preWrapMode;
             public int postWrapMode;
@@ -4188,6 +4222,15 @@ namespace Swole.API.Unity.Animation
 
                 curve.keys = keys;
             }
+
+            public State Duplicate()
+            {
+                var state = this;
+                state.keyframes = keyframes == null ? null : ((KeyframeStateRaw[])keyframes.Clone());
+                state.selectedKeys = selectedKeys == null ? null : ((int[])selectedKeys.Clone()); 
+                return state;
+            }
+            public object Clone() => Duplicate();
         }
 
         protected State currentState;
@@ -4195,9 +4238,9 @@ namespace Swole.API.Unity.Animation
         /// <summary>
         /// Have changes been made to the curve since the last state query?
         /// </summary>
-        public bool IsDirty => isDirty;
-        public void SetDirty() => isDirty = true; 
-        public State GetState()
+        public virtual bool IsDirty => isDirty;
+        public virtual void SetDirty() => isDirty = true; 
+        public virtual State GetState()
         {
             if (currentState.keyframes != null && !isDirty) return currentState;
 
@@ -4223,7 +4266,7 @@ namespace Swole.API.Unity.Animation
             currentState = state;
             return state;
         }
-        public void SetState(State state, bool notifyListeners = false, bool redraw = true)
+        public virtual void SetState(State state, bool notifyListeners = false, bool redraw = true)
         {
             State preState = default;
             if (notifyListeners) preState = CurrentState;
@@ -4260,7 +4303,7 @@ namespace Swole.API.Unity.Animation
 
             if (redraw) Redraw();
         }
-        public State CurrentState
+        public virtual State CurrentState
         {
             get => GetState();
             set => SetState(value);
@@ -5086,7 +5129,7 @@ namespace Swole.API.Unity.Animation
 
         public void SetKeyTimeAndRefresh(int keyIndex, float time) => SetKeyTime(keyIndex, time);
         public void SetKeyTime(int keyIndex, float time, bool refreshUI = true) => SetKeyTime(keyframeData == null || keyIndex < 0 || keyIndex >= keyframeData.Length ? null : keyframeData[keyIndex], time, refreshUI);
-        public void SetKeyTime(KeyframeData key, float time, bool refreshUI = true) 
+        public virtual void SetKeyTime(KeyframeData key, float time, bool refreshUI = true) 
         {
             if (key == null) return;
 
@@ -5100,7 +5143,7 @@ namespace Swole.API.Unity.Animation
         }
         public void SetKeyValueAndRefresh(int keyIndex, float value) => SetKeyValue(keyIndex, value);
         public void SetKeyValue(int keyIndex, float value, bool refreshUI = true) => SetKeyValue(keyframeData == null || keyIndex < 0 || keyIndex >= keyframeData.Length ? null : keyframeData[keyIndex], value, refreshUI);
-        public void SetKeyValue(KeyframeData key, float value, bool refreshUI = true) 
+        public virtual void SetKeyValue(KeyframeData key, float value, bool refreshUI = true) 
         {
             if (key == null) return;
 
@@ -5114,7 +5157,7 @@ namespace Swole.API.Unity.Animation
         }
 
         public void SetKeyWeightedMode(int keyIndex, WeightedMode mode, bool refreshUI = true) => SetKeyWeightedMode(keyframeData == null || keyIndex < 0 || keyIndex >= keyframeData.Length ? null : keyframeData[keyIndex], mode, refreshUI);
-        public void SetKeyWeightedMode(KeyframeData key, WeightedMode mode, bool refreshUI = true) 
+        public virtual void SetKeyWeightedMode(KeyframeData key, WeightedMode mode, bool refreshUI = true) 
         {
             if (key == null) return;
 
@@ -5127,7 +5170,7 @@ namespace Swole.API.Unity.Animation
             }
         }
         public void SetKeyTangentSettings(int keyIndex, KeyframeTangentSettings settings, bool refreshUI = true) => SetKeyTangentSettings(keyframeData == null || keyIndex < 0 || keyIndex >= keyframeData.Length ? null : keyframeData[keyIndex], settings, refreshUI);
-        public void SetKeyTangentSettings(KeyframeData key, KeyframeTangentSettings settings, bool refreshUI = true)
+        public virtual void SetKeyTangentSettings(KeyframeData key, KeyframeTangentSettings settings, bool refreshUI = true)
         {
             if (key == null) return;
 
@@ -5140,7 +5183,7 @@ namespace Swole.API.Unity.Animation
             }
         }
         public void SetKeyTangentMode(int keyIndex, TangentMode mode, bool refreshUI = true) => SetKeyTangentMode(keyframeData == null || keyIndex < 0 || keyIndex >= keyframeData.Length ? null : keyframeData[keyIndex], mode, refreshUI);
-        public void SetKeyTangentMode(KeyframeData key, TangentMode mode, bool refreshUI = true) 
+        public virtual void SetKeyTangentMode(KeyframeData key, TangentMode mode, bool refreshUI = true) 
         {
             if (key == null) return;
 
@@ -5153,7 +5196,7 @@ namespace Swole.API.Unity.Animation
             }
         }
         public void SetKeyInBrokenTangentMode(int keyIndex, BrokenTangentMode mode, bool refreshUI = true) => SetKeyInBrokenTangentMode(keyframeData == null || keyIndex < 0 || keyIndex >= keyframeData.Length ? null : keyframeData[keyIndex], mode, refreshUI);
-        public void SetKeyInBrokenTangentMode(KeyframeData key, BrokenTangentMode mode, bool refreshUI = true)
+        public virtual void SetKeyInBrokenTangentMode(KeyframeData key, BrokenTangentMode mode, bool refreshUI = true)
         {
             if (key == null) return;
 
@@ -5166,7 +5209,7 @@ namespace Swole.API.Unity.Animation
             }
         }
         public void SetKeyOutBrokenTangentMode(int keyIndex, BrokenTangentMode mode, bool refreshUI = true) => SetKeyOutBrokenTangentMode(keyframeData == null || keyIndex < 0 || keyIndex >= keyframeData.Length ? null : keyframeData[keyIndex], mode, refreshUI);
-        public void SetKeyOutBrokenTangentMode(KeyframeData key, BrokenTangentMode mode, bool refreshUI = true)
+        public virtual void SetKeyOutBrokenTangentMode(KeyframeData key, BrokenTangentMode mode, bool refreshUI = true)
         {
             if (key == null) return;
 
@@ -5179,7 +5222,7 @@ namespace Swole.API.Unity.Animation
             }
         }
         public void SetInTangentWeight(int keyIndex, float weight, bool refreshUI = true) => SetInTangentWeight(keyframeData == null || keyIndex < 0 || keyIndex >= keyframeData.Length ? null : keyframeData[keyIndex], weight, refreshUI);
-        public void SetInTangentWeight(KeyframeData key, float weight, bool refreshUI = true)
+        public virtual void SetInTangentWeight(KeyframeData key, float weight, bool refreshUI = true)
         {
             if (key == null) return;
 
@@ -5192,7 +5235,7 @@ namespace Swole.API.Unity.Animation
             }
         }
         public void SetOutTangentWeight(int keyIndex, float weight, bool refreshUI = true) => SetOutTangentWeight(keyframeData == null || keyIndex < 0 || keyIndex >= keyframeData.Length ? null : keyframeData[keyIndex], weight, refreshUI);
-        public void SetOutTangentWeight(KeyframeData key, float weight, bool refreshUI = true)
+        public virtual void SetOutTangentWeight(KeyframeData key, float weight, bool refreshUI = true)
         {
             if (key == null) return;
 
@@ -5205,7 +5248,7 @@ namespace Swole.API.Unity.Animation
             }
         }
         public void SetInTangent(int keyIndex, float value, bool refreshUI = true) => SetInTangent(keyframeData == null || keyIndex < 0 || keyIndex >= keyframeData.Length ? null : keyframeData[keyIndex], value, refreshUI);
-        public void SetInTangent(KeyframeData key, float value, bool refreshUI = true)
+        public virtual void SetInTangent(KeyframeData key, float value, bool refreshUI = true)
         {
             if (key == null) return;
 
@@ -5218,7 +5261,7 @@ namespace Swole.API.Unity.Animation
             }
         }
         public void SetOutTangent(int keyIndex, float value, bool refreshUI = true) => SetOutTangent(keyframeData == null || keyIndex < 0 || keyIndex >= keyframeData.Length ? null : keyframeData[keyIndex], value, refreshUI);
-        public void SetOutTangent(KeyframeData key, float value, bool refreshUI = true)
+        public virtual void SetOutTangent(KeyframeData key, float value, bool refreshUI = true)
         {
             if (key == null) return;
 
@@ -5231,7 +5274,7 @@ namespace Swole.API.Unity.Animation
             }
         }
         public void SetInTangentWeightedState(int keyIndex, bool isWeighted, bool refreshUI = true) => SetInTangentWeightedState(keyframeData == null || keyIndex < 0 || keyIndex >= keyframeData.Length ? null : keyframeData[keyIndex], isWeighted, refreshUI);
-        public void SetInTangentWeightedState(KeyframeData key, bool isWeighted, bool refreshUI = true)
+        public virtual void SetInTangentWeightedState(KeyframeData key, bool isWeighted, bool refreshUI = true)
         {
             if (key == null) return;
 
@@ -5255,7 +5298,7 @@ namespace Swole.API.Unity.Animation
             }
         }
         public void SetOutTangentWeightedState(int keyIndex, bool isWeighted, bool refreshUI = true) => SetOutTangentWeightedState(keyframeData == null || keyIndex < 0 || keyIndex >= keyframeData.Length ? null : keyframeData[keyIndex], isWeighted, refreshUI);
-        public void SetOutTangentWeightedState(KeyframeData key, bool isWeighted, bool refreshUI = true)
+        public virtual void SetOutTangentWeightedState(KeyframeData key, bool isWeighted, bool refreshUI = true)
         {
             if (key == null) return;
 
@@ -5306,7 +5349,7 @@ namespace Swole.API.Unity.Animation
             return 0;
         }
         public void SetPreWrapModeByIndex(int preWrapModeIndex) => SetPreWrapMode(GetWrapModeByIndex(preWrapModeIndex));
-        public void SetPreWrapMode(WrapMode preWrapMode, bool redraw = true)
+        public virtual void SetPreWrapMode(WrapMode preWrapMode, bool redraw = true)
         {
             if (curve == null) return;
 
@@ -5317,7 +5360,7 @@ namespace Swole.API.Unity.Animation
             if (redraw) Redraw();
         }
         public void SetPostWrapModeByIndex(int postWrapModeIndex) => SetPostWrapMode(GetWrapModeByIndex(postWrapModeIndex));
-        public void SetPostWrapMode(WrapMode postWrapMode, bool redraw = true)
+        public virtual void SetPostWrapMode(WrapMode postWrapMode, bool redraw = true)
         {
             if (curve == null) return;
 

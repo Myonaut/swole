@@ -4,6 +4,7 @@ using System;
 using System.Reflection;
 using System.Collections;
 using System.Collections.Generic;
+using System.Runtime.CompilerServices;
 
 using UnityEngine;
 
@@ -23,11 +24,62 @@ namespace Swole.API.Unity.Animation
         public const string _propertyZ = ".z";
         public const string _propertyW = ".w";
 
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static float WrapTimeForward(float time, float length, WrapMode wrapMode)
+        {
+            switch (wrapMode) 
+            {
+                default:
+                    time = math.clamp(time, 0.0f, length);
+                    break;
+                case WrapMode.Loop:
+                    time = time - (math.floor(math.select(time / length, 0, length <= 0)) * length);
+                    break;
+                case WrapMode.PingPong:
+                    int iteration = (int)math.floor(math.select(time / length, 0, length <= 0));
+                    time = time - (iteration * length);
+                    time = math.select(length - time, time, iteration % 2 == 0); 
+                    break;
+            }
+
+            return time;
+        }
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static float WrapTimeBackward(float time, float length, WrapMode wrapMode) => length - WrapTimeForward(length - time, length, wrapMode); 
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static float WrapNormalizedTimeForward(float time, WrapMode wrapMode)
+        {
+            switch (wrapMode)
+            {
+                default:
+                    time = math.saturate(time);
+                    break;
+                case WrapMode.Loop:
+                    time = time - math.floor(time);
+                    break;
+                case WrapMode.PingPong:
+                    int iteration = (int)math.floor(time);
+                    time = time - iteration;
+                    time = math.select(1 - time, time, iteration % 2 == 0); 
+                    break;
+            }
+
+            return time;
+        }
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static float WrapNormalizedTimeBackward(float time, WrapMode wrapMode) => 1 - WrapNormalizedTimeForward(1 - time, wrapMode);
+
         [Serializable]
         public struct AnimatableElement
         {
             public string id;
             public float value;
+            public AnimatableElement(string id, float value)
+            {
+                this.id=id;
+                this.value = value;
+            }
         }
 
         [Serializable]
@@ -35,7 +87,13 @@ namespace Swole.API.Unity.Animation
         {
             public string id;
             public float change;
-            public bool isAbsolute;
+            public bool isAbsolute; 
+            public AnimatableElementDelta(string id, float change, bool isAbsolute)
+            {
+                this.id = id;
+                this.change = change;
+                this.isAbsolute = isAbsolute;
+            }
         }
 
         [Serializable]
@@ -44,6 +102,12 @@ namespace Swole.API.Unity.Animation
             public Vector3 localPosition;
             public Quaternion localRotation;
             public Vector3 localScale;
+            public TransformState(Vector3 localPosition, Quaternion localRotation, Vector3 localScale)
+            {
+                this.localPosition = localPosition;
+                this.localRotation = localRotation;
+                this.localScale = localScale;
+            }
         }
 
         [Serializable]
@@ -51,6 +115,78 @@ namespace Swole.API.Unity.Animation
         {
             public string id;
             public int position;
+        }
+
+        private static List<float> _tempTimes = new List<float>();
+        public static TransformLinearCurve RebuildCurveFromReference(this TransformLinearCurve targetCurve, ITransformCurve referenceCurve, int framesPerSecond, EditableAnimationCurve referenceTimeCurve = null)
+        {
+            if (targetCurve == null || referenceCurve == null) return targetCurve; 
+
+            float newLength = referenceCurve.GetLengthInSeconds(framesPerSecond);
+
+            _tempTimes.Clear();
+            targetCurve.GetFrameTimes(framesPerSecond, _tempTimes);
+            referenceCurve.GetFrameTimes(framesPerSecond, _tempTimes); 
+
+            foreach(var frameTime in _tempTimes)
+            {
+                float time = frameTime * framesPerSecond;
+                if (time > newLength) continue;
+
+                float t = newLength > 0 ? (time / newLength) : 0;
+                if (referenceTimeCurve != null) t = referenceTimeCurve.Evaluate(t);
+                var data = referenceCurve.Evaluate(t);
+                targetCurve.AddFrame(new ITransformCurve.Frame() { timelinePosition = (int)frameTime, data = data}); 
+            }
+            _tempTimes.Clear();
+
+            return targetCurve;
+        } 
+        public static TransformCurve RebuildCurveFromReference(this TransformCurve targetCurve, ITransformCurve referenceCurve, int framesPerSecond, bool onlyEmptySubCurves = false, EditableAnimationCurve referenceTimeCurve = null)
+        {
+            if (targetCurve == null || referenceCurve == null) return targetCurve;
+
+            float newLength = referenceCurve.GetLengthInSeconds(framesPerSecond);
+
+            _tempTimes.Clear();
+            targetCurve.GetFrameTimes(framesPerSecond, _tempTimes);
+            referenceCurve.GetFrameTimes(framesPerSecond, _tempTimes);
+
+            foreach (var frameTime in _tempTimes)
+            {
+                float time = frameTime * framesPerSecond;
+                if (time > newLength) continue;
+
+                float t = newLength > 0 ? (time / newLength) : 0;
+                if (referenceTimeCurve != null) t = referenceTimeCurve.Evaluate(t); 
+                var data = referenceCurve.Evaluate(t);
+
+                if (targetCurve.localPositionCurveX == null) targetCurve.localPositionCurveX = new EditableAnimationCurve(); 
+                if (!onlyEmptySubCurves || targetCurve.localPositionCurveX.length <= 0) targetCurve.localPositionCurveX.AddOrReplaceKey(time, data.localPosition.x);
+                if (targetCurve.localPositionCurveY == null) targetCurve.localPositionCurveY = new EditableAnimationCurve();
+                if (!onlyEmptySubCurves || targetCurve.localPositionCurveY.length <= 0) targetCurve.localPositionCurveY.AddOrReplaceKey(time, data.localPosition.y);
+                if (targetCurve.localPositionCurveZ == null) targetCurve.localPositionCurveZ = new EditableAnimationCurve();
+                if (!onlyEmptySubCurves || targetCurve.localPositionCurveZ.length <= 0) targetCurve.localPositionCurveZ.AddOrReplaceKey(time, data.localPosition.z);
+
+                if (targetCurve.localRotationCurveX == null) targetCurve.localRotationCurveX = new EditableAnimationCurve();
+                if (!onlyEmptySubCurves || targetCurve.localRotationCurveX.length <= 0) targetCurve.localRotationCurveX.AddOrReplaceKey(time, data.localRotation.value.x);
+                if (targetCurve.localRotationCurveY == null) targetCurve.localRotationCurveY = new EditableAnimationCurve();
+                if (!onlyEmptySubCurves || targetCurve.localRotationCurveY.length <= 0) targetCurve.localRotationCurveY.AddOrReplaceKey(time, data.localRotation.value.y);
+                if (targetCurve.localRotationCurveZ == null) targetCurve.localRotationCurveZ = new EditableAnimationCurve();
+                if (!onlyEmptySubCurves || targetCurve.localRotationCurveZ.length <= 0) targetCurve.localRotationCurveZ.AddOrReplaceKey(time, data.localRotation.value.z);
+                if (targetCurve.localRotationCurveW == null) targetCurve.localRotationCurveW = new EditableAnimationCurve();
+                if (!onlyEmptySubCurves || targetCurve.localRotationCurveW.length <= 0) targetCurve.localRotationCurveW.AddOrReplaceKey(time, data.localRotation.value.w);
+
+                if (targetCurve.localScaleCurveX == null) targetCurve.localScaleCurveX = new EditableAnimationCurve();
+                if (!onlyEmptySubCurves || targetCurve.localScaleCurveX.length <= 0) targetCurve.localScaleCurveX.AddOrReplaceKey(time, data.localScale.x);  
+                if (targetCurve.localScaleCurveY == null) targetCurve.localScaleCurveY = new EditableAnimationCurve();
+                if (!onlyEmptySubCurves || targetCurve.localScaleCurveY.length <= 0) targetCurve.localScaleCurveY.AddOrReplaceKey(time, data.localScale.y);
+                if (targetCurve.localScaleCurveZ == null) targetCurve.localScaleCurveZ = new EditableAnimationCurve();
+                if (!onlyEmptySubCurves || targetCurve.localScaleCurveZ.length <= 0) targetCurve.localScaleCurveZ.AddOrReplaceKey(time, data.localScale.z);  
+            }
+            _tempTimes.Clear();
+
+            return targetCurve;
         }
 
         private const float _clampedAutoFalloff = 1 / 3f;
@@ -65,8 +201,20 @@ namespace Swole.API.Unity.Animation
                 keyframe.outTangent = keyframe.inTangent = ((rightNeighbor.value - leftNeighbor.value) / (rightNeighbor.time - leftNeighbor.time)) * mul;
             }
 
-            return keyframe; 
+            if (!float.IsFinite(keyframe.inTangent)) keyframe.inTangent = 0;
+            if (!float.IsFinite(keyframe.outTangent)) keyframe.outTangent = 0;
+
+            return keyframe;
         }
+        public static AnimationCurveEditor.KeyframeStateRaw AutoSmoothKeyframe(AnimationCurveEditor.KeyframeStateRaw keyframe, bool hasLeftNeighbor, bool hasRightNeighbor, AnimationCurveEditor.KeyframeStateRaw leftNeighbor, AnimationCurveEditor.KeyframeStateRaw rightNeighbor)
+        {
+            var data = AutoSmoothKeyframe((Keyframe)keyframe, hasLeftNeighbor, hasRightNeighbor, (Keyframe)leftNeighbor, (Keyframe)rightNeighbor);
+            var temp = (AnimationCurveEditor.KeyframeState)keyframe;
+            temp.data = data;
+            return data; 
+        }
+
+        public static AnimationCurveEditor.KeyframeState AsState(this Keyframe key) => new AnimationCurveEditor.KeyframeState() { data = key, tangentSettings = new AnimationCurveEditor.KeyframeTangentSettings() { inTangentMode = AnimationCurveEditor.BrokenTangentMode.Free, outTangentMode = AnimationCurveEditor.BrokenTangentMode.Free, tangentMode = AnimationCurveEditor.TangentMode.Broken } };
 
         [Serializable]
         public enum InsertAutoSmoothBehaviour
@@ -74,21 +222,24 @@ namespace Swole.API.Unity.Animation
             Always, IfNew, Never
         }
         private static List<Keyframe> _tempKeyframes = new List<Keyframe>();
-        public static void DeleteKeysAt(this AnimationCurve curve, float time, IntFromDecimalDelegate getFrameIndex = null)
+        private static List<AnimationCurveEditor.KeyframeStateRaw> _tempKeyframeStates = new List<AnimationCurveEditor.KeyframeStateRaw>();
+        public static void DeleteKeysAt(this AnimationCurve curve, float time, IntFromDecimalDelegate getFrameIndex = null) => DeleteKeysAt(new AnimationCurveProxy(curve), time, getFrameIndex);
+        public static void DeleteKeysAt(this IAnimationCurveProxy curve, float time, IntFromDecimalDelegate getFrameIndex = null)
         {
-            _tempKeyframes.Clear();
-            _tempKeyframes.AddRange(curve.keys);
+            _tempKeyframeStates.Clear();
+            _tempKeyframeStates.AddRange(curve.Keys);
 
             bool useFrameIndices = getFrameIndex != null;
             int frameIndex = useFrameIndices ? getFrameIndex((decimal)time) : 0;
-            _tempKeyframes.RemoveAll(i => (useFrameIndices ? (getFrameIndex((decimal)i.time) == frameIndex) : (i.time == time)));
+            _tempKeyframeStates.RemoveAll(i => (useFrameIndices ? (getFrameIndex((decimal)i.time) == frameIndex) : (i.time == time)));
 
-            curve.keys = _tempKeyframes.ToArray();
+            curve.Keys = _tempKeyframeStates.ToArray();
         }
-        public static void InsertKey(this AnimationCurve curve, Keyframe keyframe, bool addTimeZeroKeyframeIfEmpty = false, bool useNewDataForTimeZeroKey = false, Keyframe timeZeroKey = default, InsertAutoSmoothBehaviour autoSmooth = default)
+        public static void InsertKey(this AnimationCurve curve, Keyframe keyframe, bool addTimeZeroKeyframeIfEmpty = false, bool useNewDataForTimeZeroKey = false, Keyframe timeZeroKey = default, InsertAutoSmoothBehaviour autoSmooth = default, bool fixNaN = true) => InsertKey(new AnimationCurveProxy(curve), keyframe, addTimeZeroKeyframeIfEmpty, useNewDataForTimeZeroKey, timeZeroKey, autoSmooth, fixNaN);
+        public static void InsertKey(this IAnimationCurveProxy curve, AnimationCurveEditor.KeyframeStateRaw keyframe, bool addTimeZeroKeyframeIfEmpty = false, bool useNewDataForTimeZeroKey = false, AnimationCurveEditor.KeyframeStateRaw timeZeroKey = default, InsertAutoSmoothBehaviour autoSmooth = default, bool fixNaN = true)
         {
             if (curve == null) return;
-            Keyframe[] keyframes = curve.keys;
+            var keyframes = curve.Keys;
             int pos = keyframes.Length;
             bool replace = false;
             for (int a = 0; a < keyframes.Length; a++)
@@ -117,10 +268,10 @@ namespace Swole.API.Unity.Animation
                 {
                     var kfzero = useNewDataForTimeZeroKey ? timeZeroKey : keyframe;
                     kfzero.time = 0;
-                    keyframes = (Keyframe[])keyframes.Add(kfzero, 0);
+                    keyframes = (AnimationCurveEditor.KeyframeStateRaw[])keyframes.Add(kfzero, 0);
                     pos++;
                 }
-                keyframes = (Keyframe[])keyframes.Add(keyframe, pos);
+                keyframes = (AnimationCurveEditor.KeyframeStateRaw[])keyframes.Add(keyframe, pos); 
             }
 
             bool autoSmooth_ = false;
@@ -139,21 +290,23 @@ namespace Swole.API.Unity.Animation
                 keyframes[pos] = keyframe;
             }
 
-            curve.keys = keyframes;
+            curve.Keys = keyframes;
+            if (fixNaN) curve.FixNaN();
         }
-        public static void AddOrReplaceKey(this AnimationCurve curve, float time, float value, bool addTimeZeroKeyframeIfEmpty = false, bool useNewDataForTimeZeroKey = false, float timeZeroData = 0, InsertAutoSmoothBehaviour autoSmooth = default)
+        public static void AddOrReplaceKey(this AnimationCurve curve, float time, float value, bool addTimeZeroKeyframeIfEmpty = false, bool useNewDataForTimeZeroKey = false, float timeZeroData = 0, InsertAutoSmoothBehaviour autoSmooth = default, bool fixNaN = true) => AddOrReplaceKey(new AnimationCurveProxy(curve), time, value, addTimeZeroKeyframeIfEmpty, useNewDataForTimeZeroKey, timeZeroData, autoSmooth, fixNaN);
+        public static void AddOrReplaceKey(this IAnimationCurveProxy curve, float time, float value, bool addTimeZeroKeyframeIfEmpty = false, bool useNewDataForTimeZeroKey = false, float timeZeroData = 0, InsertAutoSmoothBehaviour autoSmooth = default, bool fixNaN = true)
         {
             if (curve == null) return;
 
-            if (curve.length <= 0 && addTimeZeroKeyframeIfEmpty && time != 0) curve.AddKey(0, useNewDataForTimeZeroKey ? timeZeroData : value);
+            if (curve.length <= 0 && addTimeZeroKeyframeIfEmpty && time != 0) curve.AddKey(0, useNewDataForTimeZeroKey ? timeZeroData : value, false);
 
             bool replace = false;
-            Keyframe[] keyframes = null;
-            int pos = curve.AddKey(time, value);
+            AnimationCurveEditor.KeyframeStateRaw[] keyframes = null;
+            int pos = curve.AddKey(time, value, false);
             if (pos < 0)
             {
                 replace = true;
-               keyframes = curve.keys;
+                keyframes = curve.Keys;
                 for(int a = 0; a < keyframes.Length; a++)
                 {
                     pos=a;
@@ -165,8 +318,8 @@ namespace Swole.API.Unity.Animation
                         break;
                     }
                 }
-                curve.keys = keyframes; 
-            } 
+                curve.Keys = keyframes;
+            }
 
             bool autoSmooth_ = false;
             switch (autoSmooth)
@@ -180,14 +333,303 @@ namespace Swole.API.Unity.Animation
             }
             if (autoSmooth_)
             {
-                if (keyframes == null) keyframes = curve.keys;
+                if (keyframes == null) keyframes = curve.Keys;
 
                 var keyframe = keyframes[pos];
                 keyframe = AutoSmoothKeyframe(keyframe, pos > 0, pos < keyframes.Length - 1, pos > 0 ? keyframes[pos - 1] : keyframe, pos < keyframes.Length - 1 ? keyframes[keyframes.Length - 1] : keyframe);
                 keyframes[pos] = keyframe;
 
-                curve.keys = keyframes;
+                curve.Keys = keyframes;
             }
+            else curve.NotifyStateChange();
+
+            if (fixNaN) curve.FixNaN(); 
+        }
+
+        public static bool HasKeyAtTime(this IAnimationCurveProxy prox, decimal time) => HasKeyAtTime(prox, (float)time);
+        public static bool HasKeyAtTime(this IAnimationCurveProxy prox, float time)
+        {
+            if (prox.length <= 0) return false;
+
+            for (int a = 0; a < prox.length; a++)
+            {
+                var key = prox[a];
+                if (key.time == time) return true; 
+            }
+
+            return false;
+        }
+
+        public static bool HasKeyAtFrame(this IAnimationCurveProxy prox, float time, TimelinePositionToFrameIndex getFrameIndex) => HasKeyAtFrame(prox, (decimal)time, getFrameIndex);
+        public static bool HasKeyAtFrame(this IAnimationCurveProxy prox, decimal time, TimelinePositionToFrameIndex getFrameIndex) => HasKeyAtFrame(prox, getFrameIndex(time), getFrameIndex);
+
+        public static bool HasKeyAtFrame(this IAnimationCurveProxy prox, float time, TimelinePositionFloatToFrameIndex getFrameIndex) => HasKeyAtFrame(prox, getFrameIndex(time), getFrameIndex);
+
+        public static bool HasKeyAtFrame(this IAnimationCurveProxy prox, int frame, TimelinePositionToFrameIndex getFrameIndex)
+        {
+            if (prox.length <= 0) return false;
+
+            for (int a = 0; a < prox.length; a++)
+            {
+                var key = prox[a];
+                if (getFrameIndex((decimal)key.time) == frame) return true;
+            }
+
+            return false;
+        }
+
+        public static bool HasKeyAtFrame(this IAnimationCurveProxy prox, int frame, TimelinePositionFloatToFrameIndex getFrameIndex)
+        {
+            if (prox.length <= 0) return false;
+
+            for (int a = 0; a < prox.length; a++)
+            {
+                var key = prox[a];
+                if (getFrameIndex(key.time) == frame) return true;
+            }
+
+            return false;
+        }
+
+
+        public static bool HasKeyAtTime(this AnimationCurve curve, decimal time) => HasKeyAtTime(curve, (float)time);
+        public static bool HasKeyAtTime(this AnimationCurve curve, float time)
+        {
+            if (curve.length <= 0) return false;
+
+            for (int a = 0; a < curve.length; a++)
+            {
+                var key = curve[a];
+                if (key.time == time) return true;
+            }
+
+            return false;
+        }
+
+        public static bool HasKeyAtFrame(this AnimationCurve curve, float time, TimelinePositionToFrameIndex getFrameIndex) => HasKeyAtFrame(curve, (decimal)time, getFrameIndex);
+        public static bool HasKeyAtFrame(this AnimationCurve curve, decimal time, TimelinePositionToFrameIndex getFrameIndex) => HasKeyAtFrame(curve, getFrameIndex(time), getFrameIndex);
+
+        public static bool HasKeyAtFrame(this AnimationCurve curve, float time, TimelinePositionFloatToFrameIndex getFrameIndex) => HasKeyAtFrame(curve, getFrameIndex(time), getFrameIndex);
+         
+        public static bool HasKeyAtFrame(this AnimationCurve curve, int frame, TimelinePositionToFrameIndex getFrameIndex)
+        {
+            if (curve.length <= 0) return false;
+
+            for (int a = 0; a < curve.length; a++)
+            {
+                var key = curve[a];
+                if (getFrameIndex((decimal)key.time) == frame) return true;
+            }
+
+            return false;
+        }
+
+        public static bool HasKeyAtFrame(this AnimationCurve curve, int frame, TimelinePositionFloatToFrameIndex getFrameIndex)
+        {
+            if (curve.length <= 0) return false;
+
+            for (int a = 0; a < curve.length; a++)
+            {
+                var key = curve[a];
+                if (getFrameIndex(key.time) == frame) return true;
+            }
+
+            return false;
+        }
+
+        public static void ForceLinearAtFrame(int frameIndex, TimelinePositionFloatToFrameIndex getFrameIndex, EditableAnimationCurve curve, AnimationCurveEditor editor = null, bool notifyListeners = true)
+        {
+            if (curve == null || getFrameIndex == null) return;
+
+            for(int a = 0; a < curve.length; a++)
+            {
+                var key = curve[a];
+                if (getFrameIndex(key.time) == frameIndex)
+                {
+                    ForceLinear(curve, editor, notifyListeners, a, 1);
+                    return;
+                }
+            }
+        }
+        public static void ForceLinear(EditableAnimationCurve curve, AnimationCurveEditor editor = null, bool notifyListeners = true, int minIndex = 0, int count = -1)
+        {
+            if (curve == null) return;
+
+            if (count < 0) count = curve.length;
+            for(int a = minIndex; a < minIndex + count; a++)
+            {
+                if (a < 0 || a >= curve.length) continue;
+
+                var key = (AnimationCurveEditor.KeyframeState)curve[a]; 
+
+                key.tangentSettings = new AnimationCurveEditor.KeyframeTangentSettings() { inTangentMode = AnimationCurveEditor.BrokenTangentMode.Linear, outTangentMode = AnimationCurveEditor.BrokenTangentMode.Linear, tangentMode = AnimationCurveEditor.TangentMode.Broken };
+
+                var data = key.data;
+                data.inTangent = 0;
+                data.outTangent = 0;
+                data.inWeight = 0;
+                data.outWeight = 0; 
+                if (a > 0) data = SwoleCurveEditor.CalculateLinearInTangent(data, curve[a - 1]);
+                if (a < curve.length - 1) data = SwoleCurveEditor.CalculateLinearOutTangent(data, curve[a + 1]);   
+                key.data = data; 
+
+                if (editor != null)
+                {
+                    var keyData = editor[a];
+                    keyData.state = key;
+                    editor[a] = keyData;
+                }
+
+                curve.SetKey(a, key, false, false); 
+            }
+
+            curve.SyncWithUnityCurve(); 
+            if (notifyListeners) curve.NotifyStateChange(); 
+        }
+        public static void ForceLinear(TransformCurve curve, AnimationCurveEditor editor = null, bool notifyListeners = true, int minIndex = 0, int count = -1)
+        {
+            if (curve == null) return;
+
+            ForceLinear(curve.localPositionCurveX, editor != null && curve.localPositionCurveX != null && ReferenceEquals(editor.Curve, curve.localPositionCurveX.Instance) ? editor : null, notifyListeners, minIndex, count);
+            ForceLinear(curve.localPositionCurveY, editor != null && curve.localPositionCurveY != null && ReferenceEquals(editor.Curve, curve.localPositionCurveY.Instance) ? editor : null, notifyListeners, minIndex, count);
+            ForceLinear(curve.localPositionCurveZ, editor != null && curve.localPositionCurveZ != null && ReferenceEquals(editor.Curve, curve.localPositionCurveZ.Instance) ? editor : null, notifyListeners, minIndex, count);
+
+            ForceLinear(curve.localRotationCurveX, editor != null && curve.localRotationCurveX != null && ReferenceEquals(editor.Curve, curve.localRotationCurveX.Instance) ? editor : null, notifyListeners, minIndex, count);
+            ForceLinear(curve.localRotationCurveY, editor != null && curve.localRotationCurveY != null && ReferenceEquals(editor.Curve, curve.localRotationCurveY.Instance) ? editor : null, notifyListeners, minIndex, count);
+            ForceLinear(curve.localRotationCurveZ, editor != null && curve.localRotationCurveZ != null && ReferenceEquals(editor.Curve, curve.localRotationCurveZ.Instance) ? editor : null, notifyListeners, minIndex, count);
+            ForceLinear(curve.localRotationCurveW, editor != null && curve.localRotationCurveW != null && ReferenceEquals(editor.Curve, curve.localRotationCurveW.Instance) ? editor : null, notifyListeners, minIndex, count);
+
+            ForceLinear(curve.localScaleCurveX, editor != null && curve.localScaleCurveX != null && ReferenceEquals(editor.Curve, curve.localScaleCurveX.Instance) ? editor : null, notifyListeners, minIndex, count);
+            ForceLinear(curve.localScaleCurveY, editor != null && curve.localScaleCurveY != null && ReferenceEquals(editor.Curve, curve.localScaleCurveY.Instance) ? editor : null, notifyListeners, minIndex, count);
+            ForceLinear(curve.localScaleCurveZ, editor != null && curve.localScaleCurveZ != null && ReferenceEquals(editor.Curve, curve.localScaleCurveZ.Instance) ? editor : null, notifyListeners, minIndex, count);
+        }
+        public static void ForceLinearAtFrame(int frameIndex, TimelinePositionFloatToFrameIndex getFrameIndex, TransformCurve curve, AnimationCurveEditor editor = null, bool notifyListeners = true, int minIndex = 0, int count = -1)
+        {
+            if (curve == null) return;
+
+            ForceLinearAtFrame(frameIndex, getFrameIndex, curve.localPositionCurveX, editor != null && curve.localPositionCurveX != null && ReferenceEquals(editor.Curve, curve.localPositionCurveX.Instance) ? editor : null, notifyListeners);
+            ForceLinearAtFrame(frameIndex, getFrameIndex, curve.localPositionCurveY, editor != null && curve.localPositionCurveY != null && ReferenceEquals(editor.Curve, curve.localPositionCurveY.Instance) ? editor : null, notifyListeners);
+            ForceLinearAtFrame(frameIndex, getFrameIndex, curve.localPositionCurveZ, editor != null && curve.localPositionCurveZ != null && ReferenceEquals(editor.Curve, curve.localPositionCurveZ.Instance) ? editor : null, notifyListeners);
+
+            ForceLinearAtFrame(frameIndex, getFrameIndex, curve.localRotationCurveX, editor != null && curve.localRotationCurveX != null && ReferenceEquals(editor.Curve, curve.localRotationCurveX.Instance) ? editor : null, notifyListeners);
+            ForceLinearAtFrame(frameIndex, getFrameIndex, curve.localRotationCurveY, editor != null && curve.localRotationCurveY != null && ReferenceEquals(editor.Curve, curve.localRotationCurveY.Instance) ? editor : null, notifyListeners);
+            ForceLinearAtFrame(frameIndex, getFrameIndex, curve.localRotationCurveZ, editor != null && curve.localRotationCurveZ != null && ReferenceEquals(editor.Curve, curve.localRotationCurveZ.Instance) ? editor : null, notifyListeners);
+            ForceLinearAtFrame(frameIndex, getFrameIndex, curve.localRotationCurveW, editor != null && curve.localRotationCurveW != null && ReferenceEquals(editor.Curve, curve.localRotationCurveW.Instance) ? editor : null, notifyListeners);
+
+            ForceLinearAtFrame(frameIndex, getFrameIndex, curve.localScaleCurveX, editor != null && curve.localScaleCurveX != null && ReferenceEquals(editor.Curve, curve.localScaleCurveX.Instance) ? editor : null, notifyListeners);
+            ForceLinearAtFrame(frameIndex, getFrameIndex, curve.localScaleCurveY, editor != null && curve.localScaleCurveY != null && ReferenceEquals(editor.Curve, curve.localScaleCurveY.Instance) ? editor : null, notifyListeners);
+            ForceLinearAtFrame(frameIndex, getFrameIndex, curve.localScaleCurveZ, editor != null && curve.localScaleCurveZ != null && ReferenceEquals(editor.Curve, curve.localScaleCurveZ.Instance) ? editor : null, notifyListeners);
+        }
+        public static void ForceLinear(PropertyCurve curve, AnimationCurveEditor editor = null, bool notifyListeners = true, int minIndex = 0, int count = -1)
+        {
+            if (curve == null) return;
+
+            ForceLinear(curve.propertyValueCurve, editor != null && curve.propertyValueCurve != null && ReferenceEquals(editor.Curve, curve.propertyValueCurve.Instance) ? editor : null, notifyListeners, minIndex, count);
+        }
+        public static void ForceLinearAtFrame(int frameIndex, TimelinePositionFloatToFrameIndex getFrameIndex, PropertyCurve curve, AnimationCurveEditor editor = null, bool notifyListeners = true)
+        {
+            if (curve == null) return;
+
+            ForceLinearAtFrame(frameIndex, getFrameIndex, curve.propertyValueCurve, editor != null && curve.propertyValueCurve != null && ReferenceEquals(editor.Curve, curve.propertyValueCurve.Instance) ? editor : null, notifyListeners);
+        }
+
+        public static void ForceSmoothAtFrame(int frameIndex, TimelinePositionFloatToFrameIndex getFrameIndex, EditableAnimationCurve curve, AnimationCurveEditor editor = null, bool notifyListeners = true)
+        {
+            if (curve == null || getFrameIndex == null) return;
+
+            for (int a = 0; a < curve.length; a++)
+            {
+                var key = curve[a];
+                if (getFrameIndex(key.time) == frameIndex)
+                {
+                    ForceSmooth(curve, editor, notifyListeners, a, 1);
+                    return;
+                }
+            }
+        }
+        public static void ForceSmooth(EditableAnimationCurve curve, AnimationCurveEditor editor = null, bool notifyListeners = true, int minIndex = 0, int count = -1)
+        {
+            if (curve == null) return;
+
+            if (count < 0) count = curve.length;
+            for (int a = minIndex; a < minIndex + count; a++)
+            {
+                if (a < 0 || a >= curve.length) continue;
+
+                var key = (AnimationCurveEditor.KeyframeState)curve[a];
+
+                key.tangentSettings = new AnimationCurveEditor.KeyframeTangentSettings() { inTangentMode = AnimationCurveEditor.BrokenTangentMode.Free, outTangentMode = AnimationCurveEditor.BrokenTangentMode.Free, tangentMode = AnimationCurveEditor.TangentMode.Auto };
+
+                var data = key.data;
+                data.inTangent = 0;
+                data.outTangent = 0;
+                data.inWeight = 1;
+                data.outWeight = 1;  
+                if (curve.length > 1)
+                {
+                    //data = SwoleCurveEditor.CalculateAutoTangents(data, a == 0 ? data : curve[a - 1], a == curve.length - 1 ? data : curve[a + 1]);
+                    if (a > 0 && a < curve.length - 1) data = SwoleCurveEditor.CalculateAutoTangents(data, curve[a - 1], curve[a + 1]);  
+                }
+                key.data = data;
+
+                if (editor != null)
+                {
+                    var keyData = editor[a];
+                    keyData.state = key;
+                    editor[a] = keyData;
+                }
+
+                curve.SetKey(a, key, false, false);
+            }
+
+            curve.SyncWithUnityCurve();
+            if (notifyListeners) curve.NotifyStateChange(); 
+        }
+        public static void ForceSmooth(TransformCurve curve, AnimationCurveEditor editor = null, bool notifyListeners = true, int minIndex = 0, int count = -1)
+        {
+            if (curve == null) return;
+
+            ForceSmooth(curve.localPositionCurveX, editor != null && curve.localPositionCurveX != null && ReferenceEquals(editor.Curve, curve.localPositionCurveX.Instance) ? editor : null, notifyListeners, minIndex, count);
+            ForceSmooth(curve.localPositionCurveY, editor != null && curve.localPositionCurveY != null && ReferenceEquals(editor.Curve, curve.localPositionCurveY.Instance) ? editor : null, notifyListeners, minIndex, count);
+            ForceSmooth(curve.localPositionCurveZ, editor != null && curve.localPositionCurveZ != null && ReferenceEquals(editor.Curve, curve.localPositionCurveZ.Instance) ? editor : null, notifyListeners, minIndex, count);
+
+            ForceSmooth(curve.localRotationCurveX, editor != null && curve.localRotationCurveX != null && ReferenceEquals(editor.Curve, curve.localRotationCurveX.Instance) ? editor : null, notifyListeners, minIndex, count);
+            ForceSmooth(curve.localRotationCurveY, editor != null && curve.localRotationCurveY != null && ReferenceEquals(editor.Curve, curve.localRotationCurveY.Instance) ? editor : null, notifyListeners, minIndex, count);
+            ForceSmooth(curve.localRotationCurveZ, editor != null && curve.localRotationCurveZ != null && ReferenceEquals(editor.Curve, curve.localRotationCurveZ.Instance) ? editor : null, notifyListeners, minIndex, count);
+            ForceSmooth(curve.localRotationCurveW, editor != null && curve.localRotationCurveW != null && ReferenceEquals(editor.Curve, curve.localRotationCurveW.Instance) ? editor : null, notifyListeners, minIndex, count); 
+
+            ForceSmooth(curve.localScaleCurveX, editor != null && curve.localScaleCurveX != null && ReferenceEquals(editor.Curve, curve.localScaleCurveX.Instance) ? editor : null, notifyListeners, minIndex, count);
+            ForceSmooth(curve.localScaleCurveY, editor != null && curve.localScaleCurveY != null && ReferenceEquals(editor.Curve, curve.localScaleCurveY.Instance) ? editor : null, notifyListeners, minIndex, count);
+            ForceSmooth(curve.localScaleCurveZ, editor != null && curve.localScaleCurveZ != null && ReferenceEquals(editor.Curve, curve.localScaleCurveZ.Instance) ? editor : null, notifyListeners, minIndex, count); 
+        }
+        public static void ForceSmoothAtFrame(int frameIndex, TimelinePositionFloatToFrameIndex getFrameIndex, TransformCurve curve, AnimationCurveEditor editor = null, bool notifyListeners = true)
+        {
+            if (curve == null) return; 
+
+            ForceSmoothAtFrame(frameIndex, getFrameIndex, curve.localPositionCurveX, editor != null && curve.localPositionCurveX != null && ReferenceEquals(editor.Curve, curve.localPositionCurveX.Instance) ? editor : null, notifyListeners);
+            ForceSmoothAtFrame(frameIndex, getFrameIndex, curve.localPositionCurveY, editor != null && curve.localPositionCurveY != null && ReferenceEquals(editor.Curve, curve.localPositionCurveY.Instance) ? editor : null, notifyListeners);
+            ForceSmoothAtFrame(frameIndex, getFrameIndex, curve.localPositionCurveZ, editor != null && curve.localPositionCurveZ != null && ReferenceEquals(editor.Curve, curve.localPositionCurveZ.Instance) ? editor : null, notifyListeners);
+
+            ForceSmoothAtFrame(frameIndex, getFrameIndex, curve.localRotationCurveX, editor != null && curve.localRotationCurveX != null && ReferenceEquals(editor.Curve, curve.localRotationCurveX.Instance) ? editor : null, notifyListeners);
+            ForceSmoothAtFrame(frameIndex, getFrameIndex, curve.localRotationCurveY, editor != null && curve.localRotationCurveY != null && ReferenceEquals(editor.Curve, curve.localRotationCurveY.Instance) ? editor : null, notifyListeners);
+            ForceSmoothAtFrame(frameIndex, getFrameIndex, curve.localRotationCurveZ, editor != null && curve.localRotationCurveZ != null && ReferenceEquals(editor.Curve, curve.localRotationCurveZ.Instance) ? editor : null, notifyListeners);
+            ForceSmoothAtFrame(frameIndex, getFrameIndex, curve.localRotationCurveW, editor != null && curve.localRotationCurveW != null && ReferenceEquals(editor.Curve, curve.localRotationCurveW.Instance) ? editor : null, notifyListeners);
+
+            ForceSmoothAtFrame(frameIndex, getFrameIndex, curve.localScaleCurveX, editor != null && curve.localScaleCurveX != null && ReferenceEquals(editor.Curve, curve.localScaleCurveX.Instance) ? editor : null, notifyListeners);
+            ForceSmoothAtFrame(frameIndex, getFrameIndex, curve.localScaleCurveY, editor != null && curve.localScaleCurveY != null && ReferenceEquals(editor.Curve, curve.localScaleCurveY.Instance) ? editor : null, notifyListeners);
+            ForceSmoothAtFrame(frameIndex, getFrameIndex, curve.localScaleCurveZ, editor != null && curve.localScaleCurveZ != null && ReferenceEquals(editor.Curve, curve.localScaleCurveZ.Instance) ? editor : null, notifyListeners);
+        }
+        public static void ForceSmooth(PropertyCurve curve, AnimationCurveEditor editor = null, bool notifyListeners = true, int minIndex = 0, int count = -1)
+        {
+            if (curve == null) return;
+
+            ForceSmooth(curve.propertyValueCurve, editor != null && curve.propertyValueCurve != null && ReferenceEquals(editor.Curve, curve.propertyValueCurve.Instance) ? editor : null, notifyListeners, minIndex, count);
+        }
+        public static void ForceSmoothAtFrame(int frameIndex, TimelinePositionFloatToFrameIndex getFrameIndex, PropertyCurve curve, AnimationCurveEditor editor = null, bool notifyListeners = true)
+        {
+            if (curve == null) return;
+
+            ForceSmoothAtFrame(frameIndex, getFrameIndex, curve.propertyValueCurve, editor != null && curve.propertyValueCurve != null && ReferenceEquals(editor.Curve, curve.propertyValueCurve.Instance) ? editor : null, notifyListeners);
         }
 
         public static float GetProperty(object startInstance, string[] propertyChain, int startIndex = 0)
@@ -431,7 +873,7 @@ namespace Swole.API.Unity.Animation
         public static void InsertIntoTransformCurve(out int index, out CustomAnimation.CurveInfoPair info, out ITransformCurve mainCurve, out ITransformCurve baseCurve, string transformName, CustomAnimation animation, InsertIntoTransformCurveDelegate insertionAction, Pose restPose = null)
         {
             animation.TryGetTransformCurves(transformName, out index, out info, out mainCurve, out baseCurve);
-
+            
             if (mainCurve == null)
             {
                 mainCurve = TransformCurve.NewInstance;
@@ -640,6 +1082,8 @@ namespace Swole.API.Unity.Animation
 
             #region Serialization
 
+            public override string SerializedName => nameof(Pose); 
+
             public override Serialized AsSerializableStruct() => this;
             public override string AsJSON(bool prettyPrint = false) => AsSerializableStruct().AsJSON(prettyPrint);
             public static Pose FromJSON(string json) => Serialized.FromJSON(json).AsOriginalType();
@@ -647,6 +1091,8 @@ namespace Swole.API.Unity.Animation
             [Serializable]
             public struct Serialized : ISerializableContainer<Pose, Pose.Serialized>
             {
+
+                public string SerializedName => nameof(Pose);
 
                 public List<AnimatableElement> elements;
 
@@ -718,13 +1164,14 @@ namespace Swole.API.Unity.Animation
             /// <summary>
             /// Get the delta element values between the two poses, using a special case for rotation elements.
             /// </summary>
-            public List<AnimatableElementDelta> GetDifference(Pose to, List<AnimatableElementDelta> list = null)
+            public List<AnimatableElementDelta> GetDifference(Pose to, List<AnimatableElementDelta> list = null, bool ignoreNonEntries = false)
             {
                 if (list == null) list = new List<AnimatableElementDelta>();
+                if (to == null || to.elements == null) return list; 
 
                 if (elements == null)
                 {
-                    if (to != null && to.elements != null)
+                    if (to != null && to.elements != null && !ignoreNonEntries)
                     {
                         foreach (var element in to.elements)
                         {
@@ -793,14 +1240,15 @@ namespace Swole.API.Unity.Animation
                                 Quaternion rotA = new Quaternion(localRotX_A, localRotY_A, localRotZ_A, localRotW_A);
                                 Quaternion rotB = new Quaternion(localRotX_B, localRotY_B, localRotZ_B, localRotW_B);
 
-                                //Quaternion difference = Quaternion.Inverse(rotA) * rotB;
-                                Quaternion difference = Maths.ShortestRotationGlobal(rotA, rotB); 
+                                //Quaternion difference = Maths.ShortestRotationGlobal(rotA, rotB);     
+                                Quaternion difference = Maths.ShortestRotationLocal(rotA, rotB); 
+                                //if (Quaternion.Angle(rotA, rotB) >= 0.1f) Debug.Log(element.Key + ": " + Quaternion.Angle(rotA, rotB) + ": " + Quaternion.Angle(Quaternion.identity, difference)); // Debug
 
                                 list.Add(new AnimatableElementDelta() { id = keyRotX, change = difference.x, isAbsolute = false });
                                 list.Add(new AnimatableElementDelta() { id = keyRotY, change = difference.y, isAbsolute = false });
                                 list.Add(new AnimatableElementDelta() { id = keyRotZ, change = difference.z, isAbsolute = false });
                                 list.Add(new AnimatableElementDelta() { id = keyRotW, change = difference.w, isAbsolute = false });
-
+                                
                                 toIgnore.Add(keyRotX);
                                 toIgnore.Add(keyRotY);
                                 toIgnore.Add(keyRotZ);
@@ -813,6 +1261,17 @@ namespace Swole.API.Unity.Animation
 
                         } 
                     }
+
+                    if (to.elements != null && !ignoreNonEntries)
+                    {
+                        foreach(var element in to.elements)
+                        {
+                            if (elements != null && elements.ContainsKey(element.Key)) continue;
+
+                            list.Add(new AnimatableElementDelta() { id = element.Key, change = element.Value, isAbsolute = true });
+                        }
+                    }
+
                 }
 
                 return list;
@@ -821,13 +1280,14 @@ namespace Swole.API.Unity.Animation
             /// <summary>
             /// Get the delta element values between the two poses by calculating the difference between each element's float value.
             /// </summary>
-            public List<AnimatableElementDelta> GetDifferenceRaw(Pose to, List<AnimatableElementDelta> list = null)
+            public List<AnimatableElementDelta> GetDifferenceRaw(Pose to, List<AnimatableElementDelta> list = null, bool ignoreNonEntries = false)
             {
                 if (list == null) list = new List<AnimatableElementDelta>();
+                if (to == null || to.elements == null) return list;
 
                 if (elements == null)
                 {
-                    if (to != null && to.elements != null)
+                    if (to != null && to.elements != null && !ignoreNonEntries)
                     {
                         foreach (var element in to.elements)
                         {
@@ -844,6 +1304,17 @@ namespace Swole.API.Unity.Animation
                             list.Add(new AnimatableElementDelta() { id = element.Key, change = otherVal - element.Value, isAbsolute = false });
                         }
                     }
+
+                    if (to.elements != null && !ignoreNonEntries)
+                    {
+                        foreach (var element in to.elements)
+                        {
+                            if (elements != null && elements.ContainsKey(element.Key)) continue;
+
+                            list.Add(new AnimatableElementDelta() { id = element.Key, change = element.Value, isAbsolute = true });
+                        }
+                    }
+
                 }
 
                 return list;
@@ -859,6 +1330,12 @@ namespace Swole.API.Unity.Animation
                 }
 
                 return list;
+            }
+
+            public bool ContainsElement(string id)
+            {
+                if (elements == null) return false;
+                return elements.ContainsKey(id);
             }
 
             public Pose ReplaceElement(AnimatableElement element)
@@ -1016,14 +1493,17 @@ namespace Swole.API.Unity.Animation
                         if (TryFindDeltaValue(keyRotY, out float localRotOffsetY)) flag = true;
                         if (TryFindDeltaValue(keyRotZ, out float localRotOffsetZ)) flag = true;
                         if (TryFindDeltaValue(keyRotW, out float localRotOffsetW)) flag = true;
-
+                        
                         Quaternion rotOffset = Quaternion.identity;
                         if (flag)
                         {
                             rotOffset = new Quaternion(localRotOffsetX, localRotOffsetY, localRotOffsetZ, localRotOffsetW);
                         }
 
-                        rot = Quaternion.SlerpUnclamped(rot, rot * rotOffset, mix);
+                        //var temp = rot;
+                        //rot = Quaternion.SlerpUnclamped(rot, rot * rotOffset, mix); 
+                        rot = Quaternion.SlerpUnclamped(rot, rotOffset * rot, mix);
+                        //Debug.Log(Quaternion.Angle(temp, rot) + " : " + Quaternion.Angle(Quaternion.identity, rotOffset));  // Debug 
 
                         ApplyDelta(new AnimatableElementDelta() { id = keyRotX, change = rot.x, isAbsolute = true }, 1);
                         ApplyDelta(new AnimatableElementDelta() { id = keyRotY, change = rot.y, isAbsolute = true }, 1);
@@ -1141,6 +1621,7 @@ namespace Swole.API.Unity.Animation
                             float t = curveLength <= 0 ? 0 : normalizedTime * (length / curveLength);
 
                             var data = mainCurve.Evaluate(t) * mix;
+
                             ApplyTransformData(mainCurve.TransformName, data, mainCurve.ValidityPosition, mainCurve.ValidityRotation, mainCurve.ValidityScale, false, mix);
                         }
                     if (animation.propertyAnimationCurves != null)
@@ -1267,14 +1748,14 @@ namespace Swole.API.Unity.Animation
                 ApplyAnimationInternal(animation, time, additive, mix, preWrapMode, postWrapMode);
             }
 
-            private Pose ApplyTransformHierarchy(ICollection<Transform> hierarchy)
+            private Pose ApplyTransformHierarchy(ICollection<Transform> hierarchy, CustomAvatar avatar)
             {
                 if (hierarchy == null) return this;
 
                 foreach(var transform in hierarchy)
                 {
                     if (transform == null) continue;
-                    string baseId = transform.name;
+                    string baseId = avatar == null ? transform.name : avatar.Remap(transform.name);
 
                     Vector3 localPosition = transform.localPosition;
                     Quaternion localRotation = transform.localRotation;
@@ -1297,9 +1778,9 @@ namespace Swole.API.Unity.Animation
                 return this;
             }
 
-            public Pose(ICollection<Transform> transformHierarchy, CustomAnimation animation = null, float time = 0, bool additive = false, float mix = 1, WrapMode preWrapMode = WrapMode.Loop, WrapMode postWrapMode = WrapMode.Loop) : base(default)
+            public Pose(ICollection<Transform> transformHierarchy, CustomAvatar avatar = null, CustomAnimation animation = null, float time = 0, bool additive = false, float mix = 1, WrapMode preWrapMode = WrapMode.Loop, WrapMode postWrapMode = WrapMode.Loop) : base(default)
             {
-                ApplyTransformHierarchy(transformHierarchy);
+                ApplyTransformHierarchy(transformHierarchy, avatar);
                 ApplyAnimationInternal(animation, time, additive, mix, preWrapMode, postWrapMode);
             }
             private static readonly List<Transform> tempTransforms = new List<Transform>();
@@ -1309,23 +1790,23 @@ namespace Swole.API.Unity.Animation
                 {
                     if (animator.avatar == null)
                     {
-                        ApplyTransformHierarchy(animator.gameObject.GetComponentsInChildren<Transform>());
+                        ApplyTransformHierarchy(animator.gameObject.GetComponentsInChildren<Transform>(), animator.avatar);
                     }
                     else
                     {
                         tempTransforms.Clear();
-                        ApplyTransformHierarchy(animator.avatar.FindBones(animator.transform, tempTransforms)); 
+                        ApplyTransformHierarchy(animator.avatar.FindBones(animator.transform, tempTransforms), animator.avatar); 
                         tempTransforms.Clear();
                     }
                 }
                 ApplyAnimationInternal(animation, time, additive, mix, preWrapMode, postWrapMode);
             } 
 
-            public Pose(Transform rootTransform, CustomAnimation animation = null, float time = 0, bool additive = false, float mix = 1, WrapMode preWrapMode = WrapMode.Loop, WrapMode postWrapMode = WrapMode.Loop) : base(default)
+            public Pose(Transform rootTransform, CustomAvatar avatar = null, CustomAnimation animation = null, float time = 0, bool additive = false, float mix = 1, WrapMode preWrapMode = WrapMode.Loop, WrapMode postWrapMode = WrapMode.Loop) : base(default)
             {
                 if (rootTransform != null)
                 {
-                    ApplyTransformHierarchy(rootTransform.gameObject.GetComponentsInChildren<Transform>());
+                    ApplyTransformHierarchy(rootTransform.gameObject.GetComponentsInChildren<Transform>(), avatar);
                 }
 
                 ApplyAnimationInternal(animation, time, additive, mix, preWrapMode, postWrapMode);
@@ -1337,7 +1818,7 @@ namespace Swole.API.Unity.Animation
             public Pose ApplyTo(CustomAnimator animator)
             {
                 if (animator == null) return this;
-                Apply((string name) => animator.FindTransformInHierarchy(name, false));
+                Apply((string name) => animator.FindTransformInHierarchy(name/*, false*/));
 
                 return this;
             }
@@ -1360,10 +1841,11 @@ namespace Swole.API.Unity.Animation
                 if (transformStates == null) transformStates = new Dictionary<string, TransformState>();
                 transformStates.Clear();
 
-                foreach(var element in elements)
+                foreach (var element in elements)
                 {
                     string id = element.Key.ToLower();
-                    int subIndex = id.IndexOf(_localPositionProperty);
+
+                    int subIndex = id.IndexOf(_localPositionProperty.ToLower()); 
                     id = id.Trim();
                     if (subIndex >= 0)
                     {
@@ -1392,7 +1874,7 @@ namespace Swole.API.Unity.Animation
                     else
                     {
 
-                        subIndex = id.IndexOf(_localRotationProperty);
+                        subIndex = id.IndexOf(_localRotationProperty.ToLower());
                         if (subIndex >= 0)
                         {
                             string transformName = element.Key.Substring(0, subIndex);
@@ -1423,7 +1905,7 @@ namespace Swole.API.Unity.Animation
                         }
                         else
                         {
-                            subIndex = id.IndexOf(_localScaleProperty);
+                            subIndex = id.IndexOf(_localScaleProperty.ToLower());
                             if (subIndex >= 0)
                             {
                                 string transformName = element.Key.Substring(0, subIndex);
@@ -1458,7 +1940,7 @@ namespace Swole.API.Unity.Animation
                 {
                     Transform transform = findTransform(transformState.Key);
                     if (transform == null) continue;
-                     
+
                     var state = transformState.Value;
                     transform.localPosition = state.localPosition;
                     transform.localRotation = state.localRotation;
@@ -1476,7 +1958,7 @@ namespace Swole.API.Unity.Animation
             /// <param name="originalPose">An optional pose that only allows deviations from itself to be considered for insertion.</param>
             /// <param name="useFrameIndices">Use passed in getFrameIndex method to get frame indices from time values, and use those for insertion instead.</param>
             /// <param name="minDeltaThreshold">The minimum value by which element values must differ to be considered for insertion when using an original pose</param>
-            public Pose Insert(CustomAnimation animation, float time, Pose restPose = null, Pose originalPose = null, List<Transform> transformMask = null, bool useFrameIndices = false, IntFromDecimalDelegate getFrameIndex = null, bool verbose = false, float minDeltaThreshold = 0.00001f)
+            public Pose Insert(CustomAvatar avatar, CustomAnimation animation, float time, Pose restPose = null, Pose originalPose = null, List<Transform> transformMask = null, bool useFrameIndices = false, IntFromDecimalDelegate getFrameIndex = null, bool verbose = false, float minDeltaThreshold = 0.00001f)
             {
                 if (animation == null) return this;
                 useFrameIndices = useFrameIndices && getFrameIndex != null;
@@ -1496,6 +1978,11 @@ namespace Swole.API.Unity.Animation
                         {
                             contained = true;
                             diff = element.Value - mainValue;
+
+                            if (float.IsNaN(element.Value)) { swole.LogError($"NaN element '{element.Key}' {element.Value} - {mainValue} = {diff}"); return; }
+                            if (float.IsNaN(mainValue)) { swole.LogError($"NaN orig pose element '{element.Key}' {element.Value} - {mainValue} = {diff}"); return; }
+                            if (float.IsNaN(diff)) { swole.LogError($"NaN element difference '{element.Key}' {element.Value} - {mainValue} = {diff}"); return; }    
+
                             if (/*mainValue == element.Value*/Mathf.Abs(diff) < minDeltaThreshold) return; // Element has not changed from main pose so do not create a keyframe for this element
                         }
                     }
@@ -1522,19 +2009,19 @@ namespace Swole.API.Unity.Animation
                                     TransformCurve curve = (TransformCurve)transformCurve;
                                     if (id.EndsWith(_propertyX.ToLower()))
                                     {
-                                        if (curve.localPositionCurveX == null) curve.localPositionCurveX = new AnimationCurve();
+                                        if (curve.localPositionCurveX == null) curve.localPositionCurveX = new EditableAnimationCurve();//new AnimationCurve();
                                         if (useFrameIndices) curve.localPositionCurveX.DeleteKeysAt(time, getFrameIndex);
                                         curve.localPositionCurveX.AddOrReplaceKey(time, element.Value, true, true, (restPose != null && restPose.TryGetValue(element.Key, out var defaultVal)) ? defaultVal : element.Value);
                                     }
                                     else if (id.EndsWith(_propertyY.ToLower()))
                                     {
-                                        if (curve.localPositionCurveY == null) curve.localPositionCurveY = new AnimationCurve();
+                                        if (curve.localPositionCurveY == null) curve.localPositionCurveY = new EditableAnimationCurve();//new AnimationCurve();
                                         if (useFrameIndices) curve.localPositionCurveY.DeleteKeysAt(time, getFrameIndex);
                                         curve.localPositionCurveY.AddOrReplaceKey(time, element.Value, true, true, (restPose != null && restPose.TryGetValue(element.Key, out var defaultVal)) ? defaultVal : element.Value);
                                     }
                                     else if (id.EndsWith(_propertyZ.ToLower()))
                                     {
-                                        if (curve.localPositionCurveZ == null) curve.localPositionCurveZ = new AnimationCurve();
+                                        if (curve.localPositionCurveZ == null) curve.localPositionCurveZ = new EditableAnimationCurve();//new AnimationCurve();
                                         if (useFrameIndices) curve.localPositionCurveZ.DeleteKeysAt(time, getFrameIndex);
                                         curve.localPositionCurveZ.AddOrReplaceKey(time, element.Value, true, true, (restPose != null && restPose.TryGetValue(element.Key, out var defaultVal)) ? defaultVal : element.Value);
                                     }
@@ -1589,25 +2076,25 @@ namespace Swole.API.Unity.Animation
                                         TransformCurve curve = (TransformCurve)transformCurve;
                                         if (id.EndsWith(_propertyX.ToLower()))
                                         {
-                                            if (curve.localRotationCurveX == null) curve.localRotationCurveX = new AnimationCurve();
+                                            if (curve.localRotationCurveX == null) curve.localRotationCurveX = new EditableAnimationCurve();//new AnimationCurve();
                                             if (useFrameIndices) curve.localRotationCurveX.DeleteKeysAt(time, getFrameIndex);
                                             curve.localRotationCurveX.AddOrReplaceKey(time, element.Value, true, true, (restPose != null && restPose.TryGetValue(element.Key, out var defaultVal)) ? defaultVal : element.Value);
                                         }
                                         else if (id.EndsWith(_propertyY.ToLower()))
                                         {
-                                            if (curve.localRotationCurveY == null) curve.localRotationCurveY = new AnimationCurve();
+                                            if (curve.localRotationCurveY == null) curve.localRotationCurveY = new EditableAnimationCurve();//new AnimationCurve();
                                             if (useFrameIndices) curve.localRotationCurveY.DeleteKeysAt(time, getFrameIndex);
                                             curve.localRotationCurveY.AddOrReplaceKey(time, element.Value, true, true, (restPose != null && restPose.TryGetValue(element.Key, out var defaultVal)) ? defaultVal : element.Value);
                                         }
                                         else if (id.EndsWith(_propertyZ.ToLower()))
                                         {
-                                            if (curve.localRotationCurveZ == null) curve.localRotationCurveZ = new AnimationCurve();
+                                            if (curve.localRotationCurveZ == null) curve.localRotationCurveZ = new EditableAnimationCurve();//new AnimationCurve();
                                             if (useFrameIndices) curve.localRotationCurveZ.DeleteKeysAt(time, getFrameIndex);
                                             curve.localRotationCurveZ.AddOrReplaceKey(time, element.Value, true, true, (restPose != null && restPose.TryGetValue(element.Key, out var defaultVal)) ? defaultVal : element.Value);
                                         }
                                         else if (id.EndsWith(_propertyW.ToLower()))
                                         {
-                                            if (curve.localRotationCurveW == null) curve.localRotationCurveW = new AnimationCurve();
+                                            if (curve.localRotationCurveW == null) curve.localRotationCurveW = new EditableAnimationCurve();//new AnimationCurve();
                                             if (useFrameIndices) curve.localRotationCurveW.DeleteKeysAt(time, getFrameIndex);
                                             curve.localRotationCurveW.AddOrReplaceKey(time, element.Value, true, true, (restPose != null && restPose.TryGetValue(element.Key, out var defaultVal)) ? defaultVal : element.Value);
                                         }
@@ -1665,19 +2152,19 @@ namespace Swole.API.Unity.Animation
                                             TransformCurve curve = (TransformCurve)transformCurve;
                                             if (id.EndsWith(_propertyX.ToLower()))
                                             {
-                                                if (curve.localScaleCurveX == null) curve.localScaleCurveX = new AnimationCurve();
+                                                if (curve.localScaleCurveX == null) curve.localScaleCurveX = new EditableAnimationCurve();//new AnimationCurve();
                                                 if (useFrameIndices) curve.localScaleCurveX.DeleteKeysAt(time, getFrameIndex);
                                                 curve.localScaleCurveX.AddOrReplaceKey(time, element.Value, true, true, (restPose != null && restPose.TryGetValue(element.Key, out var defaultVal)) ? defaultVal : element.Value);
                                             }
                                             else if (id.EndsWith(_propertyY.ToLower()))
                                             {
-                                                if (curve.localScaleCurveY == null) curve.localScaleCurveY = new AnimationCurve();
+                                                if (curve.localScaleCurveY == null) curve.localScaleCurveY = new EditableAnimationCurve();//new AnimationCurve();
                                                 if (useFrameIndices) curve.localScaleCurveY.DeleteKeysAt(time, getFrameIndex);
                                                 curve.localScaleCurveY.AddOrReplaceKey(time, element.Value, true, true, (restPose != null && restPose.TryGetValue(element.Key, out var defaultVal)) ? defaultVal : element.Value);
                                             }
                                             else if (id.EndsWith(_propertyZ.ToLower()))
                                             {
-                                                if (curve.localScaleCurveZ == null) curve.localScaleCurveZ = new AnimationCurve();
+                                                if (curve.localScaleCurveZ == null) curve.localScaleCurveZ = new EditableAnimationCurve();//new AnimationCurve();
                                                 if (useFrameIndices) curve.localScaleCurveZ.DeleteKeysAt(time, getFrameIndex);
                                                 curve.localScaleCurveZ.AddOrReplaceKey(time, element.Value, true, true, (restPose != null && restPose.TryGetValue(element.Key, out var defaultVal)) ? defaultVal : element.Value);
                                             }
@@ -1725,7 +2212,7 @@ namespace Swole.API.Unity.Animation
                         {
                             PropertyCurve curve = (PropertyCurve)propertyCurve;
 
-                            if (curve.propertyValueCurve == null) curve.propertyValueCurve = new AnimationCurve();
+                            if (curve.propertyValueCurve == null) curve.propertyValueCurve = new EditableAnimationCurve();//new AnimationCurve();
                             if (useFrameIndices) curve.propertyValueCurve.DeleteKeysAt(time, getFrameIndex);
                             curve.propertyValueCurve.AddOrReplaceKey(time, element.Value, true, true, (restPose != null && restPose.TryGetValue(element.Key, out var defaultVal)) ? defaultVal : element.Value);
 
@@ -1762,14 +2249,14 @@ namespace Swole.API.Unity.Animation
                         } 
                         else if (elements.TryGetValue(id.AsID(), out val))
                         {
-                            InsertElement(new KeyValuePair<string, float>(id, val));
+                            InsertElement(new KeyValuePair<string, float>(id, val)); 
                         }
                     }
                     foreach(var transform in transformMask)
                     {
                         if (transform == null) continue;
 
-                        string transformName = transform.name;
+                        string transformName = avatar == null ? transform.name : avatar.Remap(transform.name); 
 
                         TryInsertByID($"{transformName}{_localPositionProperty}{_propertyX}");
                         TryInsertByID($"{transformName}{_localPositionProperty}{_propertyY}");
@@ -1792,6 +2279,11 @@ namespace Swole.API.Unity.Animation
         }
 
     }
+
+    public delegate int TimelinePositionToFrameIndex(decimal timelinePos);
+    public delegate int TimelinePositionFloatToFrameIndex(float timelinePos);
+    public delegate decimal FrameIndexToTimelinePosition(int frameIndex);
+
 }
 
 #endif

@@ -749,6 +749,8 @@ namespace Swole
             #region Proxy Implementations
 
             public string name => swole.Engine.GetName(instance);
+            public void SetName(string name) => swole.Engine.Object_SetName(this, name);
+            public void SetNameAdmin(string name) => swole.Engine.Object_SetNameAdmin(this, name);
 
             public int InstanceID => swole.Engine.Object_GetInstanceID(instance);
 
@@ -771,7 +773,7 @@ namespace Swole
             #endregion
 
             public object instance;
-            public object Instance => instance;
+            public object Instance => instance; 
             public bool IsDestroyed => swole.Engine.IsNull(Instance);
 
             public ITransform transform;
@@ -994,6 +996,23 @@ namespace Swole
             public bool IsChildOf(ITransform parent);
 
             public ITransform GetChild(int index);
+
+        }
+
+        public interface IRectTransform : ITransform
+        {
+
+            public EngineInternal.Vector2 anchorMin { get; set; }
+            public EngineInternal.Vector2 anchorMax { get; set; }
+
+            public EngineInternal.Vector2 sizeDelta { get; set; }
+            public EngineInternal.Vector2 offsetMin { get; set; }
+            public EngineInternal.Vector2 offsetMax { get; set; }
+
+            public EngineInternal.Vector2 pivot { get; set; }
+
+            public EngineInternal.Vector2 anchoredPosition { get; set; }
+            public EngineInternal.Vector3 anchoredPosition3D { get; set; }
 
         }
 
@@ -1445,13 +1464,13 @@ namespace Swole
             protected void OnPreEventCall(string eventName, int id)
             {
                 if (runtimePreListeners == null) return;
-                foreach (var listener in runtimePreListeners) listener(eventName, id);
+                foreach (var listener in runtimePreListeners) listener(eventName, id, this);
             }
             protected List<RuntimeEventListenerDelegate> runtimePostListeners;
             protected void OnPostEventCall(string eventName, int id)
             {
                 if (runtimePostListeners == null) return;
-                foreach (var listener in runtimePostListeners) listener(eventName, id);
+                foreach (var listener in runtimePostListeners) listener(eventName, id, this);
             }
             public void SubscribePreEvent(RuntimeEventListenerDelegate listener)
             {
@@ -1473,6 +1492,71 @@ namespace Swole
                 if (runtimePostListeners == null) return;
                 runtimePostListeners.Remove(listener);
             }
+        }
+
+        public class RectTransform : Transform, IRectTransform
+        {
+
+            public RectTransform(string id, object instance) : base(id, instance)
+            {
+            }
+
+            public RectTransform(Transform transform) : base(transform == null ? string.Empty : transform.ID, transform == null ? null : transform.Instance)
+            {
+                if (transform != null)
+                {
+                    if (transform.HasEventHandler) eventHandler = transform.EventHandler as TransformEventHandler;
+                } 
+            }
+             
+            #region Proxy Implementation
+
+            public EngineInternal.Vector2 anchorMin
+            {
+                get => swole.Engine.RectTransform_anchorMinGet(this);
+                set => swole.Engine.RectTransform_anchorMinSet(this, value);
+            }
+            public EngineInternal.Vector2 anchorMax
+            {
+                get => swole.Engine.RectTransform_anchorMaxGet(this);
+                set => swole.Engine.RectTransform_anchorMaxSet(this, value);
+            }
+
+            public EngineInternal.Vector2 sizeDelta
+            {
+                get => swole.Engine.RectTransform_sizeDeltaGet(this);
+                set => swole.Engine.RectTransform_sizeDeltaSet(this, value);
+            }
+            public EngineInternal.Vector2 offsetMin
+            {
+                get => swole.Engine.RectTransform_offsetMinGet(this);
+                set => swole.Engine.RectTransform_offsetMinSet(this, value);
+            }
+            public EngineInternal.Vector2 offsetMax
+            {
+                get => swole.Engine.RectTransform_offsetMaxGet(this);
+                set => swole.Engine.RectTransform_offsetMaxSet(this, value);
+            }
+
+            public EngineInternal.Vector2 pivot
+            {
+                get => swole.Engine.RectTransform_pivotGet(this);
+                set => swole.Engine.RectTransform_pivotSet(this, value);
+            }
+
+            public EngineInternal.Vector2 anchoredPosition
+            {
+                get => swole.Engine.RectTransform_anchoredPositionGet(this);
+                set => swole.Engine.RectTransform_anchoredPositionSet(this, value);
+            }
+            public EngineInternal.Vector3 anchoredPosition3D
+            {
+                get => swole.Engine.RectTransform_anchoredPosition3DGet(this);
+                set => swole.Engine.RectTransform_anchoredPosition3DSet(this, value);
+            }
+
+            #endregion
+
         }
 
         #endregion
@@ -1670,6 +1754,24 @@ namespace Swole
         public struct Tile : ITile
         {
 
+            public System.Type AssetType => instance == null ? typeof(ITile) : instance.AssetType;
+            public object Asset => instance;
+
+            public bool IsInternalAsset
+            {
+                get => instance == null ? false : instance.IsInternalAsset; 
+                set
+                {
+                    if (instance == null) return;
+                    instance.IsInternalAsset = value;
+                }
+            }
+            public void Dispose() 
+            {
+                if (instance == null) return;
+                instance.Dispose();
+            }
+
             #region ICloneable
 
             public object Clone() => instance == null ? this : new Tile((ITile)instance.Clone());
@@ -1677,6 +1779,8 @@ namespace Swole
             #endregion
 
             #region ITile
+
+            public bool IsValid => instance == null ? false : instance.IsValid;
 
             public IImageAsset PreviewTexture
             {
@@ -1785,7 +1889,25 @@ namespace Swole
 
         public struct TileSet : ITileSet
         {
-             
+
+            public System.Type AssetType => instance == null ? typeof(ITileSet) : instance.AssetType;
+            public object Asset => instance;
+
+            public bool IsInternalAsset
+            {
+                get => instance == null ? false : instance.IsInternalAsset;
+                set
+                {
+                    if (instance == null) return;
+                    instance.IsInternalAsset = value;
+                }
+            }
+            public void Dispose()
+            {
+                if (instance == null) return;
+                instance.Dispose();
+            }
+
             #region IEngineObject
 
             public string Name => instance == null ? string.Empty : instance.Name;
@@ -1806,6 +1928,8 @@ namespace Swole
             #endregion
 
             #region ITileSet
+
+            public bool IsValid => instance == null ? false : instance.IsValid; 
 
             public bool IgnoreMeshMasking
             {
@@ -2424,10 +2548,26 @@ namespace Swole
 
             #region IAnimator
 
-            public void Reinitialize()
+            public void DisableIKControllers()
             {
                 if (IsDestroyed) return;
-                instance.Reinitialize(); 
+                instance.DisableIKControllers();
+            }
+            public void EnableIKControllers()
+            {
+                if (IsDestroyed) return;
+                instance.EnableIKControllers();
+            }
+            public void ResetIKControllers()
+            {
+                if (IsDestroyed) return;
+                instance.ResetIKControllers();
+            }
+
+            public void ReinitializeControllers()
+            {
+                if (IsDestroyed) return;
+                instance.ReinitializeControllers(); 
             }
 
             public void ApplyController(IAnimationController controller, bool usePrefix = true, bool incrementDuplicateParameters = false)
@@ -2448,16 +2588,16 @@ namespace Swole
                 return instance.HasControllerData(prefix);
             }
 
-            public void RemoveControllerData(IAnimationController controller)
+            public void RemoveControllerData(IAnimationController controller, bool disposeLayers = true)
             {
                 if (IsDestroyed) return;
-                instance.RemoveControllerData(controller);
+                instance.RemoveControllerData(controller, disposeLayers);
             }
 
-            public void RemoveControllerData(string prefix)
+            public void RemoveControllerData(string prefix, bool disposeLayers = true)
             {
                 if (IsDestroyed) return;
-                instance.RemoveControllerData(prefix);
+                instance.RemoveControllerData(prefix, disposeLayers);
             }
 
             public int GetBoneIndex(string name)
@@ -2473,6 +2613,8 @@ namespace Swole
                 if (IsDestroyed) return null;
                 return instance.GetBone(index);
             }
+
+            public EngineInternal.ITransform RootBone => IsDestroyed ? default : instance.RootBone; 
 
             public void ClearControllerData()
             {
@@ -2547,6 +2689,9 @@ namespace Swole
                 return instance.RecalculateParameterIndices();
             }
 
+            public int LayerCount => IsDestroyed ? 0 : instance.LayerCount;
+            public IAnimationLayer GetLayer(int layerIndex) => IsDestroyed ? null : instance.GetLayer(layerIndex);
+
             public void AddLayer(IAnimationLayer layer, bool instantiate = true, string prefix = "", List<IAnimationLayer> outList = null, bool onlyOutputNew = false, IAnimationController animationController = null)
             {
                 if (IsDestroyed) return;
@@ -2577,28 +2722,28 @@ namespace Swole
                 return instance.FindLayer(layerName);
             }
 
-            public bool RemoveLayer(IAnimationLayer layer)
+            public bool RemoveLayer(IAnimationLayer layer, bool dispose = true)
             {
                 if (IsDestroyed) return false;
-                return instance.RemoveLayer(layer);
+                return instance.RemoveLayer(layer, dispose);
             }
 
-            public bool RemoveLayer(int layerIndex)
+            public bool RemoveLayer(int layerIndex, bool dispose = true)
             {
                 if (IsDestroyed) return false;
-                return instance.RemoveLayer(layerIndex);
+                return instance.RemoveLayer(layerIndex, dispose);
             }
 
-            public bool RemoveLayer(string layerName)
+            public bool RemoveLayer(string layerName, bool dispose = true)
             {
                 if (IsDestroyed) return false;
-                return instance.RemoveLayer(layerName);
+                return instance.RemoveLayer(layerName, dispose);
             }
 
-            public int RemoveLayersStartingWith(string prefix)
+            public int RemoveLayersStartingWith(string prefix, bool dispose = true)
             {
                 if (IsDestroyed) return 0;
-                return instance.RemoveLayersStartingWith(prefix);
+                return instance.RemoveLayersStartingWith(prefix, dispose);
             }
 
             public Dictionary<int, int> RearrangeLayer(int layerIndex, int swapIndex, bool recalculateIndices = true)
@@ -2611,6 +2756,18 @@ namespace Swole
             {
                 if (IsDestroyed) return;
                 instance.RearrangeLayerNoRemap(layerIndex, swapIndex, recalculateIndices);
+            }
+
+            public Dictionary<int, int> MoveLayer(int layerIndex, int newIndex, bool recalculateIndices = true)
+            {
+                if (IsDestroyed) return null;
+                return instance.MoveLayer(layerIndex, newIndex, recalculateIndices); 
+            }
+
+            public void MoveLayerNoRemap(int layerIndex, int newIndex, bool recalculateIndices = true)
+            {
+                if (IsDestroyed) return;
+                instance.MoveLayerNoRemap(layerIndex, newIndex, recalculateIndices);
             }
 
             public Dictionary<int, int> RecalculateLayerIndices()
@@ -2762,7 +2919,32 @@ namespace Swole
         public struct Animation : IAnimationAsset
         {
 
+            public System.Type AssetType => instance == null ? typeof(IAnimationAsset) : instance.AssetType;
+            public object Asset => instance;
+
+            public bool IsInternalAsset
+            {
+                get => instance == null ? false : instance.IsInternalAsset;
+                set
+                {
+                    if (instance == null) return;
+                    instance.IsInternalAsset = value;
+                }
+            }
+            public void Dispose()
+            {
+                if (instance == null) return;
+                instance.Dispose();
+            }
+            public void Delete()
+            {
+                if (instance == null) return;
+                instance.Delete();
+            }
+
             #region IContent
+
+            public bool IsValid => instance == null ? false : instance.IsValid;
 
             public PackageInfo PackageInfo => instance == null ? default : instance.PackageInfo;
 
@@ -3041,6 +3223,12 @@ namespace Swole
 
             public bool HasActiveState => instance == null ? false : instance.HasActiveState;
 
+            public bool HasPrefix(string prefix)
+            {
+                if (instance == null) return false;
+                return instance.HasPrefix(prefix);
+            }
+
             public bool DisposeIfHasPrefix(string prefix)
             {
                 if (instance == null) return false;
@@ -3063,6 +3251,18 @@ namespace Swole
             {
                 if (instance == null) return;
                 instance.RearrangeNoRemap(swapIndex, recalculateIndices);
+            }
+
+            public Dictionary<int, int> Move(int newIndex, bool recalculateIndices = true)
+            {
+                if (instance == null) return null;
+                return instance.Move(newIndex, recalculateIndices);
+            }
+
+            public void MoveNoRemap(int newIndex, bool recalculateIndices = true)
+            {
+                if (instance == null) return;
+                instance.MoveNoRemap(newIndex, recalculateIndices);
             }
 
             public void SetAdditive(bool isAdditiveLayer)
@@ -3927,6 +4127,13 @@ namespace Swole
                     instance.Time = value;
                 }
             }
+
+            public float GetLoopedTime(float time, bool canLoop = true)
+            {
+                if (instance == null) return time;
+                return instance.GetLoopedTime(time, canLoop);
+            }
+
             public float Speed
             {
                 get
@@ -3956,6 +4163,15 @@ namespace Swole
                     instance.Mix = value;
                 }
             }
+
+            public float DynamicMix
+            {
+                get
+                {
+                    if (instance == null) return default;
+                    return instance.DynamicMix;
+                }
+            }
             public bool Paused
             {
                 get
@@ -3970,12 +4186,31 @@ namespace Swole
                 }
             }
 
+            public bool HasAnimationEvents
+            {
+                get
+                {
+                    if (instance == null) return default;
+                    return instance.HasAnimationEvents;
+                }
+            }
+
             public TransformHierarchy Hierarchy => instance == null ? null : instance.Hierarchy;
 
             public void CallAnimationEvents(float startTime, float endTime)
             {
                 if (instance == null) return;
                 instance.CallAnimationEvents(startTime, endTime);
+            }
+            public void CallAnimationEvents(float startTime, float endTime, float currentSpeed)
+            {
+                if (instance == null) return;
+                instance.CallAnimationEvents(startTime, endTime, currentSpeed);
+            }
+            public void CallAnimationEvents(float startTime, float endTime, float currentSpeed, object sender)
+            {
+                if (instance == null) return;
+                instance.CallAnimationEvents(startTime, endTime, currentSpeed, sender);
             }
 
             public void ResetLoop()

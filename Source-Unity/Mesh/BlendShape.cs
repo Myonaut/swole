@@ -8,116 +8,44 @@ using UnityEngine;
 namespace Swole
 {
 
-    [System.Serializable]
-    public class BlendShape
+    [Serializable]
+    public class BlendShape : ICloneable
     {
-
-        [System.Serializable]
-        public class MicroShape
-        {
-
-            [System.NonSerialized]
-            public int cachedIndex;
-
-            [System.NonSerialized]
-            public float cachedWeight;
-
-            [System.NonSerialized]
-            public float cachedPreviousWeight;
-
-            [System.NonSerialized]
-            public bool cachedUpdated;
-
-            public BlendShape blendShape;
-
-            public int[] indexTranslator = new int[0];
-
-            public int TranslateIndex(int i)
-            {
-
-                for (int a = 0; a < indexTranslator.Length; a++) if (indexTranslator[a] == i) return a;
-
-                return -1;
-
-            }
-
-            public MicroShape(BlendShape shape, int[] indexTranslator)
-            {
-
-                this.indexTranslator = indexTranslator;
-
-                blendShape = new BlendShape(shape.name);
-
-                blendShape.frames = new Frame[shape.frames.Length];
-
-                for (int a = 0; a < shape.frames.Length; a++)
-                {
-
-                    Frame frame1 = shape.frames[a];
-
-                    Frame frame2 = new Frame(frame1.weight);
-
-                    frame2.deltaVertices = new FrameDataLinear(indexTranslator.Length);
-                    frame2.deltaNormals = new FrameDataLinear(indexTranslator.Length);
-                    frame2.deltaTangents = new FrameDataLinear(indexTranslator.Length);
-
-                    for (int b = 0; b < indexTranslator.Length; b++)
-                    {
-
-                        frame2.deltaVertices[b] = frame1.deltaVertices[indexTranslator[b]];
-                        frame2.deltaNormals[b] = frame1.deltaNormals[indexTranslator[b]];
-                        frame2.deltaTangents[b] = frame1.deltaTangents[indexTranslator[b]];
-
-                    }
-
-                    blendShape.frames[a] = frame2;
-
-                }
-
-            }
-
-        }
-
-        public MicroShape GetMicroShape(int[] indexTranslator)
-        {
-
-            return new MicroShape(this, indexTranslator);
-
-        }
 
         public string name;
 
+        /// <summary>
+        /// Convenience field for storing a string
+        /// </summary>
+        public string tag;
+
+        /// <summary>
+        /// Convenience field for storing an index
+        /// </summary>
+        public int index;
+
         public Frame[] frames = new Frame[0];
 
+        public BlendShape() { }
         public BlendShape(string name)
         {
-
             this.name = name;
-
         }
 
-        public BlendShape() { }
-
-        public BlendShape Clone()
+        public object Clone() => Duplicate();
+        public BlendShape Duplicate()
         {
-
             BlendShape shape = new BlendShape(name);
 
             shape.frames = new Frame[frames.Length];
-
             for (int a = 0; a < frames.Length; a++)
             {
-
-                Frame frame = frames[a].Clone();
-
+                Frame frame = frames[a].Duplicate();
                 frame.shape = shape;
-
                 shape.frames[a] = frame;
-
             }
 
             return shape;
-
         }
 
         public BlendShape AsRelative(BlendShape baseShape)
@@ -180,7 +108,7 @@ namespace Swole
 
                 int origFramesLength = frames.Length;
 
-                for (int a = 0; a < baseShape.frames.Length; a++) 
+                for (int a = 0; a < baseShape.frames.Length; a++)
                 {
 
                     Frame baseFrame = baseShape.frames[a];
@@ -259,7 +187,7 @@ namespace Swole
 
         }
 
-        public BlendShape(string name, Frame[] referenceFrames, bool expandable = false)
+        public BlendShape(string name, Frame[] referenceFrames, int vertexCount, bool expandable = false)
         {
 
             this.name = name;
@@ -269,9 +197,9 @@ namespace Swole
 
                 float weight = referenceFrames[a].weight;
 
-                Vector3[] dV = new Vector3[0];
-                Vector3[] dN = new Vector3[0];
-                Vector3[] dT = new Vector3[0];
+                Vector3[] dV = new Vector3[vertexCount];
+                Vector3[] dN = new Vector3[vertexCount];
+                Vector3[] dT = new Vector3[vertexCount];
 
                 AddFrame(weight, dV, dN, dT, expandable);
 
@@ -349,8 +277,8 @@ namespace Swole
 
             int pos = frames.Length;
 
-            for (int a = 0; a < frames.Length; a++) 
-            { 
+            for (int a = 0; a < frames.Length; a++)
+            {
 
                 if (frames[a].weight > frame.weight)
                 {
@@ -363,7 +291,7 @@ namespace Swole
 
             }
 
-            for(int a = pos; a < frames.Length; a++)
+            for (int a = pos; a < frames.Length; a++)
             {
 
                 na[a + 1] = frames[a];
@@ -380,12 +308,10 @@ namespace Swole
 
         public Frame AddFrame(float weight, Frame frame)
         {
-
-            frame = frame.Clone();
+            frame = frame.Duplicate();
             frame.weight = weight;
 
             return AddFrame(frame);
-
         }
 
         public Vector3[][] GetDeltaVertices()
@@ -421,65 +347,42 @@ namespace Swole
 
         }
 
-        [System.Serializable]
-        public abstract class FrameData
+        [Serializable]
+        public abstract class FrameData : ICloneable
         {
-
             public abstract int GetLength();
-
             public abstract void SetLength(int length);
-
             public int Length
             {
-
                 get
                 {
-
                     return GetLength();
-
                 }
 
                 set
                 {
-
                     SetLength(value);
-
                 }
-
             }
 
             public abstract Vector3 GetDelta(int i);
-
             public abstract void SetDelta(int i, Vector3 delta);
-
             public Vector3 this[int i]
             {
-
-                get
-                {
-
-                    return GetDelta(i);
-
-                }
-
-                set
-                {
-
-                    SetDelta(i, value);
-
-                }
-
+                get => GetDelta(i);
+                set => SetDelta(i, value);
             }
 
             public abstract Vector3[] ToArray();
+            public abstract void SetData(Vector3[] array);
 
-            public abstract FrameData Clone();
+            public object Clone() => Duplicate();
+            public abstract FrameData Duplicate();
 
             public abstract FrameData AsRelative(FrameData baseData);
-
         }
 
-        [System.Serializable]
+        [Serializable]
         public class FrameDataLinear : FrameData
         {
 
@@ -487,25 +390,15 @@ namespace Swole
 
             public FrameDataLinear(Vector3[] array)
             {
-
                 internalArray = array;
-
             }
 
             public FrameDataLinear(int length)
             {
-
                 internalArray = new Vector3[length];
-
             }
 
-            public override int GetLength()
-            {
-
-                return internalArray.Length;
-
-            }
-
+            public override int GetLength() => internalArray.Length;
             public override void SetLength(int length)
             {
                 throw new NotImplementedException();
@@ -513,30 +406,26 @@ namespace Swole
 
             public override Vector3 GetDelta(int i)
             {
-
                 return internalArray[i];
-
             }
 
             public override void SetDelta(int i, Vector3 delta)
             {
-
                 internalArray[i] = delta;
-
             }
 
             public override Vector3[] ToArray()
             {
-
                 return (Vector3[])internalArray.Clone();
-
+            }
+            public override void SetData(Vector3[] array)
+            {
+                internalArray = array;
             }
 
-            public override FrameData Clone()
+            public override FrameData Duplicate()
             {
-
                 return new FrameDataLinear(ToArray());
-
             }
 
             public override FrameData AsRelative(FrameData baseData)
@@ -545,12 +434,9 @@ namespace Swole
                 FrameDataLinear deltaData = new FrameDataLinear(new Vector3[internalArray.Length]);
 
                 int baseLength = baseData.Length;
-
-                for(int a = 0; a < GetLength(); a++)
+                for (int a = 0; a < GetLength(); a++)
                 {
-
                     deltaData.SetDelta(a, GetDelta(a) - (a >= baseLength ? Vector3.zero : baseData.GetDelta(a)));
-
                 }
 
                 return deltaData;
@@ -559,7 +445,7 @@ namespace Swole
 
         }
 
-        [System.Serializable]
+        [Serializable]
         public class FrameDataMapped : FrameData
         {
 
@@ -602,19 +488,9 @@ namespace Swole
 
             }
 
-            public override int GetLength()
-            {
+            public override int GetLength() => vertexCount;
+            public override void SetLength(int length) => vertexCount = length;
 
-                return vertexCount;
-
-            }
-
-            public override void SetLength(int length)
-            {
-
-                vertexCount = length;
-
-            }
 
             public override Vector3 GetDelta(int i)
             {
@@ -628,12 +504,13 @@ namespace Swole
             public override void SetDelta(int i, Vector3 delta)
             {
 
-                if (Mathf.Abs(delta.x) <= threshold && Mathf.Abs(delta.y) <= threshold && Mathf.Abs(delta.z) <= threshold) {
+                if (Mathf.Abs(delta.x) <= threshold && Mathf.Abs(delta.y) <= threshold && Mathf.Abs(delta.z) <= threshold)
+                {
 
                     internalData.Remove(i);
 
                     return;
-                
+
                 }
 
                 internalData[i] = delta;
@@ -651,7 +528,22 @@ namespace Swole
 
             }
 
-            public override FrameData Clone()
+            public override void SetData(Vector3[] array)
+            {
+                internalData.Clear();
+                if (array != null)
+                {
+                    for (int a = 0; a < array.Length; a++)
+                    {
+                        var data = array[a];
+                        if (data.x == 0 && data.y == 0 && data.z == 0) continue;
+
+                        internalData[a] = data;
+                    }
+                }
+            }
+
+            public override FrameData Duplicate()
             {
 
                 FrameDataMapped data = new FrameDataMapped(vertexCount);
@@ -669,7 +561,7 @@ namespace Swole
 
                 int baseLength = baseData.Length;
 
-                foreach(var set in internalData)
+                foreach (var set in internalData)
                 {
 
                     int key = set.Key;
@@ -684,8 +576,8 @@ namespace Swole
 
         }
 
-        [System.Serializable]
-        public class Frame
+        [Serializable]
+        public class Frame : ICloneable
         {
 
             public Frame(float weight, bool expandable = false)
@@ -751,7 +643,7 @@ namespace Swole
 
             public int index;
 
-            [System.NonSerialized]
+            [NonSerialized]
             public BlendShape shape;
 
             [HideInInspector]
@@ -808,33 +700,28 @@ namespace Swole
 
             }
 
-            public Frame Clone()
+            public object Clone() => Duplicate();
+            public Frame Duplicate()
             {
 
-                Frame frame = new Frame(shape, index, weight, deltaVertices.Clone(), deltaNormals.Clone(), deltaTangents.Clone(), false);
+                Frame frame = new Frame(shape, index, weight, deltaVertices.Duplicate(), deltaNormals.Duplicate(), deltaTangents.Duplicate(), false);
 
                 if (expandable_deltaNormals != null && expandable_deltaNormals.Count > 0)
                 {
-
                     frame.expandable_deltaNormals = new List<Vector3>();
                     frame.expandable_deltaNormals.AddRange(expandable_deltaNormals);
-
                 }
 
                 if (expandable_deltaVertices != null && expandable_deltaVertices.Count > 0)
                 {
-
                     frame.expandable_deltaVertices = new List<Vector3>();
                     frame.expandable_deltaVertices.AddRange(expandable_deltaVertices);
-
                 }
 
                 if (expandable_deltaTangents != null && expandable_deltaTangents.Count > 0)
                 {
-
                     frame.expandable_deltaTangents = new List<Vector3>();
                     frame.expandable_deltaTangents.AddRange(expandable_deltaTangents);
-
                 }
 
                 return frame;
@@ -1208,10 +1095,10 @@ namespace Swole
 
         }
 
-        public Vector3[] GetTransformedNormals(Vector3[] originalNormals, float weight)
+        public Vector3[] GetTransformedNormals(Vector3[] originalNormals, float weight, bool createNewArray = true)
         {
 
-            Vector3[] normals = (Vector3[])originalNormals.Clone();
+            Vector3[] normals = createNewArray ? (Vector3[])originalNormals.Clone() : originalNormals;
 
             int frameCount = frames.Length;
 
@@ -1282,10 +1169,10 @@ namespace Swole
 
         }
 
-        public Vector4[] GetTransformedTangents(Vector4[] originalTangents, float weight)
+        public Vector4[] GetTransformedTangents(Vector4[] originalTangents, float weight, bool createNewArray = true)
         {
 
-            Vector4[] tangents = (Vector4[])originalTangents.Clone();
+            Vector4[] tangents = createNewArray ? (Vector4[])originalTangents.Clone() : originalTangents;
 
             int frameCount = frames.Length;
 
@@ -1385,12 +1272,12 @@ namespace Swole
 
         }
 
-        public void GetTransformedData(Vector3[] originalVertices, Vector3[] originalNormals, float weight, out Vector3[] vertices, out Vector3[] normals)
+        public void GetTransformedData(Vector3[] originalVertices, Vector3[] originalNormals, float weight, out Vector3[] vertices, out Vector3[] normals, bool createNewArrays = true)
         {
 
-            vertices = (Vector3[])originalVertices.Clone();
+            vertices = createNewArrays ? (Vector3[])originalVertices.Clone() : originalVertices;
 
-            normals = (Vector3[])originalNormals.Clone();
+            normals = createNewArrays ? (Vector3[])originalNormals.Clone() : originalNormals;
 
             int frameCount = frames.Length;
 
@@ -1487,14 +1374,14 @@ namespace Swole
 
         }
 
-        public void GetTransformedData(Vector3[] originalVertices, Vector3[] originalNormals, Vector4[] originalTangents, float weight, out Vector3[] vertices, out Vector3[] normals, out Vector4[] tangents)
+        public void GetTransformedData(Vector3[] originalVertices, Vector3[] originalNormals, Vector4[] originalTangents, float weight, out Vector3[] vertices, out Vector3[] normals, out Vector4[] tangents, bool createNewArrays = true)
         {
 
-            vertices = (Vector3[])originalVertices.Clone();
+            vertices = createNewArrays ? (Vector3[])originalVertices.Clone() : originalVertices;
 
-            normals = (Vector3[])originalNormals.Clone();
+            normals = createNewArrays ? (Vector3[])originalNormals.Clone() : originalNormals;
 
-            tangents = (Vector4[])originalTangents.Clone();
+            tangents = createNewArrays ? (Vector4[])originalTangents.Clone() : originalTangents;
 
             int frameCount = frames.Length;
 

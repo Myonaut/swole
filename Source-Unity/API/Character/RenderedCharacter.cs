@@ -15,7 +15,8 @@ namespace Swole.API.Unity
 {
     public class RenderedCharacterUpdater : SingletonBehaviour<RenderedCharacterUpdater>
     {
-        public override int Priority => ProxyBoneJobs.ExecutionPriority + 1; // Update after proxy bones
+        public static int ExecutionPriority => CustomAnimatorUpdater.FinalAnimationBehaviourPriority + 1; // update after animation
+        public override int Priority => ExecutionPriority;
         public override bool DestroyOnLoad => false; 
 
         protected readonly List<RenderedCharacter> characters = new List<RenderedCharacter>();
@@ -52,6 +53,8 @@ namespace Swole.API.Unity
     }
     public class RenderedCharacter : MonoBehaviour
     {
+
+        public List<RenderedCharacter> children;
 
         public BlendShapeWeight[] blendShapeWeights;
 
@@ -195,6 +198,11 @@ namespace Swole.API.Unity
             shape.weight = weight;
             shape.UpdateRenderers(m_skinnedRenderers, m_customSkinnedRenderers);
 
+            if (children != null)
+            {
+                foreach(var child in children) if (child != null) child.SetBlendShapeWeight(child.GetBlendShapeIndex(shape.name), weight);
+            }
+
         }
 
 #if UNITY_EDITOR
@@ -215,8 +223,8 @@ namespace Swole.API.Unity
 
             if (rootTransform == null) rootTransform = transform;
 
-            m_skinnedRenderers = rootTransform.gameObject.GetComponentsInChildren<SkinnedMeshRenderer>();
-            m_customSkinnedRenderers = rootTransform.gameObject.GetComponentsInChildren<CustomSkinnedMeshRenderer>();
+            m_skinnedRenderers = rootTransform.gameObject.GetComponentsInChildren<SkinnedMeshRenderer>(true); 
+            m_customSkinnedRenderers = rootTransform.gameObject.GetComponentsInChildren<CustomSkinnedMeshRenderer>(true);
 
             Dictionary<string, BlendShapeWeight> blendShapeWeightsCreator = new Dictionary<string, BlendShapeWeight>();
 
@@ -417,23 +425,28 @@ namespace Swole.API.Unity
         public virtual void UpdateStep()
         {
 
-            if (m_Surfaces != null)
+            /*if (m_Surfaces != null)
             {
 
                 foreach (var surface in m_Surfaces) if (surface != null) surface.Refresh();
 
-            }
+            }*/
 
         }
 
         public virtual void LateUpdateStep()
         {
 
-            if (m_Surfaces != null)
+            /*if (m_Surfaces != null)
             {
 
                 foreach (var surface in m_Surfaces) if (surface != null) surface.CompleteJobs();
 
+            }*/
+
+            if (m_Surfaces != null)
+            {
+                foreach (var surface in m_Surfaces) if (surface != null) EndFrameJobWaiter.WaitFor(surface.Refresh(true));
             }
 
         }

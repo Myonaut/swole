@@ -17,6 +17,30 @@ namespace Swole.API.Unity.Animation
     public class CustomAnimationAsset : ScriptableObject, IAnimationAsset
     {
 
+        public System.Type AssetType => GetType();
+        public object Asset => this;
+
+        private bool disposed;
+        public bool isNotInternalAsset;
+        public bool IsInternalAsset
+        {
+            get => !isNotInternalAsset;
+            set => isNotInternalAsset = !value;
+        }
+
+        protected bool invalid;
+        public bool IsValid => !invalid;
+        public void Dispose()
+        {
+            if (!IsInternalAsset && !disposed)
+            {
+                GameObject.Destroy(this);
+            }
+            disposed = true;
+            invalid = true;
+        }
+        public void Delete() => Dispose();
+
         #region IContent
 
         public PackageInfo PackageInfo => animation == null ? default : animation.PackageInfo;
@@ -39,7 +63,7 @@ namespace Swole.API.Unity.Animation
 
         public IContent CreateCopyAndReplaceContentInfo(ContentInfo info)
         {
-            var obj = ScriptableObject.CreateInstance<CustomAnimationAsset>();
+            var obj = NewExternalInstance();
             if (animation != null) obj.animation = (CustomAnimation)animation.CreateCopyAndReplaceContentInfo(info);
             return obj;
         }
@@ -97,6 +121,12 @@ namespace Swole.API.Unity.Animation
 #endif
 
             return asset;
+        }
+        public static CustomAnimationAsset NewExternalInstance()
+        {
+            var inst = ScriptableObject.CreateInstance<CustomAnimationAsset>();
+            inst.isNotInternalAsset = true;
+            return inst;
         }
 
         [SerializeField]

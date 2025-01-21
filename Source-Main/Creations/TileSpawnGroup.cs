@@ -7,8 +7,13 @@ namespace Swole
     public class TileSpawnGroup : ObjectSpawnGroup
     {
 
-        public TileSpawnGroup(string tileSetId, ICollection<ObjectSpawner> tileSpawns, string tileCollectionId = null) : base(new ObjectSpawnGroup.Serialized() { assetStringMain = tileSetId, assetStringSecondary = tileCollectionId })
+        public TileSpawnGroup(ObjectSpawnGroup.Serialized serializable) : base(serializable)
         {
+        }
+        public TileSpawnGroup(string tileSetId, ICollection<ObjectSpawner> tileSpawns, string tileCollectionId = null, bool collectionIsPackage = false) : base(new ObjectSpawnGroup.Serialized() { assetStringMain = tileSetId, assetStringSecondary = tileCollectionId })
+        {
+            isPackageDependent = collectionIsPackage;
+
             if (tileSpawns != null)
             {
                 this.objectSpawns = new ObjectSpawner[tileSpawns.Count];
@@ -25,6 +30,11 @@ namespace Swole
         public string TileSetId => AssetStringMain;
         public string TileCollectionId => AssetStringSecondary;
 
+        /// <summary>
+        /// Does the tileset belong to a package? If so, TileCollectionID becomes the package id.
+        /// </summary>
+        public override bool IsPackageDependent => isPackageDependent; 
+
         [NonSerialized]
         protected EngineInternal.TileSet cachedTileSet;
         public EngineInternal.TileSet TileSet
@@ -33,7 +43,7 @@ namespace Swole
             {
                 if (cachedTileSet == null) 
                 {
-                    cachedTileSet = swole.Engine.GetTileSet(TileSetId, TileCollectionId);
+                    cachedTileSet = swole.Engine.GetTileSet(TileSetId, TileCollectionId, isPackageDependent);  
                 }
                 return cachedTileSet;
             }

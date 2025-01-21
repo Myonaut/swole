@@ -14,15 +14,17 @@ using Unity.Collections;
 using Unity.Jobs;
 using Unity.Mathematics;
 
-using Swole.API.Unity.Animation;
+using Swole.API.Unity.Animation; 
+using UnityEngine.SceneManagement;
 
 namespace Swole.API.Unity
 {
     public class ProxyBoneJobs : SingletonBehaviour<ProxyBoneJobs>, IDisposable
     {
 
-        public static int ExecutionPriority => CustomAnimatorUpdater.ExecutionPriority + 1; // Update after animators
+        public static int ExecutionPriority => CustomIKManagerUpdater.ExecutionPriority + 1; // Update after animators and ik
         public override int Priority => ExecutionPriority;
+        //public override bool DestroyOnLoad => false; 
 
         public void Dispose()
         {
@@ -44,20 +46,30 @@ namespace Swole.API.Unity
 
         }
 
+        /*protected override void OnAwake()
+        {
+            base.OnAwake(); 
+            SceneManager.activeSceneChanged += OnSceneChange; 
+        }*/
+        public void OnSceneChange(Scene sceneFrom, Scene sceneTo)
+        {
+            Dispose();
+
+            PreUpdate?.RemoveAllListeners();
+            PostUpdate?.RemoveAllListeners(); 
+
+            PreLateUpdate?.RemoveAllListeners();
+            PostLateUpdate?.RemoveAllListeners();
+        } 
         public override void OnDestroyed()
         {
 
             base.OnDestroyed();
 
-            Dispose();
-
-            PreUpdate?.RemoveAllListeners();
-            PostUpdate?.RemoveAllListeners();
-
-            PreLateUpdate?.RemoveAllListeners();
-            PostLateUpdate?.RemoveAllListeners();
+            OnSceneChange(default, default);
 
         }
+
 
         [Serializable]
         public enum BindingOrder
@@ -117,7 +129,32 @@ namespace Swole.API.Unity
 
         }
 
-        protected Dictionary<Transform, int> boundTransforms;
+        public class ProxyBoneIndex
+        {
+            public ProxyBone owner;
+            protected int proxyIndex;
+            public int ProxyIndex => proxyIndex;
+
+            public ProxyBoneIndex(ProxyBone owner, int proxyIndex)
+            {
+                this.owner = owner;
+                this.proxyIndex = proxyIndex;
+            }
+
+            public void ChangeIndex(int newIndex)
+            {
+                if (!IsValid) return;
+                proxyIndex = newIndex;
+            }
+            public void Invalidate() => proxyIndex = -1;
+
+            public bool IsValid => proxyIndex >= 0;
+
+            private static readonly ProxyBoneIndex _invalid = new ProxyBoneIndex(null, -1);
+            public static ProxyBoneIndex Invalid => _invalid;
+        }
+
+        protected readonly Dictionary<int, ProxyBoneIndex> proxyBoneIndices = new Dictionary<int, ProxyBoneIndex>();
         protected NativeList<Binding> boneBindings;
         protected NativeList<ProxyParentWorldTransform> proxyParentWorldTransforms;
         protected TransformAccessArray transforms;
@@ -156,21 +193,96 @@ namespace Swole.API.Unity
 
         protected int AddOrGetProxyIndex(Transform proxyTransform, int3 header)
         {
-
             int proxyIndex = IndexOf(proxyTransform);
 
             if (proxyIndex < 0)
             {
+                if (proxyTransform == null) return -1;
 
                 if (!proxyTransforms.isCreated) proxyTransforms = new TransformAccessArray(1);
                 proxyIndex = proxyTransforms.length;
                 proxyTransforms.Add(proxyTransform);
                 proxyBindingHeaders.Add(header);
-
+#if UNITY_EDITOR
+                //Debug.Log($"Adding new proxy bone header for {proxyTransform.name}"); 
+#endif
             }
 
             return proxyIndex;
 
+        }
+
+        private static readonly List<int> parentsToRemove = new List<int>();
+        private bool RemoveNextParentIn(IList<int> parentsToRemove)
+        {
+            if (parentsToRemove.Count <= 0) return false;
+
+            int nextIndex = parentsToRemove[0];
+            parentsToRemove.RemoveAt(0);
+#if UNITY_EDITOR
+            //Debug.Log("Removing EMPTY PARENT " + nextIndex);
+#endif
+            if (nextIndex < 0) return true;
+
+            var proxyHeader = proxyBindingHeaders[nextIndex];
+            int startIndex = proxyHeader.y;
+            int count = Mathf.Max(0, proxyHeader.x);
+            int worldTransformIndex = proxyHeader.z;
+
+            if (proxyBoneIndices.TryGetValue(nextIndex, out var indexReference) && indexReference != null)
+            {
+                indexReference.ChangeIndex(-1);
+                proxyBoneIndices.Remove(nextIndex);
+            }
+
+            int swapIndex = proxyBindingHeaders.Length - 1; // Only the last element is moved. All other elements remain at the same index (Swapback)
+            proxyBindingHeaders.RemoveAtSwapBack(nextIndex);
+            proxyTransforms.RemoveAtSwapBack(nextIndex);
+            if (worldTransformIndex >= 0) proxyParentWorldTransforms.RemoveAt(worldTransformIndex);
+
+            if (proxyBoneIndices.TryGetValue(swapIndex, out indexReference) && indexReference != null) 
+            {
+                indexReference.ChangeIndex(nextIndex);
+                proxyBoneIndices[nextIndex] = indexReference;
+                proxyBoneIndices.Remove(swapIndex);
+            }        
+
+            for (int a = 0; a < boneBindings.Length; a++) // Update parent indices in bindings that reference swap back index
+            {
+                var binding = boneBindings[a];
+                if (binding.proxyParentIndex != swapIndex) continue; // If they don't reference the last element, then no change is needed
+
+                binding.proxyParentIndex = nextIndex;
+                boneBindings[a] = binding;
+            }
+
+            if (worldTransformIndex >= 0)
+            {
+                for (int a = 0; a < proxyBindingHeaders.Length; a++) // Update world transform indices in headers
+                {
+                    var header = proxyBindingHeaders[a];
+                    if (header.y >= startIndex && startIndex >= 0) header.y = (header.y - count);
+                    if (header.z >= worldTransformIndex && worldTransformIndex >= 0) header.z = header.z - 1;
+                    proxyBindingHeaders[a] = header;
+                }
+            } 
+
+            for(int a = 0; a < parentsToRemove.Count; a++)
+            {
+                int ind = parentsToRemove[a];
+                if (ind == swapIndex)
+                {
+                    ind = nextIndex;
+                }
+                else if (ind == nextIndex)
+                {
+                    ind = -1;
+                }
+
+                parentsToRemove[a] = ind;
+            }
+
+            return true;
         }
         protected void RemoveProxy(int proxyIndex, bool onlyBindings = false, int newCount = 0)
         {
@@ -178,16 +290,70 @@ namespace Swole.API.Unity
 
             lastJobHandle.Complete();
 
+            parentsToRemove.Clear();
+
             var proxyHeader = proxyBindingHeaders[proxyIndex];
             int startIndex = proxyHeader.y;
-            int count = proxyHeader.x;
+            int count = Mathf.Max(0, proxyHeader.x);
             int worldTransformIndex = proxyHeader.z;
+            newCount = Mathf.Max(0, newCount); 
 
-            boneBindings.RemoveRange(startIndex, count);
-            tempTransforms.Clear();
-            for (int a = 0; a < transforms.length; a++) tempTransforms.Add(transforms[a]);
-            tempTransforms.RemoveRange(startIndex, count);
-            transforms.SetTransforms(tempTransforms.ToArray());
+            if (proxyBoneIndices.TryGetValue(proxyIndex, out var indexReference) && indexReference != null) 
+            {
+                indexReference.ChangeIndex(-1);
+                proxyBoneIndices.Remove(proxyIndex); 
+            }
+
+            if (startIndex >= 0 && count > 0) 
+            {
+#if UNITY_EDITOR
+                //Debug.Log("Removing proxyIndex " + proxyIndex + " : " + proxyTransforms[proxyIndex].name + " (bindingIndices:" + startIndex + "-" + (startIndex + (count - 1)) + ") (bindingCount:" + count + ")");
+                //Debug.Log("Prev size (Headers: " + proxyBindingHeaders.Length + ") (Bindings: " + boneBindings.Length + ")"); 
+#endif
+
+                for(int a = startIndex; a < startIndex + count; a++) // prepare to remove any parent proxies that have no bindings
+                {
+                    var binding = boneBindings[a];
+                    if (binding.proxyParentIndex >= 0)
+                    {
+                        var parentProxy = proxyBindingHeaders[binding.proxyParentIndex];
+                        if (parentProxy.x <= 0) // binding count
+                        {
+                            bool flag = true; // make sure no other bindings reference this parent before flagging it to be removed
+                            for(int b = 0; b < startIndex; b++)
+                            {
+                                var binding_ = boneBindings[b];
+                                if (binding_.proxyParentIndex == binding.proxyParentIndex)
+                                {
+                                    flag = false;
+                                    break;
+                                }
+                            }
+                            if (flag)
+                            {
+                                for (int b = startIndex + count; b < proxyBindingHeaders.Length; b++)
+                                {
+                                    var binding_ = boneBindings[b];
+                                    if (binding_.proxyParentIndex == binding.proxyParentIndex)
+                                    {
+                                        flag = false;
+                                        break;
+                                    }
+                                }
+                            }
+
+                            if (flag) parentsToRemove.Add(binding.proxyParentIndex);  
+                        }
+                    }
+                }
+                
+                boneBindings.RemoveRange(startIndex, count); 
+                tempTransforms.Clear();
+                for (int a = 0; a < transforms.length; a++) tempTransforms.Add(transforms[a]);
+                tempTransforms.RemoveRange(startIndex, count);
+                transforms.SetTransforms(tempTransforms.ToArray());
+                //Debug.Log("New size " + boneBindings.Length); 
+            }
 
             if (!onlyBindings)
             {
@@ -199,52 +365,77 @@ namespace Swole.API.Unity
 
                     onlyBindings = true; // It is referenced, so don't delete it entirely
 #if UNITY_EDITOR
-                    swole.Log($"[{nameof(ProxyBoneJobs)}] Preserved proxy transform {proxyIndex}");
+                    Debug.Log($"[{nameof(ProxyBoneJobs)}] Preserved proxy transform {proxyIndex}. Saved by binding at {((a >= startIndex) ? a + count : a)}");
 #endif
                     break;
                 }
 
                 if (!onlyBindings)
                 {
-                    int swapIndex = proxyBindingHeaders.Length - 1;
+                    int swapIndex = proxyBindingHeaders.Length - 1; // Only the last element is moved. All other elements remain at the same index (Swapback)
                     proxyBindingHeaders.RemoveAtSwapBack(proxyIndex);
                     proxyTransforms.RemoveAtSwapBack(proxyIndex);
-                    if (worldTransformIndex >= 0) proxyParentWorldTransforms.RemoveAt(worldTransformIndex);  
+                    if (worldTransformIndex >= 0) proxyParentWorldTransforms.RemoveAt(worldTransformIndex);
 
-                    for (int a = 0; a < boneBindings.Length; a++) // Update parent indices in bindings
+                    if (proxyBoneIndices.TryGetValue(swapIndex, out indexReference) && indexReference != null) 
+                    {
+                        indexReference.ChangeIndex(proxyIndex);
+                        proxyBoneIndices[proxyIndex] = indexReference;
+                        proxyBoneIndices.Remove(swapIndex); 
+                    }
+
+                    for (int a = 0; a < boneBindings.Length; a++) // Update parent indices in bindings that reference swap back index
                     {
                         var binding = boneBindings[a];
+                        if (binding.proxyParentIndex != swapIndex) continue; // If they don't reference the last element, then no change is needed
 
-                        if (binding.proxyParentIndex != swapIndex) continue;
                         binding.proxyParentIndex = proxyIndex;
                         boneBindings[a] = binding;
                     }
+                     
+                    for (int a = 0; a < parentsToRemove.Count; a++)
+                    {
+                        if (parentsToRemove[a] == swapIndex) parentsToRemove[a] = proxyIndex;
+                    }
                 }
             }
-            else
+             
+            if (onlyBindings)
             {
-                proxyBindingHeaders[proxyIndex] = new int3(startIndex, newCount, worldTransformIndex);
+                //Debug.Log(proxyTransforms[proxyIndex].name + " " + newCount); 
+                proxyBindingHeaders[proxyIndex] = new int3(newCount, newCount <= 0 ? -1 : startIndex, worldTransformIndex);   
             }
 
             for (int a = 0; a < proxyBindingHeaders.Length; a++) // Update indices in headers
             {
+                if (onlyBindings && a == proxyIndex) continue;  
+
                 var header = proxyBindingHeaders[a];
 
-                if (header.y > startIndex) header.y = (header.y - count) + newCount;
-                if (!onlyBindings && header.z >= worldTransformIndex && worldTransformIndex >= 0) header.z = header.z - 1;    
+                if (header.y >= startIndex && startIndex >= 0) header.y = (header.y - count) + newCount;
+                if (!onlyBindings && header.z >= worldTransformIndex && worldTransformIndex >= 0) header.z = header.z - 1;     
 
                 proxyBindingHeaders[a] = header;
             }
+
+            while(RemoveNextParentIn(parentsToRemove));
+
+#if UNITY_EDITOR
+            //Debug.Log("New size (Headers: " + proxyBindingHeaders.Length + ") (Bindings: " + boneBindings.Length + ")");
+#endif
         }
 
         private static readonly List<Transform> tempTransforms = new List<Transform>();
         private static readonly List<Binding> tempBindings = new List<Binding>();
-        public static int Register(ProxyBone proxy)
+        public static ProxyBoneIndex Register(ProxyBone proxy)
         {
-            if (proxy == null || proxy.bindings == null) return -1;
+            if (proxy == null || proxy.bindings == null) return ProxyBoneIndex.Invalid;
 
             var instance = Instance;
-            if (instance == null) return -1; 
+            if (instance == null) return ProxyBoneIndex.Invalid;
+
+            tempTransforms.Clear();
+            tempBindings.Clear();
 
             instance.lastJobHandle.Complete();
 
@@ -260,25 +451,35 @@ namespace Swole.API.Unity
             if (proxyIndex >= 0) 
             { 
                 isNew=false;
-                instance.RemoveProxy(proxyIndex, true, proxy.bindings.Length);
+                instance.RemoveProxy(proxyIndex, true, proxy.bindings.Length); 
                 header = instance.proxyBindingHeaders[proxyIndex];
+
+#if UNITY_EDITOR
+                //Debug.Log($"Found existing proxy for {proxyTransform.name} : {proxyIndex} :: header: {header.x} {header.y} {header.z}");
+#endif
             } 
             else
             {
                 proxyIndex = instance.AddOrGetProxyIndex(proxyTransform, -1);
                 header = instance.proxyBindingHeaders[proxyIndex];
-                header.x = proxy.bindings.Length; // binding count
-                header.y = instance.boneBindings.Length; // binding index start
-                // .z is used to indicate that the transform is a parent used in world space calculations
             }
 
-            instance.proxyBindingHeaders[proxyIndex] = header;
+            header.x = proxy.bindings.Length; // binding count
+            if (header.y < 0) // if it's negative then give it a new startIndex in the boneBindings array
+            {
+                header.y = instance.boneBindings.Length; // binding index start
+                isNew = true;
+
+#if UNITY_EDITOR
+                //Debug.Log($"Adding new proxy for {proxyTransform.name} : {proxyIndex} :: header: {header.x} {header.y} {header.z}");
+#endif
+            }
+
+            instance.proxyBindingHeaders[proxyIndex] = header; 
 
             if (!isNew)
             {
-                tempTransforms.Clear();
                 for (int a = 0; a < instance.transforms.length; a++) tempTransforms.Add(instance.transforms[a]);
-                tempBindings.Clear();
                 for (int a = 0; a < instance.boneBindings.Length; a++) tempBindings.Add(instance.boneBindings[a]);
             }
 
@@ -292,13 +493,23 @@ namespace Swole.API.Unity
                 if (!proxy.hasStartingPose)
                 {
 
-                    bindingJobData.startPosition = binding.bone.localPosition;
-                    bindingJobData.startRotation = binding.bone.localRotation;
+                    if (binding.binding.applyInWorldSpace)
+                    {
+                        bindingJobData.startPosition = proxyTransform.parent == null ? binding.bone.position : proxyTransform.parent.InverseTransformPoint(binding.bone.position);
+                        bindingJobData.startRotation = proxyTransform.parent == null ? binding.bone.rotation : (Quaternion.Inverse(proxyTransform.parent.rotation) * binding.bone.rotation);
+                    } 
+                    else
+                    {
+                        bindingJobData.startPosition = binding.bone.localPosition;
+                        bindingJobData.startRotation = binding.bone.localRotation;
+                    }
+
                     bindingJobData.startProxyPosition = proxyTransform.localPosition;
                     bindingJobData.startProxyRotation = proxyTransform.localRotation;
 
                 }
-
+                
+                bindingJobData.proxyParentIndex = -1; 
                 if (bindingJobData.applyInWorldSpace)
                 {
 
@@ -311,7 +522,10 @@ namespace Swole.API.Unity
                         instance.proxyBindingHeaders[proxyParentIndex] = proxyParentHeader;
                         instance.proxyParentWorldTransforms.Add(new ProxyParentWorldTransform() { currentProxyParentWorldPosition = proxyParentTransform.position, currentProxyParentWorldRotation = proxyParentTransform.rotation });
 
-                        bindingJobData.proxyParentIndex = proxyParentIndex; // parent's PROXY index, i.e the index of its header
+                        bindingJobData.proxyParentIndex = proxyParentIndex; // the header index of this proxy's parent
+#if UNITY_EDITOR
+                        //Debug.Log($"Proxy {proxy.name}, binding {a} has parent index {proxyParentIndex}");
+#endif
                     }
                     else
                     {
@@ -324,18 +538,20 @@ namespace Swole.API.Unity
 
                 binding.binding = bindingJobData;
 
-                proxy.bindings[a] = binding;
+                proxy.bindings[a] = binding; 
 
                 if (isNew)
                 {
-                    instance.boneBindings.Add(binding.binding);
-                    instance.transforms.Add(binding.bone); 
+                    instance.boneBindings.Add(binding.binding); 
+                    instance.transforms.Add(binding.bone);
+                    //Debug.Log(proxy.name + " : " + binding.bone.name + " : add " + (instance.boneBindings.Length - 1)); 
                 } 
                 else
                 {
                     int index = header.y + a;
-                    tempBindings.Insert(index, binding.binding);
-                    tempTransforms.Insert(index, binding.bone);
+                    //Debug.Log(proxy.name + " : " + binding.bone.name + " : ins " + index);
+                    /*if (index >= tempBindings.Count) tempBindings.Add(binding.binding); else */tempBindings.Insert(index, binding.binding);
+                    /*if (index >= tempTransforms.Count) tempTransforms.Add(binding.bone); else */tempTransforms.Insert(index, binding.bone);   
                 }
 
             }
@@ -344,24 +560,40 @@ namespace Swole.API.Unity
                 instance.transforms.SetTransforms(tempTransforms.ToArray());
                 instance.boneBindings.Clear();
                 instance.boneBindings.SetCapacity(tempBindings.Count);
-                for (int a = 0; a < tempBindings.Count; a++) instance.boneBindings.Add(tempBindings[a]);
+                for (int a = 0; a < tempBindings.Count; a++) instance.boneBindings.Add(tempBindings[a]); 
             }
 
-            return proxyIndex;
+#if UNITY_EDITOR
+            //Debug.Log($"Current sizes (headers:{instance.proxyBindingHeaders.Length}) (bindings:{instance.boneBindings.Length})");
+#endif
+
+            if (instance.proxyBoneIndices.TryGetValue(proxyIndex, out var ind) && ind != null) ind.Invalidate();
+            ind = new ProxyBoneIndex(proxy, proxyIndex);
+            instance.proxyBoneIndices[proxyIndex] = ind;  
+            return ind;
         }
 
         public static void Unregister(ProxyBone proxy)
         {
             if (proxy == null) return;
-
-            var instance = Instance;
+            
+            var instance = InstanceOrNull; 
             if (instance == null) return;
 
             Unregister(instance.IndexOf(proxy));
         }
+        public static void Unregister(ProxyBoneIndex proxy)
+        {
+            if (proxy == null || !proxy.IsValid) return;
+
+            var instance = InstanceOrNull;
+            if (instance == null) return;
+             
+            Unregister(proxy.ProxyIndex);
+        }
         public static void Unregister(int proxyIndex)
         {
-            var instance = Instance;
+            var instance = InstanceOrNull;
             if (instance == null) return;
 
             if (proxyIndex < 0 || !instance.boneBindings.IsCreated || proxyIndex >= instance.proxyBindingHeaders.Length) return;
@@ -374,7 +606,7 @@ namespace Swole.API.Unity
         {
             get
             {
-                var instance = Instance;
+                var instance = InstanceOrNull;
                 if (instance == null) return default;
 
                 return instance.lastJobHandle;
@@ -383,10 +615,7 @@ namespace Swole.API.Unity
 
         protected JobHandle RunJobs(JobHandle deps = default)
         {
-
             lastJobHandle.Complete();
-
-            deps = JobHandle.CombineDependencies(deps, Rigs.OutputDependency);
 
             if (boneBindings.IsCreated)
             {
@@ -413,21 +642,22 @@ namespace Swole.API.Unity
              
             lastJobHandle = deps;
 
-            //Rigs.AddInputDependency(lastJobHandle);
-
             return deps;
-
         }
 
         public static void ExecuteBeforeUpdate(UnityAction action)
         {
             var instance = Instance;
+            if (instance == null) return;
+
             if (instance.PreUpdate == null) instance.PreUpdate = new UnityEvent();
             instance.PreUpdate.AddListener(action);
         }
         public static void ExecuteAfterUpdate(UnityAction action)
         {
             var instance = Instance;
+            if (instance == null) return;
+
             if (instance.PostUpdate == null) instance.PostUpdate = new UnityEvent();
             instance.PostUpdate.AddListener(action);
         }
@@ -438,20 +668,25 @@ namespace Swole.API.Unity
         public override void OnUpdate()
         {
             PreUpdate?.Invoke();
-            JobHandle inputDeps = Rigs.InputDependency;
-            RunJobs(inputDeps);
+
+            //RunJobs(); // Moved to late update so that synchronous IK code happens first. TODO: revisit this if there's ever a jobified IK solution
+
             PostUpdate?.Invoke();
         }
 
         public static void ExecuteBeforeLateUpdate(UnityAction action)
         {
             var instance = Instance;
+            if (instance == null) return;
+
             if (instance.PreLateUpdate == null) instance.PreLateUpdate = new UnityEvent();
             instance.PreLateUpdate.AddListener(action);
         }
         public static void ExecuteAfterLateUpdate(UnityAction action)
         {
             var instance = Instance;
+            if (instance == null) return;
+
             if (instance.PostLateUpdate == null) instance.PostLateUpdate = new UnityEvent();
             instance.PostLateUpdate.AddListener(action);
         }
@@ -462,7 +697,9 @@ namespace Swole.API.Unity
         public override void OnLateUpdate()
         {
             PreLateUpdate?.Invoke();
-            lastJobHandle.Complete();
+
+            EndFrameJobWaiter.WaitFor(RunJobs());//.Complete();
+
             PostLateUpdate?.Invoke();
         }
 
@@ -627,7 +864,7 @@ namespace Swole.API.Unity
 
                 if (binding.relative && !binding.firstRun)
                 {
-
+                    // binding is relative and this isn't the first execution, so undo previous changes before applying new ones
                     localPosition = localPosition - binding.positionOffset;
                     localRotation = math.mul(localRotation, math.inverse(binding.rotationOffset));
 

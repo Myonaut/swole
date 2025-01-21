@@ -5,6 +5,8 @@ using System.Collections.Generic;
 
 using UnityEngine;
 
+using Unity.Collections;
+
 namespace Swole
 {
 
@@ -68,7 +70,26 @@ namespace Swole
 
         }
 
-        public static Vector3 GetTransformedVertexPosition(Matrix4x4[] matrices, Vector3 vertex, BoneWeight boneWeight, int boneCount)
+        public static Matrix4x4 GetVertexSkinningMatrix(Matrix4x4[] boneMatrices, NativeArray<BoneWeight1> boneWeights, int boneWeightIndexStart, int boneCount)
+        {
+            Matrix4x4 finalMatrix = boneCount > 0 ? Matrix4x4.zero : Matrix4x4.identity;
+
+            int matrixCount = boneMatrices.Length;
+            for (int a = 0; a < boneCount; a++)
+            {
+                var boneWeight = boneWeights[boneWeightIndexStart + a];
+                if (boneWeight.boneIndex < 0 || boneWeight.boneIndex >= matrixCount) continue;
+
+                var matrix = boneMatrices[boneWeight.boneIndex];
+                for (int n = 0; n < 16; n++)
+                {
+                    finalMatrix[n] += matrix[n] * boneWeight.weight;  
+                }
+            }
+
+            return finalMatrix;
+        }
+        public static Matrix4x4 GetVertexSkinningMatrix(Matrix4x4[] matrices, BoneWeight boneWeight, int boneCount)
         {
 
             if (boneWeight.boneIndex0 >= boneCount)
@@ -124,11 +145,11 @@ namespace Swole
                 finalMatrix[n] = m0[n] + m1[n] + m2[n] + m3[n];
             }
 
-            vertex = finalMatrix.MultiplyPoint3x4(vertex);
-
-            return vertex;
+            return finalMatrix;
 
         }
+
+        public static Vector3 GetTransformedVertexPosition(Matrix4x4[] matrices, Vector3 vertex, BoneWeight boneWeight, int boneCount) => GetVertexSkinningMatrix(matrices, boneWeight, boneCount).MultiplyPoint3x4(vertex);
 
         public static Vector3 GetTransformedVertexPosition(BlendShape[] blendShapes, int vertexIndex, SkinnedMeshRenderer smr, Matrix4x4[] matrices, Vector3 vertex, BoneWeight boneWeight, int boneCount)
         {
@@ -167,6 +188,77 @@ namespace Swole
             }
 
             return vertex;
+
+        }
+
+        public static Matrix4x4[] GetBoneSkinningMatrices(Transform[] bones, Matrix4x4[] bindposes, Matrix4x4[] outputArray = null)
+        {
+            if (outputArray == null) outputArray = new Matrix4x4[bones.Length];
+            for (int a = 0; a < outputArray.Length; a++)
+            {
+                Transform bone = bones[a];
+                outputArray[a] = bone.localToWorldMatrix * bindposes[a];
+            }
+            return outputArray;
+        }
+        public static Matrix4x4[] GetPerVertexSkinningMatrices(Transform[] bones, Matrix4x4[] bindposes, NativeArray<BoneWeight1> boneWeights, NativeArray<byte> boneCounts, Matrix4x4[] outputArray = null)
+        {
+            Matrix4x4[] boneMatricesArray = GetBoneSkinningMatrices(bones, bindposes, null);
+            return GetPerVertexSkinningMatrices(boneMatricesArray, boneWeights, boneCounts, outputArray);
+        }
+        public static Matrix4x4[] GetPerVertexSkinningMatrices(Matrix4x4[] boneMatricesArray, NativeArray<BoneWeight1> boneWeights, NativeArray<byte> boneCounts, Matrix4x4[] outputArray = null)
+        {
+            int vertexCount = boneCounts.Length;
+
+            if (outputArray == null)
+            {
+                outputArray = new Matrix4x4[vertexCount];
+                for (int a = 0; a < outputArray.Length; a++) outputArray[a] = Matrix4x4.identity;
+            }
+
+            int boneWeightIndex = 0;
+            for (int a = 0; a < vertexCount; a++)
+            {
+                int boneCount = boneCounts[a];
+                outputArray[a] = GetVertexSkinningMatrix(boneMatricesArray, boneWeights, boneWeightIndex, boneCount);
+                boneWeightIndex += boneCount;
+            }
+
+            return outputArray;
+        }
+
+        public static Matrix4x4[] GetPerVertexSkinningMatrices(SkinnedMeshRenderer smr)
+        {
+
+            if (smr == null || smr.sharedMesh == null) return new Matrix4x4[0];
+
+            Matrix4x4[] perVertexMatrices = new Matrix4x4[smr.sharedMesh.vertexCount];
+            for (int a = 0; a < perVertexMatrices.Length; a++) perVertexMatrices[a] = Matrix4x4.identity;
+
+            Transform[] bones = smr.bones;
+            if (bones == null || bones.Length == 0) return perVertexMatrices; 
+
+            Matrix4x4[] bindposes = smr.sharedMesh.bindposes;
+            if (bindposes == null || bindposes.Length == 0) return perVertexMatrices;
+
+            BoneWeight[] boneWeights = smr.sharedMesh.boneWeights;
+            if (boneWeights == null || boneWeights.Length == 0) return perVertexMatrices;
+
+            Matrix4x4[] matrices = new Matrix4x4[bones.Length];
+            for (int a = 0; a < matrices.Length; a++)
+            {
+                Transform bone = bones[a];
+                matrices[a] = bone.localToWorldMatrix * bindposes[a];
+            }
+
+            int boneCount = bones.Length;
+            for (int a = 0; a < smr.sharedMesh.vertexCount; a++)
+            {
+                BoneWeight bw = boneWeights[a];
+                perVertexMatrices[a] = GetVertexSkinningMatrix(matrices, bw, boneCount);
+            }
+
+            return perVertexMatrices;
 
         }
 
@@ -213,64 +305,8 @@ namespace Swole
 
             for (int a = 0; a < vertices.Length; a++)
             {
-
                 BoneWeight bw = boneWeights[a];
-
-                if (bw.boneIndex0 >= boneCount)
-                {
-
-                    bw.boneIndex0 = 0;
-
-                    bw.weight0 = 0;
-
-                }
-
-                if (bw.boneIndex1 >= boneCount)
-                {
-
-                    bw.boneIndex1 = 0;
-
-                    bw.weight1 = 0;
-
-                }
-
-                if (bw.boneIndex2 >= boneCount)
-                {
-
-                    bw.boneIndex2 = 0;
-
-                    bw.weight2 = 0;
-
-                }
-
-                if (bw.boneIndex3 >= boneCount)
-                {
-
-                    bw.boneIndex3 = 0;
-
-                    bw.weight3 = 0;
-
-                }
-
-                Matrix4x4 m0 = matrices[Mathf.Max(0, bw.boneIndex0)];
-                Matrix4x4 m1 = matrices[Mathf.Max(0, bw.boneIndex1)];
-                Matrix4x4 m2 = matrices[Mathf.Max(0, bw.boneIndex2)];
-                Matrix4x4 m3 = matrices[Mathf.Max(0, bw.boneIndex3)];
-
-                Matrix4x4 finalMatrix = Matrix4x4.identity;
-
-                for (int n = 0; n < 16; n++)
-                {
-                    m0[n] *= bw.weight0;
-                    m1[n] *= bw.weight1;
-                    m2[n] *= bw.weight2;
-                    m3[n] *= bw.weight3;
-
-                    finalMatrix[n] = m0[n] + m1[n] + m2[n] + m3[n];
-                }
-
-                vertices[a] = finalMatrix.MultiplyPoint3x4(vertices[a]);
-
+                vertices[a] = GetTransformedVertexPosition(matrices, vertices[a], bw, boneCount);
             }
 
             return vertices;

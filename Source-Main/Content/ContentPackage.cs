@@ -8,29 +8,63 @@ namespace Swole
 {
 
     [Serializable]
-    public class ContentPackage
+    public class ContentPackage : IEnumerable<IContent>
     {
+
+        private List<IContent> orphanedContent;
+        public void DisposeOrphanedContent()
+        {
+            if (orphanedContent != null) 
+            {
+                if (content != null)
+                {
+                    for (int a = 0; a < content.Length; a++)
+                    {
+                        var c = content[a];
+                        if (c == null) continue;
+                        orphanedContent.RemoveAll(i => i == c);
+                    }
+                }
+                for (int a = 0; a < orphanedContent.Count; a++)
+                {
+                    var content = orphanedContent[a];
+                    if (content == null) continue;
+                    try
+                    {
+                        content.Dispose();
+                    }
+                    catch (Exception ex)
+                    {
+                        swole.LogError(ex);
+                    }
+                }
+                orphanedContent.Clear();
+                orphanedContent = null;
+            } 
+        }
 
         private SourcePackage cachedSourcePackage;
 
+        private static readonly List<SourceScript> _tempScripts = new List<SourceScript>();
         /// <summary>
         /// Returns a SourcePackage containing all of the scripts in the ContentPackage.
         /// </summary>
         public SourcePackage AsSourcePackage()
         {
 
-            if (cachedSourcePackage != null) return cachedSourcePackage;
+            if (cachedSourcePackage != null) return cachedSourcePackage; 
 
-            List<SourceScript> scripts = new List<SourceScript>();
+            _tempScripts.Clear();
 
             if (content != null)
             {
 
-                for (int a = 0; a < content.Length; a++) if (content[a] is SourceScript script) scripts.Add(script);
+                for (int a = 0; a < content.Length; a++) if (content[a] is SourceScript script) _tempScripts.Add(script);
 
             }
 
-            cachedSourcePackage = new SourcePackage(manifest, scripts, false);
+            cachedSourcePackage = new SourcePackage(manifest, _tempScripts, false);
+            _tempScripts.Clear();
 
             return cachedSourcePackage;
 
@@ -39,15 +73,18 @@ namespace Swole
 
         public ContentPackage(PackageManifest manifest)
         {
-
+            this.manifest = manifest;   
+        }
+        public ContentPackage(List<IContent> orphanedContent, PackageManifest manifest)
+        {
+            this.orphanedContent = orphanedContent; 
             this.manifest = manifest;
-        
         }
 
         private static readonly List<PackageIdentifier> depsViewer = new List<PackageIdentifier>();
-        public ContentPackage(PackageManifest manifest, IContent content, bool ensureDependencies = true)
+        public ContentPackage(PackageManifest manifest, IContent content, bool ensureDependencies = true, List<IContent> orphanedContent = null)
         {
-
+            this.orphanedContent = orphanedContent;
             this.content = new IContent[] { content };
 
             if (ensureDependencies)
@@ -90,10 +127,10 @@ namespace Swole
             this.manifest = manifest;
 
         }
-
-        public ContentPackage(PackageManifest manifest, ICollection<IContent> content, bool ensureDependencies = true)
+         
+        public ContentPackage(PackageManifest manifest, ICollection<IContent> content, bool ensureDependencies = true, List<IContent> orphanedContent = null)
         {
-
+            this.orphanedContent = orphanedContent;
             if (content != null)
             {
 
@@ -182,9 +219,13 @@ namespace Swole
         public List<IContent> AsList(List<IContent> list = null)
         {
             if (list == null) list = new List<IContent>();
-            for (int a = 0; a < ContentCount; a++) if (content[a] != null) list.Add(content[a]);
-
+            CopyIntoList(list);
             return list;
+        }
+        public void CopyIntoList(IList<IContent> list)
+        {
+            if (list == null) return;
+            for (int a = 0; a < ContentCount; a++) if (content[a] != null) list.Add(content[a]);
         }
 
         public int ContentCount => content == null ? 0 : content.Length;
@@ -199,7 +240,7 @@ namespace Swole
                 var c = GetContent(a);
                 if (c == null || !contentType.IsAssignableFrom(c.GetType())) continue;
                 string cname = c.Name;
-                if (!caseSensitive) cname = cname.ToLower();
+                if (!caseSensitive && !string.IsNullOrWhiteSpace(cname)) cname = cname.ToLower(); 
                 if (cname == contentName) return a;
             }
             return -1;
@@ -235,10 +276,81 @@ namespace Swole
             return false;
         }
 
+        public bool TryFindLoader<T>(out ContentLoader<T> contentLoader, string contentName, bool caseSensitive = false) where T : IContent
+        {
+            contentLoader = null;
+            if (TryFind<T>(out var content, contentName, caseSensitive)) // TODO: Temporary
+            {
+                contentLoader = new ContentLoader<T>(content);
+                return true;
+            }
+            return false;
+        }
+
         public int DependencyCount => Manifest.DependencyCount;
         public PackageIdentifier GetDependency(int index) => Manifest.GetDependency(index);
         public string GetDependencyString(int index) => Manifest.GetDependencyString(index);
 
+        public ContentPackageEnumerator GetEnumerator() => new ContentPackageEnumerator(this);
+        IEnumerator<IContent> IEnumerable<IContent>.GetEnumerator() => GetEnumerator();
+        IEnumerator IEnumerable.GetEnumerator() => GetEnumerator();
+
+    }
+
+    public class ContentPackageEnumerator : IEnumerator<IContent>
+    {
+        protected ContentPackage package;
+
+        // Enumerators are positioned before the first element
+        // until the first MoveNext() call.
+        int position = -1;
+
+        public ContentPackageEnumerator(ContentPackage package)
+        {
+            this.package = package;
+        }
+
+        public bool MoveNext()
+        {
+            if (package == null) throw new ObjectDisposedException(nameof(ContentPackageEnumerator));
+            position++;
+            return (position < package.ContentCount);
+        }
+
+        public void Reset()
+        {
+            if (package == null) throw new ObjectDisposedException(nameof(ContentPackageEnumerator));
+            position = -1;
+        }
+
+        public void Dispose()
+        {
+            this.package = null;
+        }
+
+        object IEnumerator.Current
+        {
+            get
+            {
+                return Current;
+            }
+        }
+
+        public IContent Current
+        {
+            get
+            {
+                if (package == null) throw new ObjectDisposedException(nameof(ContentPackageEnumerator));
+                try
+                {
+                    return package[position];
+                }
+                catch (IndexOutOfRangeException)
+                {
+                    throw new InvalidOperationException();
+                }
+            }
+        }
     }
 
 }

@@ -10,11 +10,14 @@ namespace Swole
     public class CreationSpawnGroup : ObjectSpawnGroup
     {
 
-        public CreationSpawnGroup(string packageIdentityString, string assetName, ICollection<ObjectSpawner> creationSpawns) : base(new ObjectSpawnGroup.Serialized() { assetStringSecondary = packageIdentityString, assetStringMain = assetName })
+        public CreationSpawnGroup(ObjectSpawnGroup.Serialized serializable) : base(serializable)
+        {
+        }
+        public CreationSpawnGroup(string packageIdentityString, string assetName, ICollection<ObjectSpawner> creationSpawns) : base(new ObjectSpawnGroup.Serialized() { assetStringSecondary = packageIdentityString, assetStringMain = assetName, isPackageDependent = true })
         {
             if (creationSpawns != null)
             {
-                this.objectSpawns = new ObjectSpawner[creationSpawns.Count];
+                this.objectSpawns = new ObjectSpawner[creationSpawns.Count]; 
                 int i = 0;
                 foreach (var spawn in creationSpawns)
                 {
@@ -29,6 +32,8 @@ namespace Swole
         public string AssetName => AssetStringMain;
         public string PackageIdentityString => AssetStringSecondary;
         public PackageIdentifier PackageIdentity => new PackageIdentifier(PackageIdentityString);
+
+        public override bool IsPackageDependent => true;
 
         [NonSerialized]
         protected Creation cachedAsset;

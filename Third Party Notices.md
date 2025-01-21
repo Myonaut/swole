@@ -17,3 +17,9 @@ Component Name: User Interface Icon Pack
 License Type: "CC BY 4.0"
 
 [User Interface Icon Pack Homepage](https://www.figma.com/community/file/1063138616574654762/user-interface-icon-pack)
+
+Component Name: Controller Input Icons
+
+License Type: "CC0 1.0"
+
+[Controller Input Icons Homepage](https://opengameart.org/content/controller-input-icons)

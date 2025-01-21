@@ -10,12 +10,14 @@ using Unity.Mathematics;
 
 namespace Swole.API.Unity.Animation
 {
-    public interface IPropertyCurve
+    public interface IPropertyCurve : ICloneable
     {
 
         [Serializable]
         public class Frame : SwoleObject<Frame, Frame.Serialized>
         {
+
+            public override string SerializedName => nameof(Frame);
 
             #region Serialization
 
@@ -24,6 +26,8 @@ namespace Swole.API.Unity.Animation
             [Serializable]
             public struct Serialized : ISerializableContainer<Frame, Frame.Serialized>
             {
+
+                public string SerializedName => nameof(Frame);
 
                 public int timelinePosition;
                 public SerializedAnimationCurve interpolationCurve;
@@ -55,7 +59,7 @@ namespace Swole.API.Unity.Animation
 
             public int timelinePosition;
 
-            public AnimationCurve interpolationCurve;
+            public EditableAnimationCurve interpolationCurve;
 
             public float value;
 
@@ -88,7 +92,7 @@ namespace Swole.API.Unity.Animation
                 clone.timelinePosition = timelinePosition;
                 if (interpolationCurve != null)
                 {
-                    clone.interpolationCurve = new AnimationCurve(interpolationCurve.keys);
+                    clone.interpolationCurve = interpolationCurve.Duplicate();//new AnimationCurve(interpolationCurve.keys);
                     clone.interpolationCurve.preWrapMode = interpolationCurve.preWrapMode;
                     clone.interpolationCurve.postWrapMode = interpolationCurve.postWrapMode;
                 }
@@ -156,6 +160,9 @@ namespace Swole.API.Unity.Animation
 
         string PropertyString { get; }
 
+        public WrapMode PreWrapMode { get; set; }
+        public WrapMode PostWrapMode { get; set; }
+
         float Evaluate(float normalizedTime);
 
         float GetLengthInSeconds(int framesPerSecond);
@@ -168,6 +175,9 @@ namespace Swole.API.Unity.Animation
 
         public bool HasKeyframes { get; }
         public float GetClosestKeyframeTime(float referenceTime, int framesPerSecond, bool includeReferenceTime = true, IntFromDecimalDelegate getFrameIndex = null);
+
+        public List<float> GetFrameTimes(int framesPerSecond, List<float> inputList = null);
+        public List<CustomAnimation.FrameHeader> GetFrameTimes(int framesPerSecond, List<CustomAnimation.FrameHeader> inputList);
 
     }
 }

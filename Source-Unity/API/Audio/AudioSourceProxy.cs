@@ -267,17 +267,17 @@ namespace Swole.API.Unity
         }
 
         [SwoleScriptIgnore]
-        public IAudioMixer outputAudioMixerGroup
+        public IAudioMixerGroup outputAudioMixerGroup
         {
             get
             {
                 if (source == null) return default;
-                return new TempAudioMixerProxy(source.outputAudioMixerGroup);
+                return new TempAudioMixerGroupProxy(source.outputAudioMixerGroup);
             }
             set
             {
                 if (source == null) return;
-                if (value is IAudioMixerProxy prox) source.outputAudioMixerGroup = prox.Mixer;
+                if (value is IAudioMixerGroupProxy prox) source.outputAudioMixerGroup = prox.MixerGroup;
             }
         }
 
@@ -697,7 +697,7 @@ namespace Swole.API.Unity
         }
 
         [SwoleScriptIgnore]
-        public IAudioMixer outputAudioMixerGroup
+        public IAudioMixerGroup outputAudioMixerGroup
         {
             get
             {

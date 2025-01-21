@@ -14,12 +14,18 @@ using TMPro;
 
 using Swole.UI;
 using Swole.Script;
+using Swole.API.Unity.Animation;
 
 namespace Swole.API.Unity
 {
 
     public class CreationBuilder : MonoBehaviour
     {
+
+        public const string windowStateID_objectPalette = "object_palette";
+        public const string windowStateID_curvesMenu = "curves_menu";
+        public const string windowStateID_animationCurveEditor = "anim_curve_editor";
+        public const string windowStateID_bezierCurveEditor = "bez_curve_editor";
 
         public const string str_title = "title";
         public const string str_recompile = "recompile";
@@ -29,11 +35,31 @@ namespace Swole.API.Unity
         public class Member : IDisposable
         {
 
+            public Creation.ObjectPreloadState State
+            {
+                get
+                {
+                    var state = new Creation.ObjectPreloadState();
+
+                    state.id = swoleGameObject == null ? -1 : swoleGameObject.id;
+                    state.isHidden = isHidden;
+                    state.showChildren = showChildren;
+
+                    return state;
+                }
+
+                set
+                {
+                    isHidden = value.isHidden;
+                    showChildren = value.showChildren;
+                }
+            }
+
             public bool showChildren = true;
 
             public Member parent;
             public int id;
-            public int projectIndex;
+            public Project project;
 
             public string name;
 
@@ -45,6 +71,7 @@ namespace Swole.API.Unity
             public SetTextDelegate setDisplayName;
             public RectTransform parentMask;
 
+            public bool isHidden;
             public SwoleGameObject swoleGameObject;
 
             public float clickStart;
@@ -52,7 +79,7 @@ namespace Swole.API.Unity
 
             public UIPopup activeEditorWindow;
 
-            protected Canvas canvas;
+            protected Canvas canvas; 
             public Canvas Canvas
             {
                 get
@@ -217,22 +244,187 @@ namespace Swole.API.Unity
         public class Project : IDisposable
         {
 
+            private static List<GameObject> _tempGameObjects = new List<GameObject>();
+            private static List<SwoleGameObject> _tempSwoleGameObjects = new List<SwoleGameObject>();
+            public Creation.ProjectSettings GetSettings()
+            {
+                Creation.ProjectSettings settings = default;
+
+                var editorCam = builder == null ? Camera.main : builder.MainCamera; // the default main camera in the unity scene
+                if (editorCam == null)
+                {
+                    settings.cameraPosition = new EngineInternal.Vector3(0, 2, -10);
+                    settings.cameraRotation = EngineInternal.Quaternion.identity;
+                } 
+                else
+                {
+                    var t = editorCam.transform;
+                    settings.cameraPosition = UnityEngineHook.AsSwoleVector(t.position);
+                    settings.cameraRotation = UnityEngineHook.AsSwoleQuaternion(t.rotation);
+                }
+
+                if (builder != null)
+                {
+                    var prefabHandler = builder.PrefabHandler;
+                    if (prefabHandler != null)
+                    {
+                        settings.selectedCollection = prefabHandler.ActiveCollectionIndex;
+                        settings.importedCollections = new PrefabCollectionSource[prefabHandler.CollectionCount];
+                        for (int a = 0; a < prefabHandler.CollectionCount; a++) settings.importedCollections[a] = prefabHandler.GetCollectionSource(a);
+                    }
+
+                    var runtimeEditor = builder.runtimeEditor;
+                    if (runtimeEditor != null)
+                    {
+                        settings.transformGizmoState = runtimeEditor.CurrentGizmoId;
+
+                        _tempGameObjects.Clear();
+                        _tempSwoleGameObjects.Clear();
+                        runtimeEditor.QueryActiveSelection(_tempGameObjects);
+                        foreach (var obj in _tempGameObjects)
+                        {
+                            if (obj == null) continue;
+                            var sgo = obj.GetComponentInParent<SwoleGameObject>();
+                            if (sgo != null && !_tempSwoleGameObjects.Contains(sgo) && IsAssociatedWith(sgo)) _tempSwoleGameObjects.Add(sgo);  
+                        }
+                        settings.selectedObjects = new int[_tempSwoleGameObjects.Count];
+                        for (int a = 0; a < _tempSwoleGameObjects.Count; a++) 
+                        {
+                            var sgo = _tempSwoleGameObjects[a];
+                            if (sgo == null) continue;
+                            settings.selectedObjects[a] = sgo.id; 
+                        }
+                        _tempSwoleGameObjects.Clear();
+                        _tempGameObjects.Clear();
+                    }
+                }
+
+                settings.objectStates = MemberStates;
+                settings.windowStates = WindowStates;
+
+                return settings;
+            }
+            public void ApplySettings(Creation.ProjectSettings? settings)
+            {
+                var editorCam = builder == null ? Camera.main : builder.MainCamera; // the default main camera in the unity scene
+                if (editorCam != null && settings.HasValue)
+                {
+                    var t = editorCam.transform;
+                    t.position = UnityEngineHook.AsUnityVector(settings.Value.cameraPosition);
+                    t.rotation = UnityEngineHook.AsUnityQuaternion(settings.Value.cameraRotation);
+                }
+
+                if (builder != null)
+                {
+                    var prefabHandler = builder.PrefabHandler;
+                    if (prefabHandler != null)
+                    {
+                        prefabHandler.ClearCollections();
+                        if (settings.HasValue && settings.Value.importedCollections != null)
+                        {
+                            foreach(var collection in settings.Value.importedCollections)
+                            {
+                                if (string.IsNullOrWhiteSpace(collection.id)) continue;
+                                if (collection.isPackage)
+                                {
+                                    prefabHandler.AddPackageContent(collection.id, true, false);
+                                } 
+                                else
+                                {
+                                    prefabHandler.AddTileCollection(collection.id, false);  
+                                }
+                            }
+                        }
+                        if (settings.HasValue) prefabHandler.ActiveCollectionIndex = settings.Value.selectedCollection;
+                    }
+
+                    var runtimeEditor = builder.runtimeEditor;
+                    if (runtimeEditor != null)
+                    {
+                        runtimeEditor.DeselectAll(null, false);
+                        if (settings.HasValue && settings.Value.selectedObjects != null)
+                        {
+                            foreach (var selectedId in settings.Value.selectedObjects)
+                            {
+                                if (members != null)
+                                {
+                                    foreach(var mem in members)
+                                    {
+                                        if (mem == null || mem.swoleGameObject == null) continue; 
+                                        if (mem.swoleGameObject.id == selectedId) runtimeEditor.Select(mem.swoleGameObject.gameObject, false);
+                                    }
+                                }
+                            }
+                        }
+                        if (settings.HasValue) runtimeEditor.CurrentGizmoId = settings.Value.transformGizmoState;
+                    }
+                }
+                
+                MemberStates = settings.HasValue ? settings.Value.objectStates : null;
+                WindowStates = settings.HasValue ? settings.Value.windowStates : null;
+            }
+
+            public Creation.ProjectSettings? cachedSettings;
+
+            public PackageInfo? packageInfo;
+            public ContentInfo? contentInfo;
+
+            public Sprite previewSprite;
+            public ImageAsset previewTextureAsset;
+            public ImageAsset prevPreviewTextureAsset;
+            public string PreviewTextureName => name + "_preview";
+            public bool previewTextureAssetIsNew;
+            public void ConvertPreviewSpriteToPreviewTextureAsset()
+            {
+                ImageAsset asset = new ImageAsset(PreviewTextureName, contentInfo.HasValue ? contentInfo.Value.author : string.Empty, DateTime.Now, DateTime.Now, string.Empty, previewSprite, previewSprite == null ? false : ExternalAssets.CanTextureBeCompressed(previewSprite.texture.width, previewSprite.texture.height), packageInfo.HasValue ? packageInfo.Value : default, false);
+                SetPreviewImage(asset);
+                previewSprite = null;
+                previewTextureAssetIsNew = true;  
+            }
+
+            public void SetPreviewImage(Sprite sprite)
+            {
+                previewSprite = sprite;
+
+                ContentManager.LocalPackage pkg = null;
+                if (packageInfo.HasValue) pkg = ContentManager.FindLocalPackage(packageInfo.Value);
+
+                if (pkg != null) ConvertPreviewSpriteToPreviewTextureAsset();
+            }
+            public void SetPreviewImage(ImageAsset asset)
+            {
+                if (!previewTextureAssetIsNew)
+                {
+                    prevPreviewTextureAsset = previewTextureAsset;
+                }
+                else if (previewTextureAsset != null) previewTextureAsset.Dispose(); 
+
+                previewTextureAsset = asset; 
+            }
+
             public CreationBuilder builder;
 
             [NonSerialized]
             protected Creation cachedAsset;
             public Creation CachedAsset => cachedAsset;
-            public Creation GetCreation() => GetCreation(EditPackageState.TargetPackage, EditPackageState.CurrentAuthor);
-            public Creation GetCreation(PackageInfo package, string author = null)
+            public Creation GetCreation(bool refreshSettings = true) => GetCreation(packageInfo.HasValue ? packageInfo.Value : EditPackageState.TargetPackage, contentInfo.HasValue ? contentInfo.Value.author : EditPackageState.CurrentAuthor, refreshSettings);
+            public Creation GetCreation(PackageInfo package, string author = null, bool refreshSettings = true)
             {
                 if (cachedAsset != null && hasAsset)
                 {
-                    if (!string.IsNullOrWhiteSpace(author) && author != cachedAsset.Author)
+                    var info = cachedAsset.ContentInfo;
+                    var projectInfo = contentInfo.HasValue ? contentInfo.Value : info;
+                    projectInfo.name = name;
+                    if (author != null) projectInfo.author = author;
+
+                    if (info != projectInfo)
                     {
-                        var info = cachedAsset.ContentInfo;
-                        info.author = author; 
-                        cachedAsset = (Creation)cachedAsset.CreateCopyAndReplaceContentInfo(info);
+                        cachedAsset = (Creation)cachedAsset.CreateCopyAndReplaceContentInfo(projectInfo); 
                     }
+
+                    cachedAsset.previewTexturePath = previewTexturePath;
+                    if (refreshSettings) cachedAsset.projectSettings = GetSettings(); else if (cachedSettings.HasValue) cachedAsset.projectSettings = cachedSettings.Value; 
+
                     return cachedAsset;
                 }
 
@@ -263,7 +455,7 @@ namespace Swole.API.Unity
                         if (prototype.prototype.tileSet == tileSet) 
                         {
                             _objectIds[prototype.root.GetInstanceID()] = new Vector2Int(_spawnGroups.Count, _objectSpawners.Count);
-                            _objectSpawners.Add(new ObjectSpawner() { id = prototype.id, positionInRoot = UnityEngineHook.AsSwoleVector(prototype.root.position), rotationInRoot = UnityEngineHook.AsSwoleQuaternion(prototype.root.rotation), localScale = UnityEngineHook.AsSwoleVector(prototype.root.localScale), index = prototype.prototype.tileIndex }); 
+                            _objectSpawners.Add(new ObjectSpawner() { name = prototype.root.name, id = prototype.id, positionInRoot = UnityEngineHook.AsSwoleVector(prototype.root.position), rotationInRoot = UnityEngineHook.AsSwoleQuaternion(prototype.root.rotation), localScale = UnityEngineHook.AsSwoleVector(prototype.root.localScale), index = prototype.prototype.tileIndex }); 
                         }
                     }
                     _tilePrototypes.RemoveAll(i => i.prototype.tileSet == tileSet); 
@@ -281,7 +473,7 @@ namespace Swole.API.Unity
                         if (prototype.prototype.asset == asset) 
                         {
                             _objectIds[prototype.root.GetInstanceID()] = new Vector2Int(_spawnGroups.Count, _objectSpawners.Count);
-                            _objectSpawners.Add(new ObjectSpawner() { id = prototype.id, positionInRoot = UnityEngineHook.AsSwoleVector(prototype.root.position), rotationInRoot = UnityEngineHook.AsSwoleQuaternion(prototype.root.rotation), localScale = UnityEngineHook.AsSwoleVector(prototype.root.localScale) });      
+                            _objectSpawners.Add(new ObjectSpawner() { name = prototype.root.name, id = prototype.id, positionInRoot = UnityEngineHook.AsSwoleVector(prototype.root.position), rotationInRoot = UnityEngineHook.AsSwoleQuaternion(prototype.root.rotation), localScale = UnityEngineHook.AsSwoleVector(prototype.root.localScale) });      
                         }
                     }
                     _creationPrototypes.RemoveAll(i => i.prototype.asset == asset);
@@ -303,15 +495,19 @@ namespace Swole.API.Unity
 
                         spawner.parentSpawnerIndex = parentIndices.x + 1; // Add one because zero is undefined
                         spawner.parentInstanceIndex = parentIndices.y + 1; // Add one because zero is undefined
-                        spawnGroup.ForceSetObjectSpawner(indices.y, spawner);
+                        spawnGroup.ForceSetObjectSpawner(indices.y, spawner); 
                     }
 
-                cachedAsset = new Creation(name, string.IsNullOrWhiteSpace(author) ? (string.IsNullOrWhiteSpace(info.author) ? package.curator : info.author) : author, ContentExtensions.ConvertDateStringToDateTime(info.creationDate), DateTime.Now, info.description, script, _spawnGroups, package);
+                cachedAsset = new Creation(name, string.IsNullOrWhiteSpace(author) ? (string.IsNullOrWhiteSpace(info.author) ? package.curator : info.author) : author, string.IsNullOrWhiteSpace(info.creationDate) ? DateTime.Now : ContentExtensions.ConvertDateStringToDateTime(info.creationDate), DateTime.Now, info.description, script, curves, _spawnGroups, previewTexturePath, package);
+                if (refreshSettings) cachedAsset.projectSettings = GetSettings(); else if (cachedSettings.HasValue) cachedAsset.projectSettings = cachedSettings.Value;
                 hasAsset = true;
-                return cachedAsset; 
+                return cachedAsset;
             }
 
             public string name;
+            protected string prevName;
+
+            public string DisplayName => isDirty ? ("*"+name) : name;
 
             [NonSerialized]
             protected bool isDirty;
@@ -321,22 +517,77 @@ namespace Swole.API.Unity
             public bool IsDirty => isDirty;
             public void MarkAsDirty()
             {
-                isDirty = true;
-                hasAsset = false;
+                MarkProjectAsDirty();
+                hasAsset = false; 
             }
-            public void Clean() => isDirty = false;
+            public void MarkProjectAsDirty()
+            {
+                isDirty = true;
+                if (builder != null) builder.RefreshProjectTabs(); 
+            }
+            public void Clean() 
+            { 
+                isDirty = false;
+                if (builder != null) builder.RefreshProjectTabs();  
+            }
 
             public GameObject tabObject;
 
-            public ContentInfo info;
+            protected ContentInfo info;
             public ContentInfo Info
             {
                 get => info;
                 set
                 {
                     info = value;
+                    MarkAsDirty(); 
+                }
+            }
+
+            protected string previewTexturePath;
+            public string PreviewTexturePath
+            {
+                get => previewTexturePath;
+                set
+                {
+                    previewTexturePath = value;
                     MarkAsDirty();
                 }
+            }
+
+            protected List<ICurve> curves = new List<ICurve>();
+            public int CurveCount => curves == null ? 0 : curves.Count;
+            public ICurve GetCurve(int index) => curves == null || index < 0 || index >= curves.Count ? null : curves[index];
+            public void AddCurve(ICurve curve)
+            {
+                if (curve == null) return;
+
+                if (curves == null) curves = new List<ICurve>();
+                curves.Add(curve);
+
+                MarkAsDirty();
+            }
+            public bool RemoveCurve(ICurve curve)
+            {
+                if (curve == null || curves == null) return false;
+
+                return curves.RemoveAll(i => ReferenceEquals(i, curve)) > 0; 
+            }
+            public bool TryGetCurve(string name, out ICurve curve, bool caseSensitive = false)
+            {
+                curve = null;
+                if (curves == null) return false;
+
+                if (!caseSensitive) name = name.AsID();
+                for (int a = 0; a < curves.Count; a++)
+                {
+                    var c = curves[a];
+                    if (c == null || (caseSensitive ? c.Name != name : c.Name.AsID() != name)) continue; 
+
+                    curve = c;
+                    return true;
+                }
+                return false; ;
             }
 
             protected CreationScript script;
@@ -345,12 +596,117 @@ namespace Swole.API.Unity
                 get => script;
                 set
                 {
+                    if (script != value) MarkAsDirty();
                     script = value;
-                    MarkAsDirty();
+                }
+            }
+            protected Dictionary<string, ResizableWindowState> windowStates = new Dictionary<string, ResizableWindowState>();
+            public ResizableWindowState GetWindowState(string id)
+            {
+                if (windowStates.TryGetValue(id, out var state)) return state;
+                return default;
+            }
+            public bool TryGetWindowState(string id, out ResizableWindowState state)
+            {
+                return windowStates.TryGetValue(id, out state);
+            }
+            public void SetWindowState(string id, ResizableWindowState state) 
+            {
+                state.id = id;
+                windowStates[id] = state;
+                MarkProjectAsDirty(); 
+            }
+            public ResizableWindowState[] WindowStates 
+            { 
+                get
+                {
+                    var temp = windowStates.Values;
+                    var array = new ResizableWindowState[temp.Count];
+                    temp.CopyTo(array, 0); 
+                    return array;
+                }
+
+                set
+                {
+                    if (builder == null) return;
+
+                    var activeProj = builder.ActiveProject;
+                    bool isActiveProj = ReferenceEquals(activeProj, this);
+
+                    if (isActiveProj) builder.CloseFloatingWindows();
+                    if (windowStates == null) return;
+
+                    windowStates.Clear();
+                    if (value != null) 
+                        foreach (var state in value) 
+                            if (!string.IsNullOrWhiteSpace(state.id))
+                            {
+                                windowStates[state.id] = state;
+                                if (state.id == windowStateID_objectPalette)
+                                {
+                                    var palette = !isActiveProj || builder.PrefabHandler == null ? null : builder.prefabHandler.tilePickerWindow;
+                                    if (palette != null)
+                                    {
+                                        var paletteRT = palette.GetComponent<RectTransform>();
+                                        if (paletteRT != null) state.ApplyWindowState(paletteRT);
+                                        if (state.visible) builder.OpenPrefabPalette(this);
+                                    }
+                                }
+                                else if (Enum.TryParse<ExecutionLayer>(state.id, true, out var layer))
+                                {
+                                    if (!activeCodeEditorWindows.TryGetValue(layer, out var editorWindowRT))
+                                    {
+                                        if (state.visible)
+                                        {
+                                            builder.StartEditingCode(layer, this);
+                                            activeCodeEditorWindows.TryGetValue(layer, out editorWindowRT);
+                                        }
+                                    }
+
+                                    if (editorWindowRT != null) state.ApplyWindowState(editorWindowRT);
+                                }
+                                else if (state.id == windowStateID_curvesMenu)
+                                {
+                                    var menu = !isActiveProj || builder.curveWindow == null ? null : builder.curveWindow;
+                                    if (menu != null)
+                                    {
+                                        var menuRT = menu.GetComponent<RectTransform>();
+                                        if (menuRT != null) state.ApplyWindowState(menuRT);
+                                        if (state.visible) builder.OpenCurveMenu(this); 
+                                    }
+                                }
+                                else if (state.id == windowStateID_animationCurveEditor)
+                                {
+                                    var menu = !isActiveProj || builder.animationCurveEditorWindow == null ? null : builder.animationCurveEditorWindow;
+                                    if (menu != null)
+                                    {
+                                        var menuRT = menu.GetComponent<RectTransform>();
+                                        if (menuRT != null) state.ApplyWindowState(menuRT);
+                                        if (state.visible && TryGetCurve(state.dataStringA, out var curve))
+                                        {
+                                            builder.StartEditingCurve(curve, this);
+                                        }
+                                    }
+                                }
+                                else if (state.id == windowStateID_bezierCurveEditor)
+                                {
+                                    var menu = !isActiveProj || builder.bezierCurveEditorWindow == null ? null : builder.bezierCurveEditorWindow;
+                                    if (menu != null)
+                                    {
+                                        var menuRT = menu.GetComponent<RectTransform>();
+                                        if (menuRT != null) state.ApplyWindowState(menuRT);
+                                        if (state.visible && TryGetCurve(state.dataStringA, out var curve)) 
+                                        {
+                                            builder.StartEditingCurve(curve, this);
+                                        }
+                                    }
+                                }
+                            }
                 }
             }
 
             public bool IsAssociatedWith(GameObject obj) => IsAssociatedWith(obj == null ? null : obj.transform);
+            public bool IsAssociatedWith(SwoleGameObject sgo) => IsAssociatedWith(sgo == null ? null : sgo.transform);
             public bool IsAssociatedWith(Transform transform)
             {
                 if (transform == null) return false;
@@ -368,9 +724,51 @@ namespace Swole.API.Unity
                 return false;
             }
 
-
             public List<Member> members = new List<Member>();
             public int MemberCount => members == null ? 0 : members.Count;
+
+            public Creation.ObjectPreloadState[] MemberStates  
+            {
+                get
+                {
+                    return null;
+                    // TODO: Might need this later
+                    /*
+                    var array = new Creation.ObjectPreloadState[members == null ? 0 : members.Count];
+                    if (members != null)
+                    {
+                        for(int a = 0; a < members.Count; a++)
+                        {
+                            var mem = members[a];
+                            if (mem == null) continue;
+                            array[a] = mem.State;
+                        }
+                    }
+                    return array;*/
+                }
+
+                set
+                {
+                    if (members == null) return;
+
+                    if (value != null) 
+                    { 
+                        for(int a = 0; a < value.Length; a++)
+                        {
+                            var state = value[a];
+                            if (state.id < 0) continue;
+
+                            for(int b = 0; b < members.Count; b++)
+                            {
+                                var mem = members[b];
+                                if (mem == null || mem.swoleGameObject == null || mem.swoleGameObject.id != state.id) continue;
+
+                                mem.State = state;
+                            }
+                        }
+                    }
+                }
+            }
 
             public int GetIdAtIndex(int index)
             {
@@ -424,45 +822,66 @@ namespace Swole.API.Unity
 
             public Transform containerTransform;
 
-            public Dictionary<ExecutionLayer, GameObject> activeCodeEditorWindows = new Dictionary<ExecutionLayer, GameObject>();
+            public Dictionary<ExecutionLayer, RectTransform> activeCodeEditorWindows = new Dictionary<ExecutionLayer, RectTransform>();
 
             public void Activate()
             {
+                bool dirtyFlag = isDirty;
+
                 associatedInterfaceObjects.RemoveAll(i => i.gameObject == null);
                 foreach (var state in associatedInterfaceObjects) state.gameObject.SetActive(state.activeState);
 
-                foreach (var pair in activeCodeEditorWindows) if (pair.Value != null) pair.Value.SetActive(true);
+                foreach (var pair in activeCodeEditorWindows) if (pair.Value != null) pair.Value.gameObject.SetActive(true);
 
                 if (containerTransform != null) containerTransform.gameObject.SetActive(true);
                 if (members != null)
                 {
-                    foreach (var member in members) if (member != null && member.hierarchyObject != null) member.hierarchyObject.gameObject.SetActive(true);
+                    foreach (var member in members) if (member != null)
+                        {
+                            if (member.swoleGameObject != null) member.swoleGameObject.gameObject.SetActive(!member.isHidden);
+                            if (member.hierarchyObject != null) member.hierarchyObject.gameObject.SetActive(true); 
+                        }
                 }
+
+                ApplySettings(cachedSettings);
+                isDirty = dirtyFlag;
             }
 
             public void Deactivate()
             {
+                bool dirtyFlag = isDirty;
+
+                cachedSettings = GetSettings();
+
                 associatedInterfaceObjects.RemoveAll(i => i.gameObject == null);
                 foreach (var state in associatedInterfaceObjects) state.gameObject.SetActive(false);
 
-                foreach (var pair in activeCodeEditorWindows) if (pair.Value != null) pair.Value.SetActive(false);
+                foreach (var pair in activeCodeEditorWindows) if (pair.Value != null) pair.Value.gameObject.SetActive(false); 
 
                 if (containerTransform != null) containerTransform.gameObject.SetActive(false);
                 if (members != null)
                 {
-                    foreach (var member in members) if (member != null && member.hierarchyObject != null) member.hierarchyObject.gameObject.SetActive(false);
+                    foreach (var member in members) if (member != null)
+                        {
+                            if (member.swoleGameObject != null) member.swoleGameObject.gameObject.SetActive(false);
+                            if (member.hierarchyObject != null) member.hierarchyObject.gameObject.SetActive(false);
+                        }
                 }
+                isDirty = dirtyFlag;
             }
 
+            protected bool disposed;
+            public bool IsValid => !disposed;
             public void Dispose()
             {
+                disposed = true;
                 if (activeCodeEditorWindows != null)
                 {
                     foreach(var pair in activeCodeEditorWindows)
                     {
                         if (pair.Value == null) continue;
 
-                        pair.Value.SetActive(false);
+                        pair.Value.gameObject.SetActive(false);
                         if (builder == null || builder.codeEditorPool == null) GameObject.Destroy(pair.Value); else builder.codeEditorPool.Release(pair.Value);
                     }
                     activeCodeEditorWindows.Clear();
@@ -474,6 +893,13 @@ namespace Swole.API.Unity
 
                     members.Clear();
                 }
+
+                if (previewSprite != null)
+                {
+                    if (previewSprite.texture != null) GameObject.Destroy(previewSprite.texture);
+                    GameObject.Destroy(previewSprite); 
+                }
+                previewSprite = null;
             }
 
         }
@@ -496,89 +922,297 @@ namespace Swole.API.Unity
         {
             if (IsInTestMode) EndTestMode();
 
-            var proj = ActiveProject;
-            proj?.Deactivate();
+            Project proj;
+            if (activeProjectIndex != projectIndex)
+            {
+                proj = ActiveProject;
+                if (proj != null)
+                {
+                    bool dirtyFlag = proj.IsDirty;
+                    proj.Deactivate();
+
+                    var tempProj = proj;
+                    IEnumerator ResetDirtyFlag()
+                    {
+                        yield return null;
+                        if (!dirtyFlag) tempProj.Clean();
+                    }
+                    StartCoroutine(ResetDirtyFlag());
+                }
+            }
+
+            activeProjectIndex = -1;
+
+            if (runtimeEditor != null) runtimeEditor.DeselectAll(null, false); 
 
             activeProjectIndex = projectIndex;
 
             proj = ActiveProject;
-            proj?.Activate();
+            if (proj != null)
+            {
+                bool dirtyFlag = proj.IsDirty;
+                proj.Activate();
 
-            RefreshProjectTabSelection();
+                var tempProj = proj; 
+                IEnumerator ResetDirtyFlag()
+                {
+                    yield return null;
+                    if (!dirtyFlag) tempProj.Clean();
+                }
+                StartCoroutine(ResetDirtyFlag());  
+            }
+
+            RefreshProjectTabSelection(); 
         }
 
-        public Project CreateNewProject() => CreateNewProject("untitled");
-        public Project CreateNewProject(string projectName)
+        public Project CreateNewProject() => CreateNewProject("untitled"); 
+        public Project CreateNewProject(string projectName, bool setAsActiveProject = false)
         {
-            Project project = new Project() { name = projectName };
+            Project project = new Project() { name = projectName, builder = this };
 
             openProjects.Add(project);
-            if (activeProjectIndex < 0) activeProjectIndex = openProjects.Count - 1;
+            if (activeProjectIndex < 0 || setAsActiveProject) 
+            {
+                SetActiveProject(openProjects.Count - 1);
+            }
 
-            RefreshProjectTabs();
+            //RefreshProjectTabs();
+            project.MarkAsDirty(); // refreshes project tabs
             return project;
         }
+        public void CreateNewActiveProject() => CreateNewProject("untitled", true);
+        public Project CreateNewActiveProject(string projectName) => CreateNewProject(projectName, true); 
+        
 
-        public void OpenProject(Creation creation)
+        private static readonly List<EngineInternal.ITransform> _tempTransforms = new List<EngineInternal.ITransform>();
+        public Project OpenProject(Creation creation, bool setAsActiveProject = true)
         {
-            if (creation == null) return;
+            if (creation == null) return null;
 
             if (IsInTestMode) EndTestMode();
 
-        }
+            int projectIndex = openProjects.Count;
+            var proj = CreateNewProject(creation.Name);
+            proj.packageInfo = creation.PackageInfo;
+            proj.contentInfo = creation.ContentInfo;
 
-        public void SaveProject(int index)
-        {
-            if (index < 0 || index >= openProjects.Count) return;
-            SaveProject(openProjects[index]);
+            _tempTransforms.Clear();
+            proj.Script = creation.Script;
+            if (!string.IsNullOrWhiteSpace(creation.previewTexturePath))
+            {
+                proj.PreviewTexturePath = creation.previewTexturePath;
+                if (creation.LocalPreviewTexture is ImageAsset asset)
+                {
+                    proj.previewTextureAsset = asset;
+                    proj.previewTextureAssetIsNew = false; 
+                }
+            }
+            CreationBehaviour.CreatePreRuntimeCreationPrefab(creation, true, true, null, _tempTransforms, null, false);
+            foreach(var obj in _tempTransforms)
+            {
+                if (obj == null) continue;
+                if (obj.baseGameObject.Instance is not GameObject go) continue;
+                var sgo = go.GetComponent<SwoleGameObject>();
+                if (sgo == null) continue;
+                CreateNewMember(sgo, proj, activeProjectIndex == projectIndex, sgo.name);
+            }
+
+            if (creation.CurveCount > 0)
+            {
+                for (int a = 0; a < creation.CurveCount; a++) 
+                {
+                    var curve = creation.GetCurve(a);
+                    if (curve == null) continue;
+
+                    proj.AddCurve((ICurve)curve.Clone());    
+                }
+            }
+
+            proj.cachedSettings = creation.projectSettings;
+
+            if (setAsActiveProject) SetActiveProject(projectIndex);  
+            
+            proj.Clean();
+
+            return proj;
         }
-        protected void SaveProject(Project project)
+        public bool SaveProject(int index, VoidParameterlessDelegate onSave = null, VoidParameterlessDelegate onFail = null, VoidParameterlessDelegate onComplete = null)
+        {
+            if (index < 0 || index >= openProjects.Count) return false;
+            return SaveProject(openProjects[index], onSave, onFail, onComplete);
+        }
+        public bool SaveProject(int index, VoidParameterlessDelegate onSave, VoidParameterlessDelegate onFail, VoidParameterlessDelegate onComplete, PackageInfo package, string author = null) 
+        {
+            if (index < 0 || index >= openProjects.Count) return false;
+            return SaveProject(openProjects[index], onSave, onFail, onComplete, package, author);
+        }
+        public bool SaveProject(Project project, VoidParameterlessDelegate onSave = null, VoidParameterlessDelegate onFail = null, VoidParameterlessDelegate onComplete = null) => SaveProject(project, onSave, onFail, onComplete, project.packageInfo.HasValue ? project.packageInfo.Value : EditPackageState.TargetPackage, project.contentInfo.HasValue ? project.contentInfo.Value.author : EditPackageState.CurrentAuthor);
+        protected bool SaveProject(Project project, VoidParameterlessDelegate onSave, VoidParameterlessDelegate onFail, VoidParameterlessDelegate onComplete, PackageInfo package, string author = null)
         {
             if (IsInTestMode) EndTestMode();
+            if (project == null) 
+            {
+                swole.LogError("Tried to save null project!");
+                onFail?.Invoke();
+                onComplete?.Invoke();
+                return false;
+            }
 
-            // TODO: Save Project
+            var lpkg = ContentManager.FindLocalPackage(package);
+            if (lpkg == null || lpkg.Content == null)
+            {
+                swole.LogError($"Failed to save project '{project.name}' to invalid local package '{package}'!");
+                onFail?.Invoke();
+                onComplete?.Invoke();
+                return false;
+            }
+
+            project.packageInfo = lpkg.Content.Manifest;
+
+            var pkg = SwolePackage.Create(lpkg);
+            if (project.previewSprite != null) project.ConvertPreviewSpriteToPreviewTextureAsset(); // Convert the waiting sprite to an image asset  
+
+            try
+            {
+                if (project.prevPreviewTextureAsset is ImageAsset oldPreviewAsset)
+                {
+                    oldPreviewAsset.Delete(); // delete the old preview image asset if it exists
+                    project.prevPreviewTextureAsset = null;
+                }
+            } 
+            catch(Exception ex)
+            {
+                swole.LogError(ex);
+            }
+
+            if (project.previewTextureAssetIsNew) // preview texture was created this session
+            {
+                if (project.previewTextureAsset != null)
+                {
+                    if (project.previewTextureAsset.Name != project.PreviewTextureName)
+                    {
+                        project.previewTextureAsset.DeleteImagePathAsset(lpkg);// delete old preview texture from directory if the name changed
+                        pkg.Remove(project.previewTextureAsset, false); // remove old preview texture asset from package if the name changed
+                    }
+
+                    var info = project.previewTextureAsset.contentInfo;
+                    info.name = project.PreviewTextureName;
+                    project.previewTextureAsset.contentInfo = info;
+                    project.previewTextureAsset.packageInfo = project.packageInfo.Value;
+
+                    project.PreviewTexturePath = project.previewTextureAsset.Name;
+                    pkg.AddOrReplace(project.previewTextureAsset);
+
+                    project.previewTextureAsset.ignoreSpriteOnSerialization = true;
+                    project.previewTextureAsset.SaveTextureInPackageDirectory(lpkg, true);  
+                }
+                project.previewTextureAssetIsNew = false;
+            }
+            else if (project.previewTextureAsset != null) // preview texture was loaded in or saved previously
+            {
+                if (project.previewTextureAsset.Name != project.PreviewTextureName)
+                {
+                    project.previewTextureAsset.RenameImagePathAsset(lpkg, project.PreviewTextureName, true);
+                    pkg.Remove(project.previewTextureAsset, false); // remove old preview texture asset from package if the name changed
+                }
+
+                var info = project.previewTextureAsset.contentInfo;
+                info.name = project.PreviewTextureName;
+                project.previewTextureAsset.contentInfo = info;
+                project.previewTextureAsset.packageInfo = project.packageInfo.Value;
+
+                project.PreviewTexturePath = project.previewTextureAsset.Name;
+                pkg.AddOrReplace(project.previewTextureAsset); 
+            }
+
+            if (project.CachedAsset != null && project.name != project.CachedAsset.Name) pkg.Remove(project.CachedAsset); // remove old project asset if the name changed
+
+            project.MarkAsDirty();
+            var projectAsset = project.GetCreation(package, author, ReferenceEquals(project, ActiveProject));    
+            pkg.AddOrReplace(projectAsset); 
+            lpkg.Content = pkg;  
+            if (!ContentManager.SavePackage(lpkg))
+            {
+                swole.LogError($"Failed to save project '{project.name}' to local package '{package}'!");
+                onFail?.Invoke();
+                onComplete?.Invoke();
+                return false;
+            }
             project.Clean();
+
+            onSave?.Invoke();
+            onComplete?.Invoke();
+            return true;
         }
 
-        public void CloseProject(int index) 
+        public void CloseProject(int index) => CloseProject(index, null, null, null);
+        public void CloseProject(int index, VoidParameterlessDelegate OnFullyClose, VoidParameterlessDelegate OnCancel, VoidParameterlessDelegate OnComplete) 
         {
             if (index < 0 || index >= openProjects.Count) return;
-            CloseProject(openProjects[index]);
+            CloseProject(openProjects[index], OnFullyClose, OnCancel, OnComplete); 
         }
-        protected void CloseProject(Project project)
+        protected void CloseProject(Project project) => CloseProject(project, null, null, null);
+        protected void CloseProject(Project project, VoidParameterlessDelegate OnFullyClose, VoidParameterlessDelegate OnCancel, VoidParameterlessDelegate OnComplete)
         {
             if (IsInTestMode) EndTestMode();
-
+             
             void FullyClose()
             {
-                int index = openProjects.IndexOf(project); 
+                int index = openProjects.IndexOf(project);
                 if (index >= 0)
                 {
+                    if (index == activeProjectIndex && openProjects.Count > 1)
+                    {
+                        int nextActiveIndex = index >= openProjects.Count - 1 ? (index - 1) : (index + 1);
+                        nextActiveIndex = Mathf.Clamp(nextActiveIndex, 0, openProjects.Count - 1); 
+
+                        SetActiveProject(nextActiveIndex);    
+                    }
+                     
                     openProjects.RemoveAt(index);
-                    if (index < activeProjectIndex) 
-                    { 
-                        activeProjectIndex--; 
-                    } 
-                    else 
-                    { 
-                        activeProjectIndex = Mathf.Clamp(activeProjectIndex, 0, openProjects.Count - 1); 
+                    if (index < activeProjectIndex)
+                    {
+                        activeProjectIndex--;
+                    }
+                    else
+                    {
+                        activeProjectIndex = Mathf.Clamp(activeProjectIndex, 0, openProjects.Count - 1);
+                    }
+
+                    if (openProjects == null || activeProjectIndex < 0 || activeProjectIndex >= openProjects.Count) // No projects are open
+                    {
+                        CloseFloatingWindows();  
                     }
                 }
 
                 RefreshProjectTabs();
 
                 project.Dispose();
+                OnFullyClose?.Invoke();
+                OnComplete?.Invoke();
             }
-
+            
             if (project.IsDirty)
             {
-                ShowPopupYesNoCancel("SAVE PROJECT", $"Project '{project.name}' has unsaved changes! Do you want to save them before closing?", () => { SaveProject(project); FullyClose(); }, FullyClose, null);
+                IEnumerator WaitForPrompt()
+                {
+                    while (true)
+                    {
+                        if (ShowPopupYesNoCancel("SAVE PROJECT", $"Project '{project.name}' has unsaved changes! Do you want to save them before closing?", () => { TryQuickSave(project, true, null, null, FullyClose); }, FullyClose, () =>
+                        {
+                            OnCancel?.Invoke();
+                            OnComplete?.Invoke();
+                        })) break;  
+                        yield return null;
+                    }
+                }
+                StartCoroutine(WaitForPrompt()); 
             }
             else FullyClose();
         }
 
-        private const string objName_Identifier = "Name";
-        private const string objParentMask_Identifier = "ParentMask"; 
+        private const string str_name = "Name";
+        private const string str_parentMask = "ParentMask"; 
 
         [Header("Main Setup")]
         public Canvas canvasMain;
@@ -586,14 +1220,16 @@ namespace Swole.API.Unity
         protected RectTransform canvasMainTransform;
         protected RectTransform canvasElevatedTransform;
 
+        public SceneSwap sceneSwapper;
+
         #region Project Tabs
         public HorizontalLayoutGroup creationTabsLayoutGroup;
         protected RectTransform creationTabsTransform;
         public GameObject creationTabPrototype;
         protected PrefabPool creationTabPool;
 
-        protected const string _activeTag = "Active";
-        protected const string _closeTag = "Close";
+        protected const string str_active = "active";
+        protected const string str_close = "close";
 
         protected readonly List<GameObject> projectTabs = new List<GameObject>();
         public void RefreshProjectTabs() 
@@ -613,9 +1249,9 @@ namespace Swole.API.Unity
                 inst.SetActive(true);
 
                 int index = a;
-                CustomEditorUtils.SetComponentText(inst, proj == null ? "null" : proj.name); 
+                CustomEditorUtils.SetComponentText(inst, proj == null ? "null" : proj.DisplayName);   
                 CustomEditorUtils.SetButtonOnClickAction(inst, () => SetActiveProject(index));
-                CustomEditorUtils.SetButtonOnClickActionByName(inst, _closeTag, () => CloseProject(proj));
+                CustomEditorUtils.SetButtonOnClickActionByName(inst, str_close, () => CloseProject(proj));
 
                 projectTabs.Add(inst);
             }
@@ -629,7 +1265,7 @@ namespace Swole.API.Unity
                 var tab = projectTabs[a];
                 if (tab == null) continue;
 
-                var active = tab.transform.FindDeepChildLiberal(_activeTag);
+                var active = tab.transform.FindDeepChildLiberal(str_active);
                 if (active != null) active.gameObject.SetActive(a == activeProjectIndex);
             }
         }
@@ -662,12 +1298,479 @@ namespace Swole.API.Unity
         [Tooltip("Maximum amount of windows that can be open at one time. These windows are those like the code editor or object editor.")]
         public int maxOpenWindowsPerType = 15;
 
+        #region Editor Windows
+
+        public void OpenStatefulEditorWindow(string windowStateID, Project proj, GameObject editorWindow, out RectTransform editorWindowRT, out Canvas canvas, out RectTransform canvasRT)
+        {
+            editorWindow.SetActive(true);
+
+            editorWindowRT = editorWindow.GetComponent<RectTransform>();
+            editorWindowRT.SetAsLastSibling();
+
+            canvas = editorWindow.GetComponentInParent<Canvas>();
+            canvasRT = canvas == null ? null : canvas.GetComponent<RectTransform>();
+
+            OpenStatefulEditorWindow(windowStateID, proj, editorWindow, editorWindowRT, canvasRT);
+        }
+        public void OpenStatefulEditorWindow(string windowStateID, Project proj, GameObject editorWindow) => OpenStatefulEditorWindow(windowStateID, proj, editorWindow, out _, out _, out _);
+        public void OpenStatefulEditorWindow(string windowStateID, Project proj, GameObject editorWindow, RectTransform editorWindowRT, RectTransform canvasRT)
+        {
+            if (proj == null) return;
+
+            UIResizer editorResizer = null;
+            UIPopup editorPopup = null;
+
+
+            if (proj.TryGetWindowState(windowStateID, out var state))
+            {
+                state.visible = true;
+                state.ApplyWindowState(editorWindowRT, canvasRT);
+                proj.SetWindowState(windowStateID, state);
+            }
+
+            void OnClose()
+            {
+                if (proj == null || !proj.IsValid)
+                {
+                    proj = null;
+                    return;
+                }
+
+                proj.SetWindowState(windowStateID, editorWindowRT.AsResizableWindowState(false, canvasRT));
+                if (editorPopup != null) editorPopup.OnDragStep?.RemoveAllListeners();
+                if (editorResizer != null) editorResizer.OnDragStep?.RemoveAllListeners();
+                editorPopup = null;
+                editorResizer = null;
+            }
+            void OnDrag()
+            {
+                if (proj == null || !proj.IsValid)
+                {
+                    proj = null;
+                    return;
+                }
+
+                proj.SetWindowState(windowStateID, editorWindowRT.AsResizableWindowState(true, canvasRT));
+            }
+            editorPopup = editorWindow.GetComponentInChildren<UIPopup>(true);
+            if (editorPopup != null)
+            {
+                if (editorPopup.OnDragStep == null) editorPopup.OnDragStep = new UnityEvent(); else editorPopup.OnDragStep.RemoveAllListeners();
+                editorPopup.OnDragStep.AddListener(OnDrag);
+
+                if (editorPopup.OnClose == null) editorPopup.OnClose = new UnityEvent(); else editorPopup.OnClose.RemoveAllListeners();
+                editorPopup.OnClose.AddListener(OnClose);
+            }
+            else
+            {
+                CustomEditorUtils.SetButtonOnClickActionByName(editorWindow, str_close, () =>
+                {
+                    OnClose();
+                    editorWindow.SetActive(false);
+                }, true, true, false);
+            }
+
+            editorResizer = editorWindow.GetComponentInChildren<UIResizer>(true);
+            if (editorResizer != null)
+            {
+                if (editorResizer.OnDragStep == null) editorResizer.OnDragStep = new UnityEvent(); else editorResizer.OnDragStep.RemoveAllListeners();
+                editorResizer.OnDragStep.AddListener(OnDrag);
+            }
+
+            proj.SetWindowState(windowStateID, editorWindowRT.AsResizableWindowState(true, canvasRT));
+        }
+
         [Tooltip("A window for editing an object's properties, such as name and transform.")]
         public UIPopup objectEditorWindow;
         protected PrefabPool objectEditorPool;
         [Tooltip("A window for editing SwoleScript code.")]
         public UIPopup codeEditorWindow;
         protected PrefabPool codeEditorPool;
+
+        [Tooltip("A window for setting the preview image for a creation asset.")]
+        public GameObject setPreviewImageWindow;
+
+        private const string str_keep = "keep";
+        private const string str_discard = "discard";
+        private const string str_preview = "preview";
+        public void SetPreviewImage() => SetPreviewImage(ActiveProject);
+        public void SetPreviewImage(Project project)
+        { 
+            if (project == null) project = ActiveProject;
+
+            Vector2 startCoords, endCoords;
+            if (Screen.width >= Screen.height)
+            {
+                float aspectRatio = Screen.height / (float)Screen.width;
+                startCoords = new Vector2(0.5f - (0.25f * aspectRatio), 0.25f);
+                endCoords = new Vector2(0.5f + (0.25f * aspectRatio), 0.75f);
+            } 
+            else
+            {
+                float aspectRatio = Screen.width / (float)Screen.height;
+                startCoords = new Vector2(0.25f, 0.5f - (0.25f * aspectRatio));
+                endCoords = new Vector2(0.75f, 0.5f + (0.25f * aspectRatio));   
+            }
+            
+            var screenshot = Utils.TakeScreenshot(startCoords, endCoords, true, false, Creation._defaultPreviewTextureSize, Creation._defaultPreviewTextureSize);
+            Sprite sprite = Sprite.Create(screenshot, new Rect(0, 0, screenshot.width, screenshot.height), new Vector2(0.5f, 0.5f));       
+            if (setPreviewImageWindow != null)
+            {
+                setPreviewImageWindow.SetActive(true); 
+                setPreviewImageWindow.transform.SetAsLastSibling(); 
+
+                var previewT = setPreviewImageWindow.transform.FindDeepChildLiberal(str_preview);
+                if (previewT != null)
+                {
+                    var preview = previewT.GetComponentInChildren<Image>();
+                    if (preview != null) 
+                    {
+                        preview.color = Color.white;
+                        preview.sprite = sprite;  
+                    }
+                }
+
+                void Keep()
+                {
+                    setPreviewImageWindow.gameObject.SetActive(false);
+                    SetPreviewImage(sprite, project);
+                }
+                void Discard()
+                {
+                    setPreviewImageWindow.gameObject.SetActive(false);
+                    GameObject.Destroy(screenshot);
+                    GameObject.Destroy(sprite);
+                }
+                CustomEditorUtils.SetButtonOnClickActionByName(setPreviewImageWindow, str_keep, Keep);
+                CustomEditorUtils.SetButtonOnClickActionByName(setPreviewImageWindow, str_discard, Discard);
+                CustomEditorUtils.SetButtonOnClickActionByName(setPreviewImageWindow, str_close, Discard);  
+            } 
+            else
+            {
+                SetPreviewImage(sprite, project);
+            }
+        }
+        public void SetPreviewImage(Sprite sprite) => SetPreviewImage(sprite, ActiveProject);
+        public void SetPreviewImage(Sprite sprite, Project project)
+        {
+            if (project == null) project = ActiveProject;
+            project?.SetPreviewImage(sprite);
+        }
+        public void SetPreviewImage(ImageAsset asset, Project project = null)
+        {
+            if (project == null) project = ActiveProject;
+            project?.SetPreviewImage(asset);
+        }
+
+        [Tooltip("A window for opening a saved project.")]
+        public GameObject loadProjectWindow;
+        [Tooltip("A window for saving a project.")]
+        public GameObject saveProjectWindow;
+
+        private const string str_info = "info";
+
+        private const string str_projectName = "projectName";
+        private const string str_packageName = "packageName";
+
+        private const string str_findPackage = "findPackage";
+
+        private const string str_openProject = "openProject";
+        private const string str_saveProject = "saveProject";
+
+        private const string str_errorMessage = "errorMessage";
+
+        public void OpenLoadProjectWindow()
+        {
+            if (loadProjectWindow == null) return;
+            
+            loadProjectWindow.gameObject.SetActive(true);
+
+            var windowT = loadProjectWindow.transform;
+            windowT.SetAsLastSibling();
+
+            var infoT = windowT.FindDeepChildLiberal(str_info);
+
+            Transform previewT = null;
+            Image preview = null;
+            if (infoT != null)
+            {
+                previewT = infoT.FindDeepChildLiberal(str_preview);
+                if (previewT != null)
+                {
+                    preview = previewT.GetComponentInChildren<Image>(true);
+                    preview.gameObject.SetActive(true); 
+                    preview.sprite = null;
+                    preview.enabled = false;
+                }
+                CustomEditorUtils.SetInputOrTextComponentTextByName(infoT, str_projectName, string.Empty); 
+            }
+
+            CustomEditorUtils.SetButtonOnClickActionByName(windowT, str_openProject, null, true, true, false);
+            CustomEditorUtils.SetButtonInteractableByName(windowT, str_openProject, false, true, true); 
+
+            var projList = loadProjectWindow.GetComponentInChildren<UICategorizedList>(true);
+            if (projList != null)
+            {
+                projList.Clear(true);
+                for(int a = 0; a < ContentManager.LocalPackageCount; a++)
+                {
+                    var lpkg = ContentManager.GetLocalPackage(a);
+                    if (lpkg == null) continue;
+
+                    var cat = projList.AddNewCategory(lpkg.GetIdentityString());
+                    foreach(var content in lpkg.Content)
+                    {
+                        if (content == null || !typeof(Creation).IsAssignableFrom(content.AssetType)) continue;
+
+                        bool alreadyOpen = false;
+                        foreach(var openProj in this.openProjects)
+                        {
+                            if (openProj.name != null && content.Name != null && openProj.name.AsID() == content.Name.AsID() && openProj.packageInfo.HasValue && openProj.packageInfo.Value.GetIdentityString().AsID() == lpkg.GetIdentityString().AsID())
+                            {
+                                alreadyOpen = true;
+                                break;
+                            }
+                        }
+
+                        var contentRef = content;
+                        void OnClick()
+                        {
+                            if (runtimeEditor != null) runtimeEditor.DisableClickSelectForTime(0.4f);  
+
+                            CustomEditorUtils.SetInputOrTextComponentTextByName(infoT, str_projectName, contentRef.Name);
+                            if (preview != null)
+                            {
+                                preview.enabled = false; 
+                                if (contentRef.Asset != null) // Fully loads content
+                                {
+                                    var creation = (Creation)contentRef.Asset;
+                                    if (creation.PreviewTexture is ImageAsset img)
+                                    {
+                                        preview.enabled = true;
+                                        preview.sprite = img.Sprite; // get or create sprite
+                                    }
+                                }
+                            }
+
+                            void OpenProj()
+                            {
+                                loadProjectWindow.SetActive(false); 
+                                OpenProject((Creation)contentRef.Asset, true);
+                            }
+
+                            CustomEditorUtils.SetButtonOnClickActionByName(windowT, str_openProject, OpenProj, true, true, false);
+                            CustomEditorUtils.SetButtonInteractableByName(windowT, str_openProject, !alreadyOpen, true, true);     
+
+                        }
+                        projList.AddNewListMember(contentRef.Name, cat, OnClick);
+                    }
+                }
+            }
+        }
+
+        public void OpenSaveProjectWindow() => OpenSaveProjectWindow(ActiveProject);
+        public void OpenSaveProjectWindow(Project proj, VoidParameterlessDelegate onSave = null, VoidParameterlessDelegate onFail = null, VoidParameterlessDelegate onComplete = null)
+        {
+            if (proj == null || saveProjectWindow == null) 
+            {
+                onFail?.Invoke();
+                onComplete?.Invoke();
+                return; 
+            }
+
+            saveProjectWindow.gameObject.SetActive(true);
+
+            var windowT = saveProjectWindow.transform;
+            windowT.SetAsLastSibling();
+
+            var infoT = windowT.FindDeepChildLiberal(str_info);
+
+            Transform saveProjectButtonT = windowT.FindDeepChildLiberal(str_saveProject);
+            Transform findPackageButtonT = windowT.FindDeepChildLiberal(str_findPackage);
+
+            void OnPackageNameChange(string pkgString)
+            {
+                if (SwoleUtil.IsPackageStringWithVersion(pkgString))
+                {
+                    if (saveProjectButtonT != null) saveProjectButtonT.gameObject.SetActive(true);
+                    if (findPackageButtonT != null) findPackageButtonT.gameObject.SetActive(false);
+                }
+                else
+                {
+                    if (saveProjectButtonT != null) saveProjectButtonT.gameObject.SetActive(false);
+                    if (findPackageButtonT != null) findPackageButtonT.gameObject.SetActive(true);
+                }
+            }
+
+            Transform previewT = null;
+            Image preview = null;
+            if (infoT != null)
+            {
+                previewT = infoT.FindDeepChildLiberal(str_preview); 
+                if (previewT != null)
+                {
+                    preview = previewT.GetComponentInChildren<Image>(true);
+                    preview.gameObject.SetActive(true);
+                    preview.sprite = null;
+                    preview.enabled = false;
+                }
+                if (preview != null)
+                {
+                    if (proj.previewTextureAsset != null)
+                    {
+                        preview.enabled = true;
+                        preview.sprite = proj.previewTextureAsset.Sprite;
+                    }
+                }
+
+                CustomEditorUtils.SetInputOrTextComponentTextByName(infoT, str_projectName, proj.name);
+                CustomEditorUtils.SetInputFieldOnValueChangeActionByName(infoT, str_packageName, OnPackageNameChange);
+                string pkgStr = proj.packageInfo.HasValue ? proj.packageInfo.Value.GetIdentityString() : string.Empty;
+                CustomEditorUtils.SetInputOrTextComponentTextByName(infoT, str_packageName, pkgStr);
+                OnPackageNameChange(pkgStr); 
+            }
+
+            Transform errorT = windowT.FindDeepChildLiberal(str_errorMessage);
+            UIPopupMessageFadable errorMessage = null;
+            if (errorT != null)
+            {
+                errorMessage = errorT.GetComponentInChildren<UIPopupMessageFadable>(true);
+            }
+
+            void FindPackage()
+            {
+                string pkg_name = CustomEditorUtils.GetInputOrTextComponentTextByName(infoT, str_packageName);
+                if (string.IsNullOrWhiteSpace(pkg_name))
+                {
+                    errorMessage.SetMessage("Package name cannot be empty.").SetDisplayTime(errorMessage.DefaultDisplayTime).Show();
+                    return;
+                }
+                if (!SwoleUtil.IsPackageString(pkg_name))
+                {
+                    errorMessage.SetMessage("Package name is invalid.").SetDisplayTime(errorMessage.DefaultDisplayTime).Show();
+                    return;
+                }
+                var lpkg = ContentManager.FindLocalPackage(new PackageIdentifier(pkg_name));
+                if (lpkg == null || lpkg.Content == null)
+                {
+                    errorMessage.SetMessage($"Local package '{pkg_name}' could not be found.").SetDisplayTime(errorMessage.DefaultDisplayTime).Show();
+                    return;
+                }
+
+                CustomEditorUtils.SetInputOrTextComponentTextByName(windowT, str_packageName, lpkg.GetIdentityString());
+                if (saveProjectButtonT != null) saveProjectButtonT.gameObject.SetActive(true);
+                if (findPackageButtonT != null) findPackageButtonT.gameObject.SetActive(false);
+            }
+
+            bool saved = false;
+            void Save()
+            {
+                if (runtimeEditor != null) runtimeEditor.DisableClickSelectForTime(0.4f); 
+
+                if (proj == null || !proj.IsValid)
+                {
+                    errorMessage.SetMessage("An unexpected error occurred.").SetDisplayTime(errorMessage.DefaultDisplayTime).Show(); 
+                    return;
+                }
+
+                string proj_name = CustomEditorUtils.GetInputOrTextComponentTextByName(infoT, str_projectName);
+                if (string.IsNullOrWhiteSpace(proj_name))
+                {
+                    errorMessage.SetMessage("Project name cannot be empty.").SetDisplayTime(errorMessage.DefaultDisplayTime).Show();
+                    return;
+                }
+                if (!SwoleUtil.IsContentName(proj_name))
+                {
+                    errorMessage.SetMessage("Project name is invalid.").SetDisplayTime(errorMessage.DefaultDisplayTime).Show();
+                    return;
+                }
+
+                string pkg_name = CustomEditorUtils.GetInputOrTextComponentTextByName(infoT, str_packageName);
+                if (string.IsNullOrWhiteSpace(pkg_name))
+                {
+                    errorMessage.SetMessage("Package name cannot be empty.").SetDisplayTime(errorMessage.DefaultDisplayTime).Show();
+                    return;
+                }
+                if (!SwoleUtil.IsPackageString(pkg_name))
+                {
+                    errorMessage.SetMessage("Package name is invalid.").SetDisplayTime(errorMessage.DefaultDisplayTime).Show();
+                    return;
+                }
+                var lpkg = ContentManager.FindLocalPackage(new PackageIdentifier(pkg_name));
+                if (lpkg == null || lpkg.Content == null)
+                {
+                    errorMessage.SetMessage($"Local package '{pkg_name}' could not be found.").SetDisplayTime(errorMessage.DefaultDisplayTime).Show();
+                    return;
+                }
+
+                proj.name = proj_name;
+                proj.packageInfo = lpkg.Content.Manifest;
+                if (SaveProject(proj)) 
+                { 
+                    saved = true;
+                    onSave?.Invoke();
+                }
+
+                windowT.gameObject.SetActive(false);
+            }
+
+            CustomEditorUtils.SetButtonOnClickActionByName(windowT, str_saveProject, Save, true, true, false);
+            CustomEditorUtils.SetButtonOnClickActionByName(windowT, str_findPackage, FindPackage, true, true, false);
+
+            if (onComplete != null)
+            {
+                IEnumerator WaitForClose()
+                {
+                    while (true)
+                    {
+                        if (windowT == null) break;
+                        if (!windowT.gameObject.activeInHierarchy)
+                        {
+                            if (!saved) onFail?.Invoke();  
+                            onComplete?.Invoke();
+                            break;
+                        }
+                        yield return null;
+                    }
+                }
+                StartCoroutine(WaitForClose());
+            } 
+        }
+        public void TryQuickSave()
+        {
+            TryQuickSave(ActiveProject);
+        }
+        public void TryQuickSave(Project proj, bool openSaveProjectWindowOnFail = true, VoidParameterlessDelegate onSave = null, VoidParameterlessDelegate onFail = null, VoidParameterlessDelegate onComplete = null)
+        {
+            if (proj == null) return;
+
+            if (proj.packageInfo.HasValue && proj.packageInfo.Value.NameIsValid)  
+            {
+                if (SaveProject(proj)) 
+                {
+                    onSave?.Invoke();
+                    onComplete?.Invoke();
+                    return; 
+                }
+            }
+
+            if (openSaveProjectWindowOnFail) 
+            { 
+                OpenSaveProjectWindow(proj, onSave, onFail, onComplete); 
+            } 
+            else
+            {
+                onFail?.Invoke();
+                onComplete?.Invoke();
+            }
+        }
+        public void QuickSaveAll()
+        {
+            if (openProjects == null) return;
+
+            foreach(var proj in openProjects) TryQuickSave(proj, false);
+        }
+
 
         [Tooltip("A window for importing tile collections.")]
         public GameObject tileCollectionImportWindow;
@@ -760,15 +1863,206 @@ namespace Swole.API.Unity
             packageImportWindow.transform.SetAsLastSibling();
             if (popup != null) popup.Elevate();
         }
-        public void OpenPrefabPicker()
-        {
-            if (PrefabHandler == null) return;
 
-            if (prefabHandler.tilePickerWindow != null) 
+        public void ClosePrefabPalette()
+        {
+            if (PrefabHandler == null || prefabHandler.tilePickerWindow == null) return;
+            prefabHandler.tilePickerWindow.SetActive(false); 
+        }
+        public void OpenPrefabPalette() => OpenPrefabPalette(ActiveProject);
+        public void OpenPrefabPalette(Project proj)
+        {
+            if (proj == null || PrefabHandler == null || prefabHandler.tilePickerWindow == null) return;
+
+            var editorWindow = prefabHandler.tilePickerWindow; 
+            OpenStatefulEditorWindow(windowStateID_objectPalette, proj, editorWindow);
+        }
+
+        public RectTransform curveWindow;
+        public RectTransform animationCurveEditorWindow;
+        public RectTransform bezierCurveEditorWindow;
+
+        protected const string str_edit = "edit";
+        protected const string str_delete = "delete";
+        protected const string str_add = "add";
+        protected const string str_bezier = "bezier";
+        protected const string str_time = "time";
+        protected const string str_create = "create";
+
+        public void OpenCurveMenu() => OpenCurveMenu(curveWindow, ActiveProject);
+        public void OpenCurveMenu(Project proj) => OpenCurveMenu(curveWindow, proj);
+        public void OpenCurveMenu(RectTransform curveWindow) => OpenCurveMenu(curveWindow, ActiveProject);
+        public void OpenCurveMenu(RectTransform curveWindow, Project proj)
+        {
+            if (curveWindow == null) return;
+
+            OpenStatefulEditorWindow(windowStateID_curvesMenu, proj, curveWindow.gameObject);
+
+            var list = curveWindow.GetComponentInChildren<UIRecyclingList>();
+            if (list != null)
             {
-                prefabHandler.tilePickerWindow.SetActive(true);
+                list.Clear();
+
+                if (proj != null)
+                {
+
+                    void OnRefresh(UIRecyclingList.MemberData memData, GameObject listObj)
+                    {
+                        ICurve curve = null;
+                        if (memData.storage is ICurve c) curve = c;
+
+                        void OnUpdateName(string name)
+                        {
+                            memData.name = name;
+                            if (curve != null) curve.Name = name;
+
+                            list.AddOrUpdateMember(memData, false);
+                        }
+
+                        CustomEditorUtils.SetInputFieldOnValueChangeAction(listObj, OnUpdateName);
+
+                        CustomEditorUtils.SetButtonOnClickActionByName(listObj, str_edit, () => StartEditingCurve(curve, proj));
+                        CustomEditorUtils.SetButtonOnClickActionByName(listObj, str_delete, () =>
+                        {
+                            proj.RemoveCurve(curve);
+                            OpenCurveMenu(curveWindow, proj);
+                        });
+                    }
+
+                    for (int a = 0; a < proj.CurveCount; a++)
+                    {
+                        var curve = proj.GetCurve(a);
+                        if (curve == null) continue;
+
+                        list.AddNewMember(curve.Name, null, false, OnRefresh, curve);
+                    }
+                    list.Refresh(); 
+                    
+                    var addCurveMenu = curveWindow.FindDeepChildLiberal("AddCurveMenu"); 
+                    if (addCurveMenu != null)
+                    {
+                        var type = curveWindow.FindDeepChildLiberal("Type");
+                        if (type != null)
+                        {
+                            void CreateCurve()
+                            {
+                                if (addCurveMenu != null)
+                                {
+                                    var typeStr = CustomEditorUtils.GetComponentTextByName(type, "Current-Text").AsID();
+
+                                    ICurve curve = null;
+                                    if (typeStr == str_bezier.AsID())
+                                    {
+                                        curve = new ExternalBezierCurve();
+                                    }
+                                    else if (typeStr == str_time.AsID())
+                                    {
+                                        curve = new EditableAnimationCurve(); 
+                                    }
+
+                                    addCurveMenu.gameObject.SetActive(false);
+                                    if (curve != null)
+                                    {
+                                        string curveName = CustomEditorUtils.GetInputOrTextComponentTextByName(addCurveMenu, str_name);    
+                                        if (string.IsNullOrWhiteSpace(curveName)) curveName = "unnamed_curve"; 
+                                        curve.Name = curveName;
+
+                                        int i = 2;
+                                        while (proj.TryGetCurve(curveName, out _)) 
+                                        { 
+                                            curveName = curve.Name + $"({i})";
+                                            i++;
+                                        }
+                                        curve.Name = curveName;
+
+                                        proj.AddCurve(curve);
+                                        OpenCurveMenu(curveWindow);  
+                                    }
+                                }
+                            }
+                            void OpenAddCurveMenu()
+                            {
+                                if (addCurveMenu != null)
+                                {
+                                    addCurveMenu.gameObject.SetActive(true);
+                                    CustomEditorUtils.SetButtonOnClickActionByName(addCurveMenu, str_create, CreateCurve);
+                                    CustomEditorUtils.SetInputFieldTextByName(addCurveMenu, str_name, string.Empty);
+                                }
+                            }
+
+                            CustomEditorUtils.SetButtonOnClickActionByName(curveWindow, str_add, OpenAddCurveMenu); 
+                        }
+                    }
+                }
             }
         }
+        public void StartEditingCurve(ICurve curve, Project proj)
+        {
+            if (proj == null || !proj.IsValid) return;
+
+#if BULKOUT_ENV
+            if (curve is ExternalBezierCurve ebc)
+            {
+                if (bezierCurveEditorWindow != null)
+                {
+                    OpenStatefulEditorWindow(windowStateID_bezierCurveEditor, proj, bezierCurveEditorWindow.gameObject);
+                    if (proj.TryGetWindowState(windowStateID_bezierCurveEditor, out var state))
+                    {
+                        state.dataStringA = curve.Name;
+                        proj.SetWindowState(windowStateID_bezierCurveEditor, state);
+                    }
+
+                    var editor = bezierCurveEditorWindow.GetComponentInChildren<BezierCurveEditor2D>(true); 
+                    if (editor != null)
+                    {
+                        if (editor.OnStateChange == null) editor.OnStateChange = new UnityEvent<AnimationCurveEditor.State, AnimationCurveEditor.State>(); else editor.OnStateChange.RemoveAllListeners();
+                        editor.SetCurve(ebc); 
+                        editor.OnStateChange.AddListener((AnimationCurveEditor.State stateA, AnimationCurveEditor.State stateB) => proj.MarkAsDirty()); 
+                    }
+                }
+                return;
+            }
+#endif
+
+            if (curve is EditableAnimationCurve eac)
+            {
+                if (animationCurveEditorWindow != null)
+                {
+                    OpenStatefulEditorWindow(windowStateID_animationCurveEditor, proj, animationCurveEditorWindow.gameObject);
+                    if (proj.TryGetWindowState(windowStateID_animationCurveEditor, out var state))
+                    {
+                        state.dataStringA = curve.Name;
+                        proj.SetWindowState(windowStateID_animationCurveEditor, state); 
+                    }
+
+                    var editor = animationCurveEditorWindow.GetComponentInChildren<SwoleCurveEditor>(true);  
+                    if (editor != null)
+                    {
+                        if (editor.OnStateChange == null) editor.OnStateChange = new UnityEvent<AnimationCurveEditor.State, AnimationCurveEditor.State>(); else editor.OnStateChange.RemoveAllListeners();
+                        editor.SetCurve(eac);
+                        editor.OnStateChange.AddListener((AnimationCurveEditor.State stateA, AnimationCurveEditor.State stateB) => proj.MarkAsDirty());  
+                    }
+                }
+            }
+        }
+        public void CloseCurveMenu()
+        {
+            if (curveWindow != null) curveWindow.gameObject.SetActive(false);
+        }
+        public void CloseCurveEditors() 
+        {
+            if (animationCurveEditorWindow != null) animationCurveEditorWindow.gameObject.SetActive(false);
+            if (bezierCurveEditorWindow != null) bezierCurveEditorWindow.gameObject.SetActive(false);
+        }
+
+        public void CloseFloatingWindows()
+        {
+            ClosePrefabPalette();
+            CloseCurveMenu();
+            CloseCurveEditors();
+        }
+
+        #endregion
 
         private RectTransform placeholderTransform;
         private Image placeholderGraphic;
@@ -812,7 +2106,7 @@ namespace Swole.API.Unity
         public void RemoveSelectedPrefabCollection()
         {
             if (prefabHandler == null) return;
-            var activePrefabCollectionName = prefabHandler.GetNameOfSelectedCollection();
+            var activePrefabCollectionName = prefabHandler.GetNameOfActiveCollection();
             if (string.IsNullOrWhiteSpace(activePrefabCollectionName)) return;
 
             var activePrefabCollectionNameId = activePrefabCollectionName.AsID();
@@ -833,12 +2127,12 @@ namespace Swole.API.Unity
                 ShowPopupYesNoCancel("DELETE OBJECTS", $"Do you want to delete all objects associated with the collection '{activePrefabCollectionName}' as well?", () =>
                 {
                     DeleteAllObjectsAssociatedWith(activePrefabCollectionName);
-                    prefabHandler.RemoveSelectedCollection();
-                }, prefabHandler.RemoveSelectedCollection, null); 
+                    prefabHandler.RemoveActiveCollection();
+                }, prefabHandler.RemoveActiveCollection, null); 
             }  
             else
             {
-                prefabHandler.RemoveSelectedCollection(); 
+                prefabHandler.RemoveActiveCollection(); 
             }
         }
         public void DeleteAllObjectsAssociatedWith(TileCollection tileCollection) => DeleteAllObjectsAssociatedWith(tileCollection.name);
@@ -900,6 +2194,42 @@ namespace Swole.API.Unity
         public GameObject loadingOverlay;
 
         [Header("Buttons")]
+        public GameObject quickSaveButton;
+        private const string str_unsaved = "unsaved";
+        private const string str_unsynced = "unsynced";
+        private const string str_synced = "synced";
+        public void RefreshQuickSaveButton()
+        {
+            if (quickSaveButton == null) return; 
+
+            var proj = ActiveProject;
+
+            var quickSaveButtonT = quickSaveButton.transform; 
+
+            var unsavedT = quickSaveButtonT.FindDeepChildLiberal(str_unsaved);
+            var unsyncedT = quickSaveButtonT.FindDeepChildLiberal(str_unsynced);
+            var syncedT = quickSaveButtonT.FindDeepChildLiberal(str_synced);
+
+            if (proj != null && (!proj.packageInfo.HasValue || !proj.packageInfo.Value.NameIsValid)) 
+            {
+                if (unsavedT != null) unsavedT.gameObject.SetActive(true);
+                if (unsyncedT != null) unsyncedT.gameObject.SetActive(false);
+                if (syncedT != null) syncedT.gameObject.SetActive(false);  
+            } 
+            else if (proj != null && proj.IsDirty)
+            {
+                if (unsavedT != null) unsavedT.gameObject.SetActive(false);
+                if (unsyncedT != null) unsyncedT.gameObject.SetActive(true);
+                if (syncedT != null) syncedT.gameObject.SetActive(false);
+            } 
+            else
+            {
+                if (unsavedT != null) unsavedT.gameObject.SetActive(false);
+                if (unsyncedT != null) unsyncedT.gameObject.SetActive(false);
+                if (syncedT != null) syncedT.gameObject.SetActive(true);
+            }
+        }
+
         public GameObject playButton;
         public GameObject stopButton;
 
@@ -962,6 +2292,9 @@ namespace Swole.API.Unity
             }
         }
         protected Camera mainCamera;
+        /// <summary>
+        /// The default main camera in the unity scene
+        /// </summary>
         public Camera MainCamera
         {
             get
@@ -1207,8 +2540,8 @@ namespace Swole.API.Unity
                                     OnEditorSetupSuccess.Invoke();
                                 }
 
-                                if (prefabHandler != null) SetupPrefabHandler(); else prefabHandler = PrefabHandler;  
-                                if (prefabHandler != null)
+                                if (prefabHandler != null) SetupPrefabHandler(); else prefabHandler = PrefabHandler;   
+                                /*if (prefabHandler != null)
                                 {
                                     IEnumerator DeactivatePickerWindows()
                                     {
@@ -1216,9 +2549,11 @@ namespace Swole.API.Unity
                                         if (prefabHandler.tilePickerWindow != null) prefabHandler.tilePickerWindow.SetActive(false);
                                     }
                                     StartCoroutine(DeactivatePickerWindows()); 
-                                }
+                                }*/
 
                                 EndTestMode();
+
+                                Init(); 
                             }
 
                             StartCoroutine(FindRuntimeEditor()); // Wait for scene to fully load, then find the runtime editor.
@@ -1244,9 +2579,77 @@ namespace Swole.API.Unity
 
         }
 
-        protected virtual void Start()
+        protected virtual void Init()
         {
-            if (ProjectCount <= 0) CreateNewProject();
+            //if (ProjectCount <= 0) CreateNewProject(); 
+            if (ProjectCount <= 0 && EditPackageState.TargetContent is Creation creation) OpenProject(creation);
+
+            if (sceneSwapper == null) sceneSwapper = GameObject.FindFirstObjectByType<SceneSwap>();
+        }
+
+        public void ExitToPreviousScene(int fallbackSceneId)
+        {
+            void FullExit()
+            {
+                sceneSwapper.SwapToPreviousOrDefault(fallbackSceneId); 
+            }
+            void CloseNext()
+            {
+                if (openProjects != null)
+                {
+                    if (openProjects.Count > 0)
+                    {
+                        CloseProject(activeProjectIndex < 0 || activeProjectIndex >= openProjects.Count ? 0 : activeProjectIndex, CloseNext, null, null);
+                    }
+                    else
+                    {
+                        FullExit();
+                    }
+                }
+                else
+                {
+                    FullExit();
+                }
+            }
+
+            CloseNext();
+        }
+        public void Exit()
+        {
+            void FullExit()
+            {
+                if (string.IsNullOrWhiteSpace(EditPackageState.SwapBackScene))
+                {
+                    SceneSwap.ReturnToCreateMenu();
+                } 
+                else
+                {
+                    if (sceneSwapper != null) 
+                    { 
+                        sceneSwapper.Swap(EditPackageState.ConsumeSwapBackScene()); 
+                    }
+                }
+            }
+            void CloseNext()
+            {
+                if (openProjects != null)
+                {
+                    if (openProjects.Count > 0)
+                    {
+                        CloseProject(activeProjectIndex < 0 || activeProjectIndex >= openProjects.Count ? 0 : activeProjectIndex, CloseNext, null, null);    
+                    } 
+                    else
+                    {
+                        FullExit(); 
+                    }
+                } 
+                else
+                {
+                    FullExit(); 
+                }
+            }
+
+            CloseNext(); 
         }
 
         protected virtual UIPopup CreateNewUIMember(Member member)
@@ -1266,7 +2669,7 @@ namespace Swole.API.Unity
             member.rectTransform = rootTransform;
             member.rectTransform.SetParent(hierarchyTransform, false);
 
-            var nameTransform = rootTransform.FindDeepChildLiberal(objName_Identifier);
+            var nameTransform = rootTransform.FindDeepChildLiberal(str_name);
             if (nameTransform != null)
             {
                 var nameText = nameTransform.GetComponent<TMP_Text>();
@@ -1286,7 +2689,7 @@ namespace Swole.API.Unity
                 }
             }
 
-            var parentMaskLookup = rootTransform.FindDeepChildLiberal(objParentMask_Identifier);
+            var parentMaskLookup = rootTransform.FindDeepChildLiberal(str_parentMask);
             if (parentMaskLookup != null) member.parentMask = (RectTransform)parentMaskLookup;
 
             if (member.hierarchyObject.OnDragStart == null) member.hierarchyObject.OnDragStart = new UnityEvent();
@@ -1740,7 +3143,7 @@ namespace Swole.API.Unity
         protected void OnSelectionChange(List<GameObject> fullSelection, List<GameObject> newlySelected, List<GameObject> deselected)
         {
             var proj = ActiveProject;
-            if (proj == null) return;
+            if (proj == null) return; 
 
             // Highlight selected members in hierarchy
             foreach (var obj in deselected)
@@ -1763,25 +3166,28 @@ namespace Swole.API.Unity
                 img.color = hierarchyMemberSelectedTint;
             }
             //
+
+            proj.MarkProjectAsDirty();  
         }
 
-        private const string _actionTag = "actionName";
-        private const string _messageTag = "message";
-        private const string _yesTag = "yes";
-        private const string _noTag = "no";
-        private const string _cancelTag = "cancel";
+        private const string str_actionName = "actionName";
+        private const string str_message = "message";
+        private const string str_yes = "yes";
+        private const string str_no = "no";
+        private const string str_cancel = "cancel";
         public bool ShowPopupYesNo(string actionName, string message, VoidParameterlessDelegate onYes, VoidParameterlessDelegate onNo) 
         {
             if (promptMessageYesNo.gameObject.activeSelf) return false;
 
-            CustomEditorUtils.SetComponentTextByName(promptMessageYesNo, _actionTag, actionName);
-            CustomEditorUtils.SetComponentTextByName(promptMessageYesNo, _messageTag, message);
-            CustomEditorUtils.SetButtonOnClickActionByName(promptMessageYesNo, _yesTag, () => { onYes?.Invoke(); promptMessageYesNo.gameObject.SetActive(false); });
-            CustomEditorUtils.SetButtonOnClickActionByName(promptMessageYesNo, _noTag, () => { onNo?.Invoke(); promptMessageYesNo.gameObject.SetActive(false); });
+            CustomEditorUtils.SetComponentTextByName(promptMessageYesNo, str_actionName, actionName);
+            CustomEditorUtils.SetComponentTextByName(promptMessageYesNo, str_message, message);
+            CustomEditorUtils.SetButtonOnClickActionByName(promptMessageYesNo, str_yes, () => { promptMessageYesNo.gameObject.SetActive(false); onYes?.Invoke(); });
+            CustomEditorUtils.SetButtonOnClickActionByName(promptMessageYesNo, str_no, () => { promptMessageYesNo.gameObject.SetActive(false); onNo?.Invoke(); });
 
-            CustomEditorUtils.SetButtonOnClickActionByName(promptMessageYesNo, _closeTag, () => { onNo?.Invoke(); promptMessageYesNo.gameObject.SetActive(false); });
+            CustomEditorUtils.SetButtonOnClickActionByName(promptMessageYesNo, str_close, () => { promptMessageYesNo.gameObject.SetActive(false); onNo?.Invoke(); });
 
             promptMessageYesNo.gameObject.SetActive(true);
+            promptMessageYesNo.transform.SetAsLastSibling();
 
             return true;
         }
@@ -1789,15 +3195,16 @@ namespace Swole.API.Unity
         {
             if (promptMessageYesNoCancel.gameObject.activeSelf) return false;
 
-            CustomEditorUtils.SetComponentTextByName(promptMessageYesNoCancel, _actionTag, actionName);
-            CustomEditorUtils.SetComponentTextByName(promptMessageYesNoCancel, _messageTag, message);
-            CustomEditorUtils.SetButtonOnClickActionByName(promptMessageYesNoCancel, _yesTag, () => { onYes?.Invoke(); promptMessageYesNoCancel.gameObject.SetActive(false); });
-            CustomEditorUtils.SetButtonOnClickActionByName(promptMessageYesNoCancel, _noTag, () => { onNo?.Invoke(); promptMessageYesNoCancel.gameObject.SetActive(false); });
-            CustomEditorUtils.SetButtonOnClickActionByName(promptMessageYesNoCancel, _cancelTag, () => { onCancel?.Invoke(); promptMessageYesNoCancel.gameObject.SetActive(false); });
+            CustomEditorUtils.SetComponentTextByName(promptMessageYesNoCancel, str_actionName, actionName);
+            CustomEditorUtils.SetComponentTextByName(promptMessageYesNoCancel, str_message, message);
+            CustomEditorUtils.SetButtonOnClickActionByName(promptMessageYesNoCancel, str_yes, () => { promptMessageYesNoCancel.gameObject.SetActive(false); onYes?.Invoke(); });
+            CustomEditorUtils.SetButtonOnClickActionByName(promptMessageYesNoCancel, str_no, () => { promptMessageYesNoCancel.gameObject.SetActive(false); onNo?.Invoke(); });
+            CustomEditorUtils.SetButtonOnClickActionByName(promptMessageYesNoCancel, str_cancel, () => { promptMessageYesNoCancel.gameObject.SetActive(false); onCancel?.Invoke(); });
 
-            CustomEditorUtils.SetButtonOnClickActionByName(promptMessageYesNoCancel, _closeTag, () => { onCancel?.Invoke(); promptMessageYesNoCancel.gameObject.SetActive(false); });
+            CustomEditorUtils.SetButtonOnClickActionByName(promptMessageYesNoCancel, str_close, () => { promptMessageYesNoCancel.gameObject.SetActive(false); onCancel?.Invoke(); });
 
-            promptMessageYesNoCancel.gameObject.SetActive(true);  
+            promptMessageYesNoCancel.gameObject.SetActive(true);
+            promptMessageYesNoCancel.transform.SetAsLastSibling();  
 
             return true;
         }
@@ -1830,56 +3237,89 @@ namespace Swole.API.Unity
 
         public bool test;
 
+        public string testPackage;
+        public string testName;
+
+        public bool testLoad;
+        public bool testSave;
+
         public void Update()
         {
+             
+            RefreshQuickSaveButton();
 
             if (test)
             { 
                 test = false;
-                CreateNewProject("test");
+                CreateNewProject(string.IsNullOrEmpty(testName) ? "test" : testName);  
                 //CreateNewMember(GameObject.CreatePrimitive(PrimitiveType.Sphere)); 
+            }
+
+            if (testSave)
+            {
+                testSave = false;
+                SaveProject(activeProjectIndex, null, null, null, ContentManager.FindLocalPackage(new PackageIdentifier(testPackage)).Content.Manifest); 
+            }
+            if (testLoad)
+            {
+                testLoad = false;
+                var pkg = ContentManager.FindLocalPackage(new PackageIdentifier(testPackage)).Content;
+                if (pkg.TryFind<Creation>(out var creation, testName))
+                {
+                    OpenProject(creation); 
+                } 
+                else
+                {
+                    swole.Log($"Could not find '{testName}' in '{pkg.Manifest.GetIdentityString()}'");
+                }
             }
 
         }
 
         protected Member CreateNewMember(GameObject gameObject, string name = null, int projectIndex = -1)
         {
-            if (gameObject == null) return null;
             if (projectIndex < 0 || projectIndex >= openProjects.Count) projectIndex = activeProjectIndex;
+            return CreateNewMember(gameObject, this[projectIndex], projectIndex == activeProjectIndex, name);
+        }
+        protected Member CreateNewMember(GameObject gameObject, Project project, bool isActiveProject, string name = null)
+        {
+            if (gameObject == null) return null;
 
             var sgo = gameObject.AddOrGetComponent<SwoleGameObject>();
 
-            var project = this[projectIndex];
             if (project != null)
             {
                 sgo.id = SwoleUtil.GetUniqueId(project.GetIdAtIndex, project.MemberCount);
             }
 
-            return CreateNewMember(sgo, name, projectIndex);
+            return CreateNewMember(sgo, project, isActiveProject, name);
         }
-        protected Member CreateNewMember(SwoleGameObject gameObject, string name = null, int projectIndex = -1)  
+        protected Member CreateNewMember(SwoleGameObject gameObject, string name = null, int projectIndex = -1)
+        {
+            if (projectIndex < 0 || projectIndex >= openProjects.Count) projectIndex = activeProjectIndex;
+            return CreateNewMember(gameObject, this[projectIndex], projectIndex == activeProjectIndex, name);
+        }
+        protected Member CreateNewMember(SwoleGameObject gameObject, Project project, bool isActiveProject, string name = null)  
         {
             if (gameObject == null) return null;
-            if (projectIndex < 0 || projectIndex >= openProjects.Count) projectIndex = activeProjectIndex;
 
-            var mem = new Member() { id = gameObject.id, projectIndex = projectIndex };
-            mem.name = string.IsNullOrWhiteSpace(name) ? $"{gameObject.name} ({mem.id})" : name;  
+            var mem = new Member() { id = gameObject.id, project = project };
+            mem.name = string.IsNullOrWhiteSpace(name) ? $"{gameObject.name} [{gameObject.id}]" : name;   
             gameObject.name = mem.name;
 
             mem.swoleGameObject = gameObject;
             mem.swoleGameObject.gameObject.SetLayerAllChildren(fullyEditableLayer);  
 
-            var project = this[projectIndex];
             if (project == null) 
             {
-                mem.projectIndex = -1;
+                mem.project = null;
                 return mem;
             }
 
             project.MarkAsDirty();
             project.members.Add(mem);
             var uiMember = CreateNewUIMember(mem);
-            if (uiMember != null) uiMember.gameObject.SetActive(activeProjectIndex == projectIndex);
+            if (uiMember != null) uiMember.gameObject.SetActive(isActiveProject);
 
             return mem;        
         }
@@ -1887,6 +3327,12 @@ namespace Swole.API.Unity
         protected void OnSpawnPrefabFromPicker(GameObject prefab, GameObject instance)
         {
             if (instance == null) return;
+
+            if (openProjects == null || activeProjectIndex < 0 || activeProjectIndex >= openProjects.Count)
+            {
+                Destroy(instance); 
+                return;
+            }  
 
             var tilePrototype = instance.GetComponentInChildren<TilePrototype>(true);
             var creationPrototype = instance.GetComponentInChildren<CreationPrototype>(true); 
@@ -1910,7 +3356,7 @@ namespace Swole.API.Unity
             {
                 if (PrefabHandler != null)
                 {
-                    mem.sourceCollection = prefabHandler.GetNameOfSelectedCollection();
+                    mem.sourceCollection = prefabHandler.GetNameOfActiveCollection();
                 }
             }
 
@@ -1985,9 +3431,10 @@ namespace Swole.API.Unity
             StartEditingCode(layer); 
         } 
         public void StartEditingCode(int layerId) => StartEditingCode((ExecutionLayer)layerId);
-        public void StartEditingCode(ExecutionLayer layer)
+        public void StartEditingCode(int layerId, Project proj) => StartEditingCode((ExecutionLayer)layerId, proj);
+        public void StartEditingCode(ExecutionLayer layer) => StartEditingCode(layer, ActiveProject);
+        public void StartEditingCode(ExecutionLayer layer, Project proj)
         {
-            var proj = ActiveProject;
             if (proj == null) return;
 
             ICodeEditor.CodeEditCallback codeEditCallback = null;
@@ -1998,6 +3445,12 @@ namespace Swole.API.Unity
                 case ExecutionLayer.Load:
                     codeEditCallback = (string sourceCode) =>
                     {
+                        if (proj == null || !proj.IsValid)
+                        {
+                            proj = null;
+                            return;
+                        }
+
                         var script = proj.Script;
                         script.source_OnLoadExperience = sourceCode;
                         proj.Script = script;
@@ -2008,6 +3461,12 @@ namespace Swole.API.Unity
                 case ExecutionLayer.Unload:
                     codeEditCallback = (string sourceCode) =>
                     {
+                        if (proj == null || !proj.IsValid)
+                        {
+                            proj = null;
+                            return;
+                        }
+
                         var script = proj.Script;
                         script.source_OnUnloadExperience = sourceCode;
                         proj.Script = script;
@@ -2018,6 +3477,12 @@ namespace Swole.API.Unity
                 case ExecutionLayer.Begin:
                     codeEditCallback = (string sourceCode) =>
                     {
+                        if (proj == null || !proj.IsValid)
+                        {
+                            proj = null;
+                            return;
+                        }
+
                         var script = proj.Script;
                         script.source_OnBeginExperience = sourceCode;
                         proj.Script = script;
@@ -2028,6 +3493,12 @@ namespace Swole.API.Unity
                 case ExecutionLayer.End:
                     codeEditCallback = (string sourceCode) =>
                     {
+                        if (proj == null || !proj.IsValid)
+                        {
+                            proj = null;
+                            return;
+                        }
+
                         var script = proj.Script;
                         script.source_OnEndExperience = sourceCode;
                         proj.Script = script;
@@ -2038,6 +3509,12 @@ namespace Swole.API.Unity
                 case ExecutionLayer.Restart:
                     codeEditCallback = (string sourceCode) =>
                     {
+                        if (proj == null || !proj.IsValid)
+                        {
+                            proj = null;
+                            return;
+                        }
+
                         var script = proj.Script;
                         script.source_OnRestartExperience = sourceCode;
                         proj.Script = script;
@@ -2048,6 +3525,12 @@ namespace Swole.API.Unity
                 case ExecutionLayer.Initialization:
                     codeEditCallback = (string sourceCode) =>
                     {
+                        if (proj == null || !proj.IsValid)
+                        {
+                            proj = null;
+                            return;
+                        }
+
                         var script = proj.Script;
                         script.source_OnInitialize = sourceCode;
                         proj.Script = script;
@@ -2058,6 +3541,12 @@ namespace Swole.API.Unity
                 case ExecutionLayer.Enable:
                     codeEditCallback = (string sourceCode) =>
                     {
+                        if (proj == null || !proj.IsValid)
+                        {
+                            proj = null;
+                            return;
+                        }
+
                         var script = proj.Script;
                         script.source_OnEnable = sourceCode;
                         proj.Script = script;
@@ -2068,6 +3557,12 @@ namespace Swole.API.Unity
                 case ExecutionLayer.Disable:
                     codeEditCallback = (string sourceCode) =>
                     {
+                        if (proj == null || !proj.IsValid)
+                        {
+                            proj = null;
+                            return;
+                        }
+
                         var script = proj.Script;
                         script.source_OnDisable = sourceCode;
                         proj.Script = script;
@@ -2078,6 +3573,12 @@ namespace Swole.API.Unity
                 case ExecutionLayer.Destroy:
                     codeEditCallback = (string sourceCode) =>
                     {
+                        if (proj == null || !proj.IsValid)
+                        {
+                            proj = null;
+                            return;
+                        }
+
                         var script = proj.Script;
                         script.source_OnDestroy = sourceCode;
                         proj.Script = script;
@@ -2089,6 +3590,12 @@ namespace Swole.API.Unity
                     layerName = "TickEarly";
                     codeEditCallback = (string sourceCode) =>
                     {
+                        if (proj == null || !proj.IsValid)
+                        {
+                            proj = null;
+                            return;
+                        }
+
                         var script = proj.Script;
                         script.source_OnEarlyUpdate = sourceCode;
                         proj.Script = script;
@@ -2100,6 +3607,12 @@ namespace Swole.API.Unity
                     layerName = "Tick";
                     codeEditCallback = (string sourceCode) =>
                     {
+                        if (proj == null || !proj.IsValid)
+                        {
+                            proj = null;
+                            return;
+                        }
+
                         var script = proj.Script;
                         script.source_OnUpdate = sourceCode;
                         proj.Script = script;
@@ -2111,6 +3624,12 @@ namespace Swole.API.Unity
                     layerName = "TickLate";
                     codeEditCallback = (string sourceCode) =>
                     {
+                        if (proj == null || !proj.IsValid)
+                        {
+                            proj = null;
+                            return;
+                        }
+
                         var script = proj.Script;
                         script.source_OnLateUpdate = sourceCode;
                         proj.Script = script;
@@ -2121,6 +3640,12 @@ namespace Swole.API.Unity
                 case ExecutionLayer.FixedUpdate:
                     codeEditCallback = (string sourceCode) =>
                     {
+                        if (proj == null || !proj.IsValid)
+                        {
+                            proj = null;
+                            return;
+                        }
+
                         var script = proj.Script;
                         script.source_OnFixedUpdate = sourceCode;
                         proj.Script = script;
@@ -2131,6 +3656,12 @@ namespace Swole.API.Unity
                 case ExecutionLayer.Interaction:
                     codeEditCallback = (string sourceCode) =>
                     {
+                        if (proj == null || !proj.IsValid)
+                        {
+                            proj = null;
+                            return;
+                        }
+
                         var script = proj.Script;
                         script.source_OnInteract = sourceCode;
                         proj.Script = script;
@@ -2141,6 +3672,12 @@ namespace Swole.API.Unity
                 case ExecutionLayer.CollisionEnter:
                     codeEditCallback = (string sourceCode) =>
                     {
+                        if (proj == null || !proj.IsValid)
+                        {
+                            proj = null;
+                            return;
+                        }
+
                         var script = proj.Script;
                         script.source_OnCollisionEnter = sourceCode;
                         proj.Script = script;
@@ -2151,6 +3688,12 @@ namespace Swole.API.Unity
                 case ExecutionLayer.CollisionStay:
                     codeEditCallback = (string sourceCode) =>
                     {
+                        if (proj == null || !proj.IsValid)
+                        {
+                            proj = null;
+                            return;
+                        }
+
                         var script = proj.Script;
                         script.source_OnCollisionStay = sourceCode;
                         proj.Script = script;
@@ -2161,6 +3704,12 @@ namespace Swole.API.Unity
                 case ExecutionLayer.CollisionExit:
                     codeEditCallback = (string sourceCode) =>
                     {
+                        if (proj == null || !proj.IsValid)
+                        {
+                            proj = null;
+                            return;
+                        }
+
                         var script = proj.Script;
                         script.source_OnCollisionExit = sourceCode;
                         proj.Script = script;
@@ -2171,6 +3720,12 @@ namespace Swole.API.Unity
                 case ExecutionLayer.TriggerEnter:
                     codeEditCallback = (string sourceCode) =>
                     {
+                        if (proj == null || !proj.IsValid)
+                        {
+                            proj = null;
+                            return;
+                        }
+
                         var script = proj.Script;
                         script.source_OnTriggerEnter = sourceCode;
                         proj.Script = script;
@@ -2181,6 +3736,12 @@ namespace Swole.API.Unity
                 case ExecutionLayer.TriggerStay:
                     codeEditCallback = (string sourceCode) =>
                     {
+                        if (proj == null || !proj.IsValid)
+                        {
+                            proj = null;
+                            return;
+                        }
+
                         var script = proj.Script;
                         script.source_OnTriggerStay = sourceCode;
                         proj.Script = script;
@@ -2191,6 +3752,12 @@ namespace Swole.API.Unity
                 case ExecutionLayer.TriggerExit:
                     codeEditCallback = (string sourceCode) =>
                     {
+                        if (proj == null || !proj.IsValid)
+                        {
+                            proj = null;
+                            return;
+                        }
+
                         var script = proj.Script;
                         script.source_OnTriggerExit = sourceCode;
                         proj.Script = script;
@@ -2201,6 +3768,12 @@ namespace Swole.API.Unity
                 case ExecutionLayer.LoadProgress:
                     codeEditCallback = (string sourceCode) =>
                     {
+                        if (proj == null || !proj.IsValid)
+                        {
+                            proj = null;
+                            return;
+                        }
+
                         var script = proj.Script;
                         script.source_OnLoadProgress = sourceCode;
                         proj.Script = script;
@@ -2211,6 +3784,12 @@ namespace Swole.API.Unity
                 case ExecutionLayer.SaveProgress:
                     codeEditCallback = (string sourceCode) =>
                     {
+                        if (proj == null || !proj.IsValid)
+                        {
+                            proj = null;
+                            return;
+                        }
+
                         var script = proj.Script;
                         script.source_OnSaveProgress = sourceCode;
                         proj.Script = script;
@@ -2222,20 +3801,49 @@ namespace Swole.API.Unity
             if (string.IsNullOrEmpty(currentSource)) currentSource = GetDefaultSource(layer);
 
             CodeEditorWindow editor = default;
-            if (proj.activeCodeEditorWindows.TryGetValue(layer, out GameObject editorWindow) && editorWindow != null) 
+            GameObject editorWindow = null;
+            RectTransform editorWindowRT = null;
+            if (proj.activeCodeEditorWindows.TryGetValue(layer, out editorWindowRT) && editorWindowRT != null) 
             {
+                editorWindow = editorWindowRT.gameObject;
                 editorWindow.SetActive(true);
-                editor = editorWindow.GetComponentInChildren<CodeEditorWindow>(true); 
+                editor = editorWindow.GetComponentInChildren<CodeEditorWindow>(true);    
             }         
             else
-            { 
+            {
+                Canvas canvas = null;
+                RectTransform canvasRT = null;
+                UIResizer editorResizer = null;
+                UIPopup editorPopup = null;
                 void OnClose(string source)
                 {
+                    if (proj == null || !proj.IsValid)
+                    {
+                        proj = null;
+                        return;
+                    }
+
+                    proj.SetWindowState(layer.ToString(), editorWindowRT.AsResizableWindowState(false, canvasRT));
                     codeEditCallback?.Invoke(source);
+                    if (editorPopup != null) editorPopup.OnDragStep?.RemoveAllListeners();
+                    if (editorResizer != null) editorResizer.OnDragStep?.RemoveAllListeners(); 
                     proj.activeCodeEditorWindows.Remove(layer);
+                    editorPopup = null;
+                    editorResizer = null;
                 }
-                editorWindow = OpenCodeEditorWindow("EDITING SOURCE [" + layerName + "]", out editor, codeEditCallback, OnClose); 
-                proj.activeCodeEditorWindows[layer] = editorWindow;
+                editorWindow = OpenCodeEditorWindow("EDITING SOURCE [" + layerName + "]", out editor, codeEditCallback, OnClose);
+                editorWindowRT = editorWindow.GetComponent<RectTransform>();
+                canvas = editorWindow.GetComponentInParent<Canvas>();
+                canvasRT = canvas == null ? null : canvas.GetComponent<RectTransform>();
+
+                if (proj.TryGetWindowState(layer.ToString(), out var state))
+                {
+                    state.visible = true;
+                    state.ApplyWindowState(editorWindowRT, canvasRT);
+                    proj.SetWindowState(layer.ToString(), state); 
+                }
+
+                proj.activeCodeEditorWindows[layer] = editorWindowRT;
                 if (IsInTestMode)
                 {
                     if (IsRecompilableLayer(layer))
@@ -2243,6 +3851,12 @@ namespace Swole.API.Unity
                         var creation = proj.CachedAsset;
                         CustomEditorUtils.SetButtonOnClickActionByName(editorWindow, str_recompile, () =>
                         {
+                            if (proj == null || !proj.IsValid)
+                            {
+                                proj = null;
+                                return;
+                            }
+
                             var editor = editorWindow.GetComponentInChildren<CodeEditorWindow>(true);
                             if (editor == null || editor.Editor == null) return;
 
@@ -2253,6 +3867,28 @@ namespace Swole.API.Unity
                     {
                         CustomEditorUtils.SetButtonInteractableByName(editorWindow, str_recompile, false);
                     }
+                }
+                void OnDrag()
+                {
+                    if (proj == null || !proj.IsValid)
+                    {
+                        proj = null;
+                        return;
+                    }
+
+                    proj.SetWindowState(layer.ToString(), editorWindowRT.AsResizableWindowState(true, canvasRT));
+                }
+                editorPopup = editor == null || editor.Window == null || editor.Window.rootWindowElement == null ? editorWindow.GetComponentInChildren<UIPopup>(true) : editor.Window.rootWindowElement; 
+                if (editorPopup != null)
+                {
+                    if (editorPopup.OnDragStep == null) editorPopup.OnDragStep = new UnityEvent(); else editorPopup.OnDragStep.RemoveAllListeners();
+                    editorPopup.OnDragStep.AddListener(OnDrag);
+                }
+                editorResizer = editor == null || editor.Window == null || editor.Window.resizer == null ? editorWindow.GetComponentInChildren<UIResizer>(true) : editor.Window.resizer;
+                if (editorResizer != null)
+                {
+                    if (editorResizer.OnDragStep == null) editorResizer.OnDragStep = new UnityEvent(); else editorResizer.OnDragStep.RemoveAllListeners();
+                    editorResizer.OnDragStep.AddListener(OnDrag);
                 }
             }
             if (editor != null) 
@@ -2377,7 +4013,7 @@ namespace Swole.API.Unity
             var activeProject = ActiveProject;
             if (activeProject == null) return;
 
-            var creation = activeProject.GetCreation();
+            var creation = activeProject.GetCreation(false);
             if (creation == null)
             {
                 swole.LogError("Failed to create creation asset!");
@@ -2418,18 +4054,18 @@ namespace Swole.API.Unity
             }
 
             RuntimeHandler.MainCamera = UnityEngineHook.AsSwoleCamera(TestingCamera);
-
-            var mainCam = MainCamera;
+            
+            var editorCam = MainCamera; // the default main camera in the unity scene
             var testCam = TestingCamera;
 
             testCam.fieldOfView = testingCamFOV;
             testCam.nearClipPlane = testingCamNearClip;  
             testCam.farClipPlane = testingCamFarClip;
             var camT = UnityEngineHook.AsSwoleGameObject(testingCamera.gameObject).transform; // use swole transform because cam is likely using a proxy
-            camT.SetPositionAndRotation(UnityEngineHook.AsSwoleVector(mainCam.transform.position), UnityEngineHook.AsSwoleQuaternion(mainCam.transform.rotation));
+            camT.SetPositionAndRotation(UnityEngineHook.AsSwoleVector(editorCam.transform.position), UnityEngineHook.AsSwoleQuaternion(editorCam.transform.rotation)); // start in same position as the editor camera
             //camT.localScale = testingCamScale; 
              
-            mainCam.gameObject.SetActive(false);
+            editorCam.gameObject.SetActive(false);
             testCam.gameObject.SetActive(true);
 
             swole.State = swole.RuntimeState.EditorPlayTest;
@@ -2497,8 +4133,8 @@ namespace Swole.API.Unity
 
             EnableEditor();
         }
-
-        protected virtual void RecordManipulationAction(List<Transform> affectedTransforms, Vector3 relativeOffset, Quaternion relativeRotation, Vector3 relativeScale)
+         
+        protected virtual void RecordManipulationAction(List<Transform> affectedTransforms, Vector3 relativeOffset, Quaternion relativeRotation, Vector3 relativeScale, Vector3 gizmoWorldPosition, Quaternion gizmoWorldRotation)
         {
             var proj = ActiveProject;
             if (proj == null) return;

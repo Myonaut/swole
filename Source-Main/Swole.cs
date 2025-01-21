@@ -2,6 +2,7 @@ using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.IO;
+using System.Globalization;
 
 #if SWOLE_ENV
 using Miniscript;
@@ -22,6 +23,25 @@ namespace Swole
         public static bool IsNull(object obj) => Engine.IsNull(obj);
         public static bool IsNotNull(object obj) => Engine.IsNotNull(obj);
 
+        public static float ConvertPoundsToKilograms(float pounds) => pounds * 0.45359237f;
+        public static float ConvertKilogramsToPounds(float kilograms) => kilograms * 2.20462262f;
+
+        /*private static System.Globalization.NumberFormatInfo numberFormat = null;
+        public static NumberFormatInfo NumberFormat
+        {
+            get
+            {
+                if (numberFormat == null)
+                {
+                    CultureInfo ci = CultureInfo.InstalledUICulture;
+                    numberFormat = (NumberFormatInfo) ci.NumberFormat.Clone();
+                    numberFormat.NumberDecimalSeparator = ".";
+                }
+
+                return numberFormat;
+            }
+        }*/
+
         #endregion
 
         private readonly EngineHook engine;
@@ -36,6 +56,87 @@ namespace Swole
                 return assetDirectory;
 
             }
+        }
+
+        public delegate void SettingsChangeDelegate(SwoleSettings previousSettings, SwoleSettings newSettings);
+        private event SettingsChangeDelegate OnSettingsChanged;
+        public void ListenForSettingsChangedLocal(SettingsChangeDelegate listener)
+        {
+            if (listener != null) OnSettingsChanged += listener;
+        }
+        public void StopListeningForSettingsChangedLocal(SettingsChangeDelegate listener)
+        {
+            if (listener != null) OnSettingsChanged -= listener;
+        }
+        public static void ListenForSettingsChanged(SettingsChangeDelegate listener) => Instance.ListenForSettingsChangedLocal(listener);
+        public static void StopListeningForSettingsChanged(SettingsChangeDelegate listener) => Instance.StopListeningForSettingsChangedLocal(listener);
+
+        private SwoleSettings settings;
+        private bool loadedInitialSettings; 
+        public SwoleSettings SettingsLocal
+        {
+            get
+            {
+                if (!loadedInitialSettings)
+                {
+                    loadedInitialSettings = true; 
+
+                    try
+                    {
+                        string fullPath = Path.Combine(AssetDirectoryLocal.FullName, $"settings.json");
+                        if (File.Exists(fullPath))
+                        {
+                            byte[] data = File.ReadAllBytes(fullPath); 
+                            var json = DefaultJsonSerializer.StringEncoder.GetString(data);
+                            settings = FromJson<SwoleSettings>(json);
+                        }
+                        else
+                        {
+                            SettingsLocal = SwoleSettings.Default;
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        LogError(ex);
+                        settings = SwoleSettings.Default;
+                    }
+                }
+
+                return settings;
+            }
+
+            set
+            {
+                var oldSettings = settings;
+                settings = value;
+
+                try
+                {
+                    string json = ToJson(settings, true);
+                    byte[] bytes = DefaultJsonSerializer.StringEncoder.GetBytes(json);
+                    string fullPath = Path.Combine(AssetDirectoryLocal.FullName, $"settings.json");
+
+                    File.WriteAllBytes(fullPath, bytes);
+                }
+                catch (Exception ex) 
+                { 
+                    LogError(ex);
+                }
+
+                try
+                {
+                    OnSettingsChanged?.Invoke(oldSettings, settings); 
+                } 
+                catch(Exception ex)
+                {
+                    LogError(ex);
+                }
+            }
+        }
+        public static SwoleSettings Settings
+        {
+            get => Instance.SettingsLocal;
+            set => Instance.SettingsLocal = value;
         }
 
         public swole(EngineHook engine)
@@ -62,6 +163,7 @@ namespace Swole
         public static T FromJson<T>(string json) => Engine.FromJson<T>(json);
 
         public static RuntimeEnvironment DefaultEnvironment => Engine.RuntimeEnvironment;
+        public static IRuntimeHost DefaultHost => Engine.DefaultHost;
         public static DirectoryInfo AssetDirectory => instance.AssetDirectoryLocal;
 
         public static DirectoryInfo CreateDirectory(string localPath)
@@ -91,6 +193,14 @@ namespace Swole
         public static bool IsEditor => State == RuntimeState.Editor || State == RuntimeState.EditorPlayTest;
         public static bool IsInPlayMode => State == RuntimeState.Default || State == RuntimeState.EditorPlayTest;
 
+        public static void Register(IExecutableBehaviour behaviour)
+        {
+            SingletonCallStack.Insert(behaviour);
+        }
+        public static void Unregister(IExecutableBehaviour behaviour)
+        {
+            SingletonCallStack.Remove(behaviour);
+        }
 
         #region Scripts & Packages
 
@@ -108,7 +218,16 @@ namespace Swole
 
             if (string.IsNullOrEmpty(name)) return false;
 
-            return name.IsPackageString();
+            return name.IsPackageName();
+
+        }
+
+        public static bool ValidatePackageNameAndVersion(string name)
+        {
+
+            if (string.IsNullOrEmpty(name)) return false;
+
+            return name.IsPackageStringWithVersion();
 
         }
 
@@ -727,6 +846,7 @@ namespace Swole
 
     public delegate void VoidParameterlessDelegate();
     public delegate bool BoolParameterlessDelegate();
+    public delegate float FloatParameterlessDelegate();
     public delegate int IntFromFloatDelegate(float val);
     public delegate int IntFromDecimalDelegate(decimal val);
 

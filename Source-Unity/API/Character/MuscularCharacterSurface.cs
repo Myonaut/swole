@@ -11,8 +11,8 @@ using Unity.Collections;
 using Unity.Jobs;
 using Unity.Mathematics;
 
+using Swole.DataStructures;
 using static Swole.SharedMeshData;
-using static Swole.DataStructures;
 
 namespace Swole.API.Unity
 {
@@ -118,9 +118,10 @@ namespace Swole.API.Unity
                     void AddShape(MuscularCharacterSharedData.ShapeData data)
                     {
 
-                        if (data == null || string.IsNullOrEmpty(data.shapeName) || data.deltaVertices == null || data.deltaNormals == null || data.deltaRecalculatedNormals == null) return;
+                        if (data == null || string.IsNullOrEmpty(data.shapeName) || (data.deltaVertices == null || data.deltaVertices.Length <= 0) || (data.deltaNormals == null || data.deltaNormals.Length <= 0) || (data.deltaRecalculatedNormals == null || data.deltaRecalculatedNormals.Length <= 0)) return;
 
-                        for (int a = 0; a < vertexCount; a++)
+                        //Debug.Log(renderer.name + " : " + data.shapeName + " : " + data.deltaVertices.Length + " : " + vertexCount);
+                        for (int a = 0; a < vertexCount; a++) 
                         {
 
                             shapes.Add(new BlendShapeVertex()

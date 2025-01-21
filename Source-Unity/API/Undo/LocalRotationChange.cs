@@ -6,6 +6,8 @@ namespace Swole.API.Unity.UndoSystem
 {
     public struct LocalRotationChange : IRevertableAction
     {
+        public bool ReapplyWhenRevertedTo => true;
+
         public Transform transform;
         public Quaternion oldLocalRotation, newLocalRotation;
 

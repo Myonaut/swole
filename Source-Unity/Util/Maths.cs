@@ -12,6 +12,28 @@ namespace Swole
     {
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static int countTrue(bool4 b4)
+        {
+            int4 c = 0;
+            c = math.select(c, c + 1, b4);
+            return c.x + c.y + c.z + c.w;
+        }
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static int countTrue(bool3 b3)
+        {
+            int3 c = 0;
+            c = math.select(c, c + 1, b3);
+            return c.x + c.y + c.z;
+        }
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static int countTrue(bool2 b2)
+        {
+            int2 c = 0;
+            c = math.select(c, c + 1, b2);
+            return c.x + c.y;
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static float GetValueOnSegment(float3 worldPosition, float3 pointA, float3 pointB)
         {
 
@@ -37,13 +59,9 @@ namespace Swole
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static int AsPowerOf2(int value)
         {
-
             int newVal = 1;
-
             while (value > newVal) newVal *= 2;
-
             return newVal;
-
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -64,14 +82,14 @@ namespace Swole
 
             }
 
-            float3 OSbinormal = math.cross(OSnormal, OStangentXYZ) * OStangent.w;
+            float3 OSbitangent = math.cross(OSnormal, OStangentXYZ) * OStangent.w;
 
             float offset = math.length(OSoffset);
             float3 offsetDirection = OSoffset / offset;
 
             float outwardDot = math.dot(offsetDirection, OSnormal);
             float horizontalDot = math.dot(offsetDirection, OStangentXYZ);
-            float verticalDot = math.dot(offsetDirection, OSbinormal);
+            float verticalDot = math.dot(offsetDirection, OSbitangent);
 
             float outwardVal = offset * outwardDot;
             float horizontalVal = offset * horizontalDot;
@@ -128,15 +146,15 @@ namespace Swole
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static quaternion FromToRotation(float3 aFrom, float3 aTo)
         {
-            Vector3 axis = math.cross(aFrom, aTo);
+            float3 axis = math.cross(aFrom, aTo);
             float angle = Angle(aFrom, aTo);
-            return AngleAxis(angle, axis.normalized);
+            return AngleAxis(angle, axis); 
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static quaternion AngleAxis(float aAngle, float3 aAxis)
         {
-            aAxis = math.normalize(aAxis);
+            aAxis = math.normalizesafe(aAxis);
             float rad = aAngle * 0.5f;
             aAxis *= math.sin(rad);
             return new quaternion(aAxis.x, aAxis.y, aAxis.z, math.cos(rad));
@@ -208,6 +226,8 @@ namespace Swole
         {
             return (index % length + length) % length;
         }
+
+        public static float Wrap(float value, float max) => value - (Mathf.Floor(value / max) * max);
 
         public static float NormalizeDegrees(float degrees)
         {
@@ -401,25 +421,72 @@ namespace Swole
         /// <summary>
         /// source: https://forum.unity.com/threads/shortest-rotation-between-two-quaternions.812346/
         /// </summary>
-        public static Quaternion ShortestRotationLocal(Quaternion a, Quaternion b)
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static Quaternion ShortestRotationLocal(Quaternion from, Quaternion to)
         {
-            if (Quaternion.Dot(a, b) < 0)
+            if (Quaternion.Dot(from, to) < 0)
             {
-                return a * Quaternion.Inverse(Multiply(b, -1));
+                return to * Quaternion.Inverse(Multiply(from, -1));
             }
-            else return a * Quaternion.Inverse(b);
+            else return to * Quaternion.Inverse(from);
         }
-        public static Quaternion ShortestRotationGlobal(Quaternion a, Quaternion b)
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static quaternion ShortestRotationLocal(quaternion from, quaternion to)
         {
-            if (Quaternion.Dot(b, a) < 0)
+            return math.select(math.mul(to, math.inverse(from)).value, math.mul(to, math.inverse(Multiply(from, -1))).value, math.dot(from, to) < 0);  
+        }
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+
+        public static Quaternion ShortestRotationGlobal(Quaternion from, Quaternion to)
+        {
+            if (Quaternion.Dot(to, from) < 0)
             {
-                return Quaternion.Inverse(Multiply(a, -1)) * b;
+                return Quaternion.Inverse(Multiply(from, -1)) * to;
             }
-            else return Quaternion.Inverse(a) * b;
+            else return Quaternion.Inverse(from) * to;
         }
-        public static Quaternion Multiply(Quaternion input, float scalar)
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static quaternion ShortestRotationGlobal(quaternion from, quaternion to)
         {
-            return new Quaternion(input.x * scalar, input.y * scalar, input.z * scalar, input.w * scalar);
+            return math.select(math.mul(math.inverse(from), to).value, math.mul(math.inverse(Multiply(from, -1)), to).value, math.dot(to, from) < 0);
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static Quaternion LongestRotationLocal(Quaternion from, Quaternion to)
+        {
+            if (Quaternion.Dot(from, to) >= 0)
+            {
+                return to * Quaternion.Inverse(Multiply(from, -1));
+            }
+            else return to * Quaternion.Inverse(from);
+        }
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static quaternion LongestRotationLocal(quaternion from, quaternion to)
+        {
+            return math.select(math.mul(to, math.inverse(from)).value, math.mul(to, math.inverse(Multiply(from, -1))).value, math.dot(from, to) >= 0);
+        }
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+
+        public static Quaternion LongestRotationGlobal(Quaternion from, Quaternion to)
+        {
+            if (Quaternion.Dot(to, from) >= 0)
+            {
+                return Quaternion.Inverse(Multiply(from, -1)) * to;
+            }
+            else return Quaternion.Inverse(from) * to;
+        }
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static quaternion LongestRotationGlobal(quaternion from, quaternion to)
+        {
+            return math.select(math.mul(math.inverse(from), to).value, math.mul(math.inverse(Multiply(from, -1)), to).value, math.dot(to, from) >= 0);
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static Quaternion Multiply(Quaternion input, float scalar) => Multiply((quaternion)input, scalar);
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static quaternion Multiply(quaternion input, float scalar)
+        {
+            return input.value * scalar;
         }
 
         #region Mirroring
@@ -442,7 +509,212 @@ namespace Swole
             outputPosition = new Vector3(-position.x, position.y, position.z);
             outputRotation = rotation.ReflectX();
         }
-        #endregion     
+        #endregion
+
+        // intersect a ray with a 3D triangle
+        //    Input:  a ray R, and 3 vector3 forming a triangle
+
+        //  -1 = triangle is degenerate (a segment or point)
+        //             0 = disjoint (no intersect)
+        //             1 = intersect in unique point I1
+        //             2 = are in the same plane
+        public static bool IntersectRayTriangle(Ray ray, Vector3 v0, Vector3 v1, Vector3 v2, bool bidirectional, out RaycastHit hit)
+        {
+            hit = default;
+
+            Vector3 ab = v1 - v0;
+            Vector3 ac = v2 - v0;
+
+            // Compute triangle normal. Can be precalculated or cached if
+            // intersecting multiple segments against the same triangle
+            Vector3 n = Vector3.Cross(ab, ac);
+
+            // Compute denominator d. If d <= 0, segment is parallel to or points
+            // away from triangle, so exit early
+            float d = Vector3.Dot(-ray.direction, n);
+            if (d <= 0.0f) return false;
+
+            // Compute intersection t value of pq with plane of triangle. A ray
+            // intersects iff 0 <= t. Segment intersects iff 0 <= t <= 1. Delay
+            // dividing by d until intersection has been found to pierce triangle
+            Vector3 ap = ray.origin - v0;
+            float t = Vector3.Dot(ap, n);
+            if ((t < 0.0f) && (!bidirectional)) return false;
+            //if (t > d) return null; // For segment; exclude this code line for a ray test
+
+            // Compute barycentric coordinate components and test if within bounds
+            Vector3 e = Vector3.Cross(-ray.direction, ap);
+            float v = Vector3.Dot(ac, e);
+            if (v < 0.0f || v > d) return false;
+
+            float w = -Vector3.Dot(ab, e);
+            if (w < 0.0f || v + w > d) return false;
+
+            // Segment/ray intersects triangle. Perform delayed division and
+            // compute the last barycentric coordinate component
+            float ood = 1.0f / d;
+            t *= ood;
+            v *= ood;
+            w *= ood;
+            float u = 1.0f - v - w;
+
+            hit = new RaycastHit();
+            hit.point = ray.origin + t * ray.direction;
+            hit.distance = t;
+            hit.barycentricCoordinate = new Vector3(u, v, w);
+            hit.normal = Vector3.Normalize(n);
+
+            return true;
+        }
+
+        public static bool IntersectSegmentTriangle(Vector3 s0, Vector3 s1, Vector3 v0, Vector3 v1, Vector3 v2, out RaycastHit hit)
+        {
+            hit = default;
+
+            Vector3 segment = (s1 - s0);
+
+            Vector3 ab = v1 - v0;
+            Vector3 ac = v2 - v0;
+
+            // Compute triangle normal. Can be precalculated or cached if
+            // intersecting multiple segments against the same triangle
+            Vector3 n = Vector3.Cross(ab, ac);
+
+            // Compute denominator d. If d <= 0, segment is parallel to or points
+            // away from triangle, so exit early
+            float d = Vector3.Dot(-segment, n);
+            if (d <= 0.0f) return false;
+
+            // Compute intersection t value of pq with plane of triangle. A ray
+            // intersects iff 0 <= t. Segment intersects iff 0 <= t <= 1. Delay
+            // dividing by d until intersection has been found to pierce triangle
+            Vector3 ap = s0 - v0;
+            float t = Vector3.Dot(ap, n);
+            if ((t < 0.0f) || (t > d)) return false;
+
+            // Compute barycentric coordinate components and test if within bounds
+            Vector3 e = Vector3.Cross(-segment, ap);
+            float v = Vector3.Dot(ac, e);
+            if (v < 0.0f || v > d) return false;
+
+            float w = -Vector3.Dot(ab, e);
+            if (w < 0.0f || v + w > d) return false;
+
+            float h = t; 
+            // Segment/ray intersects triangle. Perform delayed division and
+            // compute the last barycentric coordinate component
+            float ood = 1.0f / d;
+            t *= ood;
+            v *= ood;
+            w *= ood;
+            float u = 1.0f - v - w;
+
+            hit = new RaycastHit();
+            hit.point = s0 + t * segment; 
+            //hit.point = s0 + (-Vector3.Dot(ap, n) / Vector3.Dot((s1 - s0), n)) * segment;  
+            hit.distance = t * segment.magnitude;
+            hit.barycentricCoordinate = new Vector3(u, v, w);
+
+            hit.normal = Vector3.Normalize(n);
+
+            return true;
+        }
+        public struct RaycastHitResult
+        {
+            /// <summary>
+            /// The impact point in world space where the ray hit the collider.
+            /// </summary>
+            public float3 point;
+
+            /// <summary>
+            /// The normal of the surface the ray hit.
+            /// </summary>
+            public float3 normal;
+
+            /// <summary>
+            /// The index of the triangle that was hit.
+            /// </summary>
+            public int triangleIndex;
+
+            /// <summary>
+            /// The distance from the ray's origin to the impact point.
+            /// </summary>
+            public float distance;
+
+            public float2 UV;
+
+            /// <summary>
+            /// The barycentric coordinate of the triangle we hit.
+            /// </summary>
+            public float3 barycentricCoordinate
+            {
+                get
+                {
+                    return new float3(1f - (UV.y + UV.x), UV.x, UV.y);
+                }
+                set
+                {
+                    UV = value.xy;
+                }
+            }
+        }
+
+        public static bool IntersectSegmentTriangle(float3 s0, float3 s1, float3 v0, float3 v1, float3 v2, out RaycastHitResult hit) => IntersectSegmentTriangle(s0, s1, v0, v1, v2, out _, out _, out _, out hit);        
+        public static bool IntersectSegmentTriangle(float3 s0, float3 s1, float3 v0, float3 v1, float3 v2, out float3 ab, out float3 ac, out float3 triNormal, out RaycastHitResult hit)
+        {
+            ab = v1 - v0;
+            ac = v2 - v0;
+
+            // Compute triangle normal. Can be precalculated or cached if
+            // intersecting multiple segments against the same triangle
+            triNormal = math.cross(ab, ac);
+
+            return IntersectSegmentTriangle(s0, s1, v0, v1, v2, ab, ac, triNormal, out hit);
+        }
+        public static bool IntersectSegmentTriangle(float3 s0, float3 s1, float3 v0, float3 v1, float3 v2, float3 ab, float3 ac, float3 triNormal, out RaycastHitResult hit)
+        {
+            hit = default;
+
+            float3 segment = (s1 - s0);
+
+            // Compute denominator d. If d <= 0, segment is parallel to or points
+            // away from triangle, so exit early
+            float d = math.dot(-segment, triNormal);
+            if (d <= 0.0f) return false;
+
+            // Compute intersection t value of pq with plane of triangle. A ray
+            // intersects iff 0 <= t. Segment intersects iff 0 <= t <= 1. Delay
+            // dividing by d until intersection has been found to pierce triangle
+            float3 ap = s0 - v0;
+            float t = math.dot(ap, triNormal);
+            if ((t < 0.0f) || (t > d)) return false;
+
+            // Compute barycentric coordinate components and test if within bounds
+            float3 e = math.cross(-segment, ap);
+            float v = math.dot(ac, e);
+            if (v < 0.0f || v > d) return false;
+
+            float w = -math.dot(ab, e);
+            if (w < 0.0f || v + w > d) return false;
+
+            float h = t;
+            // Segment/ray intersects triangle. Perform delayed division and
+            // compute the last barycentric coordinate component
+            float ood = 1.0f / d;
+            t *= ood;
+            v *= ood;
+            w *= ood;
+            float u = 1.0f - v - w;
+
+            hit = new RaycastHitResult();
+            hit.point = s0 + t * segment;
+            hit.distance = t * math.length(segment);
+            hit.barycentricCoordinate = new float3(u, v, w);
+
+            hit.normal = math.normalizesafe(triNormal);
+
+            return true;
+        }
 
     }
 

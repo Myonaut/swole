@@ -3,10 +3,12 @@
 using System.Collections;
 using System.Collections.Generic;
 using System.Reflection;
+
 using UnityEngine;
 
 #if ENABLE_INPUT_SYSTEM
 using UnityEngine.InputSystem;
+using Swole.Unity.InputSystem;
 #endif
 
 namespace Swole
@@ -24,7 +26,7 @@ namespace Swole
                 {
                     PropertyInfo[] props = typeof(InputProxy).GetProperties(BindingFlags.Static | BindingFlags.Public);
                     FieldInfo[] fields = typeof(InputProxy).GetFields(BindingFlags.Static | BindingFlags.Public);
-                    MethodInfo[] methods = typeof(InputProxy).GetMethods(BindingFlags.Static | BindingFlags.Public);
+                    MethodInfo[] methods = typeof(InputProxy).GetMethods(BindingFlags.Static | BindingFlags.Public); 
 
                     manager = new InputManager(props, fields, methods);
                 }
@@ -33,15 +35,183 @@ namespace Swole
             }
         }
 
-#if ENABLE_INPUT_SYSTEM // TODO: Add support for new unity input system
+
+
+        public static void RumbleMainGamepad(float lowFrequency, float highFrequency, float duration, bool fadeOut = false, float rumbleTimeStartFade = -1)
+        {
+#if ENABLE_INPUT_SYSTEM
+            InputSystemProxy.RumbleMainGamepad(lowFrequency, highFrequency, duration, fadeOut, rumbleTimeStartFade); 
 #endif
+        }
+        public static void StopRumblingMainGamepad()
+        {
+#if ENABLE_INPUT_SYSTEM
+            InputSystemProxy.StopRumblingMainGamepad();
+#endif
+        }
 
         #region Standard
 
         private static KeyCode CloseOrQuitKeyCode = KeyCode.Escape;
         public static bool CloseOrQuitKey { get { return Input.GetKey(CloseOrQuitKeyCode); } }
-        public static bool CloseOrQuitKeyDown { get { return Input.GetKeyUp(CloseOrQuitKeyCode); } }
-        public static bool CloseOrQuitKeyUp { get { return Input.GetKeyDown(CloseOrQuitKeyCode); } }
+        public static bool CloseOrQuitKeyDown { get { return Input.GetKeyDown(CloseOrQuitKeyCode); } }
+        public static bool CloseOrQuitKeyUp { get { return Input.GetKeyUp(CloseOrQuitKeyCode); } }
+
+        public static bool PauseButton 
+        {
+            get
+            {
+#if ENABLE_INPUT_SYSTEM
+                return CloseOrQuitKey || InputSystemProxy.DefaultControls.Standard.Pause.IsPressed(); 
+#else
+                return CloseOrQuitKey;
+#endif
+            }
+        }
+        public static bool PauseButtonDown
+        {
+            get
+            {
+#if ENABLE_INPUT_SYSTEM
+                return CloseOrQuitKeyDown || InputSystemProxy.DefaultControls.Standard.Pause.WasPressedThisFrame();
+#else
+                return CloseOrQuitKeyDown;
+#endif
+            }
+        }
+        public static bool PauseButtonUp
+        {
+            get
+            {
+#if ENABLE_INPUT_SYSTEM
+                return CloseOrQuitKeyUp || InputSystemProxy.DefaultControls.Standard.Pause.WasReleasedThisFrame();
+#else
+                return CloseOrQuitKeyUp;
+#endif
+            }
+        }
+
+        private static KeyCode ConfirmKeyCode = KeyCode.Return;
+        public static bool ConfirmKey { get { return Input.GetKey(ConfirmKeyCode); } }
+        public static bool ConfirmKeyDown { get { return Input.GetKeyDown(ConfirmKeyCode); } }
+        public static bool ConfirmKeyUp { get { return Input.GetKeyUp(ConfirmKeyCode); } }
+
+        public static float MainLeftJoystickHorizontal
+        {
+            get
+            {
+                var settings = swole.Settings;
+#if ENABLE_INPUT_SYSTEM
+                return InputSystemProxy.DefaultControls.Standard.LeftJoystickHorizontal.ReadValue<float>() * settings.gamepadLeftStickSensitivityX * settings.gamepadLeftStickSensitivityBase;
+#else
+                return Input.GetAxis("Left Joystick Hor") * settings.gamepadLeftStickSensitivityX * settings.gamepadLeftStickSensitivityBase;
+#endif
+            }
+        }
+        public static float MainLeftJoystickVertical
+        {
+            get
+            {
+                var settings = swole.Settings;
+#if ENABLE_INPUT_SYSTEM
+                return InputSystemProxy.DefaultControls.Standard.LeftJoystickVertical.ReadValue<float>() * settings.gamepadLeftStickSensitivityY * settings.gamepadLeftStickSensitivityBase;
+#else
+                return Input.GetAxis("Left Joystick Ver") * settings.gamepadLeftStickSensitivityY * settings.gamepadLeftStickSensitivityBase;
+#endif
+            }
+        }
+        public static float MainRightJoystickHorizontal
+        {
+            get
+            {
+                var settings = swole.Settings;
+#if ENABLE_INPUT_SYSTEM
+                return InputSystemProxy.DefaultControls.Standard.RightJoystickHorizontal.ReadValue<float>() * settings.gamepadRightStickSensitivityX * settings.gamepadRightStickSensitivityBase;
+#else
+                return Input.GetAxis("Right Joystick Hor")* settings.gamepadRightStickSensitivityX * settings.gamepadRightStickSensitivityBase;
+#endif
+            }
+        }
+        public static float MainRightJoystickVertical
+        {
+            get
+            {
+                var settings = swole.Settings;
+#if ENABLE_INPUT_SYSTEM
+                return InputSystemProxy.DefaultControls.Standard.RightJoystickVertical.ReadValue<float>() * settings.gamepadRightStickSensitivityY * settings.gamepadRightStickSensitivityBase;
+#else
+                return Input.GetAxis("Right Joystick Ver")* settings.gamepadRightStickSensitivityY * settings.gamepadRightStickSensitivityBase;
+#endif
+            }
+        }
+
+        public static bool LeftBumper 
+        { 
+            get 
+            {
+#if ENABLE_INPUT_SYSTEM
+                return InputSystemProxy.DefaultControls.Standard.LeftBumper.IsPressed();
+#else
+                return false;
+#endif
+            } 
+        }
+        public static bool LeftBumperUp
+        {
+            get
+            {
+#if ENABLE_INPUT_SYSTEM
+                return InputSystemProxy.DefaultControls.Standard.LeftBumper.WasReleasedThisFrame();
+#else
+                return false;
+#endif
+            }
+        }
+        public static bool LeftBumperDown
+        {
+            get
+            {
+#if ENABLE_INPUT_SYSTEM
+                return InputSystemProxy.DefaultControls.Standard.LeftBumper.WasPressedThisFrame();
+#else
+                return false;
+#endif
+            }
+        }
+
+        public static bool RightBumper
+        {
+            get
+            {
+#if ENABLE_INPUT_SYSTEM
+                return InputSystemProxy.DefaultControls.Standard.RightBumper.IsPressed();
+#else
+                return false;
+#endif
+            }
+        }
+        public static bool RightBumperUp
+        {
+            get
+            {
+#if ENABLE_INPUT_SYSTEM
+                return InputSystemProxy.DefaultControls.Standard.RightBumper.WasReleasedThisFrame();
+#else
+                return false;
+#endif
+            }
+        }
+        public static bool RightBumperDown
+        {
+            get
+            {
+#if ENABLE_INPUT_SYSTEM
+                return InputSystemProxy.DefaultControls.Standard.RightBumper.WasPressedThisFrame();
+#else
+                return false;
+#endif
+            }
+        }
 
         #endregion
 
@@ -49,19 +219,19 @@ namespace Swole
 
         private static KeyCode ItemCombineKeyCode = KeyCode.LeftShift;
         public static bool ItemCombineKey { get { return Input.GetKey(ItemCombineKeyCode); } }
-        public static bool ItemCombineKeyDown { get { return Input.GetKeyUp(ItemCombineKeyCode); } }
-        public static bool ItemCombineKeyUp { get { return Input.GetKeyDown(ItemCombineKeyCode); } }
+        public static bool ItemCombineKeyDown { get { return Input.GetKeyDown(ItemCombineKeyCode); } }
+        public static bool ItemCombineKeyUp { get { return Input.GetKeyUp(ItemCombineKeyCode); } }
 
         private static KeyCode ItemAlternateKeyCodeA = KeyCode.LeftControl;
         private static KeyCode ItemAlternateKeyCodeB = KeyCode.LeftCommand;
         public static bool ItemAlternateKey { get { return Input.GetKey(ItemAlternateKeyCodeA) || Input.GetKey(ItemAlternateKeyCodeB); } }
-        public static bool ItemAlternateKeyDown { get { return Input.GetKeyUp(ItemAlternateKeyCodeA) || Input.GetKeyUp(ItemAlternateKeyCodeB); } }
-        public static bool ItemAlternateKeyUp { get { return Input.GetKeyDown(ItemAlternateKeyCodeA) || Input.GetKeyDown(ItemAlternateKeyCodeB); } }
+        public static bool ItemAlternateKeyDown { get { return Input.GetKeyDown(ItemAlternateKeyCodeA) || Input.GetKeyDown(ItemAlternateKeyCodeB); } }
+        public static bool ItemAlternateKeyUp { get { return Input.GetKeyUp(ItemAlternateKeyCodeA) || Input.GetKeyUp(ItemAlternateKeyCodeB); } }
 
         private static KeyCode ItemTransferKeyCode = KeyCode.T;
         public static bool ItemTransferKey { get { return Input.GetKey(ItemTransferKeyCode); } }
-        public static bool ItemTransferKeyDown { get { return Input.GetKeyUp(ItemTransferKeyCode); } }
-        public static bool ItemTransferKeyUp { get { return Input.GetKeyDown(ItemTransferKeyCode); } }
+        public static bool ItemTransferKeyDown { get { return Input.GetKeyDown(ItemTransferKeyCode); } }
+        public static bool ItemTransferKeyUp { get { return Input.GetKeyUp(ItemTransferKeyCode); } }
 
         private static KeyCode ItemRotateKeyCode = KeyCode.R;
         public static bool ItemRotateKey { get { return Input.GetKey(ItemRotateKeyCode); } }
@@ -128,8 +298,13 @@ namespace Swole
         public static bool Modding_UndoKeyDown { get { return Modding_PrimeActionKey && Input.GetKeyDown(Modding_UndoKeyCode); } }
 
         public static bool Modding_RedoKey { get { return Modding_ModifyActionKey && Modding_UndoKey; } }
-        public static bool Modding_RedoKeyUp { get { return Modding_UndoKeyUp; } }
+        public static bool Modding_RedoKeyUp { get { return Modding_ModifyActionKey && Modding_UndoKeyUp; } }
         public static bool Modding_RedoKeyDown { get { return Modding_ModifyActionKey && Modding_UndoKeyDown; } }
+
+        private static KeyCode Modding_SaveKeyCode = KeyCode.S;
+        public static bool Modding_SaveKey { get { return Modding_PrimeActionKey && Input.GetKey(Modding_SaveKeyCode); } }
+        public static bool Modding_SaveKeyUp { get { return Input.GetKeyUp(Modding_SaveKeyCode); } }
+        public static bool Modding_SaveKeyDown { get { return Modding_PrimeActionKey && Input.GetKeyDown(Modding_SaveKeyCode); } } 
 
         private static KeyCode Modding_CopyKeyCode = KeyCode.C;
         public static bool Modding_CopyKey { get { return Input.GetKey(Modding_CopyKeyCode); } }
@@ -147,47 +322,225 @@ namespace Swole
 
         private static KeyCode MoveForwardKeyCode = KeyCode.W;
         public static bool MoveForwardKey { get { return Input.GetKey(MoveForwardKeyCode); } }
-        public static bool MoveForwardKeyDown { get { return Input.GetKeyUp(MoveForwardKeyCode); } }
-        public static bool MoveForwardKeyUp { get { return Input.GetKeyDown(MoveForwardKeyCode); } }
+        public static bool MoveForwardKeyDown { get { return Input.GetKeyDown(MoveForwardKeyCode); } }
+        public static bool MoveForwardKeyUp { get { return Input.GetKeyUp(MoveForwardKeyCode); } }
 
         private static KeyCode MoveBackwardKeyCode = KeyCode.S;
         public static bool MoveBackwardKey { get { return Input.GetKey(MoveBackwardKeyCode); } }
-        public static bool MoveBackwardKeyDown { get { return Input.GetKeyUp(MoveBackwardKeyCode); } }
-        public static bool MoveBackwardKeyUp { get { return Input.GetKeyDown(MoveBackwardKeyCode); } }
+        public static bool MoveBackwardKeyDown { get { return Input.GetKeyDown(MoveBackwardKeyCode); } }
+        public static bool MoveBackwardKeyUp { get { return Input.GetKeyUp(MoveBackwardKeyCode); } }
 
         private static KeyCode MoveLeftKeyCode = KeyCode.A;
         public static bool MoveLeftKey { get { return Input.GetKey(MoveLeftKeyCode); } }
-        public static bool MoveLeftKeyDown { get { return Input.GetKeyUp(MoveLeftKeyCode); } }
-        public static bool MoveLeftKeyUp { get { return Input.GetKeyDown(MoveLeftKeyCode); } }
+        public static bool MoveLeftKeyDown { get { return Input.GetKeyDown(MoveLeftKeyCode); } }
+        public static bool MoveLeftKeyUp { get { return Input.GetKeyUp(MoveLeftKeyCode); } }
 
         private static KeyCode MoveRightKeyCode = KeyCode.D;
         public static bool MoveRightKey { get { return Input.GetKey(MoveRightKeyCode); } }
-        public static bool MoveRightKeyDown { get { return Input.GetKeyUp(MoveRightKeyCode); } }
-        public static bool MoveRightKeyUp { get { return Input.GetKeyDown(MoveRightKeyCode); } }
+        public static bool MoveRightKeyDown { get { return Input.GetKeyDown(MoveRightKeyCode); } }
+        public static bool MoveRightKeyUp { get { return Input.GetKeyUp(MoveRightKeyCode); } }
           
         public static float MoveAxisX
         {
             get
             {
-                return Mathf.Clamp(((MoveRightKey ? 1 : 0) - (MoveLeftKey ? 1 : 0)) + Input.GetAxis("Left Joystick Hor"), -1, 1); 
+                return Mathf.Clamp(((MoveRightKey ? 1 : 0) - (MoveLeftKey ? 1 : 0)) + MainLeftJoystickHorizontal, -1, 1); 
             }
         }
         public static float MoveAxisY
         {
             get
             {
-                return Mathf.Clamp(((MoveForwardKey ? 1 : 0) - (MoveBackwardKey ? 1 : 0)) - Input.GetAxis("Left Joystick Ver"), -1, 1);
+                return Mathf.Clamp(((MoveForwardKey ? 1 : 0) - (MoveBackwardKey ? 1 : 0)) - MainLeftJoystickVertical, -1, 1);
             }
         }
 
         private static KeyCode JumpKeyCode = KeyCode.Space;
         public static bool JumpKey { get { return Input.GetKey(JumpKeyCode); } }
-        public static bool JumpKeyDown { get { return Input.GetKeyUp(JumpKeyCode); } }
-        public static bool JumpKeyUp { get { return Input.GetKeyDown(JumpKeyCode); } }
+        public static bool JumpKeyDown { get { return Input.GetKeyDown(JumpKeyCode); } }
+        public static bool JumpKeyUp { get { return Input.GetKeyUp(JumpKeyCode); } }
          
-        public static bool JumpButton => JumpKey || Input.GetButton("Jump");
-        public static bool JumpButtonDown => JumpKeyDown || Input.GetButtonDown("Jump");
-        public static bool JumpButtonUp => JumpKeyUp || Input.GetButtonUp("Jump");
+        public static bool JumpButton 
+        {            
+            get            
+            {
+#if ENABLE_INPUT_SYSTEM
+                return InputSystemProxy.DefaultControls.Standard.Jump.IsPressed();
+#else
+                return JumpKey || Input.GetButton("Jump");      
+#endif
+            } 
+        }
+        public static bool JumpButtonDown
+        {
+            get
+            {
+#if ENABLE_INPUT_SYSTEM
+                return InputSystemProxy.DefaultControls.Standard.Jump.WasPressedThisFrame();
+#else
+                return JumpKeyDown || Input.GetButtonDown("Jump");      
+#endif
+            }
+        }
+        public static bool JumpButtonUp
+        {
+            get
+            {
+#if ENABLE_INPUT_SYSTEM
+                return InputSystemProxy.DefaultControls.Standard.Jump.WasReleasedThisFrame();
+#else
+                return JumpKeyUp || Input.GetButtonUp("Jump");      
+#endif
+            }
+        }
+
+        public static bool FreeLookMainAction { get { return Input.GetMouseButton(0); } }
+        public static bool FreeLookMainActionDown { get { return Input.GetMouseButtonDown(0); } }
+        public static bool FreeLookMainActionUp { get { return Input.GetMouseButtonUp(0); } }
+
+        public static bool FreeLookSecondaryAction { get { return Input.GetMouseButton(1); } }
+        public static bool FreeLookSecondaryActionDown { get { return Input.GetMouseButtonDown(1); } }
+        public static bool FreeLookSecondaryActionUp { get { return Input.GetMouseButtonUp(1); } }
+
+        #endregion
+
+        #region MOBA
+
+        public static bool MOBA_AbilityQ
+        {
+            get
+            {
+#if ENABLE_INPUT_SYSTEM
+                return InputSystemProxy.DefaultControls.MOBA.AbilityQ.IsPressed();
+#else
+                return Input.GetKey(KeyCode.Q);
+#endif
+            }
+        }
+        public static bool MOBA_AbilityQDown
+        {
+            get
+            {
+#if ENABLE_INPUT_SYSTEM
+                return InputSystemProxy.DefaultControls.MOBA.AbilityQ.WasPressedThisFrame();
+#else
+                return Input.GetKeyDown(KeyCode.Q);
+#endif
+            }
+        }
+        public static bool MOBA_AbilityQUp
+        {
+            get
+            {
+#if ENABLE_INPUT_SYSTEM
+                return InputSystemProxy.DefaultControls.MOBA.AbilityQ.WasReleasedThisFrame();
+#else
+                return Input.GetKeyUp(KeyCode.Q);
+#endif
+            }
+        }
+
+        public static bool MOBA_AbilityW
+        {
+            get
+            {
+#if ENABLE_INPUT_SYSTEM
+                return InputSystemProxy.DefaultControls.MOBA.AbilityW.IsPressed();
+#else
+                return Input.GetKey(KeyCode.W);
+#endif
+            }
+        }
+        public static bool MOBA_AbilityWDown
+        {
+            get
+            {
+#if ENABLE_INPUT_SYSTEM
+                return InputSystemProxy.DefaultControls.MOBA.AbilityW.WasPressedThisFrame();
+#else
+                return Input.GetKeyDown(KeyCode.W);
+#endif
+            }
+        }
+        public static bool MOBA_AbilityWUp
+        {
+            get
+            {
+#if ENABLE_INPUT_SYSTEM
+                return InputSystemProxy.DefaultControls.MOBA.AbilityW.WasReleasedThisFrame();
+#else
+                return Input.GetKeyUp(KeyCode.W);
+#endif
+            }
+        }
+
+        public static bool MOBA_AbilityE
+        {
+            get
+            {
+#if ENABLE_INPUT_SYSTEM
+                return InputSystemProxy.DefaultControls.MOBA.AbilityE.IsPressed();
+#else
+                return Input.GetKey(KeyCode.E);
+#endif
+            }
+        }
+        public static bool MOBA_AbilityEDown
+        {
+            get
+            {
+#if ENABLE_INPUT_SYSTEM
+                return InputSystemProxy.DefaultControls.MOBA.AbilityE.WasPressedThisFrame();
+#else
+                return Input.GetKeyDown(KeyCode.E);
+#endif
+            }
+        }
+        public static bool MOBA_AbilityEUp
+        {
+            get
+            {
+#if ENABLE_INPUT_SYSTEM
+                return InputSystemProxy.DefaultControls.MOBA.AbilityE.WasReleasedThisFrame();
+#else
+                return Input.GetKeyUp(KeyCode.E);
+#endif
+            }
+        }
+
+        public static bool MOBA_AbilityR
+        {
+            get
+            {
+#if ENABLE_INPUT_SYSTEM
+                return InputSystemProxy.DefaultControls.MOBA.AbilityR.IsPressed();
+#else
+                return Input.GetKey(KeyCode.R);
+#endif
+            }
+        }
+        public static bool MOBA_AbilityRDown
+        {
+            get
+            {
+#if ENABLE_INPUT_SYSTEM
+                return InputSystemProxy.DefaultControls.MOBA.AbilityR.WasPressedThisFrame();
+#else
+                return Input.GetKeyDown(KeyCode.R);
+#endif
+            }
+        }
+        public static bool MOBA_AbilityRUp
+        {
+            get
+            {
+#if ENABLE_INPUT_SYSTEM
+                return InputSystemProxy.DefaultControls.MOBA.AbilityR.WasReleasedThisFrame();
+#else
+                return Input.GetKeyUp(KeyCode.R);
+#endif
+            }
+        }
 
         #endregion
 
@@ -311,6 +664,180 @@ namespace Swole
             this.inputFields = inputFields;
             this.inputMethods = inputMethods;
         }
+    }
+
+    public class InputSystemProxy : SingletonBehaviour<InputSystemProxy>
+    {
+
+        public override bool DestroyOnLoad => false;
+        public override int Priority => -1;
+
+#if ENABLE_INPUT_SYSTEM
+        private DefaultSwoleControls defaultControls;
+        public DefaultSwoleControls DefaultControlsLocal
+        {
+            get
+            {
+                if (defaultControls == null) defaultControls = new DefaultSwoleControls();
+                return defaultControls;
+            }
+        }
+        public static DefaultSwoleControls DefaultControls
+        {
+            get
+            {
+                var instance = Instance;
+                if (instance == null) return null;
+
+                return instance.DefaultControlsLocal;
+            }
+        }
+#endif
+
+        public static void EnableDefaultControls()
+        {
+            var instance = Instance;
+            if (instance == null) return;
+#if ENABLE_INPUT_SYSTEM
+            instance.DefaultControlsLocal.Enable();
+#endif
+        }
+        public static void DisableDefaultControls()
+        {
+            var instance = Instance;
+            if (instance == null) return;
+#if ENABLE_INPUT_SYSTEM
+            instance.DefaultControlsLocal.Disable();
+#endif
+        }
+
+#if ENABLE_INPUT_SYSTEM
+        protected PlayerInput playerInput;
+#endif
+
+        protected override void OnAwake()
+        {
+            base.OnAwake();
+
+#if ENABLE_INPUT_SYSTEM
+            playerInput = FindFirstObjectByType<PlayerInput>();
+            if (playerInput != null) playerInput.onControlsChanged += OnControlsChange;
+
+            DefaultControlsLocal.Enable();
+#endif
+        }
+
+        protected virtual void OnDestroy()
+        {
+#if ENABLE_INPUT_SYSTEM
+            if (playerInput != null) playerInput.onControlsChanged -= OnControlsChange;
+#endif
+        }
+
+        public override void OnUpdate()
+        {
+#if ENABLE_INPUT_SYSTEM
+            if (InputSystem.settings.updateMode == InputSettings.UpdateMode.ProcessEventsManually) InputSystem.Update();
+#endif
+
+            UpdateRumble();
+        }
+
+        public override void OnFixedUpdate()
+        {
+        }
+        public override void OnLateUpdate()
+        {
+        }
+
+        protected bool isUsingGamepad;
+        public static bool IsUsingGamepad
+        {
+            get
+            {
+                var instance = Instance;
+                if (instance == null) return false;
+
+                return instance.isUsingGamepad;
+            }
+        }
+#if ENABLE_INPUT_SYSTEM
+        protected virtual void OnControlsChange(PlayerInput input)
+        {
+            isUsingGamepad = input.currentControlScheme == "Gamepad";
+        }
+#endif
+
+        protected float rumbleTime;
+        protected float rumbleTimeMax;
+        protected float rumbleTimeStartFade;
+        protected bool fadeRumble;
+        protected float rumbleLow;
+        protected float rumbleHigh;
+        public static void RumbleMainGamepad(float lowFrequency, float highFrequency, float duration, bool fadeOut = false, float rumbleTimeStartFade = -1)
+        {
+            var settings = swole.Settings;
+            var instance = Instance;
+            if (instance == null || settings.disableGamepadRumble) return;
+
+            instance.rumbleTime = duration;
+            instance.rumbleTimeMax = duration;
+            instance.rumbleTimeStartFade = rumbleTimeStartFade;
+            instance.fadeRumble = fadeOut;
+            instance.rumbleLow = lowFrequency * settings.gamepadRumbleScale;
+            instance.rumbleHigh = highFrequency * settings.gamepadRumbleScale; 
+
+#if ENABLE_INPUT_SYSTEM
+            var gamePad = Gamepad.current;
+            if (gamePad == null) return;
+
+            gamePad.SetMotorSpeeds(instance.rumbleLow, instance.rumbleHigh);
+#endif
+        }
+        public static void StopRumblingMainGamepad()
+        {
+            var instance = Instance;
+            if (instance == null) return;
+
+            instance.rumbleTime = 0;
+
+#if ENABLE_INPUT_SYSTEM
+            var gamePad = Gamepad.current;
+            if (gamePad == null) return;
+
+            gamePad.SetMotorSpeeds(0f, 0f);
+#endif
+        }
+        protected void UpdateRumble()
+        {
+#if ENABLE_INPUT_SYSTEM
+            var gamePad = Gamepad.current;
+            if (gamePad == null) return;
+
+            if (rumbleTime > 0)
+            {
+                rumbleTime -= Time.deltaTime;
+
+                if (rumbleTime > 0)
+                {
+                    if (fadeRumble && (rumbleTimeStartFade < 0 || rumbleTime < rumbleTimeStartFade))
+                    {
+                        float startFade = rumbleTimeStartFade < 0 ? rumbleTimeMax : rumbleTimeStartFade;
+
+                        float fader = rumbleTime / rumbleTimeStartFade;
+                        gamePad.SetMotorSpeeds(rumbleLow * fader, rumbleHigh * fader);
+                    }
+                }
+                else
+                {
+                    gamePad.SetMotorSpeeds(0f, 0f);
+                }
+            }
+#endif
+        }
+
+
+
     }
 
 }

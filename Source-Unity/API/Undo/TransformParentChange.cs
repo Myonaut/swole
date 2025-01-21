@@ -6,6 +6,8 @@ namespace Swole.API.Unity.UndoSystem
 {
     public struct TransformParentChange : IRevertableAction
     {
+        public bool ReapplyWhenRevertedTo => true;
+
         public Transform transform;
 
         public Transform oldParent;

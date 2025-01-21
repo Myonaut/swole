@@ -130,7 +130,7 @@ PrefabInstance:
     - target: {fileID: 4265874904793493858, guid: b04d1d0e969cdd44db4e238f64f6c833,
         type: 3}
       propertyPath: m_Name
-      value: DynamicDropDownMenu Variant
+      value: DynamicDropDownMenu
       objectReference: {fileID: 0}
     - target: {fileID: 4265874904793493862, guid: b04d1d0e969cdd44db4e238f64f6c833,
         type: 3}
@@ -141,6 +141,11 @@ PrefabInstance:
         type: 3}
       propertyPath: OnClick.m_PersistentCalls.m_Calls.Array.data[0].m_MethodName
       value: Toggle
+      objectReference: {fileID: 0}
+    - target: {fileID: 4265874904836366019, guid: b04d1d0e969cdd44db4e238f64f6c833,
+        type: 3}
+      propertyPath: m_AnchoredPosition.x
+      value: -3.7299805
       objectReference: {fileID: 0}
     - target: {fileID: 4265874904837891372, guid: b04d1d0e969cdd44db4e238f64f6c833,
         type: 3}
@@ -333,3 +338,5 @@ MonoBehaviour:
   selectedText: {fileID: 0}
   selectedTextTMP: {fileID: 5429207418427008660}
   menuItemPrototype: {fileID: 5429207417872370172}
+  layoutGroup: {fileID: 0}
+  layoutGroupTransform: {fileID: 0}

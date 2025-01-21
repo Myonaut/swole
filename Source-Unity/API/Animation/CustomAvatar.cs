@@ -6,6 +6,8 @@ using System.Collections.Generic;
 
 using UnityEngine;
 
+using Unity.Mathematics;
+
 #if UNITY_EDITOR
 using UnityEditor;
 #endif
@@ -39,8 +41,75 @@ namespace Swole.API.Unity.Animation
         }
 
         public string rigContainer;
+        public bool containerIsRoot;
+
+        [TextArea]
+        public string note;
 
         public string[] bones;
+
+        [Serializable]
+        public enum IKBoneType
+        {
+            Target, BendGoal
+        }
+
+        [Serializable]
+        public struct IkBone
+        {
+            public IKBoneType type;
+            public string name;
+            public int parentIndex;
+            public string fkParent;
+            public bool usePositionOffsetFK;
+            public float3 fkOffsetPosition;
+            public bool useRotationOffsetFK;
+            public float3 fkOffsetEulerRotation;
+        }
+
+        public IkBone[] ikBones;
+        public bool IsIkBone(string boneName) => IsIkBone(boneName, out _);
+        public bool IsIkBone(string boneName, out IkBone ikBone)
+        {
+            ikBone = default;
+            if (ikBones != null)
+            {
+                foreach (var ikBone_ in ikBones) if (ikBone_.name == boneName)
+                    {
+                        ikBone = ikBone_;
+                        return true;
+                    }
+
+                boneName = boneName.AsID();
+                foreach(var ikBone_ in ikBones) if (ikBone_.name.AsID() == boneName)
+                    {
+                        ikBone = ikBone_;
+                        return true;
+                    }
+            }
+            return false;
+        }
+        public bool IsIkBoneFkEquivalent(string boneName) => IsIkBoneFkEquivalent(boneName, out _);
+        public bool IsIkBoneFkEquivalent(string boneName, out IkBone dependentIkBone)
+        {
+            dependentIkBone = default;
+            if (ikBones != null)
+            {
+                foreach (var ikBone_ in ikBones) if (ikBone_.fkParent == boneName)
+                    {
+                        dependentIkBone = ikBone_;
+                        return true;
+                    }
+
+                boneName = boneName.AsID();
+                foreach (var ikBone_ in ikBones) if (ikBone_.fkParent.AsID() == boneName)
+                    {
+                        dependentIkBone = ikBone_;
+                        return true;
+                    }
+            }
+            return false;
+        }
 
         public RigRemapping[] remappings;
 
@@ -63,6 +132,9 @@ namespace Swole.API.Unity.Animation
         public bool IsPoseableBone(string boneName)
         {
             boneName = Remap(boneName);
+
+            if (IsIkBone(boneName)) return true;
+
             if (poseable == null || !poseable.IsExplicit) 
             {
                 string boneNameId = boneName.AsID();
@@ -91,20 +163,82 @@ namespace Swole.API.Unity.Animation
 
         public bool TryGetBoneInfo(string boneName, out PoseableRig.BoneInfo boneInfo)
         {
-            boneInfo = PoseableRig.BoneInfo.GetDefault(boneName);
+            string boneName_ = boneName;
+            boneName = Remap(boneName);
 
+            boneInfo = PoseableRig.BoneInfo.GetDefault(boneName);
+            
             if (poseable != null) 
             {
                 if (poseable.TryGetBoneInfo(boneName, out boneInfo))
                 {
                     return true;
                 }
-                else if (poseable.IsExplicit) return false;
+                else if (poseable.IsExplicit && !IsIkBone(boneName)) return false;
             }
-
-            return IsPoseableBone(boneName);
+            
+            return IsPoseableBone(boneName_);
         }
 
+        public PoseableRig.BoneInfo GetNonDefaultParentBoneInfo(Transform bone) => GetNonDefaultParentBoneInfo(bone, out _);
+        public PoseableRig.BoneInfo GetNonDefaultParentBoneInfo(Transform bone, out Transform nonDefaultParentBone)
+        {
+            var nonDefaultParentBoneInfo = PoseableRig.BoneInfo.GetDefault(string.Empty);
+            nonDefaultParentBone = null;
+            if (bone == null) return nonDefaultParentBoneInfo;
+
+            nonDefaultParentBone = bone.parent;
+            while (nonDefaultParentBone != null && nonDefaultParentBoneInfo.isDefault)
+            {
+                TryGetBoneInfo(nonDefaultParentBone.name, out nonDefaultParentBoneInfo);
+                nonDefaultParentBone = nonDefaultParentBone.parent;
+            }
+
+            return nonDefaultParentBoneInfo;
+        }
+        public bool TryGetNonDefaultParentBoneInfo(Transform bone, out PoseableRig.BoneInfo nonDefaultParentBoneInfo) => TryGetNonDefaultParentBoneInfo(bone, out nonDefaultParentBoneInfo, out _);
+        public bool TryGetNonDefaultParentBoneInfo(Transform bone, out PoseableRig.BoneInfo nonDefaultParentBoneInfo, out Transform nonDefaultParentBone)
+        {
+            nonDefaultParentBoneInfo = GetNonDefaultParentBoneInfo(bone, out nonDefaultParentBone);
+            return !nonDefaultParentBoneInfo.isDefault; 
+        }
+
+        public int BoneGroupCount => poseable == null ? 1 : poseable.BoneGroupCount;
+        public PoseableRig.BoneGroup GetBoneGroup(int index)
+        {
+            if (poseable != null) return poseable.GetBoneGroup(index);
+            return PoseableRig.BoneGroup.Default;
+        }
+        public PoseableRig.BoneGroup GetBoneGroup(Transform bone)
+        {
+            if (bone != null && TryGetBoneInfo(bone.name, out var boneInfo))
+            {
+                if (boneInfo.isDefault)
+                {
+                    var nonDefaultParentBoneInfo = GetNonDefaultParentBoneInfo(bone);
+                    if (nonDefaultParentBoneInfo.defaultChildrenToSameGroup) return GetBoneGroup(nonDefaultParentBoneInfo.boneGroup); 
+                }
+
+                return GetBoneGroup(boneInfo.boneGroup);
+            }
+
+            return GetBoneGroup(0);
+        }
+
+        public Transform FindPoseableBone(Transform rootTransform, PoseableRig.BoneInfo boneInfo)
+        {
+            Transform boneTransform = rootTransform.FindDeepChildLiberal(boneInfo.Name); 
+            if (boneTransform == null && boneInfo.id.aliases != null)
+            {
+                for (int a = 0; a < boneInfo.id.aliases.Length; a++)
+                {
+                    boneTransform = rootTransform.FindDeepChildLiberal(boneInfo.id.aliases[a]);
+                    if (boneTransform != null) break;
+                }
+            }
+
+            return boneTransform;
+        }
         public List<Transform> FindBones(Transform rootTransform, List<Transform> outputList = null)
         {
             if (outputList == null) outputList = new List<Transform>();
@@ -116,7 +250,7 @@ namespace Swole.API.Unity.Animation
                     foreach(var bone in poseable.fullRig)
                     {
                         if (poseable.ShouldExcludeBone(bone.Name)) continue;
-                        Transform boneTransform = rootTransform.FindDeepChildLiberal(bone.Name);
+                        Transform boneTransform = FindPoseableBone(rootTransform, bone); 
                         if (boneTransform != null) outputList.Add(boneTransform);
                     }
 
@@ -125,12 +259,10 @@ namespace Swole.API.Unity.Animation
                         foreach (var bone in poseable.additiveRig)
                         {
                             if (poseable.ShouldExcludeBone(bone.Name)) continue;
-                            Transform boneTransform = rootTransform.FindDeepChildLiberal(bone.Name);
+                            Transform boneTransform = FindPoseableBone(rootTransform, bone);
                             if (boneTransform != null) outputList.Add(boneTransform);
                         }
                     }
-
-                    return outputList;
                 }
                 else
                 {
@@ -149,7 +281,7 @@ namespace Swole.API.Unity.Animation
                         foreach (var bone in poseable.additiveRig)
                         {
                             if (poseable.ShouldExcludeBone(bone.Name)) continue;
-                            Transform boneTransform = rootTransform.FindDeepChildLiberal(bone.Name);
+                            Transform boneTransform = FindPoseableBone(rootTransform, bone);
                             if (boneTransform != null && !outputList.Contains(boneTransform)) outputList.Add(boneTransform);
                         }
                     }
@@ -166,7 +298,15 @@ namespace Swole.API.Unity.Animation
                     }
                 }
             }
-           
+
+            if (ikBones != null)
+            {
+                foreach(var ikBone in ikBones)
+                {
+                    Transform boneTransform = rootTransform.FindDeepChildLiberal(ikBone.name);
+                    if (boneTransform != null) outputList.Add(boneTransform);
+                }
+            }
 
             return outputList;
         }

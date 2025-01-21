@@ -11,7 +11,7 @@ using Unity.Mathematics;
 namespace Swole.API.Unity.Animation
 { 
     [Serializable]
-    public class PropertyCurve : SwoleObject<PropertyCurve, PropertyCurve.Serialized>, IPropertyCurve, ICloneable
+    public class PropertyCurve : SwoleObject<PropertyCurve, PropertyCurve.Serialized>, IPropertyCurve
     {
 
         public bool HasKeyframes
@@ -80,8 +80,9 @@ namespace Swole.API.Unity.Animation
         {
 
             public string name;
+            public string SerializedName => name;
 
-            public int preWrapMode;
+            public int preWrapMode; 
             public int postWrapMode;
 
             public SerializedAnimationCurve propertyValueCurve;
@@ -132,7 +133,7 @@ namespace Swole.API.Unity.Animation
                 instance.preWrapMode = WrapMode.Clamp;
                 instance.postWrapMode = WrapMode.Clamp;
 
-                instance.propertyValueCurve = new AnimationCurve();
+                instance.propertyValueCurve = new EditableAnimationCurve();//new AnimationCurve();
                 instance.propertyValueCurve.preWrapMode = instance.preWrapMode;
                 instance.propertyValueCurve.postWrapMode = instance.postWrapMode;
 
@@ -141,13 +142,68 @@ namespace Swole.API.Unity.Animation
         }
 
         public string name;
-
+        public override string SerializedName => name;
         public string PropertyString => name;
 
         public WrapMode preWrapMode;
         public WrapMode postWrapMode;
 
-        public AnimationCurve propertyValueCurve;
+        public WrapMode PreWrapMode
+        {
+            get => preWrapMode;
+            set => preWrapMode = value;
+        }
+        public WrapMode PostWrapMode
+        {
+            get => postWrapMode;
+            set => postWrapMode = value;
+        }
+
+        public EditableAnimationCurve propertyValueCurve;
+
+        public StateData State
+        {
+            get => new StateData(this);
+            set => value.ApplyTo(this);
+        }
+        [Serializable]
+        public struct StateData
+        {
+            public int preWrapMode;
+            public int postWrapMode;
+
+            public AnimationCurveEditor.State propertyValueCurveState;
+
+            public StateData(PropertyCurve pc)
+            {
+                if (pc != null)
+                {
+                    preWrapMode = (int)pc.preWrapMode;
+                    postWrapMode = (int)pc.postWrapMode;
+
+                    propertyValueCurveState = pc.propertyValueCurve == null ? default : pc.propertyValueCurve.CloneState();
+                }
+                else
+                {
+                    preWrapMode = postWrapMode = 0;
+                    propertyValueCurveState = default;
+                }
+            }
+
+            public void ApplyTo(PropertyCurve curve)
+            {
+                curve.preWrapMode = (WrapMode)preWrapMode;
+                curve.postWrapMode = (WrapMode)postWrapMode;
+
+                void SetCurveState(string curvePropertyName, AnimationCurveEditor.State curveState, ref EditableAnimationCurve animCurve)
+                {
+                    if (animCurve == null && curveState.keyframes != null && curveState.keyframes.Length > 0) animCurve = new EditableAnimationCurve(default, null, curvePropertyName);
+                    if (animCurve != null) animCurve.State = curveState;
+                }
+
+                SetCurveState(nameof(curve.propertyValueCurve), propertyValueCurveState, ref curve.propertyValueCurve);
+            }
+        }
 
         [NonSerialized]
         private float m_cachedLength = -1;
@@ -211,6 +267,29 @@ namespace Swole.API.Unity.Animation
             GetMaxFrameCountFromCurve(propertyValueCurve);
 
             return maxFrameCount;
+        }
+
+        public List<float> GetFrameTimes(int framesPerSecond, List<float> inputList = null)
+        {
+            if (inputList == null) inputList = new List<float>();
+
+            if (propertyValueCurve != null)
+            {
+                for (int a = 0; a < propertyValueCurve.length; a++) inputList.Add(propertyValueCurve[a].time);
+            }
+
+            return inputList;
+        }
+        public List<CustomAnimation.FrameHeader> GetFrameTimes(int framesPerSecond, List<CustomAnimation.FrameHeader> inputList)
+        {
+            if (inputList == null) inputList = new List<CustomAnimation.FrameHeader>();
+
+            if (propertyValueCurve != null)
+            {
+                for (int a = 0; a < propertyValueCurve.length; a++) inputList.Add(new CustomAnimation.FrameHeader() { time = propertyValueCurve[a].time });
+            }
+
+            return inputList;
         }
 
     }

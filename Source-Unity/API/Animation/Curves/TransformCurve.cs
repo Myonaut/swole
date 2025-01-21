@@ -11,7 +11,7 @@ using Unity.Mathematics;
 namespace Swole.API.Unity.Animation
 {
     [Serializable]
-    public class TransformCurve : SwoleObject<TransformCurve, TransformCurve.Serialized>, ITransformCurve, ICloneable
+    public class TransformCurve : SwoleObject<TransformCurve, TransformCurve.Serialized>, ITransformCurve
     {
 
         public bool HasKeyframes 
@@ -37,10 +37,10 @@ namespace Swole.API.Unity.Animation
         public float GetClosestKeyframeTime(float referenceTime, int framesPerSecond, bool includeReferenceTime = true, IntFromDecimalDelegate getFrameIndex = null)
         {
             float closestTime = 0;
-            float minDiff = -1;
+            float minDiff = float.MaxValue;
             int frameIndex = getFrameIndex == null ? 0 : getFrameIndex((decimal)referenceTime); 
 
-            void GetClosestKeyframeTimeFromCurve(AnimationCurve curve)
+            void GetClosestKeyframeTimeFromCurve(EditableAnimationCurve curve)
             {
                 if (curve == null) return;
 
@@ -48,7 +48,7 @@ namespace Swole.API.Unity.Animation
                 {
                     var key = curve[a];
                     float diff = referenceTime - key.time;
-                    if (diff < 0 || (diff > minDiff && minDiff >= 0) || (!includeReferenceTime && (diff == 0 || (getFrameIndex != null && getFrameIndex((decimal)key.time) == frameIndex)))) continue; 
+                    if (diff < 0 || diff > minDiff || (!includeReferenceTime && (diff == 0 || (getFrameIndex != null && getFrameIndex((decimal)key.time) == frameIndex)))) continue; 
                     closestTime = key.time;
                     minDiff = diff;
                 }
@@ -131,6 +131,7 @@ namespace Swole.API.Unity.Animation
         {
 
             public string name;
+            public string SerializedName => name;
 
             public bool isBone;
 
@@ -229,36 +230,36 @@ namespace Swole.API.Unity.Animation
                 instance.preWrapMode = WrapMode.Clamp;
                 instance.postWrapMode = WrapMode.Clamp;
 
-                instance.localPositionCurveX = new AnimationCurve();
+                instance.localPositionCurveX = new EditableAnimationCurve();//new AnimationCurve();
                 instance.localPositionCurveX.preWrapMode = instance.preWrapMode;
                 instance.localPositionCurveX.postWrapMode = instance.postWrapMode;
-                instance.localPositionCurveY = new AnimationCurve();
+                instance.localPositionCurveY = new EditableAnimationCurve();//new AnimationCurve();
                 instance.localPositionCurveY.preWrapMode = instance.preWrapMode;
                 instance.localPositionCurveY.postWrapMode = instance.postWrapMode;
-                instance.localPositionCurveZ = new AnimationCurve();
+                instance.localPositionCurveZ = new EditableAnimationCurve();//new AnimationCurve();
                 instance.localPositionCurveZ.preWrapMode = instance.preWrapMode;
                 instance.localPositionCurveZ.postWrapMode = instance.postWrapMode;
 
-                instance.localRotationCurveX = new AnimationCurve();
+                instance.localRotationCurveX = new EditableAnimationCurve();//new AnimationCurve();
                 instance.localRotationCurveX.preWrapMode = instance.preWrapMode;
                 instance.localRotationCurveX.postWrapMode = instance.postWrapMode;
-                instance.localRotationCurveY = new AnimationCurve();
+                instance.localRotationCurveY = new EditableAnimationCurve();//new AnimationCurve();
                 instance.localRotationCurveY.preWrapMode = instance.preWrapMode;
                 instance.localRotationCurveY.postWrapMode = instance.postWrapMode;
-                instance.localRotationCurveZ = new AnimationCurve();
+                instance.localRotationCurveZ = new EditableAnimationCurve();//new AnimationCurve();
                 instance.localRotationCurveZ.preWrapMode = instance.preWrapMode;
                 instance.localRotationCurveZ.postWrapMode = instance.postWrapMode;
-                instance.localRotationCurveW = new AnimationCurve();
+                instance.localRotationCurveW = new EditableAnimationCurve();//new AnimationCurve();
                 instance.localRotationCurveW.preWrapMode = instance.preWrapMode;
                 instance.localRotationCurveW.postWrapMode = instance.postWrapMode;
 
-                instance.localScaleCurveX = new AnimationCurve();
+                instance.localScaleCurveX = new EditableAnimationCurve();//new AnimationCurve();
                 instance.localScaleCurveX.preWrapMode = instance.preWrapMode;
                 instance.localScaleCurveX.postWrapMode = instance.postWrapMode;
-                instance.localScaleCurveY = new AnimationCurve();
+                instance.localScaleCurveY = new EditableAnimationCurve();//new AnimationCurve();
                 instance.localScaleCurveY.preWrapMode = instance.preWrapMode;
                 instance.localScaleCurveY.postWrapMode = instance.postWrapMode;
-                instance.localScaleCurveZ = new AnimationCurve();
+                instance.localScaleCurveZ = new EditableAnimationCurve();//new AnimationCurve();
                 instance.localScaleCurveZ.preWrapMode = instance.preWrapMode;
                 instance.localScaleCurveZ.postWrapMode = instance.postWrapMode;
 
@@ -267,6 +268,7 @@ namespace Swole.API.Unity.Animation
         }
 
         public string name;
+        public override string SerializedName => name;
 
         public string TransformName => name;
 
@@ -276,23 +278,123 @@ namespace Swole.API.Unity.Animation
         public WrapMode preWrapMode;
         public WrapMode postWrapMode;
 
-        public AnimationCurve localPositionTimeCurve;
-        public AnimationCurve localPositionCurveX;
-        public AnimationCurve localPositionCurveY;
-        public AnimationCurve localPositionCurveZ;
+        public WrapMode PreWrapMode
+        {
+            get => preWrapMode;
+            set => preWrapMode = value;
+        }
+        public WrapMode PostWrapMode
+        {
+            get => postWrapMode;
+            set => postWrapMode = value;
+        }
 
-        public AnimationCurve localRotationTimeCurve;
-        public AnimationCurve localRotationCurveX;
-        public AnimationCurve localRotationCurveY;
-        public AnimationCurve localRotationCurveZ;
-        public AnimationCurve localRotationCurveW;
+        public EditableAnimationCurve localPositionTimeCurve;
+        public EditableAnimationCurve localPositionCurveX;
+        public EditableAnimationCurve localPositionCurveY;
+        public EditableAnimationCurve localPositionCurveZ;
 
-        public AnimationCurve localScaleTimeCurve;
-        public AnimationCurve localScaleCurveX;
-        public AnimationCurve localScaleCurveY;
-        public AnimationCurve localScaleCurveZ;
+        public EditableAnimationCurve localRotationTimeCurve;
+        public EditableAnimationCurve localRotationCurveX;
+        public EditableAnimationCurve localRotationCurveY;
+        public EditableAnimationCurve localRotationCurveZ;
+        public EditableAnimationCurve localRotationCurveW;
 
-        public static bool Validate(AnimationCurve curve) => curve != null && curve.length > 0; // length is number of keys not time length
+        public EditableAnimationCurve localScaleTimeCurve;
+        public EditableAnimationCurve localScaleCurveX;
+        public EditableAnimationCurve localScaleCurveY;
+        public EditableAnimationCurve localScaleCurveZ;
+
+        public StateData State
+        {
+            get => new StateData(this);
+            set => value.ApplyTo(this);
+        }
+        [Serializable]
+        public struct StateData
+        {
+            public int preWrapMode;
+            public int postWrapMode;
+
+            public AnimationCurveEditor.State localPositionTimeCurveState;
+            public AnimationCurveEditor.State localPositionCurveXState;
+            public AnimationCurveEditor.State localPositionCurveYState;
+            public AnimationCurveEditor.State localPositionCurveZState;
+
+            public AnimationCurveEditor.State localRotationTimeCurveState;
+            public AnimationCurveEditor.State localRotationCurveXState;
+            public AnimationCurveEditor.State localRotationCurveYState;
+            public AnimationCurveEditor.State localRotationCurveZState;
+            public AnimationCurveEditor.State localRotationCurveWState;
+
+            public AnimationCurveEditor.State localScaleTimeCurveState;
+            public AnimationCurveEditor.State localScaleCurveXState;
+            public AnimationCurveEditor.State localScaleCurveYState;
+            public AnimationCurveEditor.State localScaleCurveZState;
+
+            public StateData(TransformCurve tc)
+            {
+                if (tc != null)
+                {
+                    preWrapMode = (int)tc.preWrapMode;
+                    postWrapMode = (int)tc.postWrapMode;
+
+                    localPositionTimeCurveState = tc.localPositionTimeCurve == null ? default : tc.localPositionTimeCurve.CloneState();
+                    localPositionCurveXState = tc.localPositionCurveX == null ? default : tc.localPositionCurveX.CloneState();
+                    localPositionCurveYState = tc.localPositionCurveY == null ? default : tc.localPositionCurveY.CloneState();
+                    localPositionCurveZState = tc.localPositionCurveZ == null ? default : tc.localPositionCurveZ.CloneState();
+
+                    localRotationTimeCurveState = tc.localRotationTimeCurve == null ? default : tc.localRotationTimeCurve.CloneState();
+                    localRotationCurveXState = tc.localRotationCurveX == null ? default : tc.localRotationCurveX.CloneState();
+                    localRotationCurveYState = tc.localRotationCurveY == null ? default : tc.localRotationCurveY.CloneState();
+                    localRotationCurveZState = tc.localRotationCurveZ == null ? default : tc.localRotationCurveZ.CloneState();
+                    localRotationCurveWState = tc.localRotationCurveW == null ? default : tc.localRotationCurveW.CloneState();
+
+                    localScaleTimeCurveState = tc.localScaleTimeCurve == null ? default : tc.localScaleTimeCurve.CloneState();
+                    localScaleCurveXState = tc.localScaleCurveX == null ? default : tc.localScaleCurveX.CloneState();
+                    localScaleCurveYState = tc.localScaleCurveY == null ? default : tc.localScaleCurveY.CloneState();
+                    localScaleCurveZState = tc.localScaleCurveZ == null ? default : tc.localScaleCurveZ.CloneState();
+                } 
+                else
+                {
+                    preWrapMode = postWrapMode = 0;
+                    localPositionTimeCurveState = localPositionCurveXState = localPositionCurveYState = localPositionCurveZState = localRotationCurveWState = default;
+                    localRotationTimeCurveState = localRotationCurveXState = localRotationCurveYState = localRotationCurveZState = default;
+                    localScaleTimeCurveState = localScaleCurveXState = localScaleCurveYState = localScaleCurveZState = default;
+                }
+            }
+
+            public void ApplyTo(TransformCurve curve)
+            {
+                curve.preWrapMode = (WrapMode)preWrapMode;
+                curve.postWrapMode = (WrapMode)postWrapMode;
+
+                void SetCurveState(string curvePropertyName, AnimationCurveEditor.State curveState, ref EditableAnimationCurve animCurve)
+                {
+                    if (animCurve == null && curveState.keyframes != null && curveState.keyframes.Length > 0) animCurve = new EditableAnimationCurve(default, null, curvePropertyName);
+                    if (animCurve != null) animCurve.State = curveState;
+                }
+                
+                SetCurveState(nameof(curve.localPositionTimeCurve), localPositionTimeCurveState, ref curve.localPositionTimeCurve);
+                SetCurveState(nameof(curve.localPositionCurveX), localPositionCurveXState, ref curve.localPositionCurveX);
+                SetCurveState(nameof(curve.localPositionCurveY), localPositionCurveYState, ref curve.localPositionCurveY);
+                SetCurveState(nameof(curve.localPositionCurveZ), localPositionCurveZState, ref curve.localPositionCurveZ);
+
+                SetCurveState(nameof(curve.localRotationTimeCurve), localRotationTimeCurveState, ref curve.localRotationTimeCurve);
+                SetCurveState(nameof(curve.localRotationCurveX), localRotationCurveXState, ref curve.localRotationCurveX);
+                SetCurveState(nameof(curve.localRotationCurveY), localRotationCurveYState, ref curve.localRotationCurveY);
+                SetCurveState(nameof(curve.localRotationCurveZ), localRotationCurveZState, ref curve.localRotationCurveZ);
+                SetCurveState(nameof(curve.localRotationCurveW), localRotationCurveWState, ref curve.localRotationCurveW);
+
+                SetCurveState(nameof(curve.localScaleTimeCurve), localScaleTimeCurveState, ref curve.localScaleTimeCurve);
+                SetCurveState(nameof(curve.localScaleCurveX), localScaleCurveXState, ref curve.localScaleCurveX);
+                SetCurveState(nameof(curve.localScaleCurveY), localScaleCurveYState, ref curve.localScaleCurveY);
+                SetCurveState(nameof(curve.localScaleCurveZ), localScaleCurveZState, ref curve.localScaleCurveZ); 
+
+            }
+        }
+
+        public static bool Validate(EditableAnimationCurve curve) => curve != null && curve.length > 0; // length is number of keys not time length
 
         [NonSerialized]
         private float m_cachedLength = -1;
@@ -321,8 +423,8 @@ namespace Swole.API.Unity.Animation
             float timeScale = CustomAnimation.ScaleNormalizedTime(normalizedTime, localScaleTimeCurve) * CachedLengthInSeconds;
 
             ITransformCurve.Data data = default;
-
-            data.localPosition = new float3(!Validate(localPositionCurveX) ? 0 : localPositionCurveX.Evaluate(timePos), !Validate(localPositionCurveY) ? 0 : localPositionCurveY.Evaluate(timePos), !Validate(localPositionCurveZ) ? 0 : localPositionCurveZ.Evaluate(timePos));
+            
+            data.localPosition = new float3(!Validate(localPositionCurveX) ? 0 : localPositionCurveX.Evaluate(timePos), !Validate(localPositionCurveY) ? 0 : localPositionCurveY.Evaluate(timePos), !Validate(localPositionCurveZ) ? 0 : localPositionCurveZ.Evaluate(timePos)); 
             data.localRotation = new quaternion(!Validate(localRotationCurveX) ? 0 : localRotationCurveX.Evaluate(timeRot), !Validate(localRotationCurveY) ? 0 : localRotationCurveY.Evaluate(timeRot), !Validate(localRotationCurveZ) ? 0 : localRotationCurveZ.Evaluate(timeRot), !Validate(localRotationCurveW) ? 0 : localRotationCurveW.Evaluate(timeRot));
             data.localScale = new float3(!Validate(localScaleCurveX) ? 1 : localScaleCurveX.Evaluate(timeScale), !Validate(localScaleCurveY) ? 1 : localScaleCurveY.Evaluate(timeScale), !Validate(localScaleCurveZ) ? 1 : localScaleCurveZ.Evaluate(timeScale));
 
@@ -335,7 +437,7 @@ namespace Swole.API.Unity.Animation
 
             float length = 0;
 
-            void CheckLength(AnimationCurve curve)
+            void CheckLength(EditableAnimationCurve curve)
             {
 
                 if (curve != null && curve.length > 0) length = math.max(length, curve[curve.length - 1].time);
@@ -362,7 +464,7 @@ namespace Swole.API.Unity.Animation
         public int GetMaxFrameCountInTimeSlice(int framesPerSecond, float sampleLength = 1)
         {
             int maxFrameCount = 0;
-            void GetMaxFrameCountFromCurve(AnimationCurve curve)
+            void GetMaxFrameCountFromCurve(EditableAnimationCurve curve)
             {
                 if (curve == null) return;
                  
@@ -391,7 +493,7 @@ namespace Swole.API.Unity.Animation
 
             GetMaxFrameCountFromCurve(localScaleCurveX);
             GetMaxFrameCountFromCurve(localScaleCurveY);
-            GetMaxFrameCountFromCurve(localScaleCurveZ);
+            GetMaxFrameCountFromCurve(localScaleCurveZ); 
 
             return maxFrameCount;
         }
@@ -399,6 +501,93 @@ namespace Swole.API.Unity.Animation
         public bool3 ValidityPosition => new bool3(Validate(localPositionCurveX), Validate(localPositionCurveY), Validate(localPositionCurveZ));
         public bool4 ValidityRotation => new bool4(Validate(localRotationCurveX), Validate(localRotationCurveY), Validate(localRotationCurveZ), Validate(localRotationCurveW));
         public bool3 ValidityScale => new bool3(Validate(localScaleCurveX), Validate(localScaleCurveY), Validate(localScaleCurveZ));
+
+        private static readonly List<float> _tempTimes = new List<float>();
+        public List<float> GetFrameTimes(int framesPerSecond, List<float> inputList = null)
+        {
+            if (inputList == null) inputList = new List<float>();
+            _tempTimes.Clear();
+
+            void AddCurve(EditableAnimationCurve curve)
+            {
+                if (curve != null)
+                {
+                    for (int a = 0; a < curve.length; a++) 
+                    {
+                        var key = curve[a];
+                        if (!_tempTimes.Contains(key.time)) _tempTimes.Add(key.time); 
+                    }
+                }
+            }
+
+            AddCurve(localPositionCurveX);
+            AddCurve(localPositionCurveY);
+            AddCurve(localPositionCurveZ);
+
+            AddCurve(localRotationCurveX);
+            AddCurve(localRotationCurveY);
+            AddCurve(localRotationCurveZ);
+            AddCurve(localRotationCurveW);
+
+            AddCurve(localScaleCurveX);
+            AddCurve(localScaleCurveY);
+            AddCurve(localScaleCurveZ);
+
+            _tempTimes.Sort((float x, float y) => (int)Mathf.Sign(x - y));
+
+            inputList.AddRange(_tempTimes);
+            _tempTimes.Clear();
+            return inputList;
+        }
+        private static readonly List<CustomAnimation.FrameHeader> _tempHeaders = new List<CustomAnimation.FrameHeader>();
+        public List<CustomAnimation.FrameHeader> GetFrameTimes(int framesPerSecond, List<CustomAnimation.FrameHeader> inputList)
+        {
+            if (inputList == null) inputList = new List<CustomAnimation.FrameHeader>();
+            _tempHeaders.Clear();
+
+            void AddCurve(EditableAnimationCurve curve)
+            {
+                if (curve != null)
+                {
+                    for (int a = 0; a < curve.length; a++)
+                    {
+                        var key = curve[a];
+                        bool contains = false;
+                        for(int b = 0; b < _tempHeaders.Count; b++)
+                        {
+                            if (_tempHeaders[b].time == key.time)
+                            {
+                                contains = true;
+                                break;
+                            }
+                        }
+                        if (!contains) _tempHeaders.Add(new CustomAnimation.FrameHeader() { time = key.time });
+                    }
+                }
+            }
+
+            AddCurve(localPositionCurveX);
+            AddCurve(localPositionCurveY);
+            AddCurve(localPositionCurveZ);
+
+            AddCurve(localRotationCurveX);
+            AddCurve(localRotationCurveY);
+            AddCurve(localRotationCurveZ);
+            AddCurve(localRotationCurveW);
+
+            AddCurve(localScaleCurveX);
+            AddCurve(localScaleCurveY);
+            AddCurve(localScaleCurveZ);
+
+            _tempHeaders.Sort((CustomAnimation.FrameHeader x, CustomAnimation.FrameHeader y) => (int)Mathf.Sign(x.time - y.time));
+            //string str = TransformName + ": ";
+            //for(int a =0; a < _tempHeaders.Count; a++) str = str + _tempHeaders[a].time + ", "; // Debug
+            //Debug.Log(str); 
+
+            inputList.AddRange(_tempHeaders); 
+            _tempHeaders.Clear();
+            return inputList;
+        }
 
     }
 }

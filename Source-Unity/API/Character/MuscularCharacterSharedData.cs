@@ -12,7 +12,7 @@ using Unity.Mathematics;
 using UnityEditor;
 #endif
 
-using static Swole.DataStructures;
+using Swole.DataStructures;
 
 namespace Swole.API.Unity
 {

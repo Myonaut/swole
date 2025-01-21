@@ -10,7 +10,7 @@ using static Swole.API.Unity.ProxyBoneJobs;
 
 namespace Swole.API.Unity
 {
-    [ExecuteInEditMode]
+    [ExecuteAlways]
     public class ProxyBone : MonoBehaviour
     {
 
@@ -42,7 +42,7 @@ namespace Swole.API.Unity
 
         public BoneBinding[] bindings;
 
-        protected int registeredIndex = -1; 
+        protected ProxyBoneJobs.ProxyBoneIndex registeredIndex = null; 
 
         protected void Awake()
         {
@@ -51,7 +51,7 @@ namespace Swole.API.Unity
             if (Application.isPlaying)
             {
 #endif
-                registeredIndex = ProxyBoneJobs.Register(this);
+                registeredIndex = ProxyBoneJobs.Register(this); 
 
 #if UNITY_EDITOR
             }
@@ -64,9 +64,7 @@ namespace Swole.API.Unity
         public void OnValidate()
         {
 
-            refreshStartPose = false;
-
-            if (bindings != null && !Application.isPlaying)
+            if (bindings != null && !Application.isPlaying && refreshStartPose)
             {
 
                 foreach (var boneBinding in bindings)
@@ -82,8 +80,16 @@ namespace Swole.API.Unity
                     if (boneBinding.bone != null)
                     {
 
-                        binding.startPosition = boneBinding.bone.localPosition;
-                        binding.startRotation = boneBinding.bone.localRotation;
+                        if (binding.applyInWorldSpace)
+                        {
+                            binding.startPosition = transform.parent == null ? boneBinding.bone.position : transform.parent.InverseTransformPoint(boneBinding.bone.position);
+                            binding.startRotation = transform.parent == null ? boneBinding.bone.rotation : (Quaternion.Inverse(transform.parent.rotation) * boneBinding.bone.rotation);
+                        }
+                        else
+                        {
+                            binding.startPosition = boneBinding.bone.localPosition;
+                            binding.startRotation = boneBinding.bone.localRotation;
+                        }
 
                     }
 
@@ -92,6 +98,7 @@ namespace Swole.API.Unity
                 }
 
                 hasStartingPose = true;
+                refreshStartPose = false;
 
             }
 
@@ -107,7 +114,7 @@ namespace Swole.API.Unity
             {
 #endif
                 ProxyBoneJobs.Unregister(registeredIndex); 
-                registeredIndex = -1; 
+                registeredIndex = null; 
 
 #if UNITY_EDITOR
             }

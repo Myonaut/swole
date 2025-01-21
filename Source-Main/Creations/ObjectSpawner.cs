@@ -6,6 +6,13 @@ namespace Swole
 {
 
     [Serializable]
+    public struct ObjectSpawnOverride
+    {
+        public string overrideId;
+        public string overrideValue;
+    }
+
+    [Serializable]
     public struct ObjectSpawner
     {
 
@@ -15,6 +22,8 @@ namespace Swole
         public int id;
         public int ID => id - 1;
 
+        public string name;
+
         public int index;
 
         public int parentSpawnerIndex;
@@ -23,6 +32,8 @@ namespace Swole
         public Vector3 positionInRoot;
         public Quaternion rotationInRoot;
         public Vector3 localScale;
+
+        public ObjectSpawnOverride[] overrides;
 
         public Matrix4x4 RootSpaceTRS => Matrix4x4.TRS(positionInRoot, rotationInRoot, localScale);
 
@@ -78,6 +89,7 @@ namespace Swole
         public EngineInternal.TileInstance CreateNewTileInstance(EngineInternal.TileSet tileSet, Vector3 rootWorldPosition, Quaternion rootWorldRotation) 
         { 
             var inst = swole.Engine.CreateNewTileInstance(tileSet, index, rootWorldPosition, rootWorldRotation, positionInRoot, rotationInRoot, localScale);
+            if (!string.IsNullOrEmpty(name)) inst.baseGameObject.SetName(name);
             if (id > 0) swole.Engine.SetSwoleId(inst, ID);
             return inst;
         }
@@ -99,6 +111,7 @@ namespace Swole
         public EngineInternal.CreationInstance CreateNewCreationInstance(Creation creation, bool useRealTransformsOnly, Vector3 rootWorldPosition, Quaternion rootWorldRotation) 
         { 
             var inst = swole.Engine.CreateNewCreationInstance(creation, useRealTransformsOnly, rootWorldPosition, rootWorldRotation, positionInRoot, rotationInRoot, localScale);
+            if (!string.IsNullOrEmpty(name)) inst.baseGameObject.SetName(name); 
             if (id > 0) swole.Engine.SetSwoleId(inst, ID);
             return inst;
         }

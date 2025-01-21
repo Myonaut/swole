@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Threading;
 using System.Threading.Tasks;
 
 using Swole.Script;
@@ -22,6 +23,7 @@ namespace Swole
 
     public interface IPackage
     {
+        public PackageManifest Manifest { get; }
         public ContentPackage Content { get; }
     }
 
@@ -59,6 +61,14 @@ namespace Swole
         public const string folderNames_Sessions = "sessions";
 
         public const string tags_Temporary = ".TEMP";
+        public const string tags_EmbeddedPackage = "@embedded";
+        public static string GetRootPathFromEmbeddedPath(string embeddedPath)
+        {
+            int ind = embeddedPath.IndexOf(ContentManager.tags_EmbeddedPackage);
+            if (ind >= 0) embeddedPath = embeddedPath.Substring(0, ind);
+
+            return embeddedPath;
+        }
 
         public const string commonFiles_Manifest = "manifest.json";
         public const string commonFiles_Projects = "projects.json";
@@ -66,84 +76,140 @@ namespace Swole
         public const string fileExtension_Generic = "swldat";
         public const string fileExtension_ZIP = "zip";
         public const string fileExtension_JSON = "json";
-        public const string fileExtension_Default = fileExtension_JSON;
-        public const string fileExtension_Package = "swole";
-        public const string fileExtension_Script = "swlscr";
-        public const string fileExtension_Creation = "swlobj";
-        public const string fileExtension_Animation = "swlani";
-        public const string fileExtension_GameplayExperience = "swlexp";
-        public const string fileExtension_Image = "swlimg"; 
+        public const string fileExtension_GenericImage = "image";
+        public const string fileExtension_PNG = "png";
+        public const string fileExtension_JPG = "jpg";
+
+        private static readonly string[] _swoleFileExtensions = new string[]
+        {
+            swoleFileExtension_Default,
+            swoleFileExtension_Package,
+            swoleFileExtension_Script,
+            swoleFileExtension_Creation,
+            swoleFileExtension_Animation,
+            swoleFileExtension_GameplayExperience,
+            swoleFileExtension_Image
+        };
+        public static bool IsSwoleFileExtension(string ext)
+        {
+            if (string.IsNullOrWhiteSpace(ext)) return false;
+
+            foreach (var swoleExt in _swoleFileExtensions) if (swoleExt.AsID() == ext.AsID()) return true;
+            return false;
+        }
+        private static readonly string[] _swoleContentExtensions = new string[]
+        {
+            swoleFileExtension_Default,
+            swoleFileExtension_Script,
+            swoleFileExtension_Creation,
+            swoleFileExtension_Animation,
+            swoleFileExtension_GameplayExperience,
+            swoleFileExtension_Image
+        };
+        public static bool IsSwoleContentExtension(string ext)
+        {
+            if (string.IsNullOrWhiteSpace(ext)) return false;
+
+            foreach (var swoleExt in _swoleContentExtensions) if (swoleExt.AsID() == ext.AsID()) return true;
+            return false;
+        }
+        public const string swoleFileExtension_Default = "swlson";
+        public const string swoleFileExtension_Package = "swole";
+        public const string swoleFileExtension_Script = "swlscr";
+        public const string swoleFileExtension_Creation = "swlobj";
+        public const string swoleFileExtension_Animation = "swlani";
+        public const string swoleFileExtension_GameplayExperience = "swlexp";
+        public const string swoleFileExtension_Image = "swlimg"; 
 
         public static bool HasValidFileExtension(string fileName)
         {
 
             if (string.IsNullOrEmpty(fileName)) return false;
 
-            if (fileName.EndsWith(fileExtension_ZIP) || fileName.EndsWith(fileExtension_Package)) return true;
+            if (fileName.EndsWith(fileExtension_ZIP) || fileName.EndsWith(swoleFileExtension_Package)) return true;
 
             #region ContentTypes
-            if (fileName.EndsWith(fileExtension_Script)) return true;
-            if (fileName.EndsWith(fileExtension_Creation)) return true;
-            if (fileName.EndsWith(fileExtension_Animation)) return true;
-            if (fileName.EndsWith(fileExtension_GameplayExperience)) return true;
-            if (fileName.EndsWith(fileExtension_Image)) return true;
+            if (fileName.EndsWith(swoleFileExtension_Default) || fileName.EndsWith(fileExtension_JSON)) return true;
+            if (fileName.EndsWith(swoleFileExtension_Script)) return true;
+            if (fileName.EndsWith(swoleFileExtension_Creation)) return true;
+            if (fileName.EndsWith(swoleFileExtension_Animation)) return true;
+            if (fileName.EndsWith(swoleFileExtension_GameplayExperience)) return true;
+            if (fileName.EndsWith(swoleFileExtension_Image)) return true;
             #endregion
 
             return false;
 
         }
 
-        public static IContent LoadContent(PackageInfo packageInfo, FileInfo file, SwoleLogger logger = null) => LoadContent(packageInfo, file.FullName, logger);
-        public static IContent LoadContent(PackageInfo packageInfo, string path, SwoleLogger logger = null) => LoadContentInternal(true, packageInfo, path, logger).GetAwaiter().GetResult();
-        public static Task<IContent> LoadContentAsync(PackageInfo packageInfo, FileInfo file, SwoleLogger logger = null) => LoadContentAsync(packageInfo, file.FullName, logger); 
-        public static Task<IContent> LoadContentAsync(PackageInfo packageInfo, string path, SwoleLogger logger = null) => LoadContentInternal(false, packageInfo, path, logger);
-        async private static Task<IContent> LoadContentInternal(bool sync, PackageInfo packageInfo, string path, SwoleLogger logger = null)
+        public static IContent LoadContent(bool addPackagesToLoadedPackages, PackageInfo packageInfo, FileInfo file, string localDir, SwoleLogger logger = null) => LoadContent(addPackagesToLoadedPackages, packageInfo, file.FullName, localDir, logger);
+        public static IContent LoadContent(bool addPackagesToLoadedPackages, PackageInfo packageInfo, string path, string localDir, SwoleLogger logger = null) => LoadContentInternal(true, addPackagesToLoadedPackages, packageInfo, path, localDir, logger).GetAwaiter().GetResult();
+        public static Task<IContent> LoadContentAsync(bool addPackagesToLoadedPackages, PackageInfo packageInfo, FileInfo file, string localDir, SwoleLogger logger = null) => LoadContentAsync(addPackagesToLoadedPackages, packageInfo, file.FullName, localDir, logger); 
+        public static Task<IContent> LoadContentAsync(bool addPackagesToLoadedPackages, PackageInfo packageInfo, string path, string localDir, SwoleLogger logger = null) => LoadContentInternal(false, addPackagesToLoadedPackages, packageInfo, path, localDir, logger);
+        async private static Task<IContent> LoadContentInternal(bool sync, bool addPackagesToLoadedPackages, PackageInfo packageInfo, string path, string localDir, SwoleLogger logger = null)
         {
-            if (string.IsNullOrEmpty(path)) return default;
+            if (string.IsNullOrWhiteSpace(path) || Path.GetFileName(path).AsID() == commonFiles_Manifest.AsID()) return default;
 
             IContent content = default;
-            if (path.EndsWith(fileExtension_Package) || path.EndsWith(fileExtension_ZIP)) // File is probably an embedded package, so try to load it recursively.
+            if (path.EndsWith(swoleFileExtension_Package) || path.EndsWith(fileExtension_ZIP)) // File is probably an embedded package, so try to load it recursively.
             {
                 ExternalPackage embeddedPackage;
                 if (sync)
                 {
-                    embeddedPackage = LoadPackageFromRaw(string.Empty, path, File.ReadAllBytes(path), null, null, logger, !path.EndsWith(fileExtension_ZIP));
+                    embeddedPackage = LoadPackageFromRaw(addPackagesToLoadedPackages, string.Empty, path, File.ReadAllBytes(path), null, null, logger, !path.EndsWith(fileExtension_ZIP));
                 }
                 else
                 {
-                    embeddedPackage = await LoadPackageFromRawAsync(string.Empty, path, await File.ReadAllBytesAsync(path), null, null, logger, !path.EndsWith(fileExtension_ZIP));
+                    embeddedPackage = await LoadPackageFromRawAsync(addPackagesToLoadedPackages, string.Empty, path, await File.ReadAllBytesAsync(path), null, null, logger, !path.EndsWith(fileExtension_ZIP));
                 }
                 if (embeddedPackage.content != null)
                 {
-                    logger?.Log($"Loaded embedded package '{embeddedPackage.content}' from '{embeddedPackage.cachedPath}'");
+                    logger?.Log($"Loaded embedded package '{embeddedPackage.content}' from '{embeddedPackage.cachedPath}'"); 
                 }
             }
             #region elseif { ContentTypes }
-            else if (path.EndsWith(fileExtension_Script))
+            else if (path.EndsWith(swoleFileExtension_Default) || path.EndsWith(fileExtension_JSON))
             {
                 byte[] data = sync ? File.ReadAllBytes(path) : await File.ReadAllBytesAsync(path);
-                content = LoadContent<SourceScript>(packageInfo, data, logger);
+
+                bool flag = true;
+                if (!path.EndsWith(fileExtension_JSON))
+                {
+                    try
+                    {
+                        var jd = LoadContent<JsonData>(packageInfo, data, localDir, null, null, null, logger, false);  
+                        content = jd;
+                        flag = !jd.hasMetadata;
+                    }
+                    catch { }
+                }
+
+                if (flag) content = new JsonData(new ContentInfo() { name = Path.GetFileNameWithoutExtension(path) }, DefaultJsonSerializer.StringEncoder.GetString(data), false, packageInfo); 
             }
-            else if (path.EndsWith(fileExtension_Creation))
+            else if (path.EndsWith(swoleFileExtension_Script))
             {
                 byte[] data = sync ? File.ReadAllBytes(path) : await File.ReadAllBytesAsync(path);
-                content = LoadContent<Creation>(packageInfo, data, logger);
+                content = LoadContent<SourceScript>(packageInfo, data, localDir, null, null, null, logger);
             }
-            else if (path.EndsWith(fileExtension_GameplayExperience))
+            else if (path.EndsWith(swoleFileExtension_Creation))
             {
                 byte[] data = sync ? File.ReadAllBytes(path) : await File.ReadAllBytesAsync(path);
-                content = LoadContent<GameplayExperience>(packageInfo, data, logger);
+                content = LoadContent<Creation>(packageInfo, data, localDir, null, null, null, logger);
+            }
+            else if (path.EndsWith(swoleFileExtension_GameplayExperience))
+            {
+                byte[] data = sync ? File.ReadAllBytes(path) : await File.ReadAllBytesAsync(path);
+                content = LoadContent<GameplayExperience>(packageInfo, data, localDir, null, null, null, logger);
             }
 #if BULKOUT_ENV
-            else if (path.EndsWith(fileExtension_Animation))
+            else if (path.EndsWith(swoleFileExtension_Animation))
             {
                 byte[] data = sync ? File.ReadAllBytes(path) : await File.ReadAllBytesAsync(path);
-                content = LoadContent<CustomAnimation>(packageInfo, data, logger);
+                content = LoadContent<CustomAnimation>(packageInfo, data, localDir, null, null, null, logger);
             }
-            else if (path.EndsWith(fileExtension_Image))
+            else if (path.EndsWith(swoleFileExtension_Image))
             {
                 byte[] data = sync ? File.ReadAllBytes(path) : await File.ReadAllBytesAsync(path);
-                content = LoadContent<ImageAsset>(packageInfo, data, logger);
+                content = LoadContent<ImageAsset>(packageInfo, data, localDir, null, null, null, logger);
             }
 #endif
             #endregion
@@ -152,15 +218,35 @@ namespace Swole
 
             return content;
         }
-        public static T LoadContent<T>(PackageInfo packageInfo, byte[] rawData, SwoleLogger logger = null) where T : IContent
+        public static T LoadContent<T>(PackageInfo packageInfo, byte[] rawData, string localDir = null, ICollection<byte[]> files = null, ICollection<Type> fileTypes = null, ICollection<string> filePaths = null, SwoleLogger logger = null, bool printExceptions = true) where T : IContent => LoadContentInternal<T>(true, packageInfo, rawData, localDir, files, fileTypes, filePaths, logger, printExceptions).GetAwaiter().GetResult();
+        public static Task<T> LoadContentAsync<T>(PackageInfo packageInfo, byte[] rawData, string localDir = null, ICollection<byte[]> files = null, ICollection<Type> fileTypes = null, ICollection<string> filePaths = null, SwoleLogger logger = null, bool printExceptions = true) where T : IContent => LoadContentInternal<T>(false, packageInfo, rawData, localDir, files, fileTypes, filePaths, logger, printExceptions);
+        async private static Task<T> LoadContentInternal<T>(bool sync, PackageInfo packageInfo, byte[] rawData, string localDir = null, ICollection<byte[]> files = null, ICollection<Type> fileTypes = null, ICollection<string> filePaths = null, SwoleLogger logger = null, bool printExceptions = true) where T : IContent
         {
-            TryLoadType<T>(out T output, packageInfo, rawData, logger);
-            return output;
+            if (sync)
+            {
+                TryLoadType(out T output, packageInfo, rawData, localDir, files, fileTypes, filePaths, logger, printExceptions);
+                return output;
+            }
+
+            return (await TryLoadTypeInternal<T>(false, packageInfo, rawData, localDir, files, fileTypes, filePaths, logger, printExceptions)).output;
         }
-        public static bool TryLoadType<T>(out T output, PackageInfo packageInfo, byte[] rawData, SwoleLogger logger = null)
+
+        public struct TryLoadTypeResult<T>
         {
-            output = default;
-            if (rawData == null) return false;
+            public bool success;
+            public T output;
+        }
+        public static bool TryLoadType<T>(out T output, PackageInfo packageInfo, byte[] rawData, string localDir = null, ICollection<byte[]> files = null, ICollection<Type> fileTypes = null, ICollection<string> filePaths = null, SwoleLogger logger = null, bool printExceptions = true)
+        {
+            var res = TryLoadTypeInternal<T>(true, packageInfo, rawData, localDir, files, fileTypes, filePaths, logger, printExceptions).GetAwaiter().GetResult();
+            output = res.output;
+            return res.success;
+        }
+        public static Task<TryLoadTypeResult<T>> TryLoadTypeAsync<T>(PackageInfo packageInfo, byte[] rawData, string localDir = null, ICollection<byte[]> files = null, ICollection<Type> fileTypes = null, ICollection<string> filePaths = null, SwoleLogger logger = null, bool printExceptions = true) => TryLoadTypeInternal<T>(false, packageInfo, rawData, localDir, files, fileTypes, filePaths, logger, printExceptions);
+        async private static Task<TryLoadTypeResult<T>> TryLoadTypeInternal<T>(bool sync, PackageInfo packageInfo, byte[] rawData, string localDir = null, ICollection<byte[]> files = null, ICollection<Type> fileTypes = null, ICollection<string> filePaths = null, SwoleLogger logger = null, bool printExceptions = true)
+        {
+            TryLoadTypeResult<T> output = default;
+            if (rawData == null) return output;
 
             Type t = typeof(T);
 
@@ -177,12 +263,87 @@ namespace Swole
                     {
                         json = DefaultJsonSerializer.StringEncoder.GetString(rawData);
                         object obj = swole.Engine.FromJson(json, interfaceType.GetGenericArguments()[1]);
-                        if (obj == null) return false;
+                        if (obj == null) return default;
                         ISerializableContainer container = (ISerializableContainer)obj;
+
+                        #region ContentTypes
+
+                        if (false)
+                        {
+                        }
+#if BULKOUT_ENV
+                        else if (container is ImageAsset.Serialized img)
+                        {
+                            if (!string.IsNullOrWhiteSpace(img.imagePath)) // image has a source uri
+                            {
+                                if (string.IsNullOrWhiteSpace(img.encodedImageData) && (img.imageData == null || img.imageData.Length <= 0)) // image has no data, so load it from the uri
+                                {
+
+                                    if (SwoleUtil.IsWebURL(img.imagePath))
+                                    { 
+                                        // path is a web url so try to download the file
+                                        img.imageData = sync ? LoadAssetDependency(img.imagePath) : await LoadAssetDependencyAsync(img.imagePath); 
+                                    }
+                                    else
+                                    {
+                                        if (files != null && fileTypes != null && filePaths != null)
+                                        {
+                                            // Try to find the file in the current collection of loaded files
+                                            using (var enuFiles = files.GetEnumerator())
+                                            using (var enuTypes = fileTypes.GetEnumerator())
+                                            using (var enuPaths = (filePaths == null ? Enumerable.Empty<string>().GetEnumerator() : filePaths.GetEnumerator()))
+                                            { 
+                                                while (enuFiles.MoveNext() && enuTypes.MoveNext())
+                                                {
+                                                    enuPaths.MoveNext();
+                                                    var filePath = enuPaths.Current;
+
+                                                    var fileType = enuTypes.Current;
+                                                    var fileData = enuFiles.Current;
+                                                    if (fileType == null || fileData == null || string.IsNullOrWhiteSpace(filePath)) continue;
+
+                                                    bool isIdentical = false;
+                                                    try
+                                                    {
+                                                        isIdentical = (Path.GetFileName(filePath).Trim() == img.imagePath.Trim()) || (Path.GetFileName(filePath).Trim() == Path.GetFileName(img.imagePath).Trim()) || SwoleUtil.IsIdenticalPath(img.imagePath, filePath); 
+                                                    }
+                                                    catch { } // Might throw errors when trying to convert to uri, which should be ignored in case the files came from a zip archive
+
+                                                    if (isIdentical || (Path.GetFileName(filePath).AsID() == img.imagePath.AsID()) || (Path.GetFileName(filePath).AsID() == Path.GetFileName(img.imagePath).AsID()))
+                                                    {
+                                                        img.imageData = fileData;
+                                                        if (isIdentical) break; // it's definitely the correct file so break out of loop
+                                                    }
+
+                                                }
+                                            }
+                                        }
+
+                                        if (!string.IsNullOrWhiteSpace(localDir) && (img.imageData == null || img.imageData.Length <= 0)) // Try to find the file in the provided local directory
+                                        {
+                                            var dir = new DirectoryInfo(localDir);
+                                            if (dir.Exists)
+                                            {
+                                                var path = SwoleUtil.FilePathToFileUrl(Path.Combine(dir.FullName, img.imagePath));
+                                                img.imageData = sync ? LoadAssetDependency(path) : await LoadAssetDependencyAsync(path);  
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                            container = img;
+                        }
+#endif
+
+#endregion
+
                         obj = container.AsNonserializableObject(packageInfo);
-                        if (obj == null) return false;
-                        output = (T)obj;
-                        return true; 
+                        if (obj == null) return output;
+                        output = new TryLoadTypeResult<T>() { output = (T)obj, success = true };
+
+                        if (output.output is ISwoleAsset asset) asset.IsInternalAsset = false; // Allows asset to be disposed when necessary
+
+                        return output; 
                     }
                 }
 
@@ -190,22 +351,125 @@ namespace Swole
                 json = DefaultJsonSerializer.StringEncoder.GetString(rawData);
                 if (string.IsNullOrEmpty(json)) return default;
 
-                output = swole.Engine.FromJson<T>(json);
-                return true;
+                output = new TryLoadTypeResult<T>() { output = swole.Engine.FromJson<T>(json), success = true };
+                return output;
                 //
 
             }
             catch (Exception ex)
             {
 
-                logger?.LogError($"Error while attempting to load data{(packageInfo.NameIsValid ? $" from package '{packageInfo.name}'" : "")} with type '{typeof(T).FullName}'");
-                logger?.LogError(ex);
+                if (printExceptions)
+                {
+                    logger?.LogError($"Error while attempting to load data{(packageInfo.NameIsValid ? $" from package '{packageInfo.name}'" : "")} with type '{typeof(T).FullName}'");
+                    logger?.LogError(ex);
+                }
 
             }
 
-            return false;
+            return default;
         }
-         
+
+        public const long _maxFileAssetDependencySize = 50000000;
+        public const long _maxWebAssetDependencySize = 10000000;   
+        public static byte[] LoadAssetDependency(string url) => LoadAssetDependencyInternal(true, url).GetAwaiter().GetResult();
+        public static Task<byte[]> LoadAssetDependencyAsync(string url) => LoadAssetDependencyInternal(false, url);
+        async private static Task<byte[]> LoadAssetDependencyInternal(bool sync, string requestUri)
+        {
+            var uri = new Uri(requestUri);
+            long sizeLimit = uri.IsFile ? _maxFileAssetDependencySize : _maxWebAssetDependencySize;
+
+            swole.Log($"{(uri.IsFile ? "Loading" : "Downloading")} resource from '{uri.AbsoluteUri}'");  
+              
+            if (sync)
+            {
+
+                //using (var client = new HttpClient()) 
+                using (var client = new ResourceDownloader())
+                {
+                    //using (var s = client.GetStreamAsync(uri))
+                    //{
+                    using (var ms = new MemoryStream())
+                    {
+                        //s.Result.CopyTo(ms);
+                        try
+                        {
+                            CancellationTokenSource cancellationToken = new CancellationTokenSource();
+                            void TrackProgress(long? totalFileSize, long totalBytesDownloaded, double? progressPercentage) 
+                            {
+                                if (totalFileSize.HasValue && totalFileSize.Value > sizeLimit)
+                                {
+                                    throw new TaskCanceledException($"Requested download had a size of {totalFileSize.Value} bytes.");
+                                }
+
+                                if (totalBytesDownloaded > sizeLimit) cancellationToken.Cancel();  
+                            }
+                            client.ProgressChanged += TrackProgress;
+                            if (uri.IsFile)
+                            {
+                                client.StartCancellableDownloadURI(cancellationToken, uri, ms);
+                            }
+                            else
+                            {
+                                client.StartCancellableDownloadHTTP(cancellationToken, uri.AbsoluteUri, ms);
+                            }
+                        } 
+                        catch(OperationCanceledException ex)
+                        {
+                            swole.LogError($"File exceeded size limit of {sizeLimit} bytes.");
+                            swole.LogError(ex.Message);
+                        }
+                        return ms.ToArray(); // returns new resized array
+                    } 
+                    //}
+                }
+            }
+            else
+            {
+                /*using var client = new HttpClient();
+                using var s = await client.GetStreamAsync(uri);
+                using var ms = new MemoryStream();
+                await s.CopyToAsync(ms, bufferSize);
+                return ms.ToArray(); // returns new resized array
+                */
+
+                using (var client = new ResourceDownloader())
+                {
+                    using (var ms = new MemoryStream()) 
+                    {
+                        try
+                        {
+                            CancellationTokenSource cancellationToken = new CancellationTokenSource();
+                            void TrackProgress(long? totalFileSize, long totalBytesDownloaded, double? progressPercentage)
+                            {
+                                if (totalFileSize.HasValue && totalFileSize.Value > sizeLimit)
+                                {
+                                    throw new TaskCanceledException($"Requested download had a size of {totalFileSize.Value} bytes.");
+                                }
+
+                                if (totalBytesDownloaded > sizeLimit) cancellationToken.Cancel();
+                            }
+                            client.ProgressChanged += TrackProgress;
+                            if (uri.IsFile)
+                            {
+                                await client.StartCancellableDownloadURIAsync(cancellationToken, uri, ms); 
+                            }
+                            else
+                            {
+                                await client.StartCancellableDownloadHTTPAsync(cancellationToken, uri.AbsoluteUri, ms);
+                            }
+                        }
+                        catch (OperationCanceledException ex)
+                        {
+                            swole.LogError($"File exceeded size limit of {sizeLimit} bytes.");
+                            swole.LogError(ex.Message);
+                        }
+                        return ms.ToArray(); // returns new resized array
+                    }
+                }
+            }
+        }
+
         public static bool SaveContent(DirectoryInfo dir, IContent content, SwoleLogger logger = null) => SaveContent(dir.FullName, content, logger);
         public static bool SaveContent(string directoryPath, IContent content, SwoleLogger logger = null) => SaveContentInternal(true, directoryPath, content, logger).GetAwaiter().GetResult();
         public static Task<bool> SaveContentAsync(DirectoryInfo dir, IContent content, SwoleLogger logger = null) => SaveContentAsync(dir.FullName, content, logger);
@@ -225,18 +489,32 @@ namespace Swole
                 string fullPath = "";
                 byte[] bytes = null;
                 #region ContentTypes
-                if (content is SourceScript script)
+                if (content is JsonData jsonData)
+                {
+                    if (jsonData.hasMetadata)
+                    {
+                        string json = jsonData.AsJSON(true);
+                        bytes = DefaultJsonSerializer.StringEncoder.GetBytes(json);
+                    }
+                    else
+                    {
+                        bytes = DefaultJsonSerializer.StringEncoder.GetBytes(string.IsNullOrWhiteSpace(jsonData.json) ? "{}" : jsonData.json);
+                    }
+
+                    fullPath = Path.Combine(directoryPath, $"{jsonData.SerializedName}.{swoleFileExtension_Default}"); 
+                }
+                else if (content is SourceScript script)
                 {
                     string json = script.AsJSON(true);
                     bytes = DefaultJsonSerializer.StringEncoder.GetBytes(json);
-                    fullPath = Path.Combine(directoryPath, $"{script.Name}.{fileExtension_Script}");
+                    fullPath = Path.Combine(directoryPath, $"{script.SerializedName}.{swoleFileExtension_Script}");
                 }
                 else if (content is Creation creation)
                 {
 
                     string json = creation.AsJSON(true);
                     bytes = DefaultJsonSerializer.StringEncoder.GetBytes(json);
-                    fullPath = Path.Combine(directoryPath, $"{creation.Name}.{fileExtension_Creation}");
+                    fullPath = Path.Combine(directoryPath, $"{creation.SerializedName}.{swoleFileExtension_Creation}");
 
                 }
                 else if (content is GameplayExperience exp)
@@ -244,7 +522,7 @@ namespace Swole
 
                     string json = exp.AsJSON(true);
                     bytes = DefaultJsonSerializer.StringEncoder.GetBytes(json);
-                    fullPath = Path.Combine(directoryPath, $"{exp.Name}.{fileExtension_GameplayExperience}");
+                    fullPath = Path.Combine(directoryPath, $"{exp.SerializedName}.{swoleFileExtension_GameplayExperience}");
 
                 }
                 else if (content is IImageAsset img)
@@ -252,7 +530,7 @@ namespace Swole
 
                     string json = img.AsJSON(true);
                     bytes = DefaultJsonSerializer.StringEncoder.GetBytes(json); 
-                    fullPath = Path.Combine(directoryPath, $"{img.Name}.{fileExtension_Image}");
+                    fullPath = Path.Combine(directoryPath, $"{img.SerializedName}.{swoleFileExtension_Image}");
 
                 }
 #if BULKOUT_ENV
@@ -261,19 +539,29 @@ namespace Swole
 
                     string json = anim.AsJSON(true);
                     bytes = DefaultJsonSerializer.StringEncoder.GetBytes(json);
-                    fullPath = Path.Combine(directoryPath, $"{anim.Name}.{fileExtension_Animation}");
+                    fullPath = Path.Combine(directoryPath, $"{anim.SerializedName}.{swoleFileExtension_Animation}");
 
                 }
 #endif
                 #endregion
 
-                if (string.IsNullOrEmpty(fullPath)) fullPath = Path.Combine(directoryPath, $"{content.Name}.{fileExtension_Default}");
-
-                if (bytes == null) 
-                { 
-                    string json = swole.Engine.ToJson(content, true);
+                string contentName = content.Name;
+                if (bytes == null)
+                {
+                    string json;
+                    if (content is ISwoleSerializable ss)
+                    {
+                        contentName = ss.SerializedName;
+                        json = ss.AsJSON(true);
+                    }
+                    else
+                    {
+                        json = swole.Engine.ToJson(content, true);
+                    }
                     bytes = DefaultJsonSerializer.StringEncoder.GetBytes(json);
                 }
+
+                if (string.IsNullOrEmpty(fullPath)) fullPath = Path.Combine(directoryPath, $"{contentName}.{swoleFileExtension_Default}");
 
                 if (sync) File.WriteAllBytes(fullPath, bytes); else await File.WriteAllBytesAsync(fullPath, bytes);
                 return true;
@@ -319,7 +607,9 @@ namespace Swole
                 OnEditContents = null;
             }
 
-            public static implicit operator ContentPackage(LocalPackage pkg) => pkg.content; 
+            public static implicit operator ContentPackage(LocalPackage pkg) => pkg.content;
+
+            public PackageManifest Manifest => content == null ? default : content.Manifest;
 
             public PackageIdentifier GetIdentity() => content == null ? default : content.GetIdentity();
             public string GetIdentityString() => content == null ? default : content.GetIdentityString();
@@ -332,14 +622,16 @@ namespace Swole
             return File.Exists(Path.Combine(directory, commonFiles_Manifest));
         }
 
-        public static void LoadContent(DirectoryInfo dir, PackageManifest manifest, List<IContent> content, SwoleLogger logger = null) => LoadContentInternal(true, dir, manifest, content, logger).GetAwaiter().GetResult();
-        public static Task LoadContentAsync(DirectoryInfo dir, PackageManifest manifest, List<IContent> content, SwoleLogger logger = null) => LoadContentInternal(false, dir, manifest, content, logger);
-        async private static Task LoadContentInternal(bool sync, DirectoryInfo dir, PackageManifest manifest, List<IContent> content, SwoleLogger logger = null)
+        public static void LoadContent(bool addPackagesToLoadedPackages, DirectoryInfo dir, PackageManifest manifest, List<IContent> content, SwoleLogger logger = null) => LoadContentInternal(true, addPackagesToLoadedPackages, dir, manifest, content, logger).GetAwaiter().GetResult();
+        public static Task LoadContentAsync(bool addPackagesToLoadedPackages, DirectoryInfo dir, PackageManifest manifest, List<IContent> content, SwoleLogger logger = null) => LoadContentInternal(false, addPackagesToLoadedPackages, dir, manifest, content, logger);
+        async private static Task LoadContentInternal(bool sync, bool addPackagesToLoadedPackages, DirectoryInfo dir, PackageManifest manifest, List<IContent> content, SwoleLogger logger = null)
         {
             var files = dir.EnumerateFiles("*", SearchOption.TopDirectoryOnly).Where(i => HasValidFileExtension(i.Name));
             foreach (var file in files)
             {
-                var contentObj = sync ? LoadContent(manifest, file, logger) : await LoadContentAsync(manifest, file, logger);
+                if (file.Name.AsID() == commonFiles_Manifest.AsID()) continue;
+
+                var contentObj = sync ? LoadContent(addPackagesToLoadedPackages, manifest, file, dir.FullName, logger) : await LoadContentAsync(addPackagesToLoadedPackages, manifest, file, dir.FullName, logger);
                 if (contentObj == null) continue;
                 content.Add(contentObj);
             }
@@ -347,43 +639,43 @@ namespace Swole
             foreach (var subDir in dirs)
             {
                 if (DirectoryIsPackage(subDir)) continue; // Directory is its own package so ignore it
-                if (sync) LoadContent(subDir, manifest, content, logger); else await LoadContentAsync(subDir, manifest, content, logger);
+                if (sync) LoadContent(addPackagesToLoadedPackages, subDir, manifest, content, logger); else await LoadContentAsync(addPackagesToLoadedPackages, subDir, manifest, content, logger);
             }
         }
 
         /// <summary>
         /// Loads a package locally by name and version.
         /// </summary>
-        public static LocalPackage LoadLocalPackage(PackageIdentifier identity, SwoleLogger logger = null) => LoadLocalPackage(identity.name, identity.version, logger);
+        public static LocalPackage LoadLocalPackage(bool addToLoadedPackages, PackageIdentifier identity, SwoleLogger logger = null) => LoadLocalPackage(addToLoadedPackages, identity.name, identity.version, logger);
         /// <summary>
         /// Asynchronously loads a package locally by name and version.
         /// </summary>
-        public static Task<LocalPackage> LoadLocalPackageAsync(PackageIdentifier identity, SwoleLogger logger = null) => LoadLocalPackageAsync(identity.name, identity.version, logger);
+        public static Task<LocalPackage> LoadLocalPackageAsync(bool addToLoadedPackages, PackageIdentifier identity, SwoleLogger logger = null) => LoadLocalPackageAsync(addToLoadedPackages, identity.name, identity.version, logger);
         /// <summary>
         /// Loads a package locally by name and version.
         /// </summary>
-        public static LocalPackage LoadLocalPackage(string packageName, string version, SwoleLogger logger = null) => LoadPackage(Path.Combine(LocalPackageDirectoryPath, SwoleScriptSemantics.GetFullPackageString(packageName, version)), logger);
+        public static LocalPackage LoadLocalPackage(bool addToLoadedPackages, string packageName, string version, SwoleLogger logger = null) => LoadPackage(addToLoadedPackages, Path.Combine(LocalPackageDirectoryPath, SwoleScriptSemantics.GetFullPackageString(packageName, version)), logger);
         /// <summary>
         /// Asynchronously loads a package locally by name and version.
         /// </summary>
-        public static Task<LocalPackage> LoadLocalPackageAsync(string packageName, string version, SwoleLogger logger = null) => LoadPackageAsync(Path.Combine(LocalPackageDirectoryPath, SwoleScriptSemantics.GetFullPackageString(packageName, version)), logger);
+        public static Task<LocalPackage> LoadLocalPackageAsync(bool addToLoadedPackages, string packageName, string version, SwoleLogger logger = null) => LoadPackageAsync(addToLoadedPackages, Path.Combine(LocalPackageDirectoryPath, SwoleScriptSemantics.GetFullPackageString(packageName, version)), logger);
         /// <summary>
         /// Loads a package locally from a folder.
         /// </summary>
-        public static LocalPackage LoadPackage(string directoryPath, SwoleLogger logger = null) => LoadPackage(new DirectoryInfo(directoryPath), logger);
+        public static LocalPackage LoadPackage(bool addToLoadedPackages, string directoryPath, SwoleLogger logger = null) => LoadPackage(addToLoadedPackages, new DirectoryInfo(directoryPath), logger);
         /// <summary>
         /// Asynchronously loads a package locally from a folder.
         /// </summary>
-        public static Task<LocalPackage> LoadPackageAsync(string directoryPath, SwoleLogger logger = null) => LoadPackageAsync(new DirectoryInfo(directoryPath), logger);
+        public static Task<LocalPackage> LoadPackageAsync(bool addToLoadedPackages, string directoryPath, SwoleLogger logger = null) => LoadPackageAsync(addToLoadedPackages, new DirectoryInfo(directoryPath), logger);
         /// <summary>
         /// Loads a package locally from a folder.
         /// </summary>
-        public static LocalPackage LoadPackage(DirectoryInfo packageDirectory, SwoleLogger logger = null) => LoadPackageInternal(true, packageDirectory, logger).GetAwaiter().GetResult();
+        public static LocalPackage LoadPackage(bool addToLoadedPackages, DirectoryInfo packageDirectory, SwoleLogger logger = null) => LoadPackageInternal(true, addToLoadedPackages, packageDirectory, logger).GetAwaiter().GetResult();
         /// <summary>
         /// Asynchronously loads a package locally from a folder.
         /// </summary>
-        public static Task<LocalPackage> LoadPackageAsync(DirectoryInfo packageDirectory, SwoleLogger logger = null) => LoadPackageInternal(false, packageDirectory, logger);
-        async private static Task<LocalPackage> LoadPackageInternal(bool sync, DirectoryInfo packageDirectory, SwoleLogger logger = null)
+        public static Task<LocalPackage> LoadPackageAsync(bool addToLoadedPackages, DirectoryInfo packageDirectory, SwoleLogger logger = null) => LoadPackageInternal(false, addToLoadedPackages, packageDirectory, logger);
+        async private static Task<LocalPackage> LoadPackageInternal(bool sync, bool addToLoadedPackages, DirectoryInfo packageDirectory, SwoleLogger logger = null)
         {
             if (packageDirectory == null) return default;
             if (!packageDirectory.Exists)
@@ -393,11 +685,15 @@ namespace Swole
             }
             var instance = Instance;
             if (instance == null) return default;
-            for (int a = 0; a < instance.localPackages.Count; a++) if (instance.localPackages[a].workingDirectory.FullName == packageDirectory.FullName) 
-                {
-                    logger?.LogWarning($"Tried to load local package from '{packageDirectory.FullName}' — but it was already loaded."); 
-                    return default;// instance.localPackages[a]; 
-                }
+
+            if (addToLoadedPackages)
+            {
+                for (int a = 0; a < instance.localPackages.Count; a++) if (instance.localPackages[a].workingDirectory.FullName == packageDirectory.FullName)
+                    {
+                        logger?.LogWarning($"Tried to load local package from '{packageDirectory.FullName}' — but it was already loaded.");
+                        return default;// instance.localPackages[a]; 
+                    }
+            }
 
             LocalPackage package = new LocalPackage();
             package.workingDirectory = packageDirectory;
@@ -423,11 +719,11 @@ namespace Swole
 
             // Load valid files and ignore the rest
             List<IContent> content = new List<IContent>();
-            if (sync) LoadContent(packageDirectory, manifest, content, logger); else await LoadContentAsync(packageDirectory, manifest, content, logger);
-            package.Content = new ContentPackage(manifest, content);
+            if (sync) LoadContent(addToLoadedPackages, packageDirectory, manifest, content, logger); else await LoadContentAsync(addToLoadedPackages, packageDirectory, manifest, content, logger);
+            package.Content = new ContentPackage(manifest, content, true);
             //
 
-            AddLocalPackage(package);
+            if (addToLoadedPackages) AddLocalPackage(package);
 
             if (!HasProjectIdentifier(manifest))
             {
@@ -443,25 +739,25 @@ namespace Swole
                 }
             }
             return package;
-        } 
+        }  
 
         /// <summary>
         /// Loads a package externally from a zip archive.
         /// </summary>
-        public static ExternalPackage LoadPackage(string sourcePath, string cachedPath = null, SwoleLogger logger = null) => LoadPackageInternal(true, sourcePath, cachedPath, logger).GetAwaiter().GetResult();
+        public static ExternalPackage LoadPackage(bool addToLoadedPackages, string sourcePath, string cachedPath = null, SwoleLogger logger = null, bool packageExpected = true, IList<ExternalPackage> outputList = null) => LoadPackageInternal(true, addToLoadedPackages, sourcePath, cachedPath, logger, packageExpected, outputList).GetAwaiter().GetResult();
         /// <summary>
         /// Asynchronously loads a package externally from a zip archive.
         /// </summary>
-        public static Task<ExternalPackage> LoadPackageAsync(string sourcePath, string cachedPath = null, SwoleLogger logger = null) => LoadPackageInternal(false, sourcePath, cachedPath, logger);
-        async private static Task<ExternalPackage> LoadPackageInternal(bool sync, string sourcePath, string cachedPath = null, SwoleLogger logger = null)
+        public static Task<ExternalPackage> LoadPackageAsync(bool addToLoadedPackages, string sourcePath, string cachedPath = null, SwoleLogger logger = null, bool packageExpected = true, IList<ExternalPackage> outputList = null) => LoadPackageInternal(false, addToLoadedPackages, sourcePath, cachedPath, logger, packageExpected, outputList);
+        async private static Task<ExternalPackage> LoadPackageInternal(bool sync, bool addToLoadedPackages, string sourcePath, string cachedPath = null, SwoleLogger logger = null, bool packageExpected = true, IList<ExternalPackage> outputList = null)
         {
-            if (string.IsNullOrEmpty(sourcePath) && string.IsNullOrEmpty(cachedPath)) return default;
+            if (string.IsNullOrWhiteSpace(sourcePath) && string.IsNullOrWhiteSpace(cachedPath)) return default;
             var instance = Instance;
             if (instance == null) return default;
 
             List<EngineHook.FileDescr> fileDescs = null;
             List<byte[]> fileData = null;
-            if (string.IsNullOrEmpty(cachedPath))
+            if (string.IsNullOrWhiteSpace(cachedPath))
             {
                 cachedPath = Path.Combine(swole.AssetDirectory.FullName, folderNames_Packages, folderNames_CachedPackages, Path.GetFileName(sourcePath));
                 if (File.Exists(cachedPath))
@@ -478,7 +774,7 @@ namespace Swole
                 } 
                 else
                 {
-                    logger?.LogError($"Failed to copy external package file from '{sourcePath}' into cache — Reason: The file does not exist!");
+                    logger?.LogError($"Failed to copy external package file from '{sourcePath}' into cache — Reason: The file does not exist!"); 
                     return default;
                 }
             }
@@ -491,21 +787,22 @@ namespace Swole
                 var result = await swole.Engine.DecompressZIPAsync(cachedPath);
                 fileDescs = result.fileDescs;
                 fileData = result.fileData;
-            }
+            } 
 
-            return sync ? LoadPackage(sourcePath, cachedPath, fileDescs, fileData, logger) : await LoadPackageAsync(sourcePath, cachedPath, fileDescs, fileData, logger);
+            return sync ? LoadPackage(addToLoadedPackages, sourcePath, cachedPath, fileDescs, fileData, logger, packageExpected, outputList) : await LoadPackageAsync(addToLoadedPackages, sourcePath, cachedPath, fileDescs, fileData, logger, packageExpected, outputList);
         }
         /// <summary>
         /// Loads a package externally from data in memory.
         /// </summary>
-        public static ExternalPackage LoadPackage(string sourcePath, string cachedPath, ICollection<EngineHook.FileDescr> fileDescs, ICollection<byte[]> fileData, SwoleLogger logger = null, bool packageExpected = true) => LoadPackageInternal(true, sourcePath, cachedPath, fileDescs, fileData, logger, packageExpected).GetAwaiter().GetResult();
+        public static ExternalPackage LoadPackage(bool addToLoadedPackages, string sourcePath, string cachedPath, ICollection<EngineHook.FileDescr> fileDescs, ICollection<byte[]> fileData, SwoleLogger logger = null, bool packageExpected = true, IList<ExternalPackage> outputList = null) => LoadPackageInternal(true, addToLoadedPackages, sourcePath, cachedPath, fileDescs, fileData, logger, packageExpected, outputList).GetAwaiter().GetResult();
         /// <summary>
         /// Asynchronously loads a package externally from data in memory.
         /// </summary>
-        public static Task<ExternalPackage> LoadPackageAsync(string sourcePath, string cachedPath, ICollection<EngineHook.FileDescr> fileDescs, ICollection<byte[]> fileData, SwoleLogger logger = null, bool packageExpected = true) => LoadPackageInternal(false, sourcePath, cachedPath, fileDescs, fileData, logger, packageExpected);
-        async private static Task<ExternalPackage> LoadPackageInternal(bool sync, string sourcePath, string cachedPath, ICollection<EngineHook.FileDescr> fileDescs, ICollection<byte[]> fileData, SwoleLogger logger = null, bool packageExpected = true)
+        public static Task<ExternalPackage> LoadPackageAsync(bool addToLoadedPackages, string sourcePath, string cachedPath, ICollection<EngineHook.FileDescr> fileDescs, ICollection<byte[]> fileData, SwoleLogger logger = null, bool packageExpected = true, IList<ExternalPackage> outputList = null) => LoadPackageInternal(false, addToLoadedPackages, sourcePath, cachedPath, fileDescs, fileData, logger, packageExpected, outputList);
+        async private static Task<ExternalPackage> LoadPackageInternal(bool sync, bool addToLoadedPackages, string sourcePath, string cachedPath, ICollection<EngineHook.FileDescr> fileDescs, ICollection<byte[]> fileData, SwoleLogger logger = null, bool packageExpected = true, IList<ExternalPackage> outputList = null)
         {
             if (fileDescs == null || fileData == null) return default;
+
             Type[] fileTypes = new Type[fileDescs.Count];
             string[] filePaths = new string[fileDescs.Count];
             byte[] manifestFile = null;
@@ -528,51 +825,61 @@ namespace Swole
                         {
                             manifestFile = enuData.Current;
                         } 
-                        else if (fileDesc.fileName.EndsWith(fileExtension_ZIP) || fileDesc.fileName.EndsWith(fileExtension_Package))  // File is likely an embedded package
+                        else if (fileDesc.fileName.EndsWith(fileExtension_ZIP) || fileDesc.fileName.EndsWith(swoleFileExtension_Package))  // File is likely an embedded package
                         {
                             fileTypes[index] = typeof(ExternalPackage);
                         }
                         #region elseif { ContentTypes }
-                        else if (fileDesc.fileName.EndsWith(fileExtension_Script))
+                        else if (fileDesc.fileName.EndsWith(swoleFileExtension_Default) || fileDesc.fileName.EndsWith(fileExtension_JSON))
+                        {
+                            fileTypes[index] = typeof(JsonData);
+                        }
+                        else if (fileDesc.fileName.EndsWith(swoleFileExtension_Script))
                         {
                             fileTypes[index] = typeof(SourceScript);
                         }
-                        else if (fileDesc.fileName.EndsWith(fileExtension_Creation))
+                        else if (fileDesc.fileName.EndsWith(swoleFileExtension_Creation))
                         {
                             fileTypes[index] = typeof(Creation);
                         }
 
-                        else if (fileDesc.fileName.EndsWith(fileExtension_GameplayExperience))
+                        else if (fileDesc.fileName.EndsWith(swoleFileExtension_GameplayExperience))
                         {
                             fileTypes[index] = typeof(GameplayExperience);
                         }
 #if BULKOUT_ENV
-                        else if (fileDesc.fileName.EndsWith(fileExtension_Animation))
+                        else if (fileDesc.fileName.EndsWith(swoleFileExtension_Animation))
                         {
                             fileTypes[index] = typeof(CustomAnimation);
                         }
-                        else if (fileDesc.fileName.EndsWith(fileExtension_Image))
+                        else if (fileDesc.fileName.EndsWith(swoleFileExtension_Image))
                         {
                             fileTypes[index] = typeof(ImageAsset);
                         }
 #endif
-#endregion
+                        #endregion
+#if BULKOUT_ENV
+                        else if (fileDesc.fileName.EndsWith(fileExtension_PNG) || fileDesc.fileName.EndsWith(fileExtension_JPG) || fileDesc.fileName.EndsWith(fileExtension_GenericImage))  // File is an image
+                        {
+                            fileTypes[index] = typeof(UnityEngine.Texture2D);
+                        }
+#endif
                     }
                 }
             }
 
-            return sync ? LoadPackage(sourcePath, cachedPath, manifestFile, fileData, fileTypes, logger, packageExpected, string.Empty, filePaths) : await LoadPackageAsync(sourcePath, cachedPath, manifestFile, fileData, fileTypes, logger, packageExpected, string.Empty, filePaths);
+            return sync ? LoadPackage(addToLoadedPackages, sourcePath, cachedPath, manifestFile, fileData, fileTypes, logger, packageExpected, string.Empty, filePaths, outputList) : await LoadPackageAsync(addToLoadedPackages, sourcePath, cachedPath, manifestFile, fileData, fileTypes, logger, packageExpected, string.Empty, filePaths, outputList);
         }
 
         /// <summary>
         /// Loads a package externally from data in memory.
         /// </summary>
-        public static ExternalPackage LoadPackageFromRaw(string sourcePath, string cachedPath, byte[] packageFileRaw, List<EngineHook.FileDescr> outFileDescs = null, List<byte[]> outFileData = null, SwoleLogger logger = null, bool packageExpected = true) => LoadPackageFromRawInternal(true, sourcePath, cachedPath, packageFileRaw, outFileDescs, outFileData, logger, packageExpected).GetAwaiter().GetResult();
+        public static ExternalPackage LoadPackageFromRaw(bool addToLoadedPackages, string sourcePath, string cachedPath, byte[] packageFileRaw, List<EngineHook.FileDescr> outFileDescs = null, List<byte[]> outFileData = null, SwoleLogger logger = null, bool packageExpected = true, IList<ExternalPackage> outputList = null) => LoadPackageFromRawInternal(true, addToLoadedPackages, sourcePath, cachedPath, packageFileRaw, outFileDescs, outFileData, logger, packageExpected, outputList).GetAwaiter().GetResult();
         /// <summary>
         /// Asynchronously loads a package externally from data in memory.
         /// </summary>
-        public static Task<ExternalPackage> LoadPackageFromRawAsync(string sourcePath, string cachedPath, byte[] packageFileRaw, List<EngineHook.FileDescr> outFileDescs = null, List<byte[]> outFileData = null, SwoleLogger logger = null, bool packageExpected = true) => LoadPackageFromRawInternal(false, sourcePath, cachedPath, packageFileRaw, outFileDescs, outFileData, logger, packageExpected);
-        async private static Task<ExternalPackage> LoadPackageFromRawInternal(bool sync, string sourcePath, string cachedPath, byte[] packageFileRaw, List<EngineHook.FileDescr> outFileDescs = null, List<byte[]> outFileData = null, SwoleLogger logger = null, bool packageExpected = true)
+        public static Task<ExternalPackage> LoadPackageFromRawAsync(bool addToLoadedPackages, string sourcePath, string cachedPath, byte[] packageFileRaw, List<EngineHook.FileDescr> outFileDescs = null, List<byte[]> outFileData = null, SwoleLogger logger = null, bool packageExpected = true, IList<ExternalPackage> outputList = null) => LoadPackageFromRawInternal(false, addToLoadedPackages, sourcePath, cachedPath, packageFileRaw, outFileDescs, outFileData, logger, packageExpected, outputList);
+        async private static Task<ExternalPackage> LoadPackageFromRawInternal(bool sync, bool addToLoadedPackages, string sourcePath, string cachedPath, byte[] packageFileRaw, List<EngineHook.FileDescr> outFileDescs = null, List<byte[]> outFileData = null, SwoleLogger logger = null, bool packageExpected = true, IList<ExternalPackage> outputList = null)
         {
             if (packageFileRaw == null) return default;
 
@@ -586,23 +893,23 @@ namespace Swole
             if (sync)
             {
                 swole.Engine.DecompressZIP(packageFileRaw, ref tempFileDescs, ref tempFileData);
-                return LoadPackage(sourcePath, cachedPath, tempFileDescs, tempFileData, logger, packageExpected);
+                return LoadPackage(addToLoadedPackages, sourcePath, cachedPath, tempFileDescs, tempFileData, logger, packageExpected, outputList);
             }
-
+            
             void Decompress() => swole.Engine.DecompressZIP(packageFileRaw, ref tempFileDescs, ref tempFileData);
             await Task.Run(Decompress);
-            return await LoadPackageAsync(sourcePath, cachedPath, tempFileDescs, tempFileData, logger, packageExpected);
+            return await LoadPackageAsync(addToLoadedPackages, sourcePath, cachedPath, tempFileDescs, tempFileData, logger, packageExpected, outputList);
         }
 
         /// <summary>
         /// Loads a package externally from data in memory.
         /// </summary>
-        public static ExternalPackage LoadPackage(string sourcePath, string cachedPath, byte[] manifestFile, ICollection<byte[]> files, ICollection<Type> fileTypes, SwoleLogger logger = null, bool packageExpected = true, string rootFolderName = null, ICollection<string> filePaths = null) => LoadPackageInternal(true, sourcePath, cachedPath, manifestFile, files, fileTypes, logger, packageExpected, rootFolderName, filePaths).GetAwaiter().GetResult();
+        public static ExternalPackage LoadPackage(bool addToLoadedPackages, string sourcePath, string cachedPath, byte[] manifestFile, ICollection<byte[]> files, ICollection<Type> fileTypes, SwoleLogger logger = null, bool packageExpected = true, string rootFolderName = null, ICollection<string> filePaths = null, IList<ExternalPackage> outputList = null) => LoadPackageInternal(true, addToLoadedPackages, sourcePath, cachedPath, manifestFile, files, fileTypes, logger, packageExpected, rootFolderName, filePaths, outputList).GetAwaiter().GetResult();
         /// <summary>
         /// Asynchronously loads a package externally from data in memory.
         /// </summary>
-        public static Task<ExternalPackage> LoadPackageAsync(string sourcePath, string cachedPath, byte[] manifestFile, ICollection<byte[]> files, ICollection<Type> fileTypes, SwoleLogger logger = null, bool packageExpected = true, string rootFolderName = null, ICollection<string> filePaths = null) => LoadPackageInternal(false, sourcePath, cachedPath, manifestFile, files, fileTypes, logger, packageExpected, rootFolderName, filePaths);
-        async private static Task<ExternalPackage> LoadPackageInternal(bool sync, string sourcePath, string cachedPath, byte[] manifestFile, ICollection<byte[]> files, ICollection<Type> fileTypes, SwoleLogger logger = null, bool packageExpected = true, string rootFolderName = null, ICollection<string> filePaths = null)
+        public static Task<ExternalPackage> LoadPackageAsync(bool addToLoadedPackages, string sourcePath, string cachedPath, byte[] manifestFile, ICollection<byte[]> files, ICollection<Type> fileTypes, SwoleLogger logger = null, bool packageExpected = true, string rootFolderName = null, ICollection<string> filePaths = null, IList<ExternalPackage> outputList = null) => LoadPackageInternal(false, addToLoadedPackages, sourcePath, cachedPath, manifestFile, files, fileTypes, logger, packageExpected, rootFolderName, filePaths, outputList);
+        async private static Task<ExternalPackage> LoadPackageInternal(bool sync, bool addToLoadedPackages, string sourcePath, string cachedPath, byte[] manifestFile, ICollection<byte[]> files, ICollection<Type> fileTypes, SwoleLogger logger = null, bool packageExpected = true, string rootFolderName = null, ICollection<string> filePaths = null, IList<ExternalPackage> outputList = null)
         {
             if (files == null || fileTypes == null) return default;
             var instance = Instance;
@@ -611,6 +918,7 @@ namespace Swole
             ExternalPackage package = new ExternalPackage();
             package.cachedPath = cachedPath;
 
+            bool notAPackage = false;
             PackageManifest manifest = default;
             if (manifestFile != null)
             {
@@ -618,38 +926,48 @@ namespace Swole
             }
             else
             {
-                if (packageExpected) logger?.LogError($"Error loading external package from '{(string.IsNullOrEmpty(cachedPath) ? sourcePath : cachedPath)}' — Reason: No package manifest was provided!");
-                return default;
-            }
-             
-            if (!manifest.NameIsValid)
-            {
-                logger?.LogError($"Error loading external package from '{(string.IsNullOrEmpty(cachedPath) ? sourcePath : cachedPath)}' — Reason: Name in package manifest was invalid!");
-                return default;
+                notAPackage = true;
+                if (packageExpected)
+                {
+                    logger?.LogError($"Error loading external package from '{(string.IsNullOrEmpty(cachedPath) ? sourcePath : cachedPath)}' — Reason: No package manifest was provided!");
+                    return default;
+                }
             }
 
-            for (int a = 0; a < instance.externalPackages.Count; a++) if (instance.externalPackages[a].content != null && instance.externalPackages[a].content.GetIdentityString() == manifest.GetIdentityString())
+            if (!notAPackage)
+            {
+                if (!manifest.NameIsValid)
                 {
-                    logger?.LogWarning($"Tried to load external package '{manifest}' from '{(string.IsNullOrEmpty(cachedPath) ? sourcePath : cachedPath)}' — but it was already loaded.");
-                    return default;// instance.externalPackages[a];
+                    logger?.LogError($"Error loading external package from '{(string.IsNullOrEmpty(cachedPath) ? sourcePath : cachedPath)}' — Reason: Name in package manifest was invalid!");
+                    return default;
                 }
 
-            if (string.IsNullOrEmpty(sourcePath))
-            {
-                sourcePath = manifest.URL;
+                if (addToLoadedPackages)
+                {
+                    for (int a = 0; a < instance.externalPackages.Count; a++) if (instance.externalPackages[a].content != null && instance.externalPackages[a].content.GetIdentityString() == manifest.GetIdentityString())
+                        {
+                            logger?.LogWarning($"Tried to load external package '{manifest}' from '{(string.IsNullOrEmpty(cachedPath) ? sourcePath : cachedPath)}' — but it was already loaded.");
+                            return default;// instance.externalPackages[a];
+                        }
+                }
+
+                if (string.IsNullOrEmpty(sourcePath))
+                {
+                    sourcePath = manifest.URL;
+                }
+                else
+                {
+                    var info = manifest.info;
+                    info.url = sourcePath;
+                    manifest.info = info;
+                }
+                package.sourcePath = sourcePath;
             }
-            else
-            {
-                var info = manifest.info;
-                info.url = sourcePath;
-                manifest.info = info;
-            }
-            package.sourcePath = sourcePath;
 
             List<EngineHook.FileDescr> embeddedPackageFileDescs = null;
             List<byte[]> embeddedPackageFileData = null;
             // > Load valid files and ignore the rest
-            List<IContent> content = new List<IContent>();
+            List<IContent> content = notAPackage ? null : new List<IContent>();
             using (var enuFiles = files.GetEnumerator())
             using (var enuTypes = fileTypes.GetEnumerator())
             using (var enuPaths = (filePaths == null ? Enumerable.Empty<string>().GetEnumerator() : filePaths.GetEnumerator()))
@@ -663,44 +981,72 @@ namespace Swole
                     var fileData = enuFiles.Current;
                     if (fileType == null || fileData == null) continue;
 
+                    bool hasPath = false;
+                    if (!string.IsNullOrWhiteSpace(filePath))
+                    {
+                        hasPath = true;
+
+                        if (Path.GetFileName(filePath).AsID() == commonFiles_Manifest.AsID()) continue;
+                    }
+
                     IContent contentObj = null;
                     if (fileType == typeof(ExternalPackage)) // File is likely an embedded package, so try to load it recursively.
                     {
                         ExternalPackage embeddedPackage;
                         if (sync)
                         {
-                            embeddedPackage = LoadPackageFromRaw(string.Empty, $"{cachedPath}@embedded", fileData, embeddedPackageFileDescs, embeddedPackageFileData, logger, false);
+                            embeddedPackage = LoadPackageFromRaw(addToLoadedPackages, string.Empty, $"{cachedPath}{tags_EmbeddedPackage}", fileData, embeddedPackageFileDescs, embeddedPackageFileData, logger, false, outputList);
                         }
                         else
                         {
-                            embeddedPackage = await LoadPackageFromRawAsync(string.Empty, $"{cachedPath}@embedded", fileData, embeddedPackageFileDescs, embeddedPackageFileData, logger, false);
+                            embeddedPackage = await LoadPackageFromRawAsync(addToLoadedPackages, string.Empty, $"{cachedPath}{tags_EmbeddedPackage}", fileData, embeddedPackageFileDescs, embeddedPackageFileData, logger, false, outputList);
                         }
                         if (embeddedPackage.content != null)
-                        {
-                            logger?.Log($"Loaded embedded package '{embeddedPackage.content}' from '{embeddedPackage.cachedPath}'");
+                        { 
+                            logger?.Log($"Loaded embedded package '{embeddedPackage.content}' from '{embeddedPackage.cachedPath}'"); 
                         }
+                    } 
+                    else if (notAPackage)
+                    {
+                        continue;
                     }
                     #region elseif { ContentTypes }
+                    else if (fileType == typeof(JsonData))
+                    {
+                        bool flag = true;
+                        if (!hasPath || !filePath.EndsWith(fileExtension_JSON))
+                        {
+                            try
+                            {
+                                var jd = LoadContent<JsonData>(manifest, fileData, null, files, fileTypes, filePaths, logger, false);
+                                contentObj = jd;
+                                flag = !jd.hasMetadata;
+                            }
+                            catch { }
+                        }
+
+                        if (flag) contentObj = new JsonData(new ContentInfo() { name = hasPath ? Path.GetFileNameWithoutExtension(filePath) : string.Empty }, DefaultJsonSerializer.StringEncoder.GetString(fileData), false, manifest);  
+                    }
                     else if (fileType == typeof(SourceScript))
                     {
-                        contentObj = LoadContent<SourceScript>(manifest, fileData, logger);
+                        contentObj = LoadContent<SourceScript>(manifest, fileData, null, files, fileTypes, filePaths, logger);
                     }
                     else if (fileType == typeof(Creation))
                     {
-                        contentObj = LoadContent<Creation>(manifest, fileData, logger);
+                        contentObj = LoadContent<Creation>(manifest, fileData, null, files, fileTypes, filePaths, logger);
                     }
                     else if (fileType == typeof(GameplayExperience))
                     {
-                        contentObj = LoadContent<GameplayExperience>(manifest, fileData, logger);
+                        contentObj = LoadContent<GameplayExperience>(manifest, fileData, null, files, fileTypes, filePaths, logger);
                     }
 #if BULKOUT_ENV
                     else if (fileType == typeof(CustomAnimation))
                     {
-                        contentObj = LoadContent<CustomAnimation>(manifest, fileData, logger);
+                        contentObj = LoadContent<CustomAnimation>(manifest, fileData, null, files, fileTypes, filePaths, logger);
                     }
                     else if (fileType == typeof(ImageAsset))
                     {
-                        contentObj = LoadContent<ImageAsset>(manifest, fileData, logger); 
+                        contentObj = LoadContent<ImageAsset>(manifest, fileData, null, files, fileTypes, filePaths, logger); 
                     }
 #endif
                     #endregion
@@ -714,10 +1060,13 @@ namespace Swole
                 }
             }
 
-            package.content = new ContentPackage(manifest, content);
+            if (notAPackage) return default; 
+
+            package.content = new ContentPackage(manifest, content, true);
             // <
 
-            AddExternalPackage(package);
+            if (addToLoadedPackages) AddExternalPackage(package);
+            if (outputList != null) outputList.Add(package);
 
             return package;
         }
@@ -751,10 +1100,10 @@ namespace Swole
 
             try
             {
-                var dir = Directory.CreateDirectory(tempPath);
+                var tempDir = Directory.CreateDirectory(tempPath);
 
                 // Save package manifest
-                string manifestPath = Path.Combine(dir.FullName, commonFiles_Manifest);
+                string manifestPath = Path.Combine(tempDir.FullName, commonFiles_Manifest);
                 byte[] manifestBytes = DefaultJsonSerializer.StringEncoder.GetBytes(swole.Engine.ToJson(package.Manifest, true));
                 if (sync)
                 { 
@@ -771,12 +1120,12 @@ namespace Swole
                 for (int a = 0; a < contentCount; a++)
                 {
 
-                    var content = package[a];
+                    var content = package[a];  
 
                     try
                     {
 
-                        bool result = sync ? SaveContent(dir, content, logger) : await SaveContentAsync(dir, content, logger);
+                        bool result = sync ? SaveContent(tempDir, content, logger) : await SaveContentAsync(tempDir, content, logger);
                         if (result) filesSaved++; else if (content != null) logger?.LogWarning($"Failed to save content object '{content.Name}' of type '{content.GetType().FullName}' in package '{package.GetIdentityString()}'.");
 
                     }
@@ -790,6 +1139,9 @@ namespace Swole
                  
                 if (exists) // Nothing went wrong so delete the old files and make the temp directory permanent.
                 {
+                    // Copy non content data into new dir
+                    SwoleUtil.CopyAll(path, tempPath, false, _swoleContentExtensions);   
+                    //
                     Directory.Delete(path, true);
                     Directory.Move(tempPath, path);
                     completedTransfer = true;
@@ -803,6 +1155,8 @@ namespace Swole
                 {
                     logger?.LogWarning($"Completed a partial save of '{package.GetIdentityString()}'. Only {filesSaved} out of {expectedFilesSaved} files were saved.");
                 }
+
+                package.DisposeOrphanedContent();
 
                 return true;
             }
@@ -830,10 +1184,14 @@ namespace Swole
             public string sourcePath;
             public string cachedPath;
 
+            public bool isNativeContent;
+
             public ContentPackage content;
             public ContentPackage Content => content;
 
-            public static implicit operator ContentPackage(ExternalPackage pkg) => pkg.content; 
+            public static implicit operator ContentPackage(ExternalPackage pkg) => pkg.content;
+
+            public PackageManifest Manifest => content == null ? default : content.Manifest;
 
             public PackageIdentifier GetIdentity() => content == null ? default : content.GetIdentity();
             public string GetIdentityString() => content == null ? default : content.GetIdentityString();
@@ -876,8 +1234,8 @@ namespace Swole
             {
                 existing.Content = package.Content;
             }
-            LoadSource(package.Content); 
-            return true;
+            LoadSource(package.Content);
+            return true; 
         }
         protected static bool AddExternalPackage(ExternalPackage package)
         {
@@ -885,6 +1243,7 @@ namespace Swole
             if (instance == null) return false;
             if (package.content == null) return false;
             if (FindExternalPackage(package.content.GetIdentity()).content != null) return false;
+            instance.externalPackages.RemoveAll(i => i.GetIdentity() == package.GetIdentity()); 
             instance.externalPackages.Add(package);
             LoadSource(package.content);
             return true;
@@ -1291,6 +1650,19 @@ namespace Swole
         public static string LocalPackageDirectoryPath => Path.Combine(PackageDirectoryPath, folderNames_LocalPackages);
         public static string CachedPackageDirectoryPath => Path.Combine(PackageDirectoryPath, folderNames_CachedPackages);
 
+        public static string AssetStreamingPath
+        {
+            get
+            {
+#if BULKOUT_ENV
+                return UnityEngine.Application.streamingAssetsPath;
+#else
+                return null;
+#endif
+            }
+        }
+        public static string EmbeddedPackageDirectoryPath => Path.Combine(AssetStreamingPath, "EmbeddedPackages");    
+
         protected DirectoryInfo localPackageDirectory;
         public DirectoryInfo LocalPackageDirectory => localPackageDirectory;
 
@@ -1347,11 +1719,11 @@ namespace Swole
         /// <summary>
         /// Load packages in the form of directories from the local file system.
         /// </summary>
-        public static void LoadPackagesLocally(string directory) => LoadPackagesLocally(new DirectoryInfo(directory));
+        public static void LoadPackagesLocally(string directory, bool addToLoadedPackages, IList<LocalPackage> outputList = null) => LoadPackagesLocally(new DirectoryInfo(directory), addToLoadedPackages, outputList);
         /// <summary>
         /// Load packages in the form of directories from the local file system.
         /// </summary>
-        public static void LoadPackagesLocally(DirectoryInfo directory)
+        public static void LoadPackagesLocally(DirectoryInfo directory, bool addToLoadedPackages, IList<LocalPackage> outputList = null)
         {
             if (directory == null) return;
 
@@ -1360,7 +1732,7 @@ namespace Swole
             {         
                 if (!DirectoryIsPackage(dir_)) // Directory is not a package so check for packages stored inside of it instead
                 {
-                    LoadPackagesLocally(dir_);
+                    LoadPackagesLocally(dir_, addToLoadedPackages, outputList);
                     continue;
                 }
 
@@ -1388,27 +1760,28 @@ namespace Swole
                     }
                 }
 
-                LoadPackage(dir, swole.DefaultLogger);
+                var pkg = LoadPackage(addToLoadedPackages, dir, swole.DefaultLogger);
+                if (!string.IsNullOrWhiteSpace(pkg.GetIdentityString()) && outputList != null) outputList.Add(pkg);
             }
         }
 
         /// <summary>
         /// Load packages in the form of zip archives from the local file system.
         /// </summary>
-        public static void LoadPackagesExternally(string directory) => LoadPackagesExternally(new DirectoryInfo(directory));
+        public static void LoadPackagesExternally(string directory, bool addToLoadedPackages, IList<ExternalPackage> outputList = null) => LoadPackagesExternally(new DirectoryInfo(directory), addToLoadedPackages, outputList);
         /// <summary>
         /// Load packages in the form of zip archives from the local file system.
         /// </summary>
-        public static void LoadPackagesExternally(DirectoryInfo directory)
+        public static void LoadPackagesExternally(DirectoryInfo directory, bool addToLoadedPackages, IList<ExternalPackage> outputList = null)
         {
             if (directory == null) return;
 
-            var files = directory.EnumerateFiles("*", SearchOption.AllDirectories);
+            var files = directory.EnumerateFiles("*", SearchOption.AllDirectories); 
             foreach (var file in files)
             {
                 string nameLower = file.Name.AsID();
-                if (!nameLower.EndsWith(fileExtension_ZIP) && !nameLower.EndsWith(fileExtension_Package)) continue;
-                LoadPackage(string.Empty, file.FullName, swole.DefaultLogger);
+                if (!nameLower.EndsWith(fileExtension_ZIP) && !nameLower.EndsWith(swoleFileExtension_Package)) continue;
+                LoadPackage(addToLoadedPackages, string.Empty, file.FullName, swole.DefaultLogger, false, outputList); 
             }
         }
 
@@ -1422,7 +1795,7 @@ namespace Swole
             localPackages.Clear();
 
             localPackageDirectory = Directory.CreateDirectory(LocalPackageDirectoryPath);
-            LoadPackagesLocally(localPackageDirectory);
+            LoadPackagesLocally(localPackageDirectory, true);
 
             ReloadProjectInfo();
             if (projects != null)
@@ -1432,7 +1805,7 @@ namespace Swole
                     try
                     {
                         if (string.IsNullOrEmpty(path) || !SwoleUtil.IsValidPath(path) || SwoleUtil.IsSubPathOf(path, localPackageDirectory.FullName)) return;
-                        LoadPackagesLocally(path);
+                        LoadPackagesLocally(path, true);
                     }
                     catch(Exception ex)
                     {
@@ -1452,16 +1825,30 @@ namespace Swole
 
             ReloadProjectInfo();
         }
+
+        private readonly List<ExternalPackage> tempEmbeddedPackages = new List<ExternalPackage>();
         private void ReloadExternalPackagesLocal()
         {
             foreach (var package in externalPackages) UnloadSource(package.content);
             externalPackages.Clear();
 
             localPackageDirectory = Directory.CreateDirectory(LocalPackageDirectoryPath);
-            LoadPackagesExternally(localPackageDirectory); // Load zip archive packages from local directory
+            LoadPackagesExternally(localPackageDirectory, true); // Load zip archive packages from local directory
 
             cachedPackageDirectory = Directory.CreateDirectory(CachedPackageDirectoryPath);
-            LoadPackagesExternally(cachedPackageDirectory); // Load zip archive packages from cache directory
+            LoadPackagesExternally(cachedPackageDirectory, true); // Load zip archive packages from cache directory
+
+#if BULKOUT_ENV
+            tempEmbeddedPackages.Clear();
+            LoadPackagesExternally(EmbeddedPackageDirectoryPath, false, tempEmbeddedPackages);
+            for(int a = 0; a < tempEmbeddedPackages.Count; a++)
+            {
+                var pkg = tempEmbeddedPackages[a];
+                pkg.isNativeContent = true;
+                AddExternalPackage(pkg); 
+            }
+            tempEmbeddedPackages.Clear();
+#endif
         }
         public void ReloadAllPackagesLocal()
         {
@@ -1469,7 +1856,7 @@ namespace Swole
             foreach (var package in localPackages) if (package != null) 
                 {
                     package.ClearListeners();
-                    UnloadSource(package.Content); 
+                    UnloadSource(package.Content);  
                 }
             localPackages.Clear();
             foreach (var package in externalPackages) UnloadSource(package.content);
@@ -1481,7 +1868,7 @@ namespace Swole
         public static void ReloadLocalPackages()
         {
             var instance = Instance;
-            if (instance == null) return;
+            if (instance == null) return; 
             instance.ReloadLocalPackagesLocal();
         }
         public static void ReloadExternalPackages()
@@ -1527,7 +1914,15 @@ namespace Swole
             public ProjectIdentifier[] identifiers;
         }
 
-        private List<Project> projects;
+        private List<Project> projects = new List<Project>();
+        private List<Project> Projects
+        {
+            get
+            {
+                if (projects == null) projects = new List<Project>();
+                return projects; 
+            }
+        }
         private Dictionary<string, string> projectIdentifiers = null; 
         private static SerializableProjectInfo ProjectIdentifiersSerializable
         {
@@ -1546,7 +1941,7 @@ namespace Swole
                     array[i] = new ProjectIdentifier() { packageName = set.Key, projectName = set.Value };
                     i++;
                 }
-                return new SerializableProjectInfo() { projects = instance.projects.ToArray(), identifiers = array };
+                return new SerializableProjectInfo() { projects = instance.Projects.ToArray(), identifiers = array };
             }
         }
         private static void Deserialize(SerializableProjectInfo serializedProjectInfo)
@@ -1562,8 +1957,7 @@ namespace Swole
             instance.projectIdentifiers.Clear();
             foreach (var identifier in serializedProjectInfo.identifiers) instance.projectIdentifiers[identifier.packageName] = identifier.projectName;
 
-            if (instance.projects == null) instance.projects = new List<Project>();
-            instance.projects.Clear();
+            instance.Projects.Clear();
             if (serializedProjectInfo.projects != null) instance.projects.AddRange(serializedProjectInfo.projects);
         }
 
@@ -1643,7 +2037,7 @@ namespace Swole
                 }
                  
                 Project project = new Project() { name = projectName, primaryPath = primaryPath };
-                instance.projects.Add(project);
+                instance.Projects.Add(project);
             }
             switch (saveMethod)
             {
@@ -1786,23 +2180,27 @@ namespace Swole
                 {
                     instance.projectIdentifiers.Remove(key);
                 }
-                for(int a = 0; a < instance.projects.Count; a++)
+                if (instance.projects != null)
                 {
-                    var proj = instance.projects[a];
-                    if (!cleanerList2.Contains(proj.name))
+                    for (int a = 0; a < instance.projects.Count; a++)
                     {
-                        cleanerList3.Add(proj.name);
-                        if (!string.IsNullOrEmpty(proj.primaryPath))
+                        var proj = instance.projects[a];
+                        if (!cleanerList2.Contains(proj.name))
                         {
-                            DirectoryInfo dir = new DirectoryInfo(proj.primaryPath);
-                            if (dir.IsEmpty())
+                            cleanerList3.Add(proj.name);  
+                            if (!string.IsNullOrEmpty(proj.primaryPath))
                             {
-                                if (dir.Exists) dir.Delete();
+                                DirectoryInfo dir = new DirectoryInfo(proj.primaryPath);
+                                if (dir.IsEmpty())
+                                {
+                                    if (dir.Exists) dir.Delete();
+                                }
                             }
                         }
                     }
+
+                    foreach (string projName in cleanerList3) instance.projects.RemoveAll(i => i.name == projName);
                 }
-                foreach (string projName in cleanerList3) instance.projects.RemoveAll(i => i.name == projName);
                 cleanerList1.Clear();
                 cleanerList2.Clear();
                 cleanerList3.Clear();
@@ -1940,6 +2338,10 @@ namespace Swole
             base.OnInit(); 
 
             if (Instance != this) return;
+
+#if UNITY_EDITOR
+            if (!UnityEngine.Application.isPlaying) return;  
+#endif
 
             InitializeLocal();
 

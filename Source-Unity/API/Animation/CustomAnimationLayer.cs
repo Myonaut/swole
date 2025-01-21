@@ -40,16 +40,14 @@ namespace Swole.API.Unity.Animation
             m_animationPlayers = null;
 
         }
-
+        
+        public bool HasPrefix(string prefix) => name == null ? false : name.ToLower().Trim().StartsWith(prefix);
         public bool DisposeIfHasPrefix(string prefix)
         {
-
-            bool dispose = name == null ? false : name.ToLower().Trim().StartsWith(prefix);
-
+            bool dispose = HasPrefix(prefix);
             if (dispose) Dispose();
 
             return dispose;
-
         }
 
         private const int loopLimit = 8192;
@@ -250,7 +248,7 @@ namespace Swole.API.Unity.Animation
 
                     var controller = layer.m_motionControllers[a];
 
-                    controller.Initialize(layer); // Essentially tells all animation reference motion controllers create their animation players
+                    controller.Initialize(layer); // Essentially tells all animation reference motion controllers to create their animation players
                     controller.ForceSetLoopMode(layer, controller.GetLoopMode(layer));
 
                 }
@@ -301,6 +299,22 @@ namespace Swole.API.Unity.Animation
         {
             if (Animator == null) return;
             Animator.RearrangeLayerNoRemap(indexInAnimator, swapIndex, recalculateIndices);
+        }
+        /// <summary>
+        /// Set the position of this layer in the animator's layer list.
+        /// </summary>
+        public Dictionary<int, int> Move(int newIndex, bool recalculateIndices = true)
+        {
+            if (Animator == null) return null;
+            return Animator.MoveLayer(indexInAnimator, newIndex, recalculateIndices);
+        }
+        /// <summary>
+        /// Set the position of this layer in the animator's layer list.
+        /// </summary>
+        public void MoveNoRemap(int newIndex, bool recalculateIndices = true)
+        {
+            if (Animator == null) return;
+            Animator.MoveLayerNoRemap(indexInAnimator, newIndex, recalculateIndices);  
         }
 
         [SerializeField]

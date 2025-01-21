@@ -8,7 +8,7 @@ using UnityEngine;
 
 using Unity.Mathematics;
 
-using static Swole.DataStructures;
+using Swole.DataStructures;
 
 namespace Swole
 {

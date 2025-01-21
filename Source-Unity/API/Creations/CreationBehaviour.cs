@@ -110,13 +110,13 @@ namespace Swole.API.Unity
         /// <summary>
         /// Used to create a non-executing prefab object for creation editors
         /// </summary>
-        public static GameObject CreatePreRuntimeCreationPrefab(Creation creation)
+        public static GameObject CreatePreRuntimeCreationPrefab(Creation creation, bool addPrototypeComponents, bool addSwoleGameObjectComponents, GameObject rootPrefab = null, List<EngineInternal.ITransform> outputInstanceList = null, List<EngineInternal.TileInstance> outputTileList = null, bool createPrefabRootIfNotProvided = true)
         {
 
-            if (creation == null) return null;
+            if (creation == null) return null;  
 
-            GameObject prefab = new GameObject(creation.Name);
-            Transform prefabTransform = prefab.transform; 
+            GameObject prefab = rootPrefab == null ? (createPrefabRootIfNotProvided ? new GameObject(creation.Name) : null) : rootPrefab;
+            Transform prefabTransform = prefab == null ? null : prefab.transform; 
 
             void SpawnTiles(TileSpawnGroup tsg, EngineInternal.ITransform rootTransform, List<EngineInternal.TileInstance> tileList)
             {
@@ -127,14 +127,31 @@ namespace Swole.API.Unity
 
                     var tile = tileSet == null ? null : tileSet.CreatePreRuntimeTilePrefab(spawner.index, tileSet.Source);
                     if (tile == null) tile = new GameObject("null_tile");
+                    if (!string.IsNullOrEmpty(spawner.name)) tile.name = spawner.name;
 
                     var tileTransform = tile.transform;
-                    tileTransform.SetParent(prefabTransform, false);
+                    if (prefabTransform != null) tileTransform.SetParent(prefabTransform, false);
                     tileTransform.localPosition = UnityEngineHook.AsUnityVector(spawner.positionInRoot);
                     tileTransform.localRotation = UnityEngineHook.AsUnityQuaternion(spawner.rotationInRoot);
                     tileTransform.localScale = UnityEngineHook.AsUnityVector(spawner.localScale);
 
-                    tileList.Add(new EngineInternal.TileInstance(new TileInstance(tileSet, spawner.index, tile.transform)));  
+                    if (addPrototypeComponents)
+                    {
+                        var prototype = tile.AddOrGetComponent<TilePrototype>();
+                        prototype.tileIndex = spawner.index;
+                        prototype.tileSet = tileSet;
+                        tileList.Add(new EngineInternal.TileInstance(prototype));
+                    } 
+                    else if (outputTileList != null || outputInstanceList != null)
+                    {
+                        tileList.Add(new EngineInternal.TileInstance(new TileInstance(tileSet, spawner.index, tile.transform)));
+                    }
+
+                    if (addSwoleGameObjectComponents && spawner.ID >= 0)
+                    {
+                        var sgo = tile.AddOrGetComponent<SwoleGameObject>();
+                        sgo.id = spawner.ID;
+                    }
                 }
 
             }
@@ -146,22 +163,37 @@ namespace Swole.API.Unity
                     for (int b = 0; b < csg.ObjectSpawnCount; b++)
                     {
                         var spawner = csg.GetObjectSpawner(b);
-
+                        
                         GameObject obj;
                         if (childCreation != null)
                         {
-                            obj = CreatePreRuntimeCreationPrefab(childCreation);
+                            obj = CreatePreRuntimeCreationPrefab(childCreation, false, false);
+                            if (!string.IsNullOrEmpty(spawner.name)) obj.name = spawner.name;
                         } 
                         else
                         {
-                            obj = new GameObject("null_creation");
+                            obj = new GameObject(string.IsNullOrEmpty(spawner.name) ? $"load_fail:{csg.AssetName}" : spawner.name);
                         }
 
                         var objTransform = obj.transform;
-                        objTransform.SetParent(prefabTransform, false);
+                        if (prefabTransform != null) objTransform.SetParent(prefabTransform, false);
                         objTransform.localPosition = UnityEngineHook.AsUnityVector(spawner.positionInRoot);
                         objTransform.localRotation = UnityEngineHook.AsUnityQuaternion(spawner.rotationInRoot);
                         objTransform.localScale = UnityEngineHook.AsUnityVector(spawner.localScale);
+
+                        if (addPrototypeComponents)
+                        {
+                            var prototype = obj.AddOrGetComponent<CreationPrototype>();
+                            if (childCreation != null) prototype.asset = childCreation;
+                            prototype.packageId = csg.PackageIdentityString;
+                            prototype.creationId = csg.AssetName;
+                        }
+
+                        if (addSwoleGameObjectComponents && spawner.ID >= 0)
+                        {
+                            var sgo = obj.AddOrGetComponent<SwoleGameObject>();
+                            sgo.id = spawner.ID;
+                        }
 
                         instanceList.Add(UnityEngineHook.AsSwoleTransform(obj.transform)); 
                     }
@@ -173,20 +205,27 @@ namespace Swole.API.Unity
                         var spawner = osg.GetObjectSpawner(b);
 
                         var obj = new GameObject("unknown_obj");
+                        if (!string.IsNullOrEmpty(spawner.name)) obj.name = spawner.name;
 
                         var objTransform = obj.transform;
-                        objTransform.SetParent(prefabTransform, false);
+                        if (prefabTransform != null) objTransform.SetParent(prefabTransform, false);
                         objTransform.localPosition = UnityEngineHook.AsUnityVector(spawner.positionInRoot);
                         objTransform.localRotation = UnityEngineHook.AsUnityQuaternion(spawner.rotationInRoot);
-                        objTransform.localScale = UnityEngineHook.AsUnityVector(spawner.localScale);
+                        objTransform.localScale = UnityEngineHook.AsUnityVector(spawner.localScale); 
+
+                        if (addSwoleGameObjectComponents && spawner.ID >= 0)
+                        {
+                            var sgo = obj.AddOrGetComponent<SwoleGameObject>();
+                            sgo.id = spawner.ID;
+                        }
 
                         instanceList.Add(UnityEngineHook.AsSwoleTransform(obj.transform));
                     }
                 }
 
             }
-
-            creation.CreateNewRootAndObjects(true, UnityEngineHook.AsSwoleVector(prefabTransform.position), UnityEngineHook.AsSwoleQuaternion(prefabTransform.rotation), null, null, SpawnTiles, SpawnObjects);
+            
+            creation.CreateNewRootAndObjects(true, null, outputInstanceList, outputTileList, SpawnTiles, SpawnObjects);
 
             return prefab;
 
@@ -462,11 +501,11 @@ namespace Swole.API.Unity
                     m_environment.SetLocalVar(varId_fixedDeltaTime, var_fixedDeltaTime);
                     break;
             }
-            OnPreRuntimeEvent?.Invoke(layer.ToString(), (int)layer);
+            OnPreRuntimeEvent?.Invoke(layer.ToString(), (int)layer, this);
         }
         protected void PostExecute(ExecutionLayer layer)
         {
-            OnPostRuntimeEvent?.Invoke(layer.ToString(), (int)layer);  
+            OnPostRuntimeEvent?.Invoke(layer.ToString(), (int)layer, this);  
         }
 
         public bool dontAutoInitialized;

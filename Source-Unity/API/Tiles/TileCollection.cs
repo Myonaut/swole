@@ -39,7 +39,10 @@ namespace Swole.API.Unity
                 var tileSet = Resources.Load<TileSet>(locator.path);
                 if (tileSet == null) return null;
 
-                tileSet.collectionId = id;
+                tileSet.collectionId = id; 
+                tileSet.IsInternalAsset = true;
+                if (tileSet.tiles != null) foreach (var tile in tileSet.tiles) tile.IsInternalAsset = true;
+
                 return tileSet;
             }
 

@@ -15,6 +15,29 @@ namespace Swole.API.Unity
     [Serializable, CreateAssetMenu(fileName = "audioClipProxy", menuName = "Audio/AudioClipProxy", order = 1)]
     public class AudioClipProxy : ScriptableObject, IAudioClipProxy
     {
+
+        public System.Type AssetType => typeof(AudioClip);
+        public object Asset => clip;
+
+        protected bool disposed;
+        public bool isNotInternalAsset;
+        public bool IsInternalAsset
+        {
+            get => !isNotInternalAsset;
+            set => isNotInternalAsset = !value;
+        }
+
+        public bool IsValid => !disposed;
+        public void Dispose() 
+        { 
+            if (!disposed)
+            {
+                GameObject.Destroy(this);
+            }
+            disposed = true;
+        }
+        public void Delete() => Dispose();
+
         public AudioClip clip;
         public AudioClip Clip
         {
@@ -52,6 +75,16 @@ namespace Swole.API.Unity
     [Serializable]
     public struct TempAudioClipProxy : IAudioClipProxy
     {
+
+        public System.Type AssetType => typeof(AudioClip);
+        public object Asset => clip;
+
+        public bool IsInternalAsset { get => true; set { } }
+
+        public bool IsValid => clip != null;
+        public void Dispose() { }
+        public void Delete() => Dispose();
+
         public AudioClip clip;
         public AudioClip Clip
         {

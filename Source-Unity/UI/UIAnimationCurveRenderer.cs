@@ -13,16 +13,16 @@ namespace Swole.UI
     public class UIAnimationCurveRenderer : MonoBehaviour
     {
 
-        public AnimationCurve curve;
+        public AnimationCurve curve; 
 
         [SerializeField]
-        private float lineThickness = 5;
-        public float LineThickness 
+        protected float lineThickness = 5;
+        public virtual float LineThickness 
         {
             get => lineThickness;
             set => SetLineThickness(value);
         }
-        public void SetLineThickness(float thickness)
+        public virtual void SetLineThickness(float thickness)
         {
             lineThickness = thickness;
             foreach (var renderer in activeRenderers)
@@ -32,14 +32,39 @@ namespace Swole.UI
             }
         }
 
+        public bool addStartCap;
+        [Tooltip("Must be at least 3")]
+        public int startCapResolution = 8;
+
+        public bool addEndCap;
+        [SerializeField, Tooltip("Must be at least 3")]
+        public int endCapResolution = 8;
+
         [SerializeField]
-        private Color lineColor = Color.white;
-        public Color LineColor
+        protected Texture2D texture;
+        public virtual Texture2D Texture
+        {
+            get => texture;
+            set => SetTexture(value);
+        }
+        public virtual void SetTexture(Texture2D texture)
+        {
+            this.texture = texture;
+            foreach (var renderer in activeRenderers)
+            {
+                if (renderer == null || renderer.lineRenderer == null) continue; 
+                renderer.lineRenderer.SetTexture(texture);
+            }
+        }
+
+        [SerializeField]
+        protected Color lineColor = Color.white;
+        public virtual Color LineColor
         {
             get => lineColor;
             set => SetLineColor(value);
         }
-        public void SetLineColor(Color color)
+        public virtual void SetLineColor(Color color)
         {
             lineColor = color;
             foreach (var renderer in activeRenderers)
@@ -57,8 +82,8 @@ namespace Swole.UI
         public float endPointPadding = 0.0001f;
 
         [SerializeField]
-        private UILineRenderer curveRendererPrototype;
-        public void SetCurveRendererPrototype(UILineRenderer prototype)
+        protected UILineRenderer curveRendererPrototype;
+        public virtual void SetCurveRendererPrototype(UILineRenderer prototype)
         {
             if (prototype == null) return;
             if (curveRendererPrototype != null) curveRendererPrototype.gameObject.SetActive(false);
@@ -71,8 +96,8 @@ namespace Swole.UI
         } 
 
         [SerializeField]
-        private Transform rendererContainer;
-        public void SetRendererContainer(RectTransform container)
+        protected Transform rendererContainer;
+        public virtual void SetRendererContainer(RectTransform container)
         {
             rendererContainer = container;
             if (lineRendererPool != null) lineRendererPool.SetContainerTransform(rendererContainer, true, true);
@@ -86,14 +111,21 @@ namespace Swole.UI
             }
         }
 
+        public bool useEqualUVPortionsPerSegment;
+
+        public Vector2 uvRangeX = new Vector2(0, 1);
+        public float GetUVX(float t) => (uvRangeX.x) + (uvRangeX.y - uvRangeX.x) * t;
+        public Vector2 uvRangeY = new Vector2(0, 1);
+        public float GetUVY(float t) => (uvRangeY.x) + (uvRangeY.y - uvRangeY.x) * t;
+
         public bool useExternalRangeX;
         public Vector2 externalRangeX;
 
         public bool useExternalRangeY;
         public Vector2 externalRangeY;
 
-        private RectTransform rectTransform;
-        public RectTransform RectTransform
+        protected RectTransform rectTransform;
+        public virtual RectTransform RectTransform
         {
             get
             {
@@ -103,10 +135,10 @@ namespace Swole.UI
         }
 
         [NonSerialized]
-        private PrefabPool lineRendererPool;
-        public bool Initialized => lineRendererPool != null;
+        protected PrefabPool lineRendererPool;
+        public virtual bool Initialized => lineRendererPool != null;
 
-        protected void Awake()
+        protected virtual void Awake()
         {
             if (rendererContainer == null) rendererContainer = gameObject.transform;
             if (curveRendererPrototype == null)
@@ -131,7 +163,7 @@ namespace Swole.UI
         protected class CurveRenderer
         {
             public UILineRenderer lineRenderer;
-            private RectTransform rectTransform;
+            protected RectTransform rectTransform;
             public RectTransform RectTransform
             {
                 get
@@ -150,8 +182,36 @@ namespace Swole.UI
         }
 
         protected readonly List<CurveRenderer> activeRenderers = new List<CurveRenderer>();
+        public List<Vector3> GetRenderedPoints(List<Vector3> pointList = null) => GetRenderedPoints(rendererContainer == null ? transform.localToWorldMatrix : rendererContainer.localToWorldMatrix, pointList); 
+        public List<Vector3> GetRenderedPoints(Matrix4x4 transformation, List<Vector3> pointList = null) 
+        {
+            if (pointList == null)  pointList = new List<Vector3>();
 
-        public void SetRaycastTarget(bool isRaycastTarget)
+            var rect = RectTransform.rect; 
+            var width = rect.width;
+            var height = rect.height;
+            var pivot = rectTransform.pivot;
+            var centerX = width * pivot.x;
+            var centerY = height * pivot.y;
+
+            for(int a = 0; a < activeRenderers.Count; a++)
+            {
+                var renderer = activeRenderers[a];
+                if (renderer == null || renderer.pointArray == null) continue;
+
+                for (int b = 0; b < renderer.pointArray.Length; b++) 
+                { 
+                    var point = renderer.pointArray[b];
+                    point.x = (point.x * width) - centerX;
+                    point.y = (point.y * height) - centerY; 
+                    pointList.Add(transformation.MultiplyPoint(point)); 
+                }
+            }
+
+            return pointList;
+        }
+
+        public virtual void SetRaycastTarget(bool isRaycastTarget)
         {
             foreach (var renderer in activeRenderers)
             {
@@ -162,9 +222,9 @@ namespace Swole.UI
 
 #if UNITY_EDITOR
         [SerializeField]
-        private bool forceRebuild;
+        protected bool forceRebuild;
 
-        public void OnGUI()
+        public virtual void OnGUI()
         {
             if (forceRebuild)
             {
@@ -174,7 +234,7 @@ namespace Swole.UI
         }
 #endif
 
-        public void Rebuild()
+        public virtual void Rebuild()
         {
             if (!Initialized) return;
 
@@ -206,6 +266,7 @@ namespace Swole.UI
                     var renderer = inst.AddOrGetComponent<UILineRenderer>();
                     renderer.SetThickness(lineThickness);
                     renderer.SetColor(lineColor);
+                    renderer.SetTexture(texture);
                     activeRenderers.Add(new CurveRenderer(renderer));
                     inst.SetActive(true);
                 }
@@ -262,6 +323,10 @@ namespace Swole.UI
                     kfB.time = Mathf.Min(kfB.time, kfB.time - endPointPadding);
                 }
                 float timeLength = endTime - startTime;
+
+                curveRenderer.lineRenderer.useEqualUVPortionsPerSegment = useEqualUVPortionsPerSegment;
+                curveRenderer.lineRenderer.uvRangeX = new Vector2((GetTimeInRange(startTime) * (uvRangeX.y - uvRangeX.x)) + uvRangeX.x, (GetTimeInRange(endTime) * (uvRangeX.y - uvRangeX.x)) + uvRangeX.x);
+                curveRenderer.lineRenderer.uvRangeY = uvRangeY;
 
                 if (slopeSamplingCount > 0)
                 {
@@ -350,6 +415,12 @@ namespace Swole.UI
             for (int a = 0; a < rendererCount; a++)
             {
                 var curveRenderer = activeRenderers[a];
+
+                curveRenderer.lineRenderer.addStartCap = addStartCap && a == 0;
+                curveRenderer.lineRenderer.startCapResolution = startCapResolution;
+                curveRenderer.lineRenderer.addEndCap = addEndCap && a == rendererCount - 1; 
+                curveRenderer.lineRenderer.endCapResolution = endCapResolution;
+
                 bool invalid = false;
                 for (int b = 0; b < curveRenderer.pointArray.Length; b++)
                 {
@@ -359,7 +430,7 @@ namespace Swole.UI
                     point.y = (point.y - rangeY.x) / (rangeY.y - rangeY.x);
                     curveRenderer.pointArray[b] = point; 
                 }
-                curveRenderer.lineRenderer.SetPoints(invalid ? null : curveRenderer.pointArray); 
+                curveRenderer.lineRenderer.SetPoints(invalid ? null : curveRenderer.pointArray);  
             }
         }
 

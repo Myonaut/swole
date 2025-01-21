@@ -20,6 +20,8 @@ namespace Swole.API.Unity
         protected UIResizeableWindow window;
         public UIResizeableWindow Window => window;
 
+        public RectTransform containerOverride;
+
         public string codeEditorResourcePath = "";
         public string fallbackCodeEditorResourcePath = "";
 
@@ -37,7 +39,9 @@ namespace Swole.API.Unity
             if (string.IsNullOrEmpty(fallbackCodeEditorResourcePath)) fallbackCodeEditorResourcePath = _defaultFallbackCodeEditorResourcePath;
             if (window == null) window = GetComponentInParent<UIResizeableWindow>(true);
 
-            if (window == null || window.contentContainer == null || editor != null) return;
+            RectTransform container = containerOverride;
+            if (container == null && window != null) container = window.contentContainer;
+            if (container == null || editor != null) return;  
 
             if (string.IsNullOrEmpty(codeEditorResourcePath)) codeEditorResourcePath = fallbackCodeEditorResourcePath;
             if (string.IsNullOrEmpty(codeEditorResourcePath)) return;
@@ -51,7 +55,7 @@ namespace Swole.API.Unity
             {
 
                 var instance = Instantiate(editorResource);
-                instance.transform.SetParent(window.contentContainer, false);
+                instance.transform.SetParent(container, false);
                 var instanceRT = instance.GetComponent<RectTransform>();
                 instanceRT.SetAnchor(AnchorPresets.StretchAll, 0, 0);
 

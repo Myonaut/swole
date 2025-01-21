@@ -12,7 +12,7 @@ namespace Swole.Script
         public static string GetFullPackageString(string packageName, string version)
         {
 
-            if (!ValidatePackageName(packageName)) return "";
+            if (!ValidatePackageName(packageName)) return string.Empty;
 
             if (!ValidateVersionString(version) || version == "0.0" || version == "0.0.0" || version == "0.0.0.0") return packageName;
 

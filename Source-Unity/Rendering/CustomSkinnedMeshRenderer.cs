@@ -15,6 +15,41 @@ namespace Swole
 
 #if UNITY_EDITOR
 
+        public virtual void OnDrawGizmosSelected()
+        {
+            if (meshRenderer == null) return;
+
+            Vector3 extents = meshRenderer.transform.TransformVector(bounds.extents);
+            Vector3 center = meshRenderer.transform.TransformPoint(bounds.center);
+
+            Vector3 p1 = center + new Vector3(-extents.x, -extents.y, extents.z);
+            Vector3 p2 = center + new Vector3(extents.x, -extents.y, extents.z);
+            Vector3 p3 = center + new Vector3(extents.x, extents.y, extents.z);
+            Vector3 p4 = center + new Vector3(-extents.x, extents.y, extents.z);
+
+            Vector3 p5 = center + new Vector3(-extents.x, -extents.y, -extents.z);
+            Vector3 p6 = center + new Vector3(extents.x, -extents.y, -extents.z);
+            Vector3 p7 = center + new Vector3(extents.x, extents.y, -extents.z);
+            Vector3 p8 = center + new Vector3(-extents.x, extents.y, -extents.z);
+
+            Gizmos.color = Color.white;
+
+            Gizmos.DrawLine(p1, p2);
+            Gizmos.DrawLine(p2, p3);
+            Gizmos.DrawLine(p3, p4);
+            Gizmos.DrawLine(p4, p1);
+
+            Gizmos.DrawLine(p1, p5);
+            Gizmos.DrawLine(p2, p6);
+            Gizmos.DrawLine(p3, p7);
+            Gizmos.DrawLine(p4, p8);
+
+            Gizmos.DrawLine(p5, p6);
+            Gizmos.DrawLine(p6, p7);
+            Gizmos.DrawLine(p7, p8);
+            Gizmos.DrawLine(p8, p5); 
+        }
+
         [Serializable]
         public class BlendShapeController
         {
@@ -80,9 +115,23 @@ namespace Swole
 
         }
 
+        public Bounds bounds;
+
         public Material[] materials;
 
-        public Transform[] bones;
+        [SerializeField]
+        protected Transform[] bones;
+        public Transform[] Bones => bones;
+        public void SetBones(Transform[] bones)
+        {
+            if (bones == null)
+            {
+                this.bones = null;
+                return;
+            }
+
+            this.bones = (Transform[])bones.Clone(); 
+        }
 
         [NonSerialized]
         protected bool initialized;
@@ -142,12 +191,16 @@ namespace Swole
 
             if (initialized) return;
 
+            if (meshRenderer != null) meshRenderer.localBounds = bounds;
+
             var tempBones = bones;
             if (tempBones != null)
             {
                 var remapper = GetComponentInParent<BoneTransformRemapper>();
                 if (remapper != null && remapper.ShouldRemap(this))
                 {
+                    swole.Log($"Remapping rig for {name} using remapper {remapper.name}");   
+
                     tempBones = new Transform[bones.Length];
                     bones.CopyTo(tempBones, 0);
                     bool ContainsBone(Transform bone)

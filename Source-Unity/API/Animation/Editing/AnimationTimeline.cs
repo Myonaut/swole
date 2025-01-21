@@ -191,9 +191,13 @@ namespace Swole.API.Unity.Animation
         private float previousWidth;
 
         public int CalculateFrameAtTimelinePosition(decimal time) => /*length <= 0 ? 1 : */CalculateFrameAtTimelinePosition(time, frameRate);
-        public static int CalculateFrameAtTimelinePosition(decimal time, int frameRate) => Mathf.FloorToInt(((float)time + 0.00001f) * frameRate); 
+        public int CalculateFrameAtTimelinePositionFloat(float time) => CalculateFrameAtTimelinePosition((decimal)time);
+        public static int CalculateFrameAtTimelinePosition(decimal time, int frameRate) => Mathf.FloorToInt(((float)time + 0.00001f) * frameRate);
+        public static int CalculateFrameAtTimelinePositionFloat(float time, int frameRate) => CalculateFrameAtTimelinePosition((decimal)time, frameRate);
         public decimal CalculateFrameTimeAtTimelinePosition(decimal time) => CalculateFrameTimeAtTimelinePosition(time, frameRate);
+        public decimal CalculateFrameTimeAtTimelinePositionFloat(float time) => CalculateFrameTimeAtTimelinePosition((decimal)time);
         public static decimal CalculateFrameTimeAtTimelinePosition(decimal time, int frameRate) => FrameToTimelinePosition(CalculateFrameAtTimelinePosition(time, frameRate), frameRate);
+        public static float CalculateFrameTimeAtTimelinePositionFloat(float time, int frameRate) => (float)CalculateFrameTimeAtTimelinePosition((decimal)time, frameRate);
         public decimal FrameToTimelinePosition(int frame) => FrameToTimelinePosition(frame, frameRate);
         public static decimal FrameToTimelinePosition(int frame, int frameRate) => frame / (decimal) frameRate;
 
@@ -276,8 +280,8 @@ namespace Swole.API.Unity.Animation
             #region Length Input
             if (lengthInput != null)
             {
-                if (lengthInput.onValueChanged == null) lengthInput.onValueChanged = new InputField.OnChangeEvent();
-                lengthInput.onValueChanged.AddListener((string valText) =>
+                if (lengthInput.onEndEdit == null) lengthInput.onEndEdit = new InputField.EndEditEvent();
+                lengthInput.onEndEdit.AddListener((string valText) =>
                 {
                     if (valText.TryParseFloatStrict(out float val)) SetLength(val);
                 });
@@ -285,8 +289,8 @@ namespace Swole.API.Unity.Animation
             }
             if (lengthInputTMP != null)
             {
-                if (lengthInputTMP.onValueChanged == null) lengthInputTMP.onValueChanged = new TMP_InputField.OnChangeEvent();
-                lengthInputTMP.onValueChanged.AddListener((string valText) =>
+                if (lengthInputTMP.onEndEdit == null) lengthInputTMP.onEndEdit = new TMP_InputField.SubmitEvent();
+                lengthInputTMP.onEndEdit.AddListener((string valText) =>
                 {
                     if (valText.TryParseFloatStrict(out float val)) SetLength(val); 
                 });
@@ -297,24 +301,24 @@ namespace Swole.API.Unity.Animation
             #region Time Input
             if (timeInput != null)
             {
-                if (timeInput.onValueChanged == null) timeInput.onValueChanged = new InputField.OnChangeEvent();
-                timeInput.onValueChanged.AddListener((string valText) =>
+                if (timeInput.onEndEdit == null) timeInput.onEndEdit = new InputField.EndEditEvent();
+                timeInput.onEndEdit.AddListener((string valText) =>
                 {
                     if (valText.TryParseFloatStrict(out float val)) SetScrubPosition(val, true, true, true);
                 });
-                timeInput.SetTextWithoutNotify(ScrubPosition.ToString());
+                timeInput.SetTextWithoutNotify(ScrubPosition.ToString()); 
             }
             if (timeInputTMP != null)
             {
-                if (timeInputTMP.onValueChanged == null) timeInputTMP.onValueChanged = new TMP_InputField.OnChangeEvent();
-                timeInputTMP.onValueChanged.AddListener((string valText) =>
+                if (timeInputTMP.onEndEdit == null) timeInputTMP.onEndEdit = new TMP_InputField.SubmitEvent();
+                timeInputTMP.onEndEdit.AddListener((string valText) =>
                 {
                     if (valText.TryParseFloatStrict(out float val)) SetScrubPosition(val, true, true, true);
                 });
                 timeInputTMP.SetTextWithoutNotify(ScrubPosition.ToString());
             }
             #endregion
-        }
+        } 
 
         private readonly List<GameObject> activeFrameMarkers = new List<GameObject>();
         private readonly List<GameObject> activeFrameLines = new List<GameObject>();

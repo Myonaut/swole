@@ -15,6 +15,18 @@ namespace Swole
     public class PointerEventsProxy : MonoBehaviour, IPointerClickHandler, IPointerDownHandler, IPointerUpHandler, IPointerEnterHandler, IPointerExitHandler, IPointerMoveHandler
     {
 
+        [SerializeField]
+        protected GameObject rootObject;
+        public GameObject RootObject
+        {
+            get 
+            {
+                if (rootObject == null) return gameObject;
+                return rootObject;
+            }
+            set => rootObject = value;
+        }
+
         public UnityEvent OnClick;
         public UnityEvent OnDown;
         public UnityEvent OnUp;

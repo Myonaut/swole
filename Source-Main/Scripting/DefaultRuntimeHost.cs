@@ -107,6 +107,9 @@ namespace Swole.Script
 
         #endregion
 
+        /// <summary>
+        /// Always null. This is not for finding content embedded in the game. That is handled by the engine hook.
+        /// </summary>
         public ContentPackage LocalContent => null;
 
         public void Dispose()

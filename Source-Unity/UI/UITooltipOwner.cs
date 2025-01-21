@@ -6,6 +6,9 @@ using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.UI;
 
+using Swole.API.Unity;
+using UnityEngine.Events;
+
 namespace Swole.UI
 {
 
@@ -50,7 +53,8 @@ namespace Swole.UI
 
         }
 
-        public void ShowTooltip()
+        public UnityEvent<GameObject> OnShowTooltip;
+        public void ShowTooltip(GameObject targetObject)
         {
 
             if (Tooltip == null) return;
@@ -68,8 +72,12 @@ namespace Swole.UI
 
             cursorCanvasPosition = tooltipInstance.Canvas.ScreenToCanvasSpace(CursorProxy.ScreenPosition);
 
+            this.targetObject = targetObject;
+            OnShowTooltip?.Invoke(targetObject);
+
         }
 
+        public UnityEvent OnHideTooltip;
         public void HideTooltip()
         {
 
@@ -78,6 +86,8 @@ namespace Swole.UI
             tooltipInstance.gameObject.SetActive(false);
 
             hoverTime = 0;
+
+            OnHideTooltip?.Invoke();
 
         }
 
@@ -103,21 +113,16 @@ namespace Swole.UI
 
             if (IsHovering)
             {
-
                 if (!showing)
                 {
-
                     hoverTime += Time.deltaTime;
 
                     if (hoverTime >= timeToShow)
                     {
-
-                        ShowTooltip();
-
+                        ShowTooltip(hoveredObject);
                     }
 
                 }
-
             }
             else
             {
@@ -135,6 +140,13 @@ namespace Swole.UI
         protected PointerEventsProxy pointerEventProxy;
 
         protected bool isHovering;
+        protected GameObject hoveredObject;
+
+        protected GameObject targetObject;
+        /// <summary>
+        /// The object that the tooltip is bound to
+        /// </summary>
+        public GameObject TargetObject;
 
         protected int lastQueryFrame;
 
@@ -154,9 +166,8 @@ namespace Swole.UI
 
                 if (pointerEventProxy != null && pointerEventProxy.IsHovering)
                 {
-
                     isHovering = true;
-
+                    hoveredObject = pointerEventProxy.gameObject;
                 }
                 else if (pointerEventProxies != null)
                 {
@@ -167,6 +178,7 @@ namespace Swole.UI
                         if (proxy == null || !proxy.IsHovering) continue; 
 
                         isHovering = true;
+                        hoveredObject = proxy.RootObject;
 
                         break;
 
@@ -199,6 +211,14 @@ namespace Swole.UI
 
             }
 
+        }
+
+        public void SetText(string text)
+        {
+            var tooltip = Tooltip;
+            if (tooltip == null) return;
+
+            CustomEditorUtils.SetComponentText(tooltip.gameObject, text);
         }
 
     }

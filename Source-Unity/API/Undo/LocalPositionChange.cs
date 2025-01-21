@@ -8,6 +8,8 @@ namespace Swole.API.Unity.UndoSystem
 {
     public struct LocalPositionChange : IRevertableAction
     {
+        public bool ReapplyWhenRevertedTo => true;
+
         public Transform transform;
         public Vector3 oldLocalPosition, newLocalPosition;
 

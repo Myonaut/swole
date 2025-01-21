@@ -111,7 +111,7 @@ namespace Swole.UI
 
             Vector3 canvasSize = canvasRect.rect.size;
 
-            Vector3 rootPos = canvasRect.InverseTransformPoint(root.position) + translation;
+            Vector3 rootPos = canvasRect.InverseTransformPoint(root.position) + translation; 
 
             Vector2 rootSize = root.rect.size;
 
@@ -288,7 +288,8 @@ namespace Swole.UI
             preDragLocalPosition = rectTransform.localPosition;
             preDragPosition = rectTransform.position;
 
-            prevCursorPosition = canvas.ScreenToCanvasSpace(eventData.position);
+            //prevCursorPosition = canvas.ScreenToCanvasSpace(eventData.position); // not in screen space?
+            prevCursorPosition = canvas.ScreenToCanvasSpace(CursorProxy.ScreenPosition);
 
             base.OnPointerDown(eventData);
 
@@ -318,6 +319,8 @@ namespace Swole.UI
             dragCooldown = 0; 
 
         }
+
+        private int lastDragFrame; // quick fix for teleporting ui when dragging children
         public void OnDrag(PointerEventData eventData)
         {
             if (freeze || dragCooldown > 0) return;
@@ -328,8 +331,16 @@ namespace Swole.UI
                 if (dragObj == null) dragObj = eventData.lastPress;
                 if (dragObj != null && dragObj != gameObject) return;
             }
+             
+            if (eventData.rawPointerPress != gameObject && Time.frameCount - lastDragFrame > 3)
+            {
+                // quick fix for teleporting ui when dragging children
+                prevCursorPosition = canvas.ScreenToCanvasSpace(CursorProxy.ScreenPosition);
+            }
+            lastDragFrame = Time.frameCount; 
 
-            var cursorPos = canvas.ScreenToCanvasSpace(eventData.position);
+            //var cursorPos = canvas.ScreenToCanvasSpace(eventData.position); // not in screen space?
+            var cursorPos = canvas.ScreenToCanvasSpace(CursorProxy.ScreenPosition);  
             Move(rectTransform, root, canvasRect, cursorPos - prevCursorPosition);
             prevCursorPosition = cursorPos;
 

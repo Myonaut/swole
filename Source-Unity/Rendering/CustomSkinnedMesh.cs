@@ -10,6 +10,7 @@ using Unity.Collections;
 using Unity.Collections.LowLevel.Unsafe;
 using Unity.Mathematics;
 using Swole.API.Unity;
+using Swole.API.Unity.Animation;
 
 namespace Swole
 {
@@ -17,7 +18,8 @@ namespace Swole
     public class CustomSkinnedMesh : SingletonBehaviour<CustomSkinnedMesh>
     {
 
-        public override int Priority => 90;
+        public static int ExecutionPriority => CustomAnimatorUpdater.FinalAnimationBehaviourPriority + 1; // update after animation
+        public override int Priority => ExecutionPriority;
         public override void OnFixedUpdate() { }
 
         public const int maxBlendShapeCount = 64;
@@ -61,11 +63,11 @@ namespace Swole
                 blendShapeWeights = new NativeArray<float4>(Mathf.CeilToInt(m_blendShapeCount / 4f), Allocator.Persistent);
                 blendShapeWeightsBuffer = new ComputeBuffer(blendShapeWeights.Length, UnsafeUtility.SizeOf(typeof(float4)), ComputeBufferType.Constant, ComputeBufferMode.SubUpdates);
 
-                sampler.TrackAll();
+                sampler.RegisterAsUser();
 
                 this.data = data;
                 this.sampler = sampler;
-                this.rigId = rigId;
+                this.rigId = rigId; 
                 this.meshRenderer = meshRenderer;
                 this.materials = materials;
 
@@ -215,7 +217,11 @@ namespace Swole
 
                 data = null;
 
-                if (sampler != null) sampler.UntrackAll();
+                if (sampler != null) 
+                { 
+                    sampler.UnregisterAsUser();
+                    sampler.TryDispose();
+                }
                 sampler = null;
 
             }
@@ -307,7 +313,7 @@ namespace Swole
             }
 
             mesh = new RenderedMesh(data, sampler, rigId, renderer, materials);
-
+            
             Instance.renderedMeshes.Add(mesh);
 
             return true;
@@ -319,7 +325,7 @@ namespace Swole
 
             renderedMeshes.RemoveAll(i => i.disposed);
 
-            for (int a = 0; a < renderedMeshes.Count; a++)
+            /*for (int a = 0; a < renderedMeshes.Count; a++)
             {
 
                 var mesh = renderedMeshes[a];
@@ -335,12 +341,32 @@ namespace Swole
 
                 if (mesh.sampler != null) mesh.sampler.Refresh();
 
-            }
+            }*/
 
         }
 
         public override void OnLateUpdate()
         {
+
+            // moved from OnUpdate
+            for (int a = 0; a < renderedMeshes.Count; a++)
+            {
+
+                var mesh = renderedMeshes[a];
+
+                if (mesh.disposed || mesh.meshRenderer == null)
+                {
+
+                    mesh.Dispose();
+
+                    continue;
+
+                }
+
+                //if (mesh.sampler != null) mesh.sampler.Refresh(true);
+
+            }
+            //
 
             for (int a = 0; a < renderedMeshes.Count; a++)
             {
@@ -356,7 +382,7 @@ namespace Swole
 
                 }
 
-                if (mesh.sampler != null) mesh.sampler.UpdateBuffer();
+                //if (mesh.sampler != null) mesh.sampler.UpdatePoseInBuffer();
 
                 if (mesh.IsDirty()) mesh.UpdateBlendShapeWeights();
 

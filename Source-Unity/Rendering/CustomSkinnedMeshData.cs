@@ -13,7 +13,7 @@ using UnityEngine;
 using Unity.Collections.LowLevel.Unsafe;
 using Unity.Mathematics;
 
-using static Swole.DataStructures;
+using Swole.DataStructures;
 
 namespace Swole
 {

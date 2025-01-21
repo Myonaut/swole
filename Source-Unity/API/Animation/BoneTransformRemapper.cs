@@ -68,7 +68,7 @@ namespace Swole.API.Unity
             if (targetRenderers == null || targetRenderers.Length <= 0)
             {
                 if (!applyToAllIfTargetRenderersIsEmpty) return;
-                var renderers = GetComponentsInChildren<SkinnedMeshRenderer>(); 
+                var renderers = GetComponentsInChildren<SkinnedMeshRenderer>(true); 
                 foreach (var renderer in renderers) Remap(renderer);
             }
             else
@@ -101,14 +101,20 @@ namespace Swole.API.Unity
                 string boneName = remapping.targetBoneName;
                 if (remapping.targetBone != null) boneName = remapping.targetBone.name;
 
+                string newBoneName = boneName;
                 Transform newBone = remapping.newBone;
                 if (newBone == null)
                 {
                     if (localRoot == null) continue;
-                    string newBoneName = (remapPrefix == null ? string.Empty : remapPrefix) + boneName; 
+                    newBoneName = (remapPrefix == null ? string.Empty : remapPrefix) + boneName; 
                     newBone = localRoot.FindDeepChild(newBoneName);
                 }
 
+                if (newBone == null) 
+                {
+                    swole.LogWarning($"Failed to find remap bone target {newBoneName} under {(root == null ? "null" : root.name)}");  
+                    continue;
+                }
                 for(int a = 0; a < bones.Length; a++)
                 {
                     var bone = bones[a];

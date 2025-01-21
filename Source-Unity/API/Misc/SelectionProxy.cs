@@ -14,6 +14,7 @@ namespace Swole.API.Unity
     public class SelectionProxy : MonoBehaviour
     {
         public bool includeSelf;
+        public bool onlyActive;
         public List<GameObject> toSelect;
     }
 

@@ -62,6 +62,60 @@ namespace Swole.UI
             public string name;
             public RectTransform rectTransform;
             public GameObject gameObject;
+            public RectTransform buttonRT;
+
+            public Category category;
+            public int Index
+            {
+                get
+                {
+                    if (category == null || category.members == null) return -1;
+                    return category.members.IndexOf(this);
+                }
+                set
+                {
+                    if (category == null || category.members == null) return;
+
+                    int currentIndex = category.members.IndexOf(this);
+                    if (currentIndex >= 0) 
+                    { 
+                        category.members.RemoveAt(currentIndex); 
+                    }
+
+                    int index = value;
+                    if (index >= category.members.Count || category.members.Count <= 0) 
+                    {
+                        index = category.members.Count;
+                        category.members.Add(this); 
+                    } 
+                    else
+                    {
+                        index = Mathf.Max(0, value);
+                        category.members.Insert(index, this); 
+                    }
+
+                    if (rectTransform != null && category.rectTransform != null) rectTransform.SetSiblingIndex(category.rectTransform.GetSiblingIndex() + 1 + index); // + 1 to position after category
+                }
+            }
+
+            public void SetName(string name)
+            {
+                this.name = name;
+
+                if (gameObject != null)
+                {
+                    var text = gameObject.GetComponentInChildren<Text>(true);
+                    var textTMP = gameObject.GetComponentInChildren<TMP_Text>(true);
+                    if (text != null)
+                    {
+                        text.text = name;
+                    }
+                    if (textTMP != null)
+                    {
+                        textTMP.SetText(name);
+                    }
+                }
+            }
         }
 
         public class Category
@@ -71,6 +125,7 @@ namespace Swole.UI
             public RectTransform rectTransform;
             public GameObject gameObject;
             public bool expanded;
+            public bool IsExpanded => expanded;
             public List<Member> members = new List<Member>();
 
             public int MemberCount => members == null ? 0 : members.Count;
@@ -134,12 +189,16 @@ namespace Swole.UI
 
         }
 
-        public void Clear(bool includeCategories=true)
+        private Dictionary<string, bool> preservedCategoryStates;
+        public void Clear(bool includeCategories = true, bool preserveCategoryStates = false)
         {
             if (categories == null) categories = new List<Category>();
+            if (preserveCategoryStates) preservedCategoryStates = new Dictionary<string, bool>(); else preservedCategoryStates = null;
             foreach (var cat in categories)
             {
                 if (cat == null || cat.members == null) continue;
+
+                if (preservedCategoryStates != null) preservedCategoryStates[cat.name] = cat.expanded; 
 
                 foreach (var mem in cat.members)
                 {
@@ -223,8 +282,14 @@ namespace Swole.UI
                     tabButton.OnClick.AddListener(category.Toggle);
                 }
 
-            }
+                if (preservedCategoryStates != null && preservedCategoryStates.TryGetValue(categoryName, out var state))
+                {
+                    if (state) category.Expand(); else category.Retract();
+                    preservedCategoryStates.Remove(categoryName);
+                }
 
+            }
+            
             return category;
         }
         public Category AddOrGetCategory(string categoryName, Sprite categoryIcon = null)
@@ -239,6 +304,32 @@ namespace Swole.UI
             categoryName = categoryName.AsID();
             foreach (var category in categories) if (category.name.AsID() == categoryName) return category;
             return null;
+        }
+
+        public void SortCategoryListBySiblingIndex()
+        {
+            if (categories == null) return;
+            categories.Sort((Category x, Category y) => (int)Mathf.Sign(x.rectTransform.GetSiblingIndex() - y.rectTransform.GetSiblingIndex()));
+        }
+        public void MoveCategory(Category category, int index)
+        {
+            if (category == null || category.rectTransform == null || categories == null || !categories.Contains(category)) return;
+
+            SortCategoryListBySiblingIndex();
+
+            index = Mathf.Clamp(index, 0, categories.Count - 1);
+            var toNudge = categories[index];
+
+            int siblingIndex = toNudge.rectTransform.GetSiblingIndex(); 
+            category.rectTransform.SetSiblingIndex(siblingIndex);
+            if (category.members != null)
+            {
+                for (int a = category.members.Count - 1; a >= 0; a--) 
+                { 
+                    var mem = categories[a];
+                    if (mem.rectTransform != null) mem.rectTransform.SetSiblingIndex(siblingIndex + 1); 
+                }
+            }
         }
 
         protected GameObject GetNewListMemberInstance(string memberName)
@@ -279,32 +370,34 @@ namespace Swole.UI
 
         protected Member AddNewListMember(GameObject inst, Category category, UnityAction onClick = null)
         {
-            if (onClick != null)
+            RectTransform buttonRT = null;
+
+            var button = inst.GetComponent<Button>();
+            var tabButton = inst.GetComponent<UITabButton>();
+
+            if (button == null && tabButton == null)
             {
-                var button = inst.GetComponent<Button>();
-                var tabButton = inst.GetComponent<UITabButton>();
-
-                if (button == null && tabButton == null)
-                {
-                    button = inst.GetComponentInChildren<Button>(false);
-                    if (button == null) tabButton = inst.GetComponentInChildren<UITabButton>(false);
-                }
-
-                if (button != null)
-                {
-                    if (button.onClick == null) button.onClick = new Button.ButtonClickedEvent();
-                    button.onClick.RemoveAllListeners();
-                    button.onClick.AddListener(onClick);
-                }
-                if (tabButton != null)
-                {
-                    if (tabButton.OnClick == null) tabButton.OnClick = new UnityEvent();
-                    tabButton.OnClick.RemoveAllListeners();
-                    tabButton.OnClick.AddListener(onClick);
-                }
+                button = inst.GetComponentInChildren<Button>(false);
+                if (button == null) tabButton = inst.GetComponentInChildren<UITabButton>(false);
             }
 
-            Member member = new Member() { gameObject = inst, name = inst.name, rectTransform = inst.GetComponent<RectTransform>() };
+            if (button != null)
+            {
+                if (button.onClick == null) button.onClick = new Button.ButtonClickedEvent();
+                button.onClick.RemoveAllListeners();
+                if (onClick != null) button.onClick.AddListener(onClick);
+                buttonRT = button.GetComponent<RectTransform>();
+            }
+            if (tabButton != null)
+            {
+                if (tabButton.OnClick == null) tabButton.OnClick = new UnityEvent(); 
+                tabButton.OnClick.RemoveAllListeners();
+                if (onClick != null) tabButton.OnClick.AddListener(onClick);
+                buttonRT = tabButton.GetComponent<RectTransform>();
+            }
+
+
+            Member member = new Member() { category = category, gameObject = inst, name = inst.name, rectTransform = inst.GetComponent<RectTransform>(), buttonRT = buttonRT };
 
             category.members.Add(member);
 
@@ -470,6 +563,92 @@ namespace Swole.UI
             }
 
             return false;
+        }
+
+        public void ClearFilters()
+        {
+            foreach (var cat in categories)
+            {
+                if (cat.gameObject != null) cat.gameObject.SetActive(true);
+                if (cat.expanded) cat.Expand(); else cat.Retract(); 
+            }
+        }
+
+        private readonly HashSet<Member> visibleMembersFilter = new HashSet<Member>();
+        private readonly HashSet<Category> visibleCategoriesFilter = new HashSet<Category>();
+        private readonly HashSet<Category> fullyVisibleCategoriesFilter = new HashSet<Category>();
+        public void FilterMembersAndCategoriesByStartString(string str, bool caseSensitive = false)
+        {
+            if (string.IsNullOrWhiteSpace(str))
+            {
+                ClearFilters(); 
+            }
+            else
+            {
+                visibleMembersFilter.Clear();
+                visibleCategoriesFilter.Clear();
+                fullyVisibleCategoriesFilter.Clear();
+
+                string originalStr = str;
+                if (!caseSensitive) str = str.ToLower();
+
+                foreach (var cat in categories)
+                {
+                    if (cat.members != null)
+                    {
+                        bool expanded = cat.expanded;
+                        cat.Expand();
+                        bool flag = !expanded;
+                        foreach (var mem in cat.members)
+                        {
+                            if (mem.gameObject != null)
+                            {
+                                string memName = mem.name;
+                                if (!caseSensitive && memName != null) memName = memName.ToLower();
+
+                                if (AssetFiltering.ContainsStartString(memName, str) || AssetFiltering.ContainsCapitalizedWord(mem.name, originalStr))
+                                {
+                                    visibleMembersFilter.Add(mem);
+                                    visibleCategoriesFilter.Add(cat);
+                                    flag = false;
+                                }
+                                else
+                                {
+                                    mem.gameObject.SetActive(false);
+                                }
+                            }
+                        }
+
+                        if (flag) cat.Retract();
+                    }
+                }
+
+                foreach (var cat in categories)
+                {
+                    if (visibleCategoriesFilter.Contains(cat)) continue;
+                    
+                    string catName = cat.name;
+                    if (!caseSensitive && catName != null) catName = catName.ToLower();
+
+                    if (AssetFiltering.ContainsStartString(catName, str) || AssetFiltering.ContainsCapitalizedWord(cat.name, originalStr))
+                    {
+                        fullyVisibleCategoriesFilter.Add(cat); 
+                    }
+                    else
+                    {
+                        cat.gameObject.SetActive(false);
+                    }
+                }
+
+                foreach (var mem in visibleMembersFilter) if (mem.gameObject != null) mem.gameObject.SetActive(true);
+                foreach (var cat in visibleCategoriesFilter) if (cat.gameObject != null) cat.gameObject.SetActive(true);
+                 
+                foreach (var cat in fullyVisibleCategoriesFilter)
+                {
+                    if (cat.gameObject != null) cat.gameObject.SetActive(true);
+                    if (cat.expanded) cat.Expand(); 
+                }
+            }
         }
 
     }

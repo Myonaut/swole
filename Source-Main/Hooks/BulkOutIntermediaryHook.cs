@@ -24,7 +24,7 @@ namespace Swole
 #if FOUND_UNITY
 
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.BeforeSplashScreen)]
-        static void Initialize()
+        new public static void Initialize()
         {
             if (!(typeof(BulkOutIntermediaryHook).IsAssignableFrom(swole.Engine.GetType())))
             {
@@ -128,7 +128,7 @@ namespace Swole
             if (tileSet == null) return default;
             return AsSwoleTile((Tile)tileSet[tileIndex]);
         }
-        public override EngineInternal.TileSet GetTileSet(string tileSetId, string tileCollectionId = null, bool caseSensitive = false) => AsSwoleTileSet(ResourceLib.FindTileSet(tileSetId, tileCollectionId, caseSensitive));
+        public override EngineInternal.TileSet GetTileSet(string tileSetId, string tileCollectionId = null, bool collectionIsPackage = false, bool caseSensitive = false) => AsSwoleTileSet(ResourceLib.FindTileSet(tileSetId, tileCollectionId, collectionIsPackage, caseSensitive)); 
 
         public override EngineInternal.TileInstance CreateNewTileInstance(EngineInternal.TileSet tileSet, int tileIndex, EngineInternal.Vector3 rootWorldPosition, EngineInternal.Quaternion rootWorldRotation, EngineInternal.Vector3 positionInRoot, EngineInternal.Quaternion rotationInRoot, EngineInternal.Vector3 localScale)
         {

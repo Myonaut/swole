@@ -8,6 +8,7 @@ namespace Swole.API.Unity
 {
 
     public delegate void MuscleValueListenerDelegate(MuscleGroupInfo muscleData);
+    public delegate void MuscleValueChangeDelegate(string muscleGroupName, int muscleGroupIndex, MuscleGroupInfo muscleData);
 
     public class MuscleValueListener : IDisposable
     {

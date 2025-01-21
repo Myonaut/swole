@@ -74,6 +74,44 @@ namespace Swole.API.Unity
             }
         }
 
+        public static void SetInputFieldOnEndEditAction(GameObject rootObject, UnityAction<string> action, bool includeInactive = true, bool removeAllListeners = true) => SetInputFieldOnEndEditAction(rootObject.transform, action, includeInactive, removeAllListeners);
+        public static void SetInputFieldOnEndEditAction(Transform rootObject, UnityAction<string> action, bool includeInactive = true, bool removeAllListeners = true)
+        {
+            if (rootObject == null) return;
+
+            InputField input = rootObject.GetComponentInChildren<InputField>(includeInactive);
+            if (input != null)
+            {
+                if (input.onEndEdit == null) input.onEndEdit = new InputField.EndEditEvent(); else if (removeAllListeners) input.onEndEdit.RemoveAllListeners();
+                if (action != null) input.onValueChanged.AddListener(action);
+            }
+            TMP_InputField tmpInput = rootObject.GetComponentInChildren<TMP_InputField>(includeInactive);
+            if (tmpInput != null)
+            {
+                if (tmpInput.onEndEdit == null) tmpInput.onEndEdit = new TMP_InputField.SubmitEvent(); else if (removeAllListeners) tmpInput.onEndEdit.RemoveAllListeners();
+                if (action != null) tmpInput.onEndEdit.AddListener(action); 
+            }
+        }
+
+        public static void SetInputFieldOnEndEditActionByName(GameObject rootObject, string componentName, UnityAction<string> action, bool includeInactive = true, bool removeAllListeners = true) => SetInputFieldOnEndEditActionByName(rootObject == null ? null : rootObject.transform, componentName, action, includeInactive, removeAllListeners);
+        public static void SetInputFieldOnEndEditActionByName(Transform rootObject, string componentName, UnityAction<string> action, bool includeInactive = true, bool removeAllListeners = true)
+        {
+            if (rootObject == null) return;
+
+            InputField input = rootObject.FindFirstComponentUnderChild<InputField>(componentName, includeInactive);
+            if (input != null)
+            {
+                if (input.onEndEdit == null) input.onEndEdit = new InputField.EndEditEvent(); else if (removeAllListeners) input.onEndEdit.RemoveAllListeners();
+                if (action != null) input.onEndEdit.AddListener(action);
+            }
+            TMP_InputField tmpInput = rootObject.FindFirstComponentUnderChild<TMP_InputField>(componentName, includeInactive);
+            if (tmpInput != null)
+            {
+                if (tmpInput.onEndEdit == null) tmpInput.onEndEdit = new TMP_InputField.SubmitEvent(); else if (removeAllListeners) tmpInput.onEndEdit.RemoveAllListeners();
+                if (action != null) tmpInput.onEndEdit.AddListener(action);
+            }
+        }
+
         public static string GetInputFieldText(Transform rootObject, bool includeInactive = true) => AnimationCurveEditorUtils.GetInputFieldText(rootObject, includeInactive);
         public static string GetInputFieldText(GameObject rootObject, bool includeInactive = true) => AnimationCurveEditorUtils.GetInputFieldText(rootObject, includeInactive);
 
@@ -385,6 +423,40 @@ namespace Swole.API.Unity
 
         public static void SetToggleOnValueChangeAction(GameObject rootObject, UnityAction<bool> action, bool includeInactive = true, bool removeAllListeners = true) => AnimationCurveEditorUtils.SetToggleOnValueChangeAction(rootObject, action, includeInactive, removeAllListeners);
         public static void SetToggleOnValueChangeAction(Transform rootObject, UnityAction<bool> action, bool includeInactive = true, bool removeAllListeners = true) => AnimationCurveEditorUtils.SetToggleOnValueChangeAction(rootObject, action, includeInactive, removeAllListeners);
+
+
+        public static void SetToggleValueByName(GameObject rootObject, string toggleName, bool value, bool includeInactive = true, bool withoutNotify = true) => SetToggleValueByName(rootObject == null ? null : rootObject.transform, toggleName, value, includeInactive, withoutNotify);
+        public static void SetToggleValueByName(Transform rootObject, string toggleName, bool value, bool includeInactive = true, bool withoutNotify = true)
+        {
+            if (rootObject == null) return;
+
+            Toggle toggle = rootObject.FindFirstComponentUnderChild<Toggle>(toggleName, includeInactive);
+            if (toggle != null)
+            {
+                if (withoutNotify)
+                {
+                    toggle.SetIsOnWithoutNotify(value); 
+                }
+                else
+                {
+                    toggle.isOn = value;
+                }
+            }
+        }
+
+        public static void SetToggleOnValueChangeActionByName(GameObject rootObject, string toggleName, UnityAction<bool> action, bool includeInactive = true, bool removeAllListeners = true) => SetToggleOnValueChangeActionByName(rootObject == null ? null : rootObject.transform, toggleName, action, includeInactive, removeAllListeners);
+        public static void SetToggleOnValueChangeActionByName(Transform rootObject, string toggleName, UnityAction<bool> action, bool includeInactive = true, bool removeAllListeners = true)
+        {
+            if (rootObject == null) return;
+
+            Toggle toggle = rootObject.FindFirstComponentUnderChild<Toggle>(toggleName, includeInactive);
+            if (toggle != null)
+            {
+                if (toggle.onValueChanged == null) toggle.onValueChanged = new Toggle.ToggleEvent(); else if (removeAllListeners) toggle.onValueChanged.RemoveAllListeners(); 
+                if (action != null) toggle.onValueChanged.AddListener(action);
+            }
+        }
+
 
         public static void SetScrollbarOnValueChangeAction(GameObject rootObject, UnityAction<float> action, bool includeInactive = true, bool removeAllListeners = true) => AnimationCurveEditorUtils.SetScrollbarOnValueChangeAction(rootObject, action, includeInactive, removeAllListeners);
         public static void SetScrollbarOnValueChangeAction(Transform rootObject, UnityAction<float> action, bool includeInactive = true, bool removeAllListeners = true) => AnimationCurveEditorUtils.SetScrollbarOnValueChangeAction(rootObject, action, includeInactive, removeAllListeners);

@@ -7,7 +7,7 @@ using UnityEngine;
 
 using Unity.Collections;
 
-using static Swole.DataStructures;
+using Swole.DataStructures;
 
 namespace Swole
 {
@@ -146,17 +146,6 @@ namespace Swole
 
         }
 
-        public static List<BlendShape> GetBlendShapes(this Mesh mesh, List<BlendShape> list = null)
-        {
-
-            if (list == null) list = new List<BlendShape>();
-
-            for (int a = 0; a < mesh.blendShapeCount; a++) list.Add(new BlendShape(mesh, mesh.GetBlendShapeName(a)));
-
-            return list;
-
-        }
-
         public static BlendShape[] GetRecalculatedBlendShapeNormals(Mesh mesh, ICollection<BlendShape> blendShapes, Vector3[] vertices = null, Vector3[] normals = null, bool recalculateMeshNormalsForShapeBaseNormals = false, bool mergeNormals = true, VertexClone[] clones = null, bool cloneShape = true)
         {
 
@@ -247,7 +236,7 @@ namespace Swole
 
             }
 
-            if (cloneShape) blendShape = blendShape.Clone();
+            if (cloneShape) blendShape = blendShape.Duplicate();
 
             for (int b = 0; b < blendShape.frames.Length; b++)
             {

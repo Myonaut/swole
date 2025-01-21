@@ -23,5 +23,25 @@ namespace Swole
         {
             currentAuthor = author;
         }
+
+        private static IContent targetContent;
+        public static IContent TargetContent
+        {
+            get => targetContent;
+            set => targetContent = value; 
+        }
+
+        private static string swapBackScene;
+        public static string SwapBackScene
+        {
+            get => swapBackScene;
+            set => swapBackScene = value;
+        }
+        public static string ConsumeSwapBackScene()
+        {
+            string scene = SwapBackScene;
+            swapBackScene = null;
+            return scene;
+        }
     }
 }

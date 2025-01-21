@@ -105,11 +105,13 @@ namespace Swole.API.Unity
 
             float remainingTime = Time.deltaTime - (nCalls * fixedDeltaTime);
 
-            Time.fixedDeltaTime = remainingTime;
+            if (remainingTime > 0)
+            {
+                Time.fixedDeltaTime = remainingTime;
 
-            Physics.Simulate(remainingTime);
-            UpdateBehaviours();
-
+                Physics.Simulate(remainingTime);
+                UpdateBehaviours();
+            }
         }
         public static void Simulate()
         {

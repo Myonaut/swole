@@ -6,6 +6,8 @@ namespace Swole.API.Unity.UndoSystem
 {
     public struct WorldPositionChange : IRevertableAction
     {
+        public bool ReapplyWhenRevertedTo => true;
+
         public Transform transform;
         public Vector3 oldPosition, newPosition;
 

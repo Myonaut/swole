@@ -352,6 +352,23 @@ namespace Swole
         public static string AsID(this string str) => str.ToLower().Trim();
 
         public static bool IsURL(this string str) => Uri.IsWellFormedUriString(str, UriKind.Absolute);
+        public static bool IsWebURL(this string str) => Uri.TryCreate(str, UriKind.Absolute, out Uri uriResult) && (uriResult.Scheme == Uri.UriSchemeHttp || uriResult.Scheme == Uri.UriSchemeHttps);
+
+        /// <summary>
+        /// source: https://stackoverflow.com/questions/1546419/convert-file-path-to-a-file-uri/74852300#74852300
+        /// </summary>
+        public static string FilePathToFileUrl(string path)
+        {
+            return new UriBuilder("file", string.Empty)
+            {
+                Path = path
+                        .Replace("%", $"%{(int)'%':X2}")
+                        .Replace("[", $"%{(int)'[':X2}")
+                        .Replace("]", $"%{(int)']':X2}"),
+            }
+                .Uri
+                .AbsoluteUri;
+        }
 
         /* Regular Expressions Cheat Sheet https://regexr.com/
         * ^ - Starts with
@@ -405,17 +422,37 @@ namespace Swole
         public static bool IsProjectName(this string str) => rgProjectName.IsMatch(str);
         public static string AsProjectName(this string str) => rgProjectNameFilter.Replace(str, "");
 
+        public static readonly Regex rgContentName = new Regex(@"^[a-zA-Z0-9\s_\-\s]*$");
+        public static readonly Regex rgContentNameFilter = new Regex(@"[^a-zA-Z0-9_\-\s]");
+        public static bool IsContentName(this string str) => rgContentName.IsMatch(str);
+        public static string AsContentName(this string str) => rgContentNameFilter.Replace(str, "");
+
         public static readonly Regex rgTagsString = new Regex(@"^[a-zA-Z0-9\s_\-.,\s]*$");
         public static readonly Regex rgTagsStringFilter = new Regex(@"[^a-zA-Z0-9_\-.,\s]");
         public static bool IsTagsString(this string str) => rgTagsString.IsMatch(str);
         public static string AsTagsString(this string str) => rgTagsStringFilter.Replace(str, "");
 
-        public static readonly Regex rgPackageString = new Regex(@"^[a-zA-Z0-9.]*$");
-        public static readonly Regex rgPackageStringFilter = new Regex(@"[^a-zA-Z0-9.]");
+        public static readonly Regex rgPackageString = new Regex(@"^[a-zA-Z0-9.]*(@([0-9]\.){1,3}[0-9])?$");
+        public static readonly Regex rgPackageStringWithVersion = new Regex(@"^[a-zA-Z0-9.]*(@([0-9]\.){1,3}[0-9])$");
+        public static readonly Regex rgPackageNameString = new Regex(@"^[a-zA-Z0-9.]*$");
+
+        public static readonly Regex rgPackageStringFilter = new Regex(@"[^a-zA-Z0-9.@]");
+        public static readonly Regex rgPackageNameFilter = new Regex(@"[^a-zA-Z0-9.]"); 
+        public static bool IsPackageName(this string str) => rgPackageNameString.IsMatch(str) && !str.StartsWith('.') && !str.EndsWith('.') && (str.Length > 0 ? str.Substring(0, 1).IsAlphabeticNoWhitespace() : false);
         public static bool IsPackageString(this string str) => rgPackageString.IsMatch(str) && !str.StartsWith('.') && !str.EndsWith('.') && (str.Length > 0 ? str.Substring(0, 1).IsAlphabeticNoWhitespace() : false);
+        public static bool IsPackageStringWithVersion(this string str) => rgPackageStringWithVersion.IsMatch(str) && !str.StartsWith('.') && !str.EndsWith('.') && (str.Length > 0 ? str.Substring(0, 1).IsAlphabeticNoWhitespace() : false);
         public static string AsPackageString(this string str) 
         { 
             str = rgPackageStringFilter.Replace(str, "");
+            while (str.StartsWith('.')) str = str.Length > 1 ? str.Substring(1) : string.Empty;
+            while (str.EndsWith('.')) str = str.Length > 1 ? str.Substring(0, str.Length - 1) : string.Empty;
+            if (str.Length > 0 && !str.Substring(0, 1).IsAlphabeticNoWhitespace()) str = "x." + str;
+
+            return str;
+        }
+        public static string AsPackageName(this string str)
+        {
+            str = rgPackageNameFilter.Replace(str, "");
             while (str.StartsWith('.')) str = str.Length > 1 ? str.Substring(1) : string.Empty;
             while (str.EndsWith('.')) str = str.Length > 1 ? str.Substring(0, str.Length - 1) : string.Empty;
             if (str.Length > 0 && !str.Substring(0, 1).IsAlphabeticNoWhitespace()) str = "x." + str;
@@ -546,7 +583,40 @@ namespace Swole
                   new FileStream(destinationFile, FileMode.CreateNew, FileAccess.Write, FileShare.None, bufferSize, fileOptions))
 
                 await sourceStream.CopyToAsync(destinationStream, bufferSize, cancellationToken)
-                                  .ConfigureAwait(false);
+                                  .ConfigureAwait(false); 
+        }
+        public static void CopyAll(string sourceDir, string targetDir, bool overwriteExistingFiles, ICollection<string> extensionFilter = null) => CopyAll(new DirectoryInfo(sourceDir), new DirectoryInfo(targetDir), overwriteExistingFiles, extensionFilter);
+        public static void CopyAll(DirectoryInfo source, DirectoryInfo target, bool overwriteExistingFiles, ICollection<string> extensionFilter = null)
+        {
+            if (source.FullName.ToLower() == target.FullName.ToLower()) return; 
+
+            if (!Directory.Exists(target.FullName)) Directory.CreateDirectory(target.FullName);
+           
+            foreach (FileInfo fi in source.GetFiles())
+            {
+                if (extensionFilter != null)
+                {
+                    var ext = Path.GetExtension(fi.Name);
+                    if (extensionFilter.Contains(ext)) continue;
+                    if (extensionFilter.Contains(ext.AsID())) continue;
+                    ext = ext.Replace(".", string.Empty);
+                    if (extensionFilter.Contains(ext)) continue;
+                    if (extensionFilter.Contains(ext.AsID())) continue;
+                }
+                try
+                {
+                    fi.CopyTo(Path.Combine(target.FullName, fi.Name), overwriteExistingFiles);
+                }
+                catch(IOException) // if the file already exists dont overwrite it and catch the exception
+                {  
+                }
+            }
+
+            foreach (DirectoryInfo diSourceSubDir in source.GetDirectories())
+            {
+                DirectoryInfo nextTargetSubDir = target.CreateSubdirectory(diSourceSubDir.Name);
+                CopyAll(diSourceSubDir, nextTargetSubDir, overwriteExistingFiles, extensionFilter);
+            }
         }
 
         /// <summary>

@@ -19,18 +19,15 @@ namespace Swole.UI
 
         public void RefetchCanvas()
         {
-
             canvas = gameObject.GetComponentInParent<Canvas>();
 
             canvasRectTransform = canvas.gameObject.GetComponent<RectTransform>();
-
         }
 
         public Vector2 cursorAnchorPoint;
 
         protected void Update()
         {
-
             Vector3 size = RectTransform.rect.size;
 
             Vector3 canvasSpacePosition = Canvas.ScreenToCanvasSpace(CursorProxy.ScreenPosition);
@@ -40,14 +37,11 @@ namespace Swole.UI
             RectTransform.position = CanvasRectTransform.TransformPoint(canvasSpacePosition);
 
             rectTransform.ConstrainInsideRectTransform(canvasRectTransform);
-
         }
 
         protected void OnEnable()
         {
-
             Update();
-
         }
 
     }

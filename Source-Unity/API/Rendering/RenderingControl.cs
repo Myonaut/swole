@@ -35,7 +35,7 @@ namespace Swole.API.Unity
             {
                 if (feature.name.AsID() == name)
                 {
-                    feature.SetActive(active);
+                    feature.SetActive(active); 
                 }
             }
         }

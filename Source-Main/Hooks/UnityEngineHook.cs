@@ -24,7 +24,7 @@ namespace Swole
 #if FOUND_UNITY
 
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.BeforeSplashScreen)]
-        static void Initialize()
+        public static void Initialize()
         {
             if (!(typeof(UnityEngineHook).IsAssignableFrom(swole.Engine.GetType())))
             {
@@ -172,6 +172,99 @@ namespace Swole
 
         #region Conversions | Swole -> Unity
 
+        public static bool CanConvertToUnityType(Type type, out Type conversionType)
+        {
+            conversionType = type;
+
+            if (typeof(EngineInternal.Vector2).IsAssignableFrom(type))
+            {
+                conversionType = typeof(Vector2);
+                return true;
+            }
+            else if (typeof(EngineInternal.Vector3).IsAssignableFrom(type))
+            {
+                conversionType = typeof(Vector3);
+                return true;
+            }
+            else if (typeof(EngineInternal.Vector4).IsAssignableFrom(type))
+            {
+                conversionType = typeof(Vector4);
+                return true;
+            }
+            else if (typeof(EngineInternal.Quaternion).IsAssignableFrom(type))
+            {
+                conversionType = typeof(Quaternion);
+                return true;
+            }
+            else if (typeof(EngineInternal.IEngineObject).IsAssignableFrom(type))
+            {
+                conversionType = typeof(UnityEngine.Object);
+                return true;
+            } 
+            else if (type.IsArray && CanConvertToUnityType(type.GetElementType(), out var elementType))
+            {
+                conversionType = elementType.MakeArrayType();
+                return true;
+            }
+
+            return false;
+        }
+        public static object ConvertToUnityType(object obj)
+        {
+            TryConvertToUnityType(obj, out var conversion);
+            return conversion;
+        }
+        public static bool TryConvertToUnityType(object obj, out object conversion)
+        {
+            conversion = obj;
+            if (ReferenceEquals(obj, null)) return false;
+
+            var type = obj.GetType();
+            if (type.IsArray)
+            {
+                var elementType = type.GetElementType();
+                if (CanConvertToUnityType(elementType, out var conversionType))
+                {
+                    var oldArray = (Array)obj;
+                    var newArray = Array.CreateInstance(conversionType, oldArray.Length);
+                    for(int a = 0; a < oldArray.Length; a++)
+                    {
+                        if (TryConvertToUnityType(oldArray.GetValue(a), out var elem)) newArray.SetValue(elem, a);
+                    }
+                }
+            }
+            else
+            {
+                if (typeof(EngineInternal.Vector2).IsAssignableFrom(type))
+                {
+                    conversion = AsUnityVector((EngineInternal.Vector2)obj);  
+                    return true;
+                }
+                else if (typeof(EngineInternal.Vector3).IsAssignableFrom(type))
+                {
+                    conversion = AsUnityVector((EngineInternal.Vector3)obj);
+                    return true;
+                }
+                else if (typeof(EngineInternal.Vector4).IsAssignableFrom(type))
+                {
+                    conversion = AsUnityVector((EngineInternal.Vector4)obj);
+                    return true;
+                }
+                else if (typeof(EngineInternal.Quaternion).IsAssignableFrom(type))
+                {
+                    conversion = AsUnityVector((EngineInternal.Quaternion)obj);
+                    return true;
+                }
+                else if (typeof(EngineInternal.IEngineObject).IsAssignableFrom(type))
+                {
+                    conversion = AsUnityObject((EngineInternal.IEngineObject)obj);
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
         public static Vector2 AsUnityVector(EngineInternal.Vector2 v2) => new Vector2(v2.x, v2.y);
         public static Vector3 AsUnityVector(EngineInternal.Vector3 v3) => new Vector3(v3.x, v3.y, v3.z);
         public static Vector4 AsUnityVector(EngineInternal.Vector4 v4) => new Vector4(v4.x, v4.y, v4.z, v4.w);
@@ -246,6 +339,99 @@ namespace Swole
 
         #region Conversions | Unity -> Swole
 
+        public static bool CanConvertToSwoleType(Type type, out Type conversionType)
+        {
+            conversionType = type;
+
+            if (typeof(Vector2).IsAssignableFrom(type))
+            {
+                conversionType = typeof(EngineInternal.Vector2);
+                return true;
+            }
+            else if (typeof(Vector3).IsAssignableFrom(type))
+            {
+                conversionType = typeof(EngineInternal.Vector3);
+                return true;
+            }
+            else if (typeof(Vector4).IsAssignableFrom(type))
+            {
+                conversionType = typeof(EngineInternal.Vector4);
+                return true;
+            }
+            else if (typeof(Quaternion).IsAssignableFrom(type))
+            {
+                conversionType = typeof(EngineInternal.Quaternion);
+                return true;
+            }
+            else if (typeof(UnityEngine.Object).IsAssignableFrom(type))
+            {
+                conversionType = typeof(EngineInternal.IEngineObject);
+                return true;
+            }
+            else if (type.IsArray && CanConvertToSwoleType(type.GetElementType(), out var elementType))
+            {
+                conversionType = elementType.MakeArrayType();
+                return true;
+            }
+
+            return false;
+        }
+        public static object ConvertToSwoleType(object obj)
+        {
+            TryConvertToSwoleType(obj, out var conversion); 
+            return conversion;
+        }
+        public static bool TryConvertToSwoleType(object obj, out object conversion)
+        {
+            conversion = obj;
+            if (ReferenceEquals(obj, null)) return false;
+
+            var type = obj.GetType();
+            if (type.IsArray)
+            {
+                var elementType = type.GetElementType();
+                if (CanConvertToSwoleType(elementType, out var conversionType))
+                {
+                    var oldArray = (Array)obj;
+                    var newArray = Array.CreateInstance(conversionType, oldArray.Length);
+                    for (int a = 0; a < oldArray.Length; a++)
+                    {
+                        if (TryConvertToSwoleType(oldArray.GetValue(a), out var elem)) newArray.SetValue(elem, a);
+                    }
+                }
+            }
+            else
+            {
+                if (typeof(Vector2).IsAssignableFrom(type))
+                {
+                    conversion = AsSwoleVector((Vector2)obj);
+                    return true;
+                }
+                else if (typeof(Vector3).IsAssignableFrom(type))
+                {
+                    conversion = AsSwoleVector((Vector3)obj);
+                    return true;
+                }
+                else if (typeof(Vector4).IsAssignableFrom(type))
+                {
+                    conversion = AsSwoleVector((Vector4)obj);
+                    return true;
+                }
+                else if (typeof(Quaternion).IsAssignableFrom(type))
+                {
+                    conversion = AsSwoleVector((Quaternion)obj);
+                    return true;
+                }
+                else if (typeof(UnityEngine.Object).IsAssignableFrom(type))
+                {
+                    conversion = AsEngineObject((UnityEngine.Object)obj);
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
         public static EngineInternal.Vector2 AsSwoleVector(Vector2 v2) => new EngineInternal.Vector2(v2.x, v2.y);
         public static EngineInternal.Vector3 AsSwoleVector(Vector3 v3) => new EngineInternal.Vector3(v3.x, v3.y, v3.z);
         public static EngineInternal.Vector4 AsSwoleVector(Vector4 v4) => new EngineInternal.Vector4(v4.x, v4.y, v4.z, v4.w);
@@ -301,8 +487,9 @@ namespace Swole
         {
             if (component == null) return default;
             if (component is EngineInternal.IComponent comp) return comp;
-            if (component is Transform t) AsSwoleTransform(t);
-            if (component is Camera cam) AsSwoleCamera(cam);
+            if (component is RectTransform rt) return AsSwoleRectTransform(rt);
+            if (component is Transform t) return AsSwoleTransform(t);
+            if (component is Camera cam) return AsSwoleCamera(cam);
             if (component is AudioSource source) return AsSwoleAudioSource(source);
             if (component is Rigidbody rigidbody) return AsSwoleRigidbody(rigidbody);
 
@@ -319,9 +506,26 @@ namespace Swole
 
             if (swoleTransform != null && swoleTransform.HasEventHandler) swoleTransform.TransformEventHandler.Dispose();
 
-            swoleTransform = new EngineInternal.Transform(id, transform);
+            swoleTransform = transform is RectTransform rt ? new EngineInternal.RectTransform(id, rt) : new EngineInternal.Transform(id, transform);
             transforms[id] = swoleTransform; 
-            return (EngineInternal.Transform)swoleTransform;
+            return (EngineInternal.Transform)swoleTransform; 
+        }
+        public static EngineInternal.RectTransform AsSwoleRectTransform(RectTransform rectTransform)
+        {
+            var transform = AsSwoleTransform(rectTransform);
+
+            EngineInternal.RectTransform output = null;
+            if (transform is EngineInternal.RectTransform rt)
+            {
+                output = rt;
+            } 
+            else
+            {
+                output = new EngineInternal.RectTransform(transform);
+                transforms[output.ID] = output;
+            }
+
+            return output;
         }
         public static EngineInternal.ITransform AsSwoleTransform(ITileInstance tile)
         {
@@ -709,6 +913,27 @@ namespace Swole
 
             return null;
         }
+        public static RectTransform AsUnityRectTransform(object engineObject)
+        {
+            if (engineObject is RectTransform transform)
+            {
+                return transform;
+            }
+            else if (engineObject is GameObject gameObject)
+            {
+                return gameObject.GetComponent<RectTransform>();
+            }
+            else if (engineObject is Component component)
+            {
+                return component.GetComponent<RectTransform>();
+            }
+            else if (engineObject is EngineInternal.IEngineObject eo)
+            {
+                if (eo.Instance != eo) return AsUnityRectTransform(eo.Instance);
+            }
+
+            return null;
+        }
 
         /// <summary>
         /// Converts an engine object to a unity gameobject, if applicable
@@ -826,11 +1051,39 @@ namespace Swole
             return default;
         }
 
+        public override void Object_SetName(object engineObject, string name) => Object_SetNameInternal(engineObject, name, false);
+        public override void Object_SetNameAdmin(object engineObject, string name) => Object_SetNameInternal(engineObject, name, true);
+        protected virtual void Object_SetNameInternal(object engineObject, string name, bool admin)
+        {
+            UnityEngine.Object unityObject = null;
+            if (engineObject is EngineInternal.IEngineObject eo)
+            {
+                if (eo.Instance is UnityEngine.Object) unityObject = (UnityEngine.Object)eo.Instance;
+            } 
+            else if (engineObject is UnityEngine.Object)
+            {
+                unityObject = (UnityEngine.Object)engineObject; 
+            }
+
+            if (unityObject != null) unityObject.name = name;
+        }
+
         public override void Object_Destroy(object engineObject, float timeDelay = 0) => Object_DestroyInternal(engineObject, timeDelay, false);
         public override void Object_AdminDestroy(object engineObject, float timeDelay = 0) => Object_DestroyInternal(engineObject, timeDelay, true);
-        protected void Object_DestroyInternal(object engineObject, float timeDelay, bool admin)
+        protected virtual void Object_DestroyInternal(object engineObject, float timeDelay, bool admin)
         {
-
+            if (engineObject is ISwoleAsset asset) 
+            {
+                if (admin)
+                {
+                    if (asset.IsInternalAsset) swole.LogWarning($"Tried to destroy internal asset '{asset.Name}'!"); else asset.Dispose();
+                }
+                else 
+                { 
+                    swole.LogWarning($"Tried to destroy swole asset '{asset.Name}' without permission!");  
+                }
+                return;
+            }
             if (engineObject is ITileInstance tileInst)
             {
                 try
@@ -1002,6 +1255,30 @@ namespace Swole
             return AsUnityTransform(transform).IsChildOf(pT); 
         }
         public override EngineInternal.ITransform Transform_GetChild(EngineInternal.ITransform transform, int index) => IsNull(transform) ? default : AsSwoleTransform(AsUnityTransform(transform).GetChild(index));
+         
+        #region Rect Transforms
+
+        public override EngineInternal.Vector2 RectTransform_anchorMinGet(EngineInternal.IRectTransform transform) => IsNull(transform) ? default : AsSwoleVector(AsUnityRectTransform(transform).anchorMin);
+        public override void RectTransform_anchorMinSet(EngineInternal.IRectTransform transform, EngineInternal.Vector2 val) { if (IsNotNull(transform)) AsUnityRectTransform(transform).anchorMin = AsUnityVector(val); }
+        public override EngineInternal.Vector2 RectTransform_anchorMaxGet(EngineInternal.IRectTransform transform) => IsNull(transform) ? default : AsSwoleVector(AsUnityRectTransform(transform).anchorMax);
+        public override void RectTransform_anchorMaxSet(EngineInternal.IRectTransform transform, EngineInternal.Vector2 val) { if (IsNotNull(transform)) AsUnityRectTransform(transform).anchorMax = AsUnityVector(val); }
+
+        public override EngineInternal.Vector2 RectTransform_sizeDeltaGet(EngineInternal.IRectTransform transform) => IsNull(transform) ? default : AsSwoleVector(AsUnityRectTransform(transform).sizeDelta);
+        public override void RectTransform_sizeDeltaSet(EngineInternal.IRectTransform transform, EngineInternal.Vector2 val) { if (IsNotNull(transform)) AsUnityRectTransform(transform).sizeDelta = AsUnityVector(val); }
+        public override EngineInternal.Vector2 RectTransform_offsetMinGet(EngineInternal.IRectTransform transform) => IsNull(transform) ? default : AsSwoleVector(AsUnityRectTransform(transform).offsetMin);
+        public override void RectTransform_offsetMinSet(EngineInternal.IRectTransform transform, EngineInternal.Vector2 val) { if (IsNotNull(transform)) AsUnityRectTransform(transform).offsetMin = AsUnityVector(val); }
+        public override EngineInternal.Vector2 RectTransform_offsetMaxGet(EngineInternal.IRectTransform transform) => IsNull(transform) ? default : AsSwoleVector(AsUnityRectTransform(transform).offsetMax);
+        public override void RectTransform_offsetMaxSet(EngineInternal.IRectTransform transform, EngineInternal.Vector2 val) { if (IsNotNull(transform)) AsUnityRectTransform(transform).offsetMax = AsUnityVector(val); }
+
+        public override EngineInternal.Vector2 RectTransform_pivotGet(EngineInternal.IRectTransform transform) => IsNull(transform) ? default : AsSwoleVector(AsUnityRectTransform(transform).pivot);
+        public override void RectTransform_pivotSet(EngineInternal.IRectTransform transform, EngineInternal.Vector2 val) { if (IsNotNull(transform)) AsUnityRectTransform(transform).pivot = AsUnityVector(val); }
+         
+        public override EngineInternal.Vector2 RectTransform_anchoredPositionGet(EngineInternal.IRectTransform transform) => IsNull(transform) ? default : AsSwoleVector(AsUnityRectTransform(transform).anchoredPosition);
+        public override void RectTransform_anchoredPositionSet(EngineInternal.IRectTransform transform, EngineInternal.Vector2 val) { if (IsNotNull(transform)) AsUnityRectTransform(transform).anchoredPosition = AsUnityVector(val); }
+        public override EngineInternal.Vector3 RectTransform_anchoredPosition3DGet(EngineInternal.IRectTransform transform) => IsNull(transform) ? default : AsSwoleVector(AsUnityRectTransform(transform).anchoredPosition3D);
+        public override void RectTransform_anchoredPosition3DSet(EngineInternal.IRectTransform transform, EngineInternal.Vector3 val) { if (IsNotNull(transform)) AsUnityRectTransform(transform).anchoredPosition3D = AsUnityVector(val); }
+
+        #endregion
 
         #endregion
 

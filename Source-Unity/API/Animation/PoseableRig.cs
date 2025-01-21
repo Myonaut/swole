@@ -6,6 +6,8 @@ using System.Collections.Generic;
 
 using UnityEngine;
 
+using Unity.Mathematics;
+
 #if UNITY_EDITOR
 using UnityEditor;
 #endif
@@ -37,13 +39,57 @@ namespace Swole.API.Unity.Animation
             return asset;
         }
 
+        protected void OnValidate()
+        {
+            if (boneGroups == null || boneGroups.Length == 0) boneGroups = new BoneGroup[] { BoneGroup.Default };
+        }
+
+        [Serializable]
+        public struct BoneGroup
+        {
+            public string name;
+            public Color color;
+            public string keyword;
+            public bool HasKeyword => string.IsNullOrWhiteSpace(keyword);
+            public bool BoneHasKeyword(string boneName)
+            {
+                if (string.IsNullOrWhiteSpace(boneName) || !HasKeyword) return false;
+
+                if (boneName.IndexOf(keyword) >= 0) return true;
+                if (boneName.AsID().IndexOf(keyword.AsID()) >= 0) return true;
+
+                return false;
+            }
+            public bool togglable;
+
+            public static readonly BoneGroup Default = new BoneGroup() { name = "bones", color = new Color(0, 1, 0, 1), togglable = true };
+        }
+
+        public BoneGroup[] boneGroups;
+        public int BoneGroupCount => boneGroups == null ? 1 : (boneGroups.Length < 1 ? 1 : boneGroups.Length);
+        public BoneGroup GetBoneGroup(int index)
+        {
+            if (boneGroups == null || boneGroups.Length <= 0)
+            {
+                boneGroups = new BoneGroup[] { BoneGroup.Default };
+            }
+
+            if (index < 0 || index >= boneGroups.Length) return boneGroups[0];
+            return boneGroups[index];
+        }
+
         [Serializable]
         public struct BoneInfo
         {
             public BoneID id;
+            public int boneGroup;
+            public bool defaultChildrenToSameGroup;
             public bool dontDrawConnection;
+            public bool dontDrawChildConnections;
             public float scale;
             public float childScale;
+
+            public float3 offset; 
 
             [NonSerialized]
             public bool isDefault;
@@ -83,6 +129,12 @@ namespace Swole.API.Unity.Animation
         public BoneInfo[] additiveRig;
         public BoneID[] subtractiveRig;
 
+        [Tooltip("Bones in this array aren't recognized by an avatar automatically. Useful for grouping ik bones.")]
+        public BoneInfo[] auxiliaryRig; 
+
+        /// <summary>
+        /// Are the rig's bones defined explicity?
+        /// </summary>
         public bool IsExplicit => fullRig != null && fullRig.Length > 0;
 
         public bool ShouldExcludeBone(string boneName)
@@ -96,36 +148,72 @@ namespace Swole.API.Unity.Animation
         }
         public bool TryGetBoneInfo(string boneName, out BoneInfo info)
         {
+            bool Internal(out BoneInfo info)
+            {
+                info = BoneInfo.GetDefault(boneName);
+                if (string.IsNullOrWhiteSpace(boneName)) return false;
+
+                bool excluded = ShouldExcludeBone(boneName);
+
+                if (TryGetAuxBoneInfo(boneName, out info)) return !excluded;
+
+                string boneNameId = boneName.AsID();
+                if (additiveRig != null)
+                {
+                    foreach (var addBone in additiveRig)
+                    {
+                        if (!addBone.IsBone(boneName, boneNameId)) continue;
+
+                        info = addBone;
+                        return !excluded;
+                    }
+                }
+
+                if (IsExplicit)
+                {
+                    foreach (var bone in fullRig)
+                    {
+                        if (!bone.IsBone(boneName, boneNameId)) continue;
+
+                        info = bone;
+                        return !excluded;
+                    }
+                    return false;
+                }
+
+                return !excluded;
+            }
+
+            bool excluded = Internal(out info);
+            if (boneGroups != null) // Check for any bone group keyword and override index in info if found
+            {
+                for (int a = 0; a < boneGroups.Length; a++)
+                {
+                    var group = boneGroups[a]; 
+                    if (group.BoneHasKeyword(boneName))
+                    {
+                        //info.boneGroup = a;
+                        break;
+                    }
+                }
+            }
+            return excluded;
+        }
+
+        protected bool TryGetAuxBoneInfo(string boneName, out BoneInfo info)
+        {
             info = BoneInfo.GetDefault(boneName);
-            if (string.IsNullOrWhiteSpace(boneName)) return false;
-
-            bool exluded = ShouldExcludeBone(boneName);
-             
-            string boneNameId = boneName.AsID();
-            if (additiveRig != null)
-            {
-                foreach(var addBone in additiveRig)
-                {
-                    if (!addBone.IsBone(boneName, boneNameId)) continue;
-
-                    info = addBone;
-                    return !exluded;
-                }
+            if (auxiliaryRig != null) 
+            { 
+                string boneNameId = boneName.AsID();
+                foreach (var info_ in auxiliaryRig) if (info_.IsBone(boneName, boneNameId)) 
+                    { 
+                        info = info_;
+                        return true;
+                    }
             }
 
-            if (IsExplicit)
-            {
-                foreach (var bone in fullRig)
-                {
-                    if (!bone.IsBone(boneName, boneNameId)) continue;
-
-                    info = bone;
-                    return !exluded;
-                }
-                return false;
-            }
-
-            return !exluded;
+            return false;
         }
 
     }

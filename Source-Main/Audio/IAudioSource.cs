@@ -22,7 +22,7 @@ namespace Swole
         public bool mute { get; set; }
 
         [SwoleScriptIgnore]
-        public IAudioMixer outputAudioMixerGroup { get; set; }
+        public IAudioMixerGroup outputAudioMixerGroup { get; set; }
 
         public float panStereo { get; set; }
         public float pitch { get; set; }

@@ -26,8 +26,31 @@ namespace Swole.API.Unity.Animation
     public class CustomAnimation : SwoleObject<CustomAnimation, CustomAnimation.Serialized>, IAnimationAsset
     {
 
+        public System.Type AssetType => GetType();
+        public object Asset => this;
+
+        private bool disposed;
+        public bool isNotInternalAsset;
+        public bool IsInternalAsset 
+        {
+            get => !isNotInternalAsset;
+            set => isNotInternalAsset = !value;
+        }
+
+        public bool IsValid => !disposed;
+        public void Dispose()
+        {
+            if (!IsInternalAsset && !disposed)
+            {
+                FlushJobData();
+            }
+            disposed = true;
+        }
+        public void Delete() => Dispose();
+
         public const int DefaultFrameRate = 30;
-        public const int DefaultJobCurveSampleRate = 4;
+        //public const int DefaultJobCurveSampleRate = 4;
+        public const int DefaultJobCurveSampleRate = 16;
 
         public string ID
         {
@@ -115,7 +138,7 @@ namespace Swole.API.Unity.Animation
         public float GetClosestKeyframeTime(float referenceTime, bool includeReferenceTime = true, IntFromDecimalDelegate getFrameIndex = null)
         {
             float closestTime = 0;
-            float minDiff = -1;
+            float minDiff = float.MaxValue;
              
             if (transformAnimationCurves != null)
             {
@@ -123,7 +146,7 @@ namespace Swole.API.Unity.Animation
                 {
                     float closest = curve.GetClosestKeyframeTime(referenceTime, framesPerSecond, includeReferenceTime, getFrameIndex); 
                     float diff = referenceTime - closest;
-                    if (diff > minDiff && minDiff >= 0) return; 
+                    if (diff > minDiff) return; 
                     closestTime = closest;
                     minDiff = diff;
                 }
@@ -200,7 +223,8 @@ namespace Swole.API.Unity.Animation
         {
 
             public ContentInfo contentInfo;
-             
+            public string SerializedName => contentInfo.name;
+
             public int framesPerSecond;
 
             public SerializedAnimationCurve timeCurve;
@@ -271,12 +295,13 @@ namespace Swole.API.Unity.Animation
 
         public CustomAnimation(CustomAnimation.Serialized serializable, PackageInfo packageInfo = default) : base(serializable)
         {
+            isNotInternalAsset = true;
 
             this.packageInfo = packageInfo;
 
             this.contentInfo = serializable.contentInfo;
             this.framesPerSecond = serializable.framesPerSecond;
-            this.timeCurve = serializable.timeCurve;
+            this.timeCurve = serializable.timeCurve.AsEditableAnimationCurve();  
             this.jobCurveSampleRate = serializable.jobCurveSampleRate;
 
             if (serializable.transformLinearCurves != null)
@@ -317,8 +342,11 @@ namespace Swole.API.Unity.Animation
         public object Clone() => Duplicate();
         public CustomAnimation Duplicate()
         {
-            var clone = new CustomAnimation(contentInfo, framesPerSecond, jobCurveSampleRate, timeCurve == null ? null : timeCurve.AsSerializableStruct(), null, null, null, null, 
+
+            var clone = new CustomAnimation(contentInfo, framesPerSecond, jobCurveSampleRate, timeCurve == null ? null : timeCurve.Duplicate(), null, null, null, null, 
                 transformAnimationCurves == null ? null : (CurveInfoPair[])transformAnimationCurves.Clone(), propertyAnimationCurves == null ? null : (CurveInfoPair[])propertyAnimationCurves.Clone(), null, packageInfo);
+
+            clone.isNotInternalAsset = true;
 
             if (transformLinearCurves != null)
             {
@@ -382,6 +410,26 @@ namespace Swole.API.Unity.Animation
         public class Event : SwoleObject<Event, Event.Serialized>, ICloneable
         {
 
+            [NonSerialized]
+            private int? cachedId;
+            public int CachedId
+            {
+                get
+                {
+                    if (cachedId.HasValue) return cachedId.Value;
+
+                    cachedId = RuntimeHelpers.GetHashCode(this);
+                    return cachedId.Value;
+                }
+                set
+                {
+                    cachedId = value;
+                }
+            }
+
+            [NonSerialized]
+            private Event original;
+
             #region Serialization
 
             public override Event.Serialized AsSerializableStruct() => this;
@@ -392,6 +440,7 @@ namespace Swole.API.Unity.Animation
             {
 
                 public string name;
+                public string SerializedName => name;
                 public float timelinePosition;
                 public int priority;
                 public string source;
@@ -438,12 +487,30 @@ namespace Swole.API.Unity.Animation
                 this.source = source; 
             }
 
+            public Serialized State
+            {
+                get => this;
+                set
+                {
+                    this.name = value.name;
+                    this.timelinePosition = value.timelinePosition;
+                    this.priority = value.priority;
+                    this.source = value.source;
+                }
+            }
+            public void SetStateForThisAndOriginals(Serialized state)
+            {
+                State = state;
+                if (original != null) original.SetStateForThisAndOriginals(state);
+            }
+
             private string name;
             public string Name 
             {
                 get => name;
                 set => name = value;
             }
+            public override string SerializedName => Name; 
 
             private float timelinePosition;
             public float TimelinePosition
@@ -481,10 +548,17 @@ namespace Swole.API.Unity.Animation
             [NonSerialized]
             private PackageIdentifier[] cachedDependencies;
 
-            public object Clone() => Duplicate();
-            public Event Duplicate()
+            public object Clone() => Duplicate(true);
+            public Event Duplicate() => Duplicate(true);
+            public Event Duplicate(bool isCopy)
             {
                 var clone = new Event();
+
+                if (isCopy)
+                {
+                    clone.cachedId = CachedId;
+                    clone.original = this;
+                }
 
                 clone.name = name;
                 clone.timelinePosition = timelinePosition;
@@ -584,6 +658,7 @@ namespace Swole.API.Unity.Animation
         public PackageInfo PackageInfo => packageInfo;
         public ContentInfo ContentInfo => contentInfo;
         public string Name => contentInfo.name;
+        public override string SerializedName => Name; 
         public string Author => contentInfo.author;
         public string CreationDate => contentInfo.creationDate;
         public string LastEditDate => contentInfo.lastEditDate;
@@ -594,11 +669,11 @@ namespace Swole.API.Unity.Animation
 
         public CustomAnimation() : base(default) { }
 
-        public CustomAnimation(string name, string author, DateTime creationDate, DateTime lastEditDate, string description, int framesPerSecond, int jobCurveSampleRate, AnimationCurve timeCurve, TransformLinearCurve[] transformLinearCurves, TransformCurve[] transformCurves, PropertyLinearCurve[] propertyLinearCurves, PropertyCurve[] propertyCurves, CurveInfoPair[] transformAnimationCurves, CurveInfoPair[] propertyAnimationCurves, CustomAnimation.Event[] events, PackageInfo packageInfo = default) : this(new ContentInfo() { name = name, author = author, creationDate = creationDate.ToString(IContent.dateFormat), lastEditDate = lastEditDate.ToString(IContent.dateFormat), description = description }, framesPerSecond, jobCurveSampleRate, timeCurve, transformLinearCurves, transformCurves, propertyLinearCurves, propertyCurves, transformAnimationCurves, propertyAnimationCurves, events, packageInfo) { }
+        public CustomAnimation(string name, string author, DateTime creationDate, DateTime lastEditDate, string description, int framesPerSecond, int jobCurveSampleRate, EditableAnimationCurve timeCurve, TransformLinearCurve[] transformLinearCurves, TransformCurve[] transformCurves, PropertyLinearCurve[] propertyLinearCurves, PropertyCurve[] propertyCurves, CurveInfoPair[] transformAnimationCurves, CurveInfoPair[] propertyAnimationCurves, CustomAnimation.Event[] events, PackageInfo packageInfo = default) : this(new ContentInfo() { name = name, author = author, creationDate = creationDate.ToString(IContent.dateFormat), lastEditDate = lastEditDate.ToString(IContent.dateFormat), description = description }, framesPerSecond, jobCurveSampleRate, timeCurve, transformLinearCurves, transformCurves, propertyLinearCurves, propertyCurves, transformAnimationCurves, propertyAnimationCurves, events, packageInfo) { }
 
-        public CustomAnimation(string name, string author, string creationDate, string lastEditDate, string description, int framesPerSecond, int jobCurveSampleRate, AnimationCurve timeCurve, TransformLinearCurve[] transformLinearCurves, TransformCurve[] transformCurves, PropertyLinearCurve[] propertyLinearCurves, PropertyCurve[] propertyCurves, CurveInfoPair[] transformAnimationCurves, CurveInfoPair[] propertyAnimationCurves, CustomAnimation.Event[] events, PackageInfo packageInfo = default) : this(new ContentInfo() { name = name, author = author, creationDate = creationDate, lastEditDate = lastEditDate, description = description }, framesPerSecond, jobCurveSampleRate, timeCurve, transformLinearCurves, transformCurves, propertyLinearCurves, propertyCurves, transformAnimationCurves, propertyAnimationCurves, events, packageInfo) { }
+        public CustomAnimation(string name, string author, string creationDate, string lastEditDate, string description, int framesPerSecond, int jobCurveSampleRate, EditableAnimationCurve timeCurve, TransformLinearCurve[] transformLinearCurves, TransformCurve[] transformCurves, PropertyLinearCurve[] propertyLinearCurves, PropertyCurve[] propertyCurves, CurveInfoPair[] transformAnimationCurves, CurveInfoPair[] propertyAnimationCurves, CustomAnimation.Event[] events, PackageInfo packageInfo = default) : this(new ContentInfo() { name = name, author = author, creationDate = creationDate, lastEditDate = lastEditDate, description = description }, framesPerSecond, jobCurveSampleRate, timeCurve, transformLinearCurves, transformCurves, propertyLinearCurves, propertyCurves, transformAnimationCurves, propertyAnimationCurves, events, packageInfo) { }
 
-        public CustomAnimation(ContentInfo contentInfo, int framesPerSecond, int jobCurveSampleRate, AnimationCurve timeCurve, TransformLinearCurve[] transformLinearCurves, TransformCurve[] transformCurves, PropertyLinearCurve[] propertyLinearCurves, PropertyCurve[] propertyCurves, CurveInfoPair[] transformAnimationCurves, CurveInfoPair[] propertyAnimationCurves, CustomAnimation.Event[] events, PackageInfo packageInfo = default) : base(default)
+        public CustomAnimation(ContentInfo contentInfo, int framesPerSecond, int jobCurveSampleRate, EditableAnimationCurve timeCurve, TransformLinearCurve[] transformLinearCurves, TransformCurve[] transformCurves, PropertyLinearCurve[] propertyLinearCurves, PropertyCurve[] propertyCurves, CurveInfoPair[] transformAnimationCurves, CurveInfoPair[] propertyAnimationCurves, CustomAnimation.Event[] events, PackageInfo packageInfo = default) : base(default)
         {
             this.packageInfo = packageInfo;
             this.contentInfo = contentInfo;
@@ -626,7 +701,7 @@ namespace Swole.API.Unity.Animation
 
             if (t < 0f)
             {
-                switch (preWrapMode)
+                /*switch (preWrapMode)
                 {
                     default:
                         return 0;
@@ -636,11 +711,12 @@ namespace Swole.API.Unity.Animation
                     case WrapMode.PingPong:
                         t = Maths.pingpong(t, 1f);
                         break;
-                }
+                }*/
+                return AnimationUtils.WrapNormalizedTimeBackward(t, preWrapMode);
             }
             else if (t > 1f)
             {
-                switch (postWrapMode)
+                /*switch (postWrapMode)
                 {
                     default:
                         return 1;
@@ -650,7 +726,8 @@ namespace Swole.API.Unity.Animation
                     case WrapMode.PingPong:
                         t = Maths.pingpong(t, 1f);
                         break;
-                }
+                }*/
+                return AnimationUtils.WrapNormalizedTimeForward(t, preWrapMode); 
             }
 
             return t;
@@ -706,34 +783,47 @@ namespace Swole.API.Unity.Animation
         [Serializable, StructLayout(LayoutKind.Sequential)]
         public struct CurveHeader
         {
-
             public int index;
             public int sampleCount;
 
+            public int frameHeaderIndex;
+            public int frameCount;
+
+            public WrapMode preWrapMode;
+            public WrapMode postWrapMode;
+
             public float timeRatio;
+            public float normalizedTimeStart;
+            public float normalizedTimeLength;
 
             public bool3 validityPosition;
             public bool3 validityScale;
             public bool4 validityRotation;
 
-            public CurveHeader(int index, int sampleCount, float timeRatio, bool3 validityPosition, bool4 validityRotation, bool3 validityScale)
+            public CurveHeader(int index, int sampleCount, int frameHeaderIndex, int frameCount, WrapMode preWrapMode, WrapMode postWrapMode, float timeRatio, float normalizedTimeStart, float normalizedTimeLength, bool3 validityPosition, bool4 validityRotation, bool3 validityScale)
             {
-
                 this.index = index;
                 this.sampleCount = sampleCount;
+
+                this.frameHeaderIndex = frameHeaderIndex;
+                this.frameCount = frameCount;
+
+                this.preWrapMode = preWrapMode;
+                this.postWrapMode = postWrapMode;
+
                 this.timeRatio = timeRatio;
+                this.normalizedTimeStart = normalizedTimeStart;
+                this.normalizedTimeLength = normalizedTimeLength;
 
                 this.validityPosition = validityPosition;
                 this.validityRotation = validityRotation;
                 this.validityScale = validityScale;
-
             }
-
         }
 
         public int framesPerSecond = DefaultFrameRate;
 
-        public AnimationCurve timeCurve;
+        public EditableAnimationCurve timeCurve;
 
         public float ScaleTime(float time) => ScaleTime(time, LengthInSeconds, timeCurve);
         public static float ScaleTime(float time, float lengthInSeconds, AnimationCurve timeCurve)
@@ -753,35 +843,30 @@ namespace Swole.API.Unity.Animation
         /// <summary>
         /// The number of samples per frame in one second of a curve's timeline (will pick the time slice with the most frames). 
         /// </summary>
+        //public int jobCurveSampleRate = DefaultJobCurveSampleRate;
+
+        /// <summary>
+        /// The number of samples per second between two frames of animation in a job. 
+        /// </summary>
         public int jobCurveSampleRate = DefaultJobCurveSampleRate;
 
         public class JobData : IDisposable
         {
-            [NonSerialized]
-            public NativeArray<ITransformCurve.Data> transformLinearCurvesSampled;
-            [NonSerialized]
-            public NativeArray<CurveHeader> transformLinearCurvesSampledHeaders;
+            public int linearTransformCurvesIndexOffset;
 
             [NonSerialized]
             public NativeArray<ITransformCurve.Data> transformCurvesSampled;
             [NonSerialized]
             public NativeArray<CurveHeader> transformCurvesSampledHeaders;
+            [NonSerialized]
+            public NativeArray<FrameHeader> transformCurvesSampledFrameHeaders;
 
             [NonSerialized]
             public NativeArray<CurveInfoPair> transformAnimationCurvesForJobs;
 
             public void Dispose()
             {
-                if (transformLinearCurvesSampled.IsCreated)
-                {
-                    transformLinearCurvesSampled.Dispose();
-                    transformLinearCurvesSampled = default;
-                }
-                if (transformLinearCurvesSampledHeaders.IsCreated)
-                {
-                    transformLinearCurvesSampledHeaders.Dispose();
-                    transformLinearCurvesSampledHeaders = default;
-                }
+                linearTransformCurvesIndexOffset = 0;
 
                 if (transformCurvesSampled.IsCreated)
                 {
@@ -792,6 +877,11 @@ namespace Swole.API.Unity.Animation
                 {
                     transformCurvesSampledHeaders.Dispose();
                     transformCurvesSampledHeaders = default;
+                }
+                if (transformCurvesSampledFrameHeaders.IsCreated)
+                {
+                    transformCurvesSampledFrameHeaders.Dispose();
+                    transformCurvesSampledFrameHeaders = default;
                 }
 
                 if (transformAnimationCurvesForJobs.IsCreated)
@@ -824,76 +914,135 @@ namespace Swole.API.Unity.Animation
             }
         }
 
+        [Obsolete]
         private int SampleTransformCurve(List<ITransformCurve.Data> sampleData, ITransformCurve curve, float animationLength, out float timeRatio)
         {
-
             float length = curve.GetLengthInSeconds(framesPerSecond);
-            timeRatio = length <= 0 ? 0 : animationLength / length;
+            timeRatio = length <= 0 ? 0 : (animationLength / length);
+            //Debug.Log(Name + ": " + animationLength + "/" + length + "  =  " + timeRatio);
 
             int maxFrameCount = curve.GetMaxFrameCountInTimeSlice(framesPerSecond);
 
-            //int sampleCount = Mathf.Max(2, Mathf.CeilToInt(length * jobCurveSampleRate)); 
-            int sampleCount = Mathf.Max(2, Mathf.CeilToInt(length * jobCurveSampleRate * maxFrameCount)); // Calculate sample count from the maximum number of frames found in 1 second time slice on the curve's timeline
-            // TODO: Consider using smallest distance between two frames as a factor in sampling too
+            int sampleCount = Mathf.Max(2, Mathf.CeilToInt(length * jobCurveSampleRate * maxFrameCount)); // Calculate sample count from the maximum number of frames found in a 1 second time slice on the curve's timeline
 
             for (int a = 0; a < sampleCount; a++)
             {
-
                 float t = a / (sampleCount - 1f);
-
                 sampleData.Add(curve.Evaluate(t));
-
             }
 
             return sampleCount;
-
         }
 
-        /// <summary>
-        /// Once this data has been initialized, it will persist until the app is closed. Any changes to the underlying curve data of this animation will not be reflected in this array.
-        /// </summary>
-        public NativeArray<ITransformCurve.Data> TransformLinearCurvesSampled
+        [Serializable]
+        public struct FrameHeader
         {
+            /// <summary>
+            /// The frame's position in the animation timeline
+            /// </summary>
+            public float time;
+            /// <summary>
+            /// The frame's normalized position in reference to the first and last frame positions
+            /// </summary>
+            public float normalizedLocalTime;
 
-            get
+            public int sampleIndex;
+            public int sampleCount;
+        }
+        private int SampleTransformCurve(List<ITransformCurve.Data> sampleData, List<FrameHeader> frameHeaders, ITransformCurve curve, float animationLength, out float timeRatio, out int frameHeaderIndex, out int frameCount, bool NaNsafe = true)
+        {
+            //float length = curve.GetLengthInSeconds(framesPerSecond);
+            //timeRatio = length <= 0 ? 0 : animationLength / length;
+
+            timeRatio = 0;
+            int sampleCount = 0;
+
+            frameHeaderIndex = frameHeaders.Count;
+            curve.GetFrameTimes(framesPerSecond, frameHeaders);
+            frameCount = frameHeaders.Count - frameHeaderIndex;
+
+            if (frameCount > 0)
             {
+                float finalTime = frameHeaders[frameHeaderIndex + frameCount - 1].time;
+                float length = finalTime - frameHeaders[frameHeaderIndex].time;
+                timeRatio = length <= 0 ? 0 : (animationLength / length);
 
-                if (jobData == null) CreateJobData();
-                if (!jobData.transformLinearCurvesSampled.IsCreated)
+                float startFrameTime = frameHeaders[frameHeaderIndex].time;
+                if (frameCount == 1)
                 {
+                    // Add single sample for single frame curve
+                    var header = frameHeaders[frameHeaderIndex];
+                    header.sampleIndex = sampleData.Count; 
 
-                    float animationLength = LengthInSeconds;
-
-                    jobData.transformLinearCurvesSampledHeaders = new NativeArray<CurveHeader>(transformLinearCurves == null ? 0 : transformLinearCurves.Length, Allocator.Persistent);
-
-                    List<ITransformCurve.Data> sampleData = new List<ITransformCurve.Data>();
-
-                    if (transformLinearCurves != null)
+                    var sample = curve.Evaluate(0);
+                    int tempLocalSampleCount = 0;
+                    if (NaNsafe && (float.IsNaN(sample.localPosition.x) || float.IsNaN(sample.localPosition.y) || float.IsNaN(sample.localPosition.z) ||
+                        float.IsNaN(sample.localRotation.value.x) || float.IsNaN(sample.localRotation.value.y) || float.IsNaN(sample.localRotation.value.z) || float.IsNaN(sample.localRotation.value.w) ||
+                        float.IsNaN(sample.localScale.x) || float.IsNaN(sample.localScale.y) || float.IsNaN(sample.localScale.z))) 
+                    { 
+                        swole.LogWarning($"Animation {Name} contains NaN animation data in transform curve '{curve.TransformName}' and will cause errors. Likely has corrupt keyframe tangents somewhere. localPos({sample.localPosition}) localRot({sample.localRotation}) localScale({sample.localScale})");
+                    }
+                    else
                     {
-
-                        int index = 0;
-                        for (int a = 0; a < transformLinearCurves.Length; a++)
-                        {
-                            var curve = transformLinearCurves[a];
-                            int sampleCount = SampleTransformCurve(sampleData, curve, animationLength, out float timeRatio);
-
-                            jobData.transformLinearCurvesSampledHeaders[a] = new CurveHeader(index, sampleCount, timeRatio, curve.ValidityPosition, curve.ValidityRotation, curve.ValidityScale);
-                            index += sampleCount;
-
-                        }
-
+                        sampleData.Add(sample);
+                        tempLocalSampleCount++;
                     }
 
-                    jobData.transformLinearCurvesSampled = new NativeArray<ITransformCurve.Data>(sampleData.ToArray(), Allocator.Persistent);
+                    sampleCount += tempLocalSampleCount;
+                    header.sampleCount = tempLocalSampleCount;
+                    frameHeaders[frameHeaderIndex] = header; 
                 }
+                else
+                {
+                    for (int a = 0; a < frameCount; a++)
+                    {
+                        int headerIndex = frameHeaderIndex + a;
+                        var header = frameHeaders[headerIndex];
+                        header.normalizedLocalTime = length <= 0 ? 0 : ((header.time - startFrameTime) / length); 
+                        header.sampleIndex = sampleData.Count;
 
-                return jobData.transformLinearCurvesSampled;
+                        if (a >= frameCount - 1) // Final frame has no samples
+                        {
+                            frameHeaders[headerIndex] = header;
+                            break;
+                        }
 
+                        var nextHeader = frameHeaders[headerIndex + 1]; 
+
+                        int localSampleCount = Mathf.Max(2, Mathf.CeilToInt((nextHeader.time - header.time) * jobCurveSampleRate));
+
+                        int tempLocalSampleCount = 0;
+                        for (int b = 0; b < localSampleCount; b++)
+                        {
+                            float t = b / (localSampleCount - 1f); 
+
+                            var sample = curve.Evaluate(((t * (nextHeader.time - header.time)) + header.time) / finalTime);
+                            if (NaNsafe && (float.IsNaN(sample.localPosition.x) || float.IsNaN(sample.localPosition.y) || float.IsNaN(sample.localPosition.z) ||
+                                float.IsNaN(sample.localRotation.value.x) || float.IsNaN(sample.localRotation.value.y) || float.IsNaN(sample.localRotation.value.z) || float.IsNaN(sample.localRotation.value.w) ||
+                                float.IsNaN(sample.localScale.x) || float.IsNaN(sample.localScale.y) || float.IsNaN(sample.localScale.z))) 
+                            { 
+                                swole.LogWarning($"Animation {Name} contains NaN animation data in transform curve '{curve.TransformName}' and will cause errors. Likely has corrupt keyframe tangents somewhere. localPos({sample.localPosition}) localRot({sample.localRotation}) localScale({sample.localScale})"); 
+                            } 
+                            else
+                            {
+                                sampleData.Add(sample);
+                                tempLocalSampleCount++;   
+                            }
+                        }
+
+                        //sampleCount += localSampleCount;
+                        //header.sampleCount = localSampleCount;
+                        sampleCount += tempLocalSampleCount;
+                        header.sampleCount = tempLocalSampleCount;
+                        frameHeaders[headerIndex] = header;
+                    }
+                }
             }
 
+            return sampleCount;
         }
 
-        public NativeArray<CurveHeader> TransformLinearCurvesSampledHeaders => jobData == null ? default : jobData.transformLinearCurvesSampledHeaders;
+        public int LinearTransformCurvesSampledIndexOffset => jobData == null ? 0 : jobData.linearTransformCurvesIndexOffset;
 
         /// <summary>
         /// Once this data has been initialized, it will persist until the app is closed. Any changes to the underlying curve data of this animation will not be reflected in this array.
@@ -908,29 +1057,43 @@ namespace Swole.API.Unity.Animation
                 if (!jobData.transformCurvesSampled.IsCreated)
                 {
 
-                    float animationLength = LengthInSeconds;
+                    float animationLength = LengthInSeconds; 
 
-                    jobData.transformCurvesSampledHeaders = new NativeArray<CurveHeader>(transformCurves == null ? 0 : transformCurves.Length, Allocator.Persistent);
+                    jobData.linearTransformCurvesIndexOffset = transformLinearCurves == null ? 0 : transformLinearCurves.Length;
+                    jobData.transformCurvesSampledHeaders = new NativeArray<CurveHeader>(jobData.linearTransformCurvesIndexOffset + (transformCurves == null ? 0 : transformCurves.Length), Allocator.Persistent);
 
                     List<ITransformCurve.Data> sampleData = new List<ITransformCurve.Data>();
+                    List<FrameHeader> frameHeaders = new List<FrameHeader>();
 
+                    int index = 0;
+                    void AddSamples(int i, ITransformCurve curve)
+                    { 
+                        int sampleCount = SampleTransformCurve(sampleData, frameHeaders, curve, animationLength, out float timeRatio, out int frameHeaderIndex, out int frameCount);
+
+                        if (sampleCount > 0)
+                        {
+                            jobData.transformCurvesSampledHeaders[i] = new CurveHeader(index, sampleCount, frameHeaderIndex, frameCount, curve.PreWrapMode, curve.PostWrapMode,
+                                timeRatio, frameHeaders[frameHeaderIndex].time / (animationLength <= 0 ? 1 : animationLength), frameCount <= 0 ? 0 : ((frameHeaders[frameHeaderIndex + frameCount - 1].time - frameHeaders[frameHeaderIndex].time) / (animationLength <= 0 ? 1 : animationLength)),
+                                curve.ValidityPosition, curve.ValidityRotation, curve.ValidityScale);
+                            index += sampleCount;
+                        } 
+                        else
+                        {
+                            jobData.transformCurvesSampledHeaders[i] = new CurveHeader(index, sampleCount, frameHeaderIndex, frameCount, curve.PreWrapMode, curve.PostWrapMode, 0, 0, 0, false, false, false); 
+                        }
+                    }
+
+                    if (transformLinearCurves != null)
+                    {
+                        for (int a = 0; a < transformLinearCurves.Length; a++) AddSamples(a, transformLinearCurves[a]);
+                    }
                     if (transformCurves != null)
                     {
-
-                        int index = 0;
-                        for (int a = 0; a < transformCurves.Length; a++)
-                        {
-                            var curve = transformCurves[a];
-                            int sampleCount = SampleTransformCurve(sampleData, curve, animationLength, out float timeRatio);
-
-                            jobData.transformCurvesSampledHeaders[a] = new CurveHeader(index, sampleCount, timeRatio, curve.ValidityPosition, curve.ValidityRotation, curve.ValidityScale);
-                            index += sampleCount;
-
-                        }
-
+                        for (int a = 0; a < transformCurves.Length; a++) AddSamples(a + jobData.linearTransformCurvesIndexOffset, transformCurves[a]);
                     }
 
                     jobData.transformCurvesSampled = new NativeArray<ITransformCurve.Data>(sampleData.ToArray(), Allocator.Persistent);
+                    jobData.transformCurvesSampledFrameHeaders = new NativeArray<FrameHeader>(frameHeaders.ToArray(), Allocator.Persistent); 
 
                 }
 
@@ -941,6 +1104,7 @@ namespace Swole.API.Unity.Animation
         }
 
         public NativeArray<CurveHeader> TransformCurvesSampledHeaders => jobData == null ? default : jobData.transformCurvesSampledHeaders;
+        public NativeArray<FrameHeader> TransformCurvesSampledFrameHeaders => jobData == null ? default : jobData.transformCurvesSampledFrameHeaders;
 
         public NativeArray<CurveInfoPair> TransformAnimationCurvesForJobs
         {
@@ -1124,10 +1288,23 @@ namespace Swole.API.Unity.Animation
                 get => eventLogger;
                 set => eventLogger = value;
             }
-            public void CallAnimationEvents(float startTime, float endTime)
+            public bool HasAnimationEvents => m_animation != null && m_animation.events != null && m_animation.events.Length > 0;
+            public void CallAnimationEvents(float startTime, float endTime) => CallAnimationEvents(startTime, endTime, InternalSpeed, null);
+            public void CallAnimationEvents(float startTime, float endTime, float currentSpeed) => CallAnimationEvents(startTime, endTime, currentSpeed, null);
+            public void CallAnimationEvents(float startTime, float endTime, float currentSpeed, object sender)
             {
-                float internalSpeed = InternalSpeed;
-                if (m_animation == null || m_animation.events == null || (internalSpeed < 0 && endTime - startTime >= 0) || (internalSpeed > 0 && endTime - startTime <= 0)) return;
+                if (!HasAnimationEvents) return;
+
+                if (currentSpeed > 0)
+                {
+                    if (startTime > endTime) startTime = 0; 
+                }
+                else if (currentSpeed < 0)
+                {
+                    if (endTime > startTime) endTime = LengthInSeconds;
+                }
+                else return;
+                //if ((currentSpeed < 0 && endTime - startTime >= 0) || (currentSpeed > 0 && endTime - startTime <= 0)) return;
 
                 var environment = eventRuntimeEnvironment == null ? swole.DefaultEnvironment : eventRuntimeEnvironment;
 
@@ -1141,7 +1318,9 @@ namespace Swole.API.Unity.Animation
                     if (_event.TimelinePosition < minTime || _event.TimelinePosition > maxTime) continue;
                     _eventQueue.Add(_event);
                 }
-                if (internalSpeed >= 0) _eventQueue.Sort(SortEventsAscending); else _eventQueue.Sort(SortEventsDescending); 
+                if (currentSpeed >= 0) _eventQueue.Sort(SortEventsAscending); else _eventQueue.Sort(SortEventsDescending);
+
+                if (sender == null) sender = this;
                 for (int a = 0; a < _eventQueue.Count; a++)
                 {
                     try
@@ -1149,7 +1328,7 @@ namespace Swole.API.Unity.Animation
                         var _event = _eventQueue[a];
                         try
                         {
-                            onPreEventCalled?.Invoke(_event.Name, _event.TimelinePosition);
+                            onPreEventCalled?.Invoke(_event.Name, _event.TimelinePosition, sender);  
                         }
                         catch (Exception ex)
                         {
@@ -1159,7 +1338,7 @@ namespace Swole.API.Unity.Animation
                         _event.Execute(environment, _defaultEventCompletionTimeout, eventLogger);
                         try
                         {
-                            onPostEventCalled?.Invoke(_event.Name, _event.TimelinePosition);
+                            onPostEventCalled?.Invoke(_event.Name, _event.TimelinePosition, sender);
                         }
                         catch (Exception ex)
                         {
@@ -1227,6 +1406,45 @@ namespace Swole.API.Unity.Animation
                     time = prevTime = value;
                 }
             }
+            public float GetLoopedTime(float time, bool canLoop = true)
+            {
+                if (canLoop && loopMode != AnimationLoopMode.PlayOnce)
+                {
+
+                    if (LengthInSeconds > 0)
+                    {
+
+                        switch (loopMode)
+                        {
+
+                            default:
+                                break;
+
+                            case AnimationLoopMode.Loop:
+                                while (time > LengthInSeconds) time -= LengthInSeconds;
+                                while (time < 0) time += LengthInSeconds;
+                                break;
+
+                            case AnimationLoopMode.PingPong:
+                                if (time >= LengthInSeconds && internalSpeedMultiplier > -1)
+                                    internalSpeedMultiplier = -1;
+                                else if (time <= 0 && internalSpeedMultiplier < 1)
+                                    internalSpeedMultiplier = 1;
+                                break;
+
+                        }
+
+                    }
+
+                }
+                else
+                {
+                    if (time < 0) time = 0;
+                    if (time > LengthInSeconds - 0.0001f) time = LengthInSeconds - 0.0001f;// Mathf.Epsilon; // Avoid time wrap with epsilon?
+                }
+
+                return time;
+            }
 
             public float speed = 1;
             public float Speed
@@ -1244,6 +1462,12 @@ namespace Swole.API.Unity.Animation
                 get => mix;
                 set => mix = value;
             }
+            protected float dynamicMix;
+            /// <summary>
+            /// Last mix used during the animation step
+            /// </summary>
+            public float DynamicMix => dynamicMix;
+
             public bool paused;
             public bool Paused
             {
@@ -1318,7 +1542,7 @@ namespace Swole.API.Unity.Animation
                     int finalPeriod = curve.PropertyString.LastIndexOf('.');
                     string memberName = finalPeriod >= 0 ? curve.PropertyString.Substring(finalPeriod + 1, curve.PropertyString.Length - (finalPeriod + 1)) : curve.PropertyString;
                     return animator.AddOrGetState(component, memberName);
-
+                    
                 }
 
                 if (animation.propertyAnimationCurves != null)
@@ -1351,7 +1575,7 @@ namespace Swole.API.Unity.Animation
 
                         curve.RefreshCachedLength(m_animation.framesPerSecond); // <- Important to do when working in the animation editor, as the animation data can change.
 
-                        var transform = animator.FindTransformInHierarchy(curve.TransformName, curve.IsBone);
+                        var transform = animator.FindTransformInHierarchy(curve.TransformName/*, curve.IsBone*/);
 
                         if (transform == null) continue;
 
@@ -1380,49 +1604,15 @@ namespace Swole.API.Unity.Animation
                 // Looping
                 if (!paused)
                 {
-                    time += deltaTime * InternalSpeed;
+                    float speed = InternalSpeed;
+                    time += deltaTime * speed;
 
-                    if (canLoop && loopMode != AnimationLoopMode.PlayOnce)
-                    {
-                        
-                        if (LengthInSeconds > 0)
-                        {
-
-                            switch (loopMode)
-                            {
-
-                                default:
-                                    break;
-
-                                case AnimationLoopMode.Loop:
-                                    while (time > LengthInSeconds) time -= LengthInSeconds;
-                                    while (time < 0) time += LengthInSeconds;
-                                    break;
-
-                                case AnimationLoopMode.PingPong:
-                                    if (time >= LengthInSeconds && internalSpeedMultiplier > -1)
-                                        internalSpeedMultiplier = -1;
-                                    else if (time <= 0 && internalSpeedMultiplier < 1)
-                                        internalSpeedMultiplier = 1;
-                                    break;
-
-                            }
-
-                        }
-
-                    }
-                    else
-                    {
-
-                        if (time < 0) time = 0;
-                        if (time > LengthInSeconds) time = LengthInSeconds - Mathf.Epsilon; // Avoid time wrap with epsilon?
-
-                    }
+                    time = GetLoopedTime(time, canLoop);
 
                     #region Animation Events
                     try
                     {
-                        CallAnimationEvents(prevTime, time);
+                        CallAnimationEvents(prevTime, time, speed); 
                     }
                     catch(Exception ex)
                     {
@@ -1440,8 +1630,8 @@ namespace Swole.API.Unity.Animation
                 //
 
                 //
-                float mix = this.mix * mixMultiplier;
-                if (!isFinal && isBlend && math.abs(mix) < 0.00001f) return jobDeps; // Don't bother updating when the changes to be made are insignificant
+                dynamicMix = mix * mixMultiplier;
+                if (!isFinal && isBlend && math.abs(dynamicMix) < 0.00001f) return jobDeps; // Don't bother updating when the changes to be made are insignificant
 
                 var animator = m_animator;
                 var anim = TypedAnimation;
@@ -1469,13 +1659,21 @@ namespace Swole.API.Unity.Animation
 
                             if (mainCurve == null && baseCurve == null) continue;
 
+                            bool testA = baseCurve == null;
+                            bool testB = mainCurve == null;
+
                             if (mainCurve == null) mainCurve = baseCurve;
                             if (baseCurve == null) baseCurve = mainCurve;
 
-                            float cachedLength = mainCurve.CachedLengthInSeconds;
-                            float t = cachedLength <= 0 ? 0 : normalizedTime * (LengthInSeconds / cachedLength);
+                            //float cachedLength = mainCurve.CachedLengthInSeconds;
+                            float cachedLengthMain = mainCurve.CachedLengthInSeconds;
+                            float cachedLengthBase = baseCurve.CachedLengthInSeconds;
+                            //float t = cachedLength <= 0 ? 0 : normalizedTime * (LengthInSeconds / cachedLength);
+                            float tM = cachedLengthMain <= 0 ? 0 : normalizedTime * (LengthInSeconds / cachedLengthMain);
+                            float tB = cachedLengthBase <= 0 ? 0 : normalizedTime * (LengthInSeconds / cachedLengthBase);
 
-                            state.ApplyAdditiveMix(mainCurve.Evaluate(t) - baseCurve.Evaluate(t), mix);
+                            //state.ApplyAdditiveMix(mainCurve.Evaluate(t) - baseCurve.Evaluate(t), mix);
+                            state.ApplyAdditiveMix(mainCurve.Evaluate(tM) - baseCurve.Evaluate(tB), dynamicMix);
 
                         }
 
@@ -1502,10 +1700,15 @@ namespace Swole.API.Unity.Animation
                             if (mainCurve == null) mainCurve = baseCurve;
                             if (baseCurve == null) baseCurve = mainCurve;
 
-                            float cachedLength = mainCurve.CachedLengthInSeconds;
-                            float t = cachedLength <= 0 ? 0 : normalizedTime * (LengthInSeconds / cachedLength);
+                            //float cachedLength = mainCurve.CachedLengthInSeconds;
+                            float cachedLengthMain = mainCurve.CachedLengthInSeconds;
+                            float cachedLengthBase = baseCurve.CachedLengthInSeconds;
+                            //float t = cachedLength <= 0 ? 0 : normalizedTime * (LengthInSeconds / cachedLength);
+                            float tM = cachedLengthMain <= 0 ? 0 : normalizedTime * (LengthInSeconds / cachedLengthMain);
+                            float tB = cachedLengthBase <= 0 ? 0 : normalizedTime * (LengthInSeconds / cachedLengthBase);
 
-                            state.ApplyAdditive(mainCurve.Evaluate(t) - baseCurve.Evaluate(t));
+                            //state.ApplyAdditive(mainCurve.Evaluate(t) - baseCurve.Evaluate(t), mix);
+                            state.ApplyAdditive(mainCurve.Evaluate(tM) - baseCurve.Evaluate(tB));
 
                         }
 
@@ -1530,7 +1733,7 @@ namespace Swole.API.Unity.Animation
                             float cachedLength = mainCurve.CachedLengthInSeconds;
                             float t = cachedLength <= 0 ? 0 : normalizedTime * (LengthInSeconds / cachedLength);
 
-                            state.ApplyMix(mainCurve.Evaluate(t), mix);
+                            state.ApplyMix(mainCurve.Evaluate(t), dynamicMix);
 
                         }
 
@@ -1569,7 +1772,7 @@ namespace Swole.API.Unity.Animation
                     if (useMultithreading)
                     {
 
-                        normalizedTime = math.saturate(normalizedTime);
+                        normalizedTime = math.saturate(normalizedTime); 
 
                         if (isBlend && isAdditive)
                         {
@@ -1578,14 +1781,13 @@ namespace Swole.API.Unity.Animation
 
                                 new ApplyAdditiveMixTransformCurvesJobFinal()
                                 {
-
+                                    linearTransformCurvesIndexOffset = anim.LinearTransformCurvesSampledIndexOffset,
                                     normalizedTime = normalizedTime,
-                                    mix = mix,
+                                    mix = dynamicMix,
                                     transformStates = animator.TransformStates,
                                     curveSamples = anim.TransformCurvesSampled,
                                     curveHeaders = anim.TransformCurvesSampledHeaders,
-                                    curveSamplesLinear = anim.TransformLinearCurvesSampled,
-                                    curveHeadersLinear = anim.TransformLinearCurvesSampledHeaders,
+                                    frameHeaders = anim.TransformCurvesSampledFrameHeaders,
                                     transformCurveBindings = m_transformCurveBindings,
                                     transformAnimationCurves = anim.TransformAnimationCurvesForJobs
 
@@ -1593,14 +1795,13 @@ namespace Swole.API.Unity.Animation
 
                                 new ApplyAdditiveMixTransformCurvesJob()
                                 {
-
+                                    linearTransformCurvesIndexOffset = anim.LinearTransformCurvesSampledIndexOffset,
                                     normalizedTime = normalizedTime,
-                                    mix = mix,
+                                    mix = dynamicMix,
                                     transformStates = animator.TransformStates,
                                     curveSamples = anim.TransformCurvesSampled,
                                     curveHeaders = anim.TransformCurvesSampledHeaders,
-                                    curveSamplesLinear = anim.TransformLinearCurvesSampled,
-                                    curveHeadersLinear = anim.TransformLinearCurvesSampledHeaders,
+                                    frameHeaders = anim.TransformCurvesSampledFrameHeaders,
                                     transformCurveBindings = m_transformCurveBindings,
                                     transformAnimationCurves = anim.TransformAnimationCurvesForJobs
 
@@ -1614,13 +1815,12 @@ namespace Swole.API.Unity.Animation
 
                                 new ApplyAdditiveTransformCurvesJobFinal()
                                 {
-
+                                    linearTransformCurvesIndexOffset = anim.LinearTransformCurvesSampledIndexOffset,
                                     normalizedTime = normalizedTime,
                                     transformStates = animator.TransformStates,
                                     curveSamples = anim.TransformCurvesSampled,
                                     curveHeaders = anim.TransformCurvesSampledHeaders,
-                                    curveSamplesLinear = anim.TransformLinearCurvesSampled,
-                                    curveHeadersLinear = anim.TransformLinearCurvesSampledHeaders,
+                                    frameHeaders = anim.TransformCurvesSampledFrameHeaders,
                                     transformCurveBindings = m_transformCurveBindings,
                                     transformAnimationCurves = anim.TransformAnimationCurvesForJobs
 
@@ -1628,13 +1828,12 @@ namespace Swole.API.Unity.Animation
 
                                 new ApplyAdditiveTransformCurvesJob()
                                 {
-
+                                    linearTransformCurvesIndexOffset = anim.LinearTransformCurvesSampledIndexOffset,
                                     normalizedTime = normalizedTime,
                                     transformStates = animator.TransformStates,
                                     curveSamples = anim.TransformCurvesSampled,
                                     curveHeaders = anim.TransformCurvesSampledHeaders,
-                                    curveSamplesLinear = anim.TransformLinearCurvesSampled,
-                                    curveHeadersLinear = anim.TransformLinearCurvesSampledHeaders,
+                                    frameHeaders = anim.TransformCurvesSampledFrameHeaders,
                                     transformCurveBindings = m_transformCurveBindings,
                                     transformAnimationCurves = anim.TransformAnimationCurvesForJobs
 
@@ -1648,14 +1847,13 @@ namespace Swole.API.Unity.Animation
 
                             new ApplyMixTransformCurvesJobFinal()
                             {
-
+                                linearTransformCurvesIndexOffset = anim.LinearTransformCurvesSampledIndexOffset,
                                 normalizedTime = normalizedTime,
-                                mix = mix,
+                                mix = dynamicMix,
                                 transformStates = animator.TransformStates,
                                 curveSamples = anim.TransformCurvesSampled,
                                 curveHeaders = anim.TransformCurvesSampledHeaders,
-                                curveSamplesLinear = anim.TransformLinearCurvesSampled,
-                                curveHeadersLinear = anim.TransformLinearCurvesSampledHeaders,
+                                frameHeaders = anim.TransformCurvesSampledFrameHeaders,
                                 transformCurveBindings = m_transformCurveBindings,
                                 transformAnimationCurves = anim.TransformAnimationCurvesForJobs
 
@@ -1663,14 +1861,13 @@ namespace Swole.API.Unity.Animation
 
                             new ApplyMixTransformCurvesJob()
                             {
-
+                                linearTransformCurvesIndexOffset = anim.LinearTransformCurvesSampledIndexOffset,
                                 normalizedTime = normalizedTime,
-                                mix = mix,
+                                mix = dynamicMix,
                                 transformStates = animator.TransformStates,
                                 curveSamples = anim.TransformCurvesSampled,
                                 curveHeaders = anim.TransformCurvesSampledHeaders,
-                                curveSamplesLinear = anim.TransformLinearCurvesSampled,
-                                curveHeadersLinear = anim.TransformLinearCurvesSampledHeaders,
+                                frameHeaders = anim.TransformCurvesSampledFrameHeaders,
                                 transformCurveBindings = m_transformCurveBindings,
                                 transformAnimationCurves = anim.TransformAnimationCurvesForJobs
 
@@ -1680,18 +1877,16 @@ namespace Swole.API.Unity.Animation
                         else
                         {
 
-
                             jobDeps = isFinal ?
 
                                 new ApplyTransformCurvesJobFinal()
                                 {
-
+                                    linearTransformCurvesIndexOffset = anim.LinearTransformCurvesSampledIndexOffset,
                                     normalizedTime = normalizedTime,
                                     transformStates = animator.TransformStates,
                                     curveSamples = anim.TransformCurvesSampled,
                                     curveHeaders = anim.TransformCurvesSampledHeaders,
-                                    curveSamplesLinear = anim.TransformLinearCurvesSampled,
-                                    curveHeadersLinear = anim.TransformLinearCurvesSampledHeaders,
+                                    frameHeaders = anim.TransformCurvesSampledFrameHeaders,
                                     transformCurveBindings = m_transformCurveBindings,
                                     transformAnimationCurves = anim.TransformAnimationCurvesForJobs
 
@@ -1699,13 +1894,12 @@ namespace Swole.API.Unity.Animation
 
                                 new ApplyTransformCurvesJob()
                                 {
-
+                                    linearTransformCurvesIndexOffset = anim.LinearTransformCurvesSampledIndexOffset,
                                     normalizedTime = normalizedTime,
                                     transformStates = animator.TransformStates,
                                     curveSamples = anim.TransformCurvesSampled,
                                     curveHeaders = anim.TransformCurvesSampledHeaders,
-                                    curveSamplesLinear = anim.TransformLinearCurvesSampled,
-                                    curveHeadersLinear = anim.TransformLinearCurvesSampledHeaders,
+                                    frameHeaders = anim.TransformCurvesSampledFrameHeaders,
                                     transformCurveBindings = m_transformCurveBindings,
                                     transformAnimationCurves = anim.TransformAnimationCurvesForJobs
 
@@ -1719,7 +1913,6 @@ namespace Swole.API.Unity.Animation
 
                         if (isBlend && isAdditive)
                         {
-
                             for (int a = 0; a < transformStates.Length; a++)
                             {
 
@@ -1739,11 +1932,16 @@ namespace Swole.API.Unity.Animation
                                 if (mainCurve == null) mainCurve = baseCurve;
                                 if (baseCurve == null) baseCurve = mainCurve;
 
-                                float cachedLength = mainCurve.CachedLengthInSeconds;
-                                float t = cachedLength <= 0 ? 0 : normalizedTime * (LengthInSeconds / cachedLength);
+                                //float cachedLength = mainCurve.CachedLengthInSeconds;
+                                float cachedLengthMain = mainCurve.CachedLengthInSeconds;
+                                float cachedLengthBase = baseCurve.CachedLengthInSeconds;
+                                //float t = cachedLength <= 0 ? 0 : normalizedTime * (LengthInSeconds / cachedLength);
+                                float tM = cachedLengthMain <= 0 ? 0 : normalizedTime * (LengthInSeconds / cachedLengthMain);
+                                float tB = cachedLengthBase <= 0 ? 0 : normalizedTime * (LengthInSeconds / cachedLengthBase);
 
-                                var stateData = animator.GetTransformState(state.index); 
-                                stateData = stateData.Swizzle(stateData.ApplyAdditiveMix(mainCurve.Evaluate(t) - baseCurve.Evaluate(t), mix), mainCurve.ValidityPosition, mainCurve.ValidityRotation, mainCurve.ValidityScale);
+                                var stateData = animator.GetTransformState(state.index);
+                                //stateData = stateData.Swizzle(stateData.ApplyAdditiveMix(mainCurve.Evaluate(t) - baseCurve.Evaluate(t), mix), mainCurve.ValidityPosition, mainCurve.ValidityRotation, mainCurve.ValidityScale);
+                                stateData = stateData.Swizzle(stateData.ApplyAdditiveMix(mainCurve.Evaluate(tM) - baseCurve.Evaluate(tB), dynamicMix), mainCurve.ValidityPosition, mainCurve.ValidityRotation, mainCurve.ValidityScale);
                                 animator.SetTransformState(state.index, stateData);
 
                             }
@@ -1751,7 +1949,6 @@ namespace Swole.API.Unity.Animation
                         }
                         else if (isAdditive)
                         {
-
                             for (int a = 0; a < transformStates.Length; a++)
                             {
 
@@ -1771,11 +1968,16 @@ namespace Swole.API.Unity.Animation
                                 if (mainCurve == null) mainCurve = baseCurve;
                                 if (baseCurve == null) baseCurve = mainCurve;
 
-                                float cachedLength = mainCurve.CachedLengthInSeconds;
-                                float t = cachedLength <= 0 ? 0 : normalizedTime * (LengthInSeconds / cachedLength);
+                                //float cachedLength = mainCurve.CachedLengthInSeconds;
+                                float cachedLengthMain = mainCurve.CachedLengthInSeconds;
+                                float cachedLengthBase = baseCurve.CachedLengthInSeconds;
+                                //float t = cachedLength <= 0 ? 0 : normalizedTime * (LengthInSeconds / cachedLength);
+                                float tM = cachedLengthMain <= 0 ? 0 : normalizedTime * (LengthInSeconds / cachedLengthMain);
+                                float tB = cachedLengthBase <= 0 ? 0 : normalizedTime * (LengthInSeconds / cachedLengthBase);
 
                                 var stateData = animator.GetTransformState(state.index);
-                                stateData = stateData.Swizzle(stateData.ApplyAdditive(mainCurve.Evaluate(t) - baseCurve.Evaluate(t)), mainCurve.ValidityPosition, mainCurve.ValidityRotation, mainCurve.ValidityScale);
+                                //stateData = stateData.Swizzle(stateData.ApplyAdditive(mainCurve.Evaluate(t) - baseCurve.Evaluate(t)), mainCurve.ValidityPosition, mainCurve.ValidityRotation, mainCurve.ValidityScale);
+                                stateData = stateData.Swizzle(stateData.ApplyAdditive(mainCurve.Evaluate(tM) - baseCurve.Evaluate(tB)), mainCurve.ValidityPosition, mainCurve.ValidityRotation, mainCurve.ValidityScale);
                                 animator.SetTransformState(state.index, stateData);
 
                             }
@@ -1783,7 +1985,6 @@ namespace Swole.API.Unity.Animation
                         }
                         else if (isBlend)
                         {
-
                             for (int a = 0; a < transformStates.Length; a++)
                             {
 
@@ -1802,7 +2003,7 @@ namespace Swole.API.Unity.Animation
                                 float t = cachedLength <= 0 ? 0 : normalizedTime * (LengthInSeconds / cachedLength);
 
                                 var stateData = animator.GetTransformState(state.index);
-                                stateData = stateData.Swizzle(stateData.ApplyMix(mainCurve.Evaluate(t), mix), mainCurve.ValidityPosition, mainCurve.ValidityRotation, mainCurve.ValidityScale);
+                                stateData = stateData.Swizzle(stateData.ApplyMix(mainCurve.Evaluate(t), dynamicMix), mainCurve.ValidityPosition, mainCurve.ValidityRotation, mainCurve.ValidityScale);
                                 animator.SetTransformState(state.index, stateData);
 
                             }
@@ -1810,7 +2011,6 @@ namespace Swole.API.Unity.Animation
                         }
                         else
                         {
-
                             for (int a = 0; a < transformStates.Length; a++)
                             {
 
@@ -1881,9 +2081,8 @@ namespace Swole.API.Unity.Animation
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static ITransformCurve.Data EvaluateSampledCurveData(NativeArray<ITransformCurve.Data> curveSamples, int startIndex, int sampleCount, float t)
+        public static ITransformCurve.Data EvaluateSampledCurveData(NativeArray<ITransformCurve.Data> curveSamples, int sampleStartIndex, int sampleCount, float t)
         {
-
             float it = (sampleCount - 1) * t;
 
             int i0 = (int)it;
@@ -1891,11 +2090,11 @@ namespace Swole.API.Unity.Animation
 
             i1 = math.select(i1, i0, i1 >= sampleCount);
 
-            return curveSamples[startIndex + i0].Lerp(curveSamples[startIndex + i1], it - i0);
-
+            return curveSamples[sampleStartIndex + i0].Slerp(curveSamples[sampleStartIndex + i1], it - i0); 
         }
 
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        #region Deprecated
+        [MethodImpl(MethodImplOptions.AggressiveInlining), Obsolete]
         public static ITransformCurve.Data EvaluateSampledCurveData(bool isLinear, int curveIndex, float normalizedTime, NativeArray<ITransformCurve.Data> curveSamples, NativeArray<CurveHeader> curveHeaders, NativeArray<ITransformCurve.Data> curveSamplesLinear, NativeArray<CurveHeader> curveHeadersLinear, out bool3 validityPosition, out bool4 validityRotation, out bool3 validityScale)
         {
 
@@ -1906,14 +2105,14 @@ namespace Swole.API.Unity.Animation
             {
 
                 header = curveHeadersLinear[curveIndex];
-                data = EvaluateSampledCurveData(curveSamplesLinear, header.index, header.sampleCount, math.saturate(normalizedTime * header.timeRatio));
+                data = EvaluateSampledCurveData(curveSamplesLinear, header.index, header.sampleCount, math.saturate(normalizedTime * header.timeRatio)); // TODO: Use wrap modes instead of clamping
 
             }
             else
             {
 
                 header = curveHeaders[curveIndex];
-                data = EvaluateSampledCurveData(curveSamples, header.index, header.sampleCount, math.saturate(normalizedTime * header.timeRatio));
+                data = EvaluateSampledCurveData(curveSamples, header.index, header.sampleCount, math.saturate(normalizedTime * header.timeRatio)); // TODO: Use wrap modes instead of clamping
 
             }
 
@@ -1924,10 +2123,50 @@ namespace Swole.API.Unity.Animation
             return data;
 
         }
+        #endregion
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static ITransformCurve.Data EvaluateSampledCurveData(bool isLinear, int linearTransformCurvesIndexOffset, int curveIndex, float normalizedTime, NativeArray<ITransformCurve.Data> curveSamples, NativeArray<CurveHeader> curveHeaders, NativeArray<FrameHeader> frameHeaders, out bool3 validityPosition, out bool4 validityRotation, out bool3 validityScale)
+        {
+
+            ITransformCurve.Data data;
+
+            curveIndex = math.select(curveIndex, curveIndex + linearTransformCurvesIndexOffset, isLinear);
+
+            var curveHeader = curveHeaders[curveIndex];
+
+            normalizedTime = (normalizedTime - curveHeader.normalizedTimeStart) / math.select(curveHeader.normalizedTimeLength, 1, curveHeader.normalizedTimeLength <= 0);  
+            normalizedTime = math.select(AnimationUtils.WrapNormalizedTimeBackward(normalizedTime, curveHeader.preWrapMode), AnimationUtils.WrapNormalizedTimeForward(normalizedTime, curveHeader.postWrapMode), normalizedTime >= 0);
+
+            FrameHeader frameHeaderA = frameHeaders[curveHeader.frameHeaderIndex];  
+            FrameHeader frameHeaderB = frameHeaderA; 
+            //int i = 0; // Debug
+            for (int a = 1; a < curveHeader.frameCount; a++)
+            {
+                frameHeaderA = frameHeaderB;
+                frameHeaderB = frameHeaders[curveHeader.frameHeaderIndex + a];
+                //i = a; // Debug
+                if (frameHeaderB.normalizedLocalTime >= normalizedTime) break;  
+            }
+            //if (curveHeader.timeRatio != 0) Debug.Log(i + "/" + curveHeader.frameCount + " : " + curveHeader.normalizedTimeStart + "/" + curveHeader.normalizedTimeLength + " : " + normalizedTime); // Debug
+
+            float frameLength = (frameHeaderB.normalizedLocalTime - frameHeaderA.normalizedLocalTime);  
+            normalizedTime = (normalizedTime - frameHeaderA.normalizedLocalTime) / math.select(frameLength, 1, frameLength <= 0); 
+            data = EvaluateSampledCurveData(curveSamples, frameHeaderA.sampleIndex, frameHeaderA.sampleCount, normalizedTime);
+
+            validityPosition = curveHeader.validityPosition;
+            validityRotation = curveHeader.validityRotation;
+            validityScale = curveHeader.validityScale;
+
+            return data;
+
+        }
 
         [BurstCompile]
         public struct ApplyTransformCurvesJob : IJobParallelFor
         {
+
+            public int linearTransformCurvesIndexOffset;
 
             public float normalizedTime;
 
@@ -1938,11 +2177,8 @@ namespace Swole.API.Unity.Animation
             public NativeArray<ITransformCurve.Data> curveSamples;
             [ReadOnly]
             public NativeArray<CurveHeader> curveHeaders;
-
             [ReadOnly]
-            public NativeArray<ITransformCurve.Data> curveSamplesLinear;
-            [ReadOnly]
-            public NativeArray<CurveHeader> curveHeadersLinear;
+            public NativeArray<FrameHeader> frameHeaders;
 
             [ReadOnly]
             public NativeArray<int2> transformCurveBindings;
@@ -1957,7 +2193,7 @@ namespace Swole.API.Unity.Animation
 
                 var state = transformStates[binding.y];
 
-                state = state.Swizzle(state.Apply(EvaluateSampledCurveData(curveInfo.infoMain.isLinear, curveInfo.infoMain.curveIndex, normalizedTime, curveSamples, curveHeaders, curveSamplesLinear, curveHeadersLinear, out bool3 validityPosition, out bool4 validityRotation, out bool3 validityScale)), validityPosition, validityRotation, validityScale);
+                state = state.Swizzle(state.Apply(EvaluateSampledCurveData(curveInfo.infoMain.isLinear, linearTransformCurvesIndexOffset, curveInfo.infoMain.curveIndex, normalizedTime, curveSamples, curveHeaders, frameHeaders, out bool3 validityPosition, out bool4 validityRotation, out bool3 validityScale)), validityPosition, validityRotation, validityScale);
 
                 transformStates[binding.y] = state;
 
@@ -1969,6 +2205,8 @@ namespace Swole.API.Unity.Animation
         public struct ApplyMixTransformCurvesJob : IJobParallelFor
         {
 
+            public int linearTransformCurvesIndexOffset;
+
             public float normalizedTime;
 
             public float mix;
@@ -1980,11 +2218,8 @@ namespace Swole.API.Unity.Animation
             public NativeArray<ITransformCurve.Data> curveSamples;
             [ReadOnly]
             public NativeArray<CurveHeader> curveHeaders;
-
             [ReadOnly]
-            public NativeArray<ITransformCurve.Data> curveSamplesLinear;
-            [ReadOnly]
-            public NativeArray<CurveHeader> curveHeadersLinear;
+            public NativeArray<FrameHeader> frameHeaders;
 
             [ReadOnly]
             public NativeArray<int2> transformCurveBindings;
@@ -1999,7 +2234,7 @@ namespace Swole.API.Unity.Animation
 
                 var state = transformStates[binding.y];
 
-                state = state.Swizzle(state.ApplyMix(EvaluateSampledCurveData(curveInfo.infoMain.isLinear, curveInfo.infoMain.curveIndex, normalizedTime, curveSamples, curveHeaders, curveSamplesLinear, curveHeadersLinear, out bool3 validityPosition, out bool4 validityRotation, out bool3 validityScale), mix), validityPosition, validityRotation, validityScale);
+                state = state.Swizzle(state.ApplyMix(EvaluateSampledCurveData(curveInfo.infoMain.isLinear, linearTransformCurvesIndexOffset, curveInfo.infoMain.curveIndex, normalizedTime, curveSamples, curveHeaders, frameHeaders, out bool3 validityPosition, out bool4 validityRotation, out bool3 validityScale), mix), validityPosition, validityRotation, validityScale);
 
                 transformStates[binding.y] = state;
 
@@ -2011,6 +2246,8 @@ namespace Swole.API.Unity.Animation
         public struct ApplyAdditiveTransformCurvesJob : IJobParallelFor
         {
 
+            public int linearTransformCurvesIndexOffset;
+
             public float normalizedTime;
 
             [NativeDisableParallelForRestriction]
@@ -2020,11 +2257,8 @@ namespace Swole.API.Unity.Animation
             public NativeArray<ITransformCurve.Data> curveSamples;
             [ReadOnly]
             public NativeArray<CurveHeader> curveHeaders;
-
             [ReadOnly]
-            public NativeArray<ITransformCurve.Data> curveSamplesLinear;
-            [ReadOnly]
-            public NativeArray<CurveHeader> curveHeadersLinear;
+            public NativeArray<FrameHeader> frameHeaders;
 
             [ReadOnly]
             public NativeArray<int2> transformCurveBindings;
@@ -2039,10 +2273,11 @@ namespace Swole.API.Unity.Animation
 
                 var state = transformStates[binding.y];
 
-                ITransformCurve.Data mainData = EvaluateSampledCurveData(curveInfo.infoMain.isLinear, curveInfo.infoMain.curveIndex, normalizedTime, curveSamples, curveHeaders, curveSamplesLinear, curveHeadersLinear, out bool3 validityPosition, out bool4 validityRotation, out bool3 validityScale);
-                ITransformCurve.Data baseData = EvaluateSampledCurveData(curveInfo.infoBase.isLinear, curveInfo.infoBase.curveIndex, normalizedTime, curveSamples, curveHeaders, curveSamplesLinear, curveHeadersLinear, out _, out _, out _);
+                ITransformCurve.Data mainData = EvaluateSampledCurveData(curveInfo.infoMain.isLinear, linearTransformCurvesIndexOffset, curveInfo.infoMain.curveIndex, normalizedTime, curveSamples, curveHeaders, frameHeaders, out bool3 validityPosition, out bool4 validityRotation, out bool3 validityScale);
+                ITransformCurve.Data baseData = EvaluateSampledCurveData(curveInfo.infoBase.isLinear, linearTransformCurvesIndexOffset, curveInfo.infoBase.curveIndex, normalizedTime, curveSamples, curveHeaders, frameHeaders, out _, out _, out _);
 
                 state = state.Swizzle(state.ApplyAdditive(mainData - baseData), validityPosition, validityRotation, validityScale);
+                //state = state.Swizzle(state.ApplyAdditive(ITransformCurve.Data.Subtract(mainData, baseData, state.modifiedLocalRotation)), validityPosition, validityRotation, validityScale); 
 
                 transformStates[binding.y] = state;
 
@@ -2054,6 +2289,8 @@ namespace Swole.API.Unity.Animation
         public struct ApplyAdditiveMixTransformCurvesJob : IJobParallelFor
         {
 
+            public int linearTransformCurvesIndexOffset;
+
             public float normalizedTime;
             public float mix;
 
@@ -2064,11 +2301,8 @@ namespace Swole.API.Unity.Animation
             public NativeArray<ITransformCurve.Data> curveSamples;
             [ReadOnly]
             public NativeArray<CurveHeader> curveHeaders;
-
             [ReadOnly]
-            public NativeArray<ITransformCurve.Data> curveSamplesLinear;
-            [ReadOnly]
-            public NativeArray<CurveHeader> curveHeadersLinear;
+            public NativeArray<FrameHeader> frameHeaders;
 
             [ReadOnly]
             public NativeArray<int2> transformCurveBindings;
@@ -2083,10 +2317,11 @@ namespace Swole.API.Unity.Animation
 
                 var state = transformStates[binding.y];
 
-                ITransformCurve.Data mainData = EvaluateSampledCurveData(curveInfo.infoMain.isLinear, curveInfo.infoMain.curveIndex, normalizedTime, curveSamples, curveHeaders, curveSamplesLinear, curveHeadersLinear, out bool3 validityPosition, out bool4 validityRotation, out bool3 validityScale);
-                ITransformCurve.Data baseData = EvaluateSampledCurveData(curveInfo.infoBase.isLinear, curveInfo.infoBase.curveIndex, normalizedTime, curveSamples, curveHeaders, curveSamplesLinear, curveHeadersLinear, out _, out _, out _);
+                ITransformCurve.Data mainData = EvaluateSampledCurveData(curveInfo.infoMain.isLinear, linearTransformCurvesIndexOffset, curveInfo.infoMain.curveIndex, normalizedTime, curveSamples, curveHeaders, frameHeaders, out bool3 validityPosition, out bool4 validityRotation, out bool3 validityScale);
+                ITransformCurve.Data baseData = EvaluateSampledCurveData(curveInfo.infoBase.isLinear, linearTransformCurvesIndexOffset, curveInfo.infoBase.curveIndex, normalizedTime, curveSamples, curveHeaders, frameHeaders, out _, out _, out _);
 
                 state = state.Swizzle(state.ApplyAdditiveMix(mainData - baseData, mix), validityPosition, validityRotation, validityScale);
+                //state = state.Swizzle(state.ApplyAdditiveMix(ITransformCurve.Data.Subtract(mainData, baseData, state.modifiedLocalRotation), mix), validityPosition, validityRotation, validityScale);
 
                 transformStates[binding.y] = state;
 
@@ -2098,6 +2333,8 @@ namespace Swole.API.Unity.Animation
         public struct ApplyTransformCurvesJobFinal : IJobParallelForTransform
         {
 
+            public int linearTransformCurvesIndexOffset;
+
             public float normalizedTime;
 
             [NativeDisableParallelForRestriction]
@@ -2107,11 +2344,8 @@ namespace Swole.API.Unity.Animation
             public NativeArray<ITransformCurve.Data> curveSamples;
             [ReadOnly]
             public NativeArray<CurveHeader> curveHeaders;
-
             [ReadOnly]
-            public NativeArray<ITransformCurve.Data> curveSamplesLinear;
-            [ReadOnly]
-            public NativeArray<CurveHeader> curveHeadersLinear;
+            public NativeArray<FrameHeader> frameHeaders;
 
             [ReadOnly]
             public NativeArray<int2> transformCurveBindings;
@@ -2126,7 +2360,7 @@ namespace Swole.API.Unity.Animation
 
                 var state = transformStates[binding.y];
 
-                state = state.Swizzle(state.Apply(EvaluateSampledCurveData(curveInfo.infoMain.isLinear, curveInfo.infoMain.curveIndex, normalizedTime, curveSamples, curveHeaders, curveSamplesLinear, curveHeadersLinear, out bool3 validityPosition, out bool4 validityRotation, out bool3 validityScale)), validityPosition, validityRotation, validityScale);
+                state = state.Swizzle(state.Apply(EvaluateSampledCurveData(curveInfo.infoMain.isLinear, linearTransformCurvesIndexOffset, curveInfo.infoMain.curveIndex, normalizedTime, curveSamples, curveHeaders, frameHeaders, out bool3 validityPosition, out bool4 validityRotation, out bool3 validityScale)), validityPosition, validityRotation, validityScale);
 
                 transformStates[binding.y] = state;
 
@@ -2140,6 +2374,8 @@ namespace Swole.API.Unity.Animation
         public struct ApplyMixTransformCurvesJobFinal : IJobParallelForTransform
         {
 
+            public int linearTransformCurvesIndexOffset;
+
             public float normalizedTime;
 
             public float mix;
@@ -2151,11 +2387,8 @@ namespace Swole.API.Unity.Animation
             public NativeArray<ITransformCurve.Data> curveSamples;
             [ReadOnly]
             public NativeArray<CurveHeader> curveHeaders;
-
             [ReadOnly]
-            public NativeArray<ITransformCurve.Data> curveSamplesLinear;
-            [ReadOnly]
-            public NativeArray<CurveHeader> curveHeadersLinear;
+            public NativeArray<FrameHeader> frameHeaders;
 
             [ReadOnly]
             public NativeArray<int2> transformCurveBindings;
@@ -2170,7 +2403,7 @@ namespace Swole.API.Unity.Animation
 
                 var state = transformStates[binding.y];
 
-                state = state.Swizzle(state.ApplyMix(EvaluateSampledCurveData(curveInfo.infoMain.isLinear, curveInfo.infoMain.curveIndex, normalizedTime, curveSamples, curveHeaders, curveSamplesLinear, curveHeadersLinear, out bool3 validityPosition, out bool4 validityRotation, out bool3 validityScale), mix), validityPosition, validityRotation, validityScale);
+                state = state.Swizzle(state.ApplyMix(EvaluateSampledCurveData(curveInfo.infoMain.isLinear, linearTransformCurvesIndexOffset, curveInfo.infoMain.curveIndex, normalizedTime, curveSamples, curveHeaders, frameHeaders, out bool3 validityPosition, out bool4 validityRotation, out bool3 validityScale), mix), validityPosition, validityRotation, validityScale);
 
                 transformStates[binding.y] = state;
 
@@ -2184,6 +2417,8 @@ namespace Swole.API.Unity.Animation
         public struct ApplyAdditiveTransformCurvesJobFinal : IJobParallelForTransform
         {
 
+            public int linearTransformCurvesIndexOffset;
+
             public float normalizedTime;
 
             [NativeDisableParallelForRestriction]
@@ -2193,11 +2428,8 @@ namespace Swole.API.Unity.Animation
             public NativeArray<ITransformCurve.Data> curveSamples;
             [ReadOnly]
             public NativeArray<CurveHeader> curveHeaders;
-
             [ReadOnly]
-            public NativeArray<ITransformCurve.Data> curveSamplesLinear;
-            [ReadOnly]
-            public NativeArray<CurveHeader> curveHeadersLinear;
+            public NativeArray<FrameHeader> frameHeaders;
 
             [ReadOnly]
             public NativeArray<int2> transformCurveBindings;
@@ -2212,11 +2444,12 @@ namespace Swole.API.Unity.Animation
 
                 var state = transformStates[binding.y];
 
-                ITransformCurve.Data mainData = EvaluateSampledCurveData(curveInfo.infoMain.isLinear, curveInfo.infoMain.curveIndex, normalizedTime, curveSamples, curveHeaders, curveSamplesLinear, curveHeadersLinear, out bool3 validityPosition, out bool4 validityRotation, out bool3 validityScale);
-                ITransformCurve.Data baseData = EvaluateSampledCurveData(curveInfo.infoBase.isLinear, curveInfo.infoBase.curveIndex, normalizedTime, curveSamples, curveHeaders, curveSamplesLinear, curveHeadersLinear, out _, out _, out _);
+                ITransformCurve.Data mainData = EvaluateSampledCurveData(curveInfo.infoMain.isLinear, linearTransformCurvesIndexOffset, curveInfo.infoMain.curveIndex, normalizedTime, curveSamples, curveHeaders, frameHeaders, out bool3 validityPosition, out bool4 validityRotation, out bool3 validityScale);
+                ITransformCurve.Data baseData = EvaluateSampledCurveData(curveInfo.infoBase.isLinear, linearTransformCurvesIndexOffset, curveInfo.infoBase.curveIndex, normalizedTime, curveSamples, curveHeaders, frameHeaders, out _, out _, out _);
 
                 state = state.Swizzle(state.ApplyAdditive(mainData - baseData), validityPosition, validityRotation, validityScale);
-
+                //state = state.Swizzle(state.ApplyAdditive(ITransformCurve.Data.Subtract(mainData, baseData, state.modifiedLocalRotation)), validityPosition, validityRotation, validityScale);
+                
                 transformStates[binding.y] = state;
 
                 state.Modify(transform);
@@ -2229,6 +2462,8 @@ namespace Swole.API.Unity.Animation
         public struct ApplyAdditiveMixTransformCurvesJobFinal : IJobParallelForTransform
         {
 
+            public int linearTransformCurvesIndexOffset;
+
             public float normalizedTime;
             public float mix;
 
@@ -2239,11 +2474,8 @@ namespace Swole.API.Unity.Animation
             public NativeArray<ITransformCurve.Data> curveSamples;
             [ReadOnly]
             public NativeArray<CurveHeader> curveHeaders;
-
             [ReadOnly]
-            public NativeArray<ITransformCurve.Data> curveSamplesLinear;
-            [ReadOnly]
-            public NativeArray<CurveHeader> curveHeadersLinear;
+            public NativeArray<FrameHeader> frameHeaders;
 
             [ReadOnly]
             public NativeArray<int2> transformCurveBindings;
@@ -2258,11 +2490,12 @@ namespace Swole.API.Unity.Animation
 
                 var state = transformStates[binding.y];
 
-                ITransformCurve.Data mainData = EvaluateSampledCurveData(curveInfo.infoMain.isLinear, curveInfo.infoMain.curveIndex, normalizedTime, curveSamples, curveHeaders, curveSamplesLinear, curveHeadersLinear, out bool3 validityPosition, out bool4 validityRotation, out bool3 validityScale);
-                ITransformCurve.Data baseData = EvaluateSampledCurveData(curveInfo.infoBase.isLinear, curveInfo.infoBase.curveIndex, normalizedTime, curveSamples, curveHeaders, curveSamplesLinear, curveHeadersLinear, out _, out _, out _);
+                ITransformCurve.Data mainData = EvaluateSampledCurveData(curveInfo.infoMain.isLinear, linearTransformCurvesIndexOffset, curveInfo.infoMain.curveIndex, normalizedTime, curveSamples, curveHeaders, frameHeaders, out bool3 validityPosition, out bool4 validityRotation, out bool3 validityScale);
+                ITransformCurve.Data baseData = EvaluateSampledCurveData(curveInfo.infoBase.isLinear, linearTransformCurvesIndexOffset, curveInfo.infoBase.curveIndex, normalizedTime, curveSamples, curveHeaders, frameHeaders, out _, out _, out _);
 
                 state = state.Swizzle(state.ApplyAdditiveMix(mainData - baseData, mix), validityPosition, validityRotation, validityScale);
-
+                //state = state.Swizzle(state.ApplyAdditiveMix(ITransformCurve.Data.Subtract(mainData, baseData, state.modifiedLocalRotation), mix), validityPosition, validityRotation, validityScale); 
+                
                 transformStates[binding.y] = state;
 
                 state.Modify(transform);

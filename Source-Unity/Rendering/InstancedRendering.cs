@@ -9,10 +9,15 @@ using UnityEngine.Rendering;
 
 using Unity.Collections;
 using Unity.Mathematics;
+using Unity.Jobs;
+using Unity.Burst;
 
 namespace Swole
 {
 
+    /// <summary>
+    /// Material properties that will be changed per instance must have their Shader Declaration (Override Property Decleration) set to "Hybrid Per Instance"
+    /// </summary>
     public class InstancedRendering : SingletonBehaviour<InstancedRendering>
     {
 
@@ -243,8 +248,13 @@ namespace Swole
 
             private int batchSize;
 
-            public RenderSequence(RenderParams renderParams, int batchSize)
+            protected IRenderGroup renderGroup;
+            public IRenderGroup RenderGroup => renderGroup;
+
+            public RenderSequence(IRenderGroup renderGroup, RenderParams renderParams, int batchSize)
             {
+
+                this.renderGroup = renderGroup;
 
                 subSequences = new List<SubRenderSequence>() { new SubRenderSequence(this, 0, renderParams) };
 
@@ -414,6 +424,8 @@ namespace Swole
             private RenderSequence sequence;
             private int subIndex;
             public int Index => subIndex;
+
+            public IRenderGroup RenderGroup => sequence == null ? null : sequence.RenderGroup;
 
             private bool dirty;
             public bool IsDirty => dirty;
@@ -597,7 +609,23 @@ namespace Swole
 
         }
 
-        public class RenderingInstance<T> : IDisposable where T : unmanaged
+        public interface IRenderingInstance : IDisposable
+        {
+            public int Index { get; }
+            public int RenderSequenceIndex { get; }
+            public int SubSequenceIndex { get; }
+            public int IndexInSubsequence { get; set; }
+
+            public IRenderGroup RenderGroup { get; }
+            public RenderSequence RenderSequence { get; }
+            public SubRenderSequence SubRenderSequence { get; }
+
+            public bool Valid { get; }
+
+            public void Dispose(bool refreshRenderIndices, bool removeFromRenderGroup);
+            public void Destroy(bool refreshRenderIndices = true, bool removeFromRenderGroup = true);
+        }
+        public class RenderingInstance<T> : IRenderingInstance where T : unmanaged
         {
 
             public RenderingInstance(RenderGroup<T> renderGroup, int index, int renderSequenceIndex, int subSequenceIndex, int indexInSubsequence)
@@ -612,11 +640,13 @@ namespace Swole
             }
 
             private RenderGroup<T> renderGroup;
+            public IRenderGroup RenderGroup => renderGroup;
 
             /// <summary>
             /// The main index used for the instance data list
             /// </summary>
             public int index;
+            public int Index => index;
 
             private int renderSequenceIndex;
             public int RenderSequenceIndex => renderSequenceIndex;
@@ -629,6 +659,9 @@ namespace Swole
                 get => indexInSubsequence;
                 set => indexInSubsequence = value;
             }
+
+            public RenderSequence RenderSequence => renderGroup.renderSequences[renderSequenceIndex];
+            public SubRenderSequence SubRenderSequence => RenderSequence[subSequenceIndex];
 
             public bool Valid => renderGroup != null;
 
@@ -653,6 +686,43 @@ namespace Swole
             {
                 if (renderGroup == null) return default;
                 return renderGroup.GetInstanceData(index);
+            }
+
+            public void SetMaterialPropertyOverrides(ICollection<MaterialPropertyInstanceOverride<float>> instanceFloatPropertyOverrides)
+            {
+                if (instanceFloatPropertyOverrides == null || renderGroup == null) return; 
+                SubRenderSequence.SetMaterialPropertyOverrides(index, instanceFloatPropertyOverrides, null, null);
+            }
+            public void SetMaterialPropertyOverrides(ICollection<MaterialPropertyInstanceOverride<Color>> instanceColorPropertyOverrides)
+            {
+                if (instanceColorPropertyOverrides == null || renderGroup == null) return;
+                SubRenderSequence.SetMaterialPropertyOverrides(index, null, instanceColorPropertyOverrides, null);
+            }
+            public void SetMaterialPropertyOverrides(ICollection<MaterialPropertyInstanceOverride<Vector4>> instanceVectorPropertyOverrides)
+            {
+                if (instanceVectorPropertyOverrides == null || renderGroup == null) return;
+                SubRenderSequence.SetMaterialPropertyOverrides(index, null, null, instanceVectorPropertyOverrides);
+            }
+
+            public void SetMaterialPropertyOverrides(ICollection<MaterialPropertyInstanceOverride<float>> instanceFloatPropertyOverrides, ICollection<MaterialPropertyInstanceOverride<Color>> instanceColorPropertyOverrides, ICollection<MaterialPropertyInstanceOverride<Vector4>> instanceVectorPropertyOverrides)
+            {
+                if (renderGroup == null) return;
+                SubRenderSequence.SetMaterialPropertyOverrides(index, instanceFloatPropertyOverrides, instanceColorPropertyOverrides, instanceVectorPropertyOverrides);
+            }
+            public void SetMaterialPropertyOverrides(ICollection<MaterialPropertyInstanceOverride<float>> instanceFloatPropertyOverrides, ICollection<MaterialPropertyInstanceOverride<Color>> instanceColorPropertyOverrides)
+            {
+                if (renderGroup == null) return;
+                SubRenderSequence.SetMaterialPropertyOverrides(index, instanceFloatPropertyOverrides, instanceColorPropertyOverrides, null);
+            }
+            public void SetMaterialPropertyOverrides(ICollection<MaterialPropertyInstanceOverride<float>> instanceFloatPropertyOverrides, ICollection<MaterialPropertyInstanceOverride<Vector4>> instanceVectorPropertyOverrides)
+            {
+                if (renderGroup == null) return;
+                SubRenderSequence.SetMaterialPropertyOverrides(index, instanceFloatPropertyOverrides, null, instanceVectorPropertyOverrides);
+            }
+            public void SetMaterialPropertyOverrides(ICollection<MaterialPropertyInstanceOverride<Color>> instanceColorPropertyOverrides, ICollection<MaterialPropertyInstanceOverride<Vector4>> instanceVectorPropertyOverrides)
+            {
+                if (renderGroup == null) return;
+                SubRenderSequence.SetMaterialPropertyOverrides(index, null, instanceColorPropertyOverrides, instanceVectorPropertyOverrides);
             }
 
             private bool destroyed;
@@ -739,6 +809,8 @@ namespace Swole
 
             public Type GetInstanceDataType();
 
+            public IEnumerable InstanceDataEnumerable { get; }
+
             public Mesh Mesh { get; }
 
             public int SubmeshIndex { get; }
@@ -746,6 +818,12 @@ namespace Swole
             public bool Render();
 
             public void Dispose();
+
+            public bool IsRenderingInFrontOfCamera { get; set; }
+            public void StartRenderingInFrontOfCamera();
+            public void StopRenderingInFrontOfCamera();
+
+            public Camera Camera { get; }
 
         }
 
@@ -758,6 +836,8 @@ namespace Swole
 
             public Type GetInstanceDataType() => typeof(T);
 
+            public IEnumerable InstanceDataEnumerable => instanceData;
+
             protected int batchSize;
             public int BatchSize => batchSize;
 
@@ -766,6 +846,21 @@ namespace Swole
 
             protected int submeshIndex;
             public int SubmeshIndex => submeshIndex;
+
+            public Camera Camera
+            {
+                get
+                {
+                    if (renderSequences != null && renderSequences.Count > 0)
+                    {
+                        var seq = renderSequences[0];
+                        var cam = seq.RenderParams.camera;
+                        if (cam != null) return cam;
+                    }
+
+                    return Camera.main;
+                }
+            }
 
             public List<RenderSequence> renderSequences;
 
@@ -786,7 +881,7 @@ namespace Swole
                 if (renderSequences == null) renderSequences = new List<RenderSequence>();
                 for (int a = 0; a < renderSequences.Count; a++) if (CheckRenderParamsEquality(renderSequences[a].RenderParams, renderParams)) return a;
 
-                renderSequences.Add(new RenderSequence(renderParams, batchSize));
+                renderSequences.Add(new RenderSequence(this, renderParams, batchSize));
 
                 return renderSequences.Count - 1;
 
@@ -849,6 +944,24 @@ namespace Swole
 
                 return instance;
 
+            }
+
+            protected bool forceRenderInFrontOfCamera;
+            public bool IsRenderingInFrontOfCamera
+            {
+                get => forceRenderInFrontOfCamera;
+                set
+                {
+                    if (value) StartRenderingInFrontOfCamera(); else StopRenderingInFrontOfCamera();
+                }
+            }
+            public void StartRenderingInFrontOfCamera()
+            {
+                forceRenderInFrontOfCamera = true;
+            }
+            public void StopRenderingInFrontOfCamera()
+            {
+                forceRenderInFrontOfCamera = false;
             }
 
             public bool SetInstanceData(RenderingInstance<T> instance, T data)
@@ -1572,13 +1685,105 @@ namespace Swole
 
         }
 
+        private readonly Dictionary<Camera, Matrix4x4> frontOfCameraMatrices = new Dictionary<Camera, Matrix4x4>();
+
+
+        [BurstCompile]
+        private struct MemsetInstanceDataMatrixOnly : IJobParallelFor
+        {
+
+            public Matrix4x4 objectToWorld;
+
+            [NativeDisableParallelForRestriction]
+            public NativeList<InstanceDataMatrixOnly> instanceData;
+
+            public void Execute(int index)
+            {
+                var value = instanceData[index];
+                value.objectToWorld = objectToWorld;
+                instanceData[index] = value;
+            }
+        }
+        [BurstCompile]
+        private struct MemsetInstanceDataMatrixAndMotionVectors : IJobParallelFor
+        {
+
+            public Matrix4x4 objectToWorld;
+
+            [NativeDisableParallelForRestriction]
+            public NativeList<InstanceDataMatrixAndMotionVectors> instanceData;
+
+            public void Execute(int index)
+            {
+                var value = instanceData[index];
+                value.objectToWorld = objectToWorld;
+                instanceData[index] = value;
+            }
+        }
+        [BurstCompile]
+        private struct MemsetInstanceDataFull : IJobParallelFor
+        {
+
+            public Matrix4x4 objectToWorld;
+
+            [NativeDisableParallelForRestriction]
+            public NativeList<InstanceDataFull> instanceData;
+
+            public void Execute(int index)
+            {
+                var value = instanceData[index];
+                value.objectToWorld = objectToWorld;
+                instanceData[index] = value;
+            }
+        }
+
         protected void RenderLocal()
         {
 
             bool refresh = false;
 
+            frontOfCameraMatrices.Clear();
             foreach (var renderGroup in renderGroups)
             {
+
+                if (renderGroup.IsRenderingInFrontOfCamera)
+                {
+                    var camera = renderGroup.Camera;
+                    if (!frontOfCameraMatrices.TryGetValue(camera, out Matrix4x4 matrix))
+                    {
+                        matrix = camera.transform.localToWorldMatrix * Matrix4x4.TRS(Vector3.forward, Quaternion.identity, Vector3.one);
+                        frontOfCameraMatrices[camera] = matrix;  
+                    }
+                    
+                    var dataType = renderGroup.GetInstanceDataType();
+                    if (typeof(InstanceDataMatrixOnly).IsAssignableFrom(dataType))
+                    {
+                        var instanceData = (NativeList<InstanceDataMatrixOnly>)renderGroup.InstanceDataEnumerable;
+                        new MemsetInstanceDataMatrixOnly()
+                        {
+                            objectToWorld = matrix,
+                            instanceData = instanceData
+                        }.Schedule(instanceData.Length, 128).Complete();
+                    }
+                    else if (typeof(InstanceDataMatrixAndMotionVectors).IsAssignableFrom(dataType))
+                    {
+                        var instanceData = (NativeList<InstanceDataMatrixAndMotionVectors>)renderGroup.InstanceDataEnumerable;
+                        new MemsetInstanceDataMatrixAndMotionVectors()
+                        {
+                            objectToWorld = matrix,
+                            instanceData = instanceData
+                        }.Schedule(instanceData.Length, 128).Complete();
+                    }
+                    else if (typeof(InstanceDataFull).IsAssignableFrom(dataType))
+                    {
+                        var instanceData = (NativeList<InstanceDataFull>)renderGroup.InstanceDataEnumerable;
+                        new MemsetInstanceDataFull()
+                        {
+                            objectToWorld = matrix,
+                            instanceData = instanceData
+                        }.Schedule(instanceData.Length, 128).Complete();
+                    }
+                }
 
                 if (!renderGroup.Render()) refresh = true;
 

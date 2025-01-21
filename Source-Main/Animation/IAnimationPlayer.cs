@@ -11,6 +11,8 @@ namespace Swole.Animation
         public IRuntimeEnvironment EventRuntimeEnvironment { get; set; }
         public SwoleLogger EventLogger { get; set; }
         public void CallAnimationEvents(float startTime, float endTime);
+        public void CallAnimationEvents(float startTime, float endTime, float currentSpeed);
+        public void CallAnimationEvents(float startTime, float endTime, float currentSpeed, object sender);
         #endregion
 
         public int Index { get; set; }
@@ -27,11 +29,19 @@ namespace Swole.Animation
 
         public float Time { get; set; }
 
+        public float GetLoopedTime(float time, bool canLoop = true);
+
         public float Speed { get; set; }
         public float InternalSpeed { get; }
 
         public float Mix { get; set; }
+        /// <summary>
+        /// Last mix used during the animation step
+        /// </summary>
+        public float DynamicMix { get; }
         public bool Paused { get; set; }
+
+        public bool HasAnimationEvents { get; }
 
 
         public void ResetLoop();

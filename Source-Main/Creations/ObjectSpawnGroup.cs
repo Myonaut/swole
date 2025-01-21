@@ -1,13 +1,13 @@
 using System;
 using System.Collections.Generic;
 
-using static Swole.EngineInternal;
-
 namespace Swole
 {
     public class ObjectSpawnGroup : SwoleObject<ObjectSpawnGroup, ObjectSpawnGroup.Serialized>
     {
         #region Serialization
+
+        public override string SerializedName => nameof(ObjectSpawnGroup);
 
         public override string AsJSON(bool prettyPrint = false) => AsSerializableStruct().AsJSON(prettyPrint);
 
@@ -15,9 +15,12 @@ namespace Swole
         public struct Serialized : ISerializableContainer<ObjectSpawnGroup, ObjectSpawnGroup.Serialized>
         {
 
+            public string SerializedName => nameof(ObjectSpawnGroup);
+
             public string type;
             public string assetStringMain;
             public string assetStringSecondary;
+            public bool isPackageDependent;
             public ObjectSpawner[] objectSpawns;
 
             private static readonly Type[] _serializedConstructorTypes = new Type[] { typeof(ObjectSpawnGroup.Serialized) };
@@ -35,7 +38,7 @@ namespace Swole
                             if (constructor != null)
                             {
                                 _serializedConstructorArguments[0] = this;
-                                constructor.Invoke(_serializedConstructorArguments);
+                                return (ObjectSpawnGroup)constructor.Invoke(_serializedConstructorArguments); 
                             }
                         }
                     }
@@ -54,7 +57,7 @@ namespace Swole
             public object AsNonserializableObject(PackageInfo packageInfo = default) => AsOriginalType(packageInfo);
         }
 
-        public static implicit operator Serialized(ObjectSpawnGroup obj) => new ObjectSpawnGroup.Serialized() { type = obj.GetType().FullName, assetStringMain = obj.assetStringMain, objectSpawns = obj.objectSpawns };
+        public static implicit operator Serialized(ObjectSpawnGroup obj) => new ObjectSpawnGroup.Serialized() { type = obj.GetType().FullName, assetStringMain = obj.assetStringMain, isPackageDependent = obj.isPackageDependent, objectSpawns = obj.objectSpawns };
 
         public override ObjectSpawnGroup.Serialized AsSerializableStruct() => this;
 
@@ -62,6 +65,7 @@ namespace Swole
         {
             this.assetStringMain = serializable.assetStringMain;
             this.assetStringSecondary = serializable.assetStringSecondary;
+            this.isPackageDependent = serializable.isPackageDependent;
             this.objectSpawns = serializable.objectSpawns;
         }
 
@@ -72,6 +76,12 @@ namespace Swole
 
         protected string assetStringSecondary;
         public string AssetStringSecondary => assetStringSecondary;
+
+        protected bool isPackageDependent;
+        /// <summary>
+        /// Does the asset belong to a package? If so, AssetStringSecondary is the package id.
+        /// </summary>
+        public virtual bool IsPackageDependent => isPackageDependent;
 
         protected ObjectSpawner[] objectSpawns;
         public int ObjectSpawnCount => objectSpawns == null ? 0 : objectSpawns.Length;

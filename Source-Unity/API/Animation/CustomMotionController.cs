@@ -33,6 +33,7 @@ namespace Swole.API.Unity.Animation
             get => name;
             set => name = value;
         }
+        public string SerializedName => Name;
 
         [Serializable]
         public class AnimationReference : CustomMotionController, IAnimationReference
@@ -45,6 +46,7 @@ namespace Swole.API.Unity.Animation
             {
 
                 public string name;
+                public string SerializedName => name;
                 public float baseSpeed;
                 public int speedMultiplierParameter;
 
@@ -402,6 +404,7 @@ namespace Swole.API.Unity.Animation
             {
 
                 public string name;
+                public string SerializedName => name;
                 public float baseSpeed;
                 public int speedMultiplierParameter;
 

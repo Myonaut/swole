@@ -264,6 +264,9 @@ namespace Swole.Script
 
         public const string type_AnimationReference = "AnimationReference";
 
+        public const string type_Curve = "Curve";
+        public const string type_BezierCurve = "BezierCurve";  
+
         #endregion
 
         #region Assets
@@ -293,7 +296,7 @@ namespace Swole.Script
         public const string type_AudioSource = "AudioSource";
         public const string type_AudibleObject = "AudibleObject";
         public const string type_AudioBundle = "AudioBundle";
-        public const string type_AudioMixer = "AudioMixer";
+        public const string type_AudioMixerGroup = "AudioMixer";
 
         #endregion
 
@@ -1240,7 +1243,7 @@ namespace Swole.Script
 
                 RuntimeEventListener listener = null;
                 ExecutionThrottle throttle = new ExecutionThrottle(_eventTimeout);
-                void Listen(string eventName, float value)
+                void Listen(string eventName, float value, object sender)
                 {
                     try
                     {
@@ -1443,7 +1446,7 @@ namespace Swole.Script
                     {
                         loopMode = (AnimationLoopMode)num.IntValue();
                     }
-                    catch (Exception ex)
+                    catch (Exception)
                     {
                         throw new RuntimeException("invalid loop mode index");
                     }
@@ -1606,7 +1609,7 @@ namespace Swole.Script
             if (obj is IAudioSource as_) return ConvertAudioSource(context, as_);
             if (obj is IAudioAsset aua) return ConvertAudioAsset(context, aua);
             if (obj is IAudioBundle bundle) return ConvertAudioBundle(context, bundle);
-            if (obj is IAudioMixer mixer) return ConvertAudioMixer(context, mixer);
+            if (obj is IAudioMixerGroup mixer) return ConvertAudioMixerGroup(context, mixer);
 
             if (obj is EngineInternal.IComponent comp) return ConvertComponent(context, comp);
 
@@ -2129,7 +2132,7 @@ namespace Swole.Script
                     {
                         SetValue(GetInstance(instance), Convert.ChangeType(value.FloatValue(), realType));
                     }
-                    catch (Exception ex)
+                    catch (Exception)
                     {
                         throw new RuntimeException($"tried to set {propName} to an invalid type");
                     }
@@ -2144,7 +2147,7 @@ namespace Swole.Script
                     {
                         SetValue(GetInstance(instance), value.BoolValue());
                     }
-                    catch (Exception ex)
+                    catch (Exception)
                     {
                         throw new RuntimeException($"tried to set {propName} to an invalid type");
                     }
@@ -2159,7 +2162,7 @@ namespace Swole.Script
                     {
                         SetValue(GetInstance(instance), Enum.Parse(realType, value.ToString(), true));
                     }
-                    catch (Exception ex)
+                    catch (Exception)
                     {
                         throw new RuntimeException($"tried to set {propName} to an invalid type");
                     }
@@ -2176,7 +2179,7 @@ namespace Swole.Script
                         {
                             SetValue(GetInstance(instance), new EngineInternal.Vector2((float)v.X, (float)v.Y));
                         }
-                        catch (Exception ex)
+                        catch (Exception)
                         {
                             throw new RuntimeException($"tried to set {propName} to an invalid type");
                         }
@@ -2195,7 +2198,7 @@ namespace Swole.Script
                         {
                             SetValue(GetInstance(instance), new EngineInternal.Vector3((float)v.X, (float)v.Y, (float)v.Z));
                         }
-                        catch (Exception ex)
+                        catch (Exception)
                         {
                             throw new RuntimeException($"tried to set {propName} to an invalid type");
                         }
@@ -2214,7 +2217,7 @@ namespace Swole.Script
                         {
                             SetValue(GetInstance(instance), new EngineInternal.Vector4((float)v.X, (float)v.Y, (float)v.Z, (float)v.W));
                         }
-                        catch (Exception ex)
+                        catch (Exception)
                         {
                             throw new RuntimeException($"tried to set {propName} to an invalid type");
                         }
@@ -2231,7 +2234,7 @@ namespace Swole.Script
                     {
                         SetValue(GetInstance(instance), value.ToString());
                     }
-                    catch (Exception ex)
+                    catch (Exception)
                     {
                         throw new RuntimeException($"tried to set {propName} to an invalid type");
                     }
@@ -2248,7 +2251,7 @@ namespace Swole.Script
                         {
                             SetValue(GetInstance(instance), new EngineInternal.Quaternion((float)v.X, (float)v.Y, (float)v.Z, (float)v.W));
                         }
-                        catch (Exception ex)
+                        catch (Exception)
                         {
                             throw new RuntimeException($"tried to set {propName} to an invalid type");
                         }
@@ -2272,7 +2275,7 @@ namespace Swole.Script
                                 new EngineInternal.Vector4((float)m.c3.X, (float)m.c3.Y, (float)m.c3.Z, (float)m.c3.W)
                                 ));
                         }
-                        catch (Exception ex)
+                        catch (Exception)
                         {
                             throw new RuntimeException($"tried to set {propName} to an invalid type");
                         }
@@ -2291,7 +2294,7 @@ namespace Swole.Script
                         {
                             SetValue(GetInstance(instance), val.Reference);
                         }
-                        catch (Exception ex)
+                        catch (Exception)
                         {
                             throw new RuntimeException($"tried to set {propName} to an invalid type");
                         }
@@ -2310,7 +2313,7 @@ namespace Swole.Script
                         {
                             SetValue(GetInstance(instance), val.Reference);
                         }
-                        catch (Exception ex)
+                        catch (Exception)
                         {
                             throw new RuntimeException($"tried to set {propName} to an invalid type");
                         }
@@ -2329,7 +2332,7 @@ namespace Swole.Script
                         {
                             SetValue(GetInstance(instance), val.Reference);
                         }
-                        catch (Exception ex)
+                        catch (Exception)
                         {
                             throw new RuntimeException($"tried to set {propName} to an invalid type");
                         }
@@ -2348,7 +2351,7 @@ namespace Swole.Script
                         {
                             SetValue(GetInstance(instance), val.Reference);
                         }
-                        catch (Exception ex)
+                        catch (Exception)
                         {
                             throw new RuntimeException($"tried to set {propName} to an invalid type");
                         }
@@ -2493,7 +2496,7 @@ namespace Swole.Script
                     }
                     catch (Exception ex)
                     {
-                        throw new RuntimeException($"error invoking external function {name}", ex); 
+                        throw new RuntimeException($"error invoking external function {name}", ex);   
                     }
                 };
 
@@ -3365,6 +3368,44 @@ namespace Swole.Script
             public override string ToString(TAC.Machine vm) => $"motion_controller_identifier[{controllerType.ToString()}, {index.IntValue()}]";
         }
 
+        #region Curves
+
+        public class ValCurve : ValReference
+        {
+            public ICurve curveObject;
+            public override object Reference => curveObject;
+
+            public ValCurve(ICurve curveObject)
+            {
+                this.curveObject = curveObject;
+            }
+            public override double Equality(Value rhs)
+            {
+                if (rhs is ValCurve obj) return ReferenceEquals(curveObject, obj.curveObject) ? 1 : 0;
+
+                return 0;
+            }
+            public override int Hash() => ReferenceEquals(curveObject, null) ? base.GetHashCode() : curveObject.GetHashCode();
+            public override string ToString(TAC.Machine vm) => $"curve[{(swole.Engine.IsNull(curveObject) ? "null" : Hash().ToString())}]";
+        }
+        /*
+        public class ValBezierCurve : ValCurve
+        {
+            public ValBezierCurve(IBezierCurve curveObject) : base(curveObject)
+            {
+            } 
+            public override double Equality(Value rhs)
+            {
+                if (rhs is ValCurve obj) return ReferenceEquals(curveObject, obj.curveObject) ? 1 : 0;
+
+                return 0;
+            }
+            public override int Hash() => ReferenceEquals(curveObject, null) ? base.GetHashCode() : curveObject.GetHashCode();
+            public override string ToString(TAC.Machine vm) => $"curve[{(swole.Engine.IsNull(curveObject) ? "null" : Hash().ToString())}]";
+        }
+        */
+        #endregion
+
         private static void CreateAnimationTypes()
         {
             Intrinsic f;
@@ -3412,6 +3453,24 @@ namespace Swole.Script
                 var type = AnimationReferenceType().GetType(context);
                 return new Intrinsic.Result(type);
             };
+
+            #endregion
+
+            #region Curves
+
+            /*
+            f = Intrinsic.Create(type_Curve);
+            f.code = (context, partialResult) => {
+                var type = CurveType().GetType(context);
+                return new Intrinsic.Result(type);
+            };
+            
+            f = Intrinsic.Create(type_BezierCurve);
+            f.code = (context, partialResult) => {
+                var type = BezierCurveType().GetType(context);
+                return new Intrinsic.Result(type);
+            };
+            */
 
             #endregion
 
@@ -4555,6 +4614,85 @@ namespace Swole.Script
             return ms_obj;
         }
 
+        #region Curves
+
+        public static SwoleScriptType CurveType()
+        {
+            if (_curveType == null)
+            {
+                var type = typeof(ICurve);
+                _curveType = new SwoleScriptType(type_Curve, type); 
+                var typeName = new ValString(type_Curve);
+
+                Intrinsic f;
+                Dictionary<string, AssignmentOverrideDelegate> assignOverrideDelegates = new Dictionary<string, AssignmentOverrideDelegate>();
+
+                var fields = type.GetFields(BindingFlags.Public | BindingFlags.Instance | BindingFlags.Static);
+                var properties = type.GetProperties(BindingFlags.Public | BindingFlags.Instance | BindingFlags.Static);
+                var methods = type.GetMethods(BindingFlags.Public | BindingFlags.Instance | BindingFlags.Static);
+
+                AddFieldsAsLocalIntrinsics(_curveType, fields, ref assignOverrideDelegates);
+                AddPropertiesAsLocalIntrinsics(_curveType, properties, ref assignOverrideDelegates);
+                AddMethodsAsLocalIntrinsics(_curveType, methods, ref assignOverrideDelegates);
+
+            }
+
+            return _curveType;
+        }
+        static SwoleScriptType _curveType = null;
+        public static ValMap ConvertCurve(TAC.Context context, ICurve obj)
+        {
+            if (obj == null) return null;
+
+            var ms_obj = CurveType().NewObject(context);
+
+            // Set data
+            ms_obj.map[varStr_cachedReference] = new ValCurve(obj); 
+
+            return ms_obj;
+        }
+
+        /*
+        public static SwoleScriptType BezierCurveType()
+        {
+            if (_bezierCurveType == null)
+            {
+                var type = typeof(IBezierCurve);
+                _bezierCurveType = new SwoleScriptType(type_BezierCurve, type);
+                var typeName = new ValString(type_BezierCurve);
+
+                Intrinsic f;
+                Dictionary<string, AssignmentOverrideDelegate> assignOverrideDelegates = new Dictionary<string, AssignmentOverrideDelegate>();
+
+                var fields = type.GetFields(BindingFlags.Public | BindingFlags.Instance | BindingFlags.Static);
+                var properties = type.GetProperties(BindingFlags.Public | BindingFlags.Instance | BindingFlags.Static);
+                var methods = type.GetMethods(BindingFlags.Public | BindingFlags.Instance | BindingFlags.Static);
+
+                AddFieldsAsLocalIntrinsics(_bezierCurveType, fields, ref assignOverrideDelegates);
+                AddPropertiesAsLocalIntrinsics(_bezierCurveType, properties, ref assignOverrideDelegates);
+                AddMethodsAsLocalIntrinsics(_bezierCurveType, methods, ref assignOverrideDelegates);
+
+            }
+
+            return _bezierCurveType;
+        }
+        static SwoleScriptType _bezierCurveType = null;
+        public static ValMap ConvertCurve(TAC.Context context, IBezierCurve obj)
+        {
+            if (obj == null) return null;
+
+            var parent_obj = ConvertCurve(context, obj);
+            var ms_obj = BezierCurveType().NewObject(context);
+            CopyParentObjectIntoChildObject(ms_obj, parent_obj);
+
+            // Set data
+            ms_obj.map[varStr_cachedReference] = new ValBezierCurve(obj);
+
+            return ms_obj;
+        }*/
+
+        #endregion
+
         #endregion
 
         #region Audio Types
@@ -4566,11 +4704,11 @@ namespace Swole.Script
             public override string ToString(TAC.Machine vm) => $"audio_asset[{(swole.Engine.IsNull(Asset) ? "null" : ((Asset.PackageInfo.NameIsValid ? (Asset.PackageInfo.ToString() + "/") : "") + Asset.Name))}]"; 
         }
 
-        public class ValAudioMixer : ValEngineObject
+        public class ValAudioMixerGroup : ValEngineObject
         {
-            public IAudioMixer Mixer => engineObject is IAudioMixer mixer ? mixer : null;
-            public ValAudioMixer(IAudioMixer reference) : base(reference){}
-            public override string ToString(TAC.Machine vm) => $"audio_mixer[{(swole.Engine.IsNull(Mixer) ? "null" : Mixer.name)}]";
+            public IAudioMixerGroup MixerGroup => engineObject is IAudioMixerGroup mixer ? mixer : null;
+            public ValAudioMixerGroup(IAudioMixerGroup reference) : base(reference){}
+            public override string ToString(TAC.Machine vm) => $"audio_mixer_group[{(swole.Engine.IsNull(MixerGroup) ? "null" : MixerGroup.name)}]";  
         }
 
         public class ValAudioSource : ValEngineObject
@@ -4619,9 +4757,9 @@ namespace Swole.Script
                 var type = AudioAssetType().GetType(context);
                 return new Intrinsic.Result(type);
             };
-            f = Intrinsic.Create(type_AudioMixer);
+            f = Intrinsic.Create(type_AudioMixerGroup);
             f.code = (context, partialResult) => {
-                var type = AudioMixerType().GetType(context);
+                var type = AudioMixerGroupType().GetType(context);
                 return new Intrinsic.Result(type);
             };
             f = Intrinsic.Create(type_AudibleObject);
@@ -4730,13 +4868,13 @@ namespace Swole.Script
                     if (TryGetCachedReference<ValAudioSource>(instance, out var reference) && reference.Source != null)
                     {
                         var source = reference.Source;
-                        ValAudioMixer mixer = null;
-                        if (TryGetCachedReference<ValAudioMixer>(value, out var _temp))
+                        ValAudioMixerGroup mixer = null;
+                        if (TryGetCachedReference<ValAudioMixerGroup>(value, out var _temp))
                         {
                             mixer = _temp;
                         }
 
-                        if (mixer != null) source.outputAudioMixerGroup = mixer.Mixer; else source.outputAudioMixerGroup = null;
+                        if (mixer != null) source.outputAudioMixerGroup = mixer.MixerGroup; else source.outputAudioMixerGroup = null;
                     }
                     return true;
                 });
@@ -4744,7 +4882,7 @@ namespace Swole.Script
                 f.code = (context, partialResult) =>
                 {
                     if (!TryGetCachedReference<ValAudioSource>(context.self, out var reference) || reference.Source == null) return Intrinsic.Result.Null;
-                    return new Intrinsic.Result(ConvertAudioMixer(context, reference.Source.outputAudioMixerGroup));
+                    return new Intrinsic.Result(ConvertAudioMixerGroup(context, reference.Source.outputAudioMixerGroup));
                 };
 
             }
@@ -4790,25 +4928,25 @@ namespace Swole.Script
             return ms_obj;
         }
          
-        public static SwoleScriptType AudioMixerType()
+        public static SwoleScriptType AudioMixerGroupType()
         {
-            if (_audioMixerType == null)
+            if (_audioMixerGroupType == null)
             {
-                _audioMixerType = new SwoleScriptType(type_AudioMixer, typeof(IAudioMixer));
-                _audioMixerType[var_genericName] = new ValString(type_AudioMixer);
+                _audioMixerGroupType = new SwoleScriptType(type_AudioMixerGroup, typeof(IAudioMixerGroup));
+                _audioMixerGroupType[var_genericName] = new ValString(type_AudioMixerGroup);
 
             }
-            return _audioMixerType;
+            return _audioMixerGroupType;
         }
-        static SwoleScriptType _audioMixerType = null;
-        public static ValMap ConvertAudioMixer(TAC.Context context, IAudioMixer mixer)
+        static SwoleScriptType _audioMixerGroupType = null;
+        public static ValMap ConvertAudioMixerGroup(TAC.Context context, IAudioMixerGroup mixer)
         {
             if (mixer == null) return null;
 
-            var ms_obj = AudioMixerType().NewObject(context);
+            var ms_obj = AudioMixerGroupType().NewObject(context);
 
             // Set audio mixer object data
-            ms_obj.map[varStr_cachedReference] = new ValAudioMixer(mixer);
+            ms_obj.map[varStr_cachedReference] = new ValAudioMixerGroup(mixer);
 
             return ms_obj;
         }

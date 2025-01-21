@@ -176,15 +176,15 @@ namespace Swole.API.Unity.Animation
                             break;
 
                         case TransformPropertyComponent.X:
-                            curve.localPositionCurveX = origCurve;
+                            curve.localPositionCurveX = new EditableAnimationCurve(origCurve);//origCurve;
                             break;
 
                         case TransformPropertyComponent.Y:
-                            curve.localPositionCurveY = origCurve;
+                            curve.localPositionCurveY = new EditableAnimationCurve(origCurve);//origCurve;
                             break;
 
                         case TransformPropertyComponent.Z:
-                            curve.localPositionCurveZ = origCurve;
+                            curve.localPositionCurveZ = new EditableAnimationCurve(origCurve);//origCurve;
                             break;
 
                     }
@@ -200,19 +200,19 @@ namespace Swole.API.Unity.Animation
                             break;
 
                         case TransformPropertyComponent.X:
-                            curve.localRotationCurveX = origCurve;
+                            curve.localRotationCurveX = new EditableAnimationCurve(origCurve);//origCurve;
                             break;
 
                         case TransformPropertyComponent.Y:
-                            curve.localRotationCurveY = origCurve;
+                            curve.localRotationCurveY = new EditableAnimationCurve(origCurve);//origCurve;
                             break;
 
                         case TransformPropertyComponent.Z:
-                            curve.localRotationCurveZ = origCurve;
+                            curve.localRotationCurveZ = new EditableAnimationCurve(origCurve);//origCurve;
                             break;
 
                         case TransformPropertyComponent.W:
-                            curve.localRotationCurveW = origCurve;
+                            curve.localRotationCurveW = new EditableAnimationCurve(origCurve);//origCurve;
                             break;
 
                     }
@@ -228,15 +228,15 @@ namespace Swole.API.Unity.Animation
                             break;
 
                         case TransformPropertyComponent.X:
-                            curve.localScaleCurveX = origCurve;
+                            curve.localScaleCurveX = new EditableAnimationCurve(origCurve);//origCurve;
                             break;
 
                         case TransformPropertyComponent.Y:
-                            curve.localScaleCurveY = origCurve;
+                            curve.localScaleCurveY = new EditableAnimationCurve(origCurve);//origCurve;
                             break;
 
                         case TransformPropertyComponent.Z:
-                            curve.localScaleCurveZ = origCurve;
+                            curve.localScaleCurveZ = new EditableAnimationCurve(origCurve);//origCurve;
                             break;
 
                     }

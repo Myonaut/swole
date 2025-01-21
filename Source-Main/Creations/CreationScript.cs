@@ -117,7 +117,7 @@ namespace Swole
         public string source_OnTriggerStay;
 
         public string source_OnTriggerExit;
-
+         
         /// <summary>
         /// Called when the Creation has interaction points and one of them is used by a character.
         /// </summary>
@@ -147,10 +147,24 @@ namespace Swole
             if (source_OnCollisionExit != other.source_OnCollisionExit) return false;
 
             if (source_OnTriggerEnter != other.source_OnTriggerEnter) return false;
-            if (source_OnTriggerStay != other.source_OnTriggerStay) return false;
+            if (source_OnTriggerStay != other.source_OnTriggerStay) return false;  
             if (source_OnTriggerExit != other.source_OnTriggerExit) return false;
 
             return true;
+        }
+
+        public static bool operator ==(CreationScript A, CreationScript B) => A.Equals(B);
+        public static bool operator !=(CreationScript A, CreationScript B) => !A.Equals(B);
+
+        public override int GetHashCode()
+        {
+            return base.GetHashCode();
+        }
+
+        public override bool Equals(object obj)
+        {
+            if (obj is CreationScript other) return this == other;
+            return base.Equals(obj);
         }
 
     }

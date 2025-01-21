@@ -197,7 +197,7 @@ namespace Swole.API.Unity
         }
 
         [SwoleScriptIgnore]
-        public IAudioMixer outputAudioMixerGroup
+        public IAudioMixerGroup outputAudioMixerGroup
         {
             get
             {
@@ -502,7 +502,7 @@ namespace Swole.API.Unity
             public void InvokeOnPlay()
             {
                 OnPlay?.Invoke();
-                onPlay?.Invoke("play", 0);
+                onPlay?.Invoke("play", 0, this);
             }
 
             public void SubscribePreEvent(RuntimeEventListenerDelegate listener)

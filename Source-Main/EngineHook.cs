@@ -56,6 +56,9 @@ namespace Swole
             }
         }
 
+        protected DefaultRuntimeHost defaultHost = new DefaultRuntimeHost();
+        public virtual IRuntimeHost DefaultHost => defaultHost;
+
         #region JSON Serialization
 
         protected virtual string ToJsonInternal(object obj, bool prettyPrint = false) => DefaultJsonSerializer.ToJson(obj, prettyPrint);
@@ -215,8 +218,19 @@ namespace Swole
         public virtual int Object_GetInstanceID(object engineObject) => -1;
 
         public virtual EngineInternal.EngineObject Object_Instantiate(object engineObject) => default;
-        public virtual void Object_Destroy(object engineObject, float timeDelay = 0) { }
-        public virtual void Object_AdminDestroy(object engineObject, float timeDelay = 0) { }
+        public virtual void Object_SetName(object engineObject, string name)
+        {
+        }
+        public virtual void Object_SetNameAdmin(object engineObject, string name)
+        {
+        }
+        public virtual void Object_Destroy(object engineObject, float timeDelay = 0) 
+        { 
+        }
+        public virtual void Object_AdminDestroy(object engineObject, float timeDelay = 0) 
+        {
+            if (engineObject is ISwoleAsset asset && !asset.IsInternalAsset) asset.Dispose();
+        }
 
         #region Math
 
@@ -336,6 +350,30 @@ namespace Swole
         public virtual bool Transform_IsChildOf(EngineInternal.ITransform transform, EngineInternal.ITransform parent) => default;
         public virtual EngineInternal.ITransform Transform_GetChild(EngineInternal.ITransform transform, int index) => default;
 
+        #region Rect Transforms
+
+        public virtual EngineInternal.Vector2 RectTransform_anchorMinGet(EngineInternal.IRectTransform transform) => default;
+        public virtual void RectTransform_anchorMinSet(EngineInternal.IRectTransform transform, EngineInternal.Vector2 val) { }
+        public virtual EngineInternal.Vector2 RectTransform_anchorMaxGet(EngineInternal.IRectTransform transform) => default;
+        public virtual void RectTransform_anchorMaxSet(EngineInternal.IRectTransform transform, EngineInternal.Vector2 val) { }
+
+        public virtual EngineInternal.Vector2 RectTransform_sizeDeltaGet(EngineInternal.IRectTransform transform) => default;
+        public virtual void RectTransform_sizeDeltaSet(EngineInternal.IRectTransform transform, EngineInternal.Vector2 val) { }
+        public virtual EngineInternal.Vector2 RectTransform_offsetMinGet(EngineInternal.IRectTransform transform) => default;
+        public virtual void RectTransform_offsetMinSet(EngineInternal.IRectTransform transform, EngineInternal.Vector2 val) { }
+        public virtual EngineInternal.Vector2 RectTransform_offsetMaxGet(EngineInternal.IRectTransform transform) => default;
+        public virtual void RectTransform_offsetMaxSet(EngineInternal.IRectTransform transform, EngineInternal.Vector2 val) { }
+
+        public virtual EngineInternal.Vector2 RectTransform_pivotGet(EngineInternal.IRectTransform transform) => default;
+        public virtual void RectTransform_pivotSet(EngineInternal.IRectTransform transform, EngineInternal.Vector2 val) { }
+
+        public virtual EngineInternal.Vector2 RectTransform_anchoredPositionGet(EngineInternal.IRectTransform transform) => default;
+        public virtual void RectTransform_anchoredPositionSet(EngineInternal.IRectTransform transform, EngineInternal.Vector2 val) { }
+        public virtual EngineInternal.Vector3 RectTransform_anchoredPosition3DGet(EngineInternal.IRectTransform transform) => default;
+        public virtual void RectTransform_anchoredPosition3DSet(EngineInternal.IRectTransform transform, EngineInternal.Vector3 val) { }
+
+        #endregion
+
         #endregion
 
         #region GameObjects
@@ -423,7 +461,7 @@ namespace Swole
         public virtual int GetTileCount(object boObject) => 0;
         public virtual EngineInternal.Tile GetTileFromSet(object boObject, int tileIndex) => default;
 
-        public virtual EngineInternal.TileSet GetTileSet(string tileSetId, string tileCollectionId = null, bool caseSensitive = false) => default;
+        public virtual EngineInternal.TileSet GetTileSet(string tileSetId, string tileCollectionId = null, bool collectionIsPackage = false, bool caseSensitive = false) => default;
 
         public virtual void SetSwoleId(object obj, int id) { }
         public virtual int GetSwoleId(object obj) => -1;
@@ -466,7 +504,7 @@ namespace Swole
 
             return res;
         }
-        public virtual FindAssetResult TryFindAsset(string assetPath, Type type, IRuntimeHost host, out ISwoleAsset asset, bool caseSensitive = false)
+        public virtual FindAssetResult TryFindAsset(string assetPath, Type type, IRuntimeHost host, out ISwoleAsset asset, bool caseSensitive = false) // If using unity engine hook, this is overridden to also include assets shipped with the game.
         {
             asset = default;
             if (type == null || !typeof(ISwoleAsset).IsAssignableFrom(type)) return FindAssetResult.InvalidType;

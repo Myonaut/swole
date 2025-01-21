@@ -9,6 +9,7 @@ namespace Swole.Animation
 
         public bool Valid { get; }
 
+        public bool HasPrefix(string prefix);
         public bool DisposeIfHasPrefix(string prefix);
 
         public IAnimationLayer NewInstance(IAnimator animator, IAnimationController animationController = null);
@@ -19,13 +20,22 @@ namespace Swole.Animation
 
         public int IndexInAnimator { get; set; }
         /// <summary>
-        /// Rearrange the position of this layer in the animator's layer list.
+        /// Swap the position of this layer in the animator's layer list with another layer.
         /// </summary>
         public Dictionary<int, int> Rearrange(int swapIndex, bool recalculateIndices = true);
         /// <summary>
-        /// Rearrange the position of this layer in the animator's layer list.
+        /// Swap the position of this layer in the animator's layer list with another layer.
         /// </summary>
         public void RearrangeNoRemap(int swapIndex, bool recalculateIndices = true);
+
+        /// <summary>
+        /// Set the position of this layer in the animator's layer list.
+        /// </summary>
+        public Dictionary<int, int> Move(int newIndex, bool recalculateIndices = true);
+        /// <summary>
+        /// Set the position of this layer in the animator's layer list.
+        /// </summary>
+        public void MoveNoRemap(int newIndex, bool recalculateIndices = true);
 
         public void SetAdditive(bool isAdditiveLayer);
         public bool IsAdditive { get; set; }

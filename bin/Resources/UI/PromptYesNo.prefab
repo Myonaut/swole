@@ -312,6 +312,11 @@ PrefabInstance:
       propertyPath: toIgnore.Array.data[1]
       value: 
       objectReference: {fileID: 567440698}
+    - target: {fileID: 2798366588283597803, guid: 3df4bb2e8147c0344a57f386f80690ea,
+        type: 3}
+      propertyPath: m_Name
+      value: Message
+      objectReference: {fileID: 0}
     - target: {fileID: 5414175424078557834, guid: 3df4bb2e8147c0344a57f386f80690ea,
         type: 3}
       propertyPath: m_RootOrder
@@ -600,6 +605,11 @@ PrefabInstance:
   m_Modification:
     m_TransformParent: {fileID: 846051036090969678}
     m_Modifications:
+    - target: {fileID: 7916089438493008553, guid: 5e4cca8bb70d9ae4bb900178972e2c95,
+        type: 3}
+      propertyPath: m_text
+      value: YES
+      objectReference: {fileID: 0}
     - target: {fileID: 7916089438521072228, guid: 5e4cca8bb70d9ae4bb900178972e2c95,
         type: 3}
       propertyPath: m_Pivot.x

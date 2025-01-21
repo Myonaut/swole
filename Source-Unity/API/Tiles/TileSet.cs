@@ -22,6 +22,34 @@ namespace Swole.API.Unity
     public class TileSet : ScriptableObject, ITileSet
     {
 
+        public System.Type AssetType => GetType(); 
+        public object Asset => this;
+
+        protected bool isNotInternalAsset;
+        public bool IsInternalAsset
+        {
+            get => !isNotInternalAsset;
+            set => isNotInternalAsset = !value;
+        }
+
+        public bool IsValid => !disposed && this != null;
+        protected bool disposed;
+        public void Dispose()
+        {
+            if (IsInternalAsset && !disposed)
+            {
+                GameObject.Destroy(this);
+                disposed = true;
+            }
+        }
+
+        public static TileSet NewExternalInstance()
+        {
+            var inst = ScriptableObject.CreateInstance<TileSet>();
+            inst.isNotInternalAsset = true;
+            return inst;
+        }
+
         #region IEngineObject
 
         public string Name => name;
@@ -264,11 +292,12 @@ namespace Swole.API.Unity
                     GameObject tempInstance = asset.CreatePreRuntimeTilePrefab(i, source);
                     tempInstance.name = tile.name + "_preview";
 
-#if UNITY_EDITOR
-                    EditorUtility.DisplayProgressBar("Creating tile previews...", tile.name, (i + 1f) / tiles.Length);
-
                     try
                     {
+#if UNITY_EDITOR
+                        EditorUtility.DisplayProgressBar("Creating tile previews...", tile.name, (i + 1f) / tiles.Length);
+
+
 
                         if (tile.previewTexture != null)
                         {

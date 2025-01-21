@@ -28,7 +28,17 @@ namespace Swole.UI
 
         public bool destroyOnClose;
 
-        public RectTransform root;
+        [SerializeField]
+        protected RectTransform root;
+        public RectTransform Root
+        {
+            get
+            {
+                if (root == null) root = RectTransform;
+                return root;
+            }
+            set => root = value;
+        }
 
         public MouseButtonMask clickMouseButtonMask = MouseButtonMask.All;
 
@@ -92,6 +102,14 @@ namespace Swole.UI
         public Vector3 DragStartScreenClickPosition => dragStartScreenClickPosition;
 
         protected RectTransform rectTransform;
+        public RectTransform RectTransform
+        {
+            get
+            {
+                if (rectTransform == null) rectTransform = gameObject.GetComponent<RectTransform>();
+                return rectTransform;
+            }
+        }
         private Canvas canvas;
         protected RectTransform canvasRect;
         protected bool CheckCanvas()

@@ -7,7 +7,7 @@ namespace Swole
     public enum AudioCollectionCategory
     {
 
-        Default
+        Default, Character
 
     }
 

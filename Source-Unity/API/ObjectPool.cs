@@ -79,6 +79,7 @@ namespace Swole.API.Unity
 
         [SerializeField]
         private T prototype;
+        public T Prototype => prototype;
 
         [SerializeField]
         private PoolGrowthMethod growthMethod;

@@ -9,6 +9,27 @@ namespace Swole.API.Unity
     public class MaterialAsset : IMaterialAsset
     {
 
+        public System.Type AssetType => typeof(Material);
+        public object Asset => material;
+        public static implicit operator Material(MaterialAsset asset) => asset.Material;
+
+        protected bool isInternalAsset;
+        public bool IsInternalAsset
+        {
+            get => isInternalAsset;
+            set => isInternalAsset = value;
+        }
+
+        public bool IsValid => material != null;
+        public void Dispose() 
+        { 
+            if (!isInternalAsset && material != null)
+            {
+                GameObject.Destroy(material);
+            }
+            material = null;
+        }
+
         protected Material material;
         public Material Material => material;
         public object Instance => Material;

@@ -15,7 +15,7 @@ using Swole.Script;
 
 namespace Swole.API.Unity.Animation
 {
-    [CreateAssetMenu(fileName = "CustomAnimationController", menuName = "CustomAnimation/CustomAnimationController", order = 1)]
+    [CreateAssetMenu(fileName = "CustomAnimationController", menuName = "SwoleAnimation/CustomAnimationController", order = 1)]
     public class CustomAnimationController : ScriptableObject, IAnimationController
     {
 

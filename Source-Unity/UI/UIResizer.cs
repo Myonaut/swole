@@ -180,7 +180,9 @@ namespace Swole.UI
 
             for (int a = 0; a < rebuildables.Count; a++) rebuildables[a].RebuildLayout();
 
-        } 
+        }
+
+        public UnityEvent OnDragStep = new UnityEvent();
 
         protected Vector3[] corners2 = new Vector3[4];
         public void OnDrag(PointerEventData eventData)
@@ -271,7 +273,9 @@ namespace Swole.UI
 
             prevCursorPosition = cursorPosition;
 
-            RebuildReferences(); 
+            RebuildReferences();
+
+            OnDragStep?.Invoke();
 
         }
 

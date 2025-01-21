@@ -6,6 +6,8 @@ using System.Collections.Generic;
 
 using UnityEngine;
 using UnityEngine.UI;
+using UnityEngine.Events;
+using UnityEngine.Audio;
 
 using Unity.Mathematics;
 
@@ -30,7 +32,7 @@ namespace Swole.API.Unity.Animation
             }
             if (rawAnimation != null) 
             { 
-                rawAnimation.FlushJobData();
+                rawAnimation.FlushJobData(); 
                 rawAnimation = null;
             }
             if (compiledAnimation != null)
@@ -60,13 +62,23 @@ namespace Swole.API.Unity.Animation
             public float lastPlaybackPosition;
             public float lastPlaybackSpeed;
 
+            public float mix;
+
             public PackageIdentifier package;
             public string syncedName;
             public string animationName;
+            public string SerializedName => animationName;
 
             public bool visible;
+            public bool locked;
 
             public bool isDirty;
+
+            public List<AudioSyncImport> audioSyncImports;
+
+            public BaseDataType baseDataMode;
+            public string baseDataSource;
+            public float baseDataReferenceTime;
 
             public List<AnimationUtils.LoopPoint> loopPoints;
 
@@ -74,7 +86,7 @@ namespace Swole.API.Unity.Animation
 
             public AnimationSource AsOriginalType(PackageInfo packageInfo = default) => new AnimationSource(this, packageInfo);
 
-            public object AsNonserializableObject(PackageInfo packageInfo = default) => AsOriginalType(packageInfo);
+            public object AsNonserializableObject(PackageInfo packageInfo = default) => AsOriginalType(packageInfo); 
 
             public string AsJSON(bool prettyPrint = false) => swole.ToJson(this, prettyPrint);
             public static Serialized FromJSON(string json) => swole.FromJson<Serialized>(json);
@@ -89,13 +101,22 @@ namespace Swole.API.Unity.Animation
             s.lastPlaybackPosition = source.playbackPosition;
             s.lastPlaybackSpeed = source.playbackSpeed;
 
+            s.mix = source.Mix;
+
             s.package = source.package;
             s.syncedName = source.syncedName;
             s.animationName = source.displayName;
 
             s.visible = source.visible;
+            s.locked = source.locked;
 
             s.isDirty = source.isDirty;
+
+            s.audioSyncImports = source.audioSyncImports;
+
+            s.baseDataMode = source.baseDataMode;
+            s.baseDataSource = source.baseDataSource == null ? string.Empty : source.baseDataSource.displayName; 
+            s.baseDataReferenceTime = source.baseDataReferenceTime;
 
             s.loopPoints = source.loopPoints;
             if (source.rawAnimation != null) s.sessionLocalAnimation = source.rawAnimation.AsSerializableStruct();
@@ -110,12 +131,22 @@ namespace Swole.API.Unity.Animation
             playbackPosition = serializable.lastPlaybackPosition;
             playbackSpeed = serializable.lastPlaybackSpeed;
 
+            mix = serializable.mix;
+
             package = serializable.package;
             syncedName = serializable.syncedName;
-            displayName = serializable.animationName;
+            displayName = serializable.animationName; 
 
             visible = serializable.visible;
+            locked = serializable.locked;
+
             isDirty = serializable.isDirty;
+
+            audioSyncImports = serializable.audioSyncImports;
+
+            baseDataMode = serializable.baseDataMode;
+            baseDataSourceLoadedName = serializable.baseDataSource;
+            baseDataReferenceTime = serializable.baseDataReferenceTime;  
 
             loopPoints = serializable.loopPoints;
 
@@ -132,7 +163,9 @@ namespace Swole.API.Unity.Animation
             {
                 if (string.IsNullOrWhiteSpace(syncedName)) syncedName = DisplayName;
 
-                SwolePackage editPkg = SwolePackage.Create(pkg);
+                if (!IsCompiledWithTimeCurve) Compile(); // force recompilation if time curve has been removed
+
+                SwolePackage editPkg = SwolePackage.Create(pkg); 
                 if (pkg.Content.TryFind<CustomAnimation>(out var toReplace, syncedName))
                 {
                     editPkg.Replace(toReplace, CompiledAnimation);
@@ -213,25 +246,85 @@ namespace Swole.API.Unity.Animation
                 return previewLayer.ActiveStateTyped; 
             }
         }
-        public float GetMixFromSlider()
-        {
-            if (listMember != null && listMember.rectTransform != null)
-            {
-                var slider = listMember.rectTransform.GetComponentInChildren<Slider>();
-                if (slider != null) return slider.value;
-            }
 
-            return 1;
+        protected float mix;
+        public float Mix
+        {
+            get => GetMix();
+            set => SetMix(null, value);
         }
-        public void SetMix(float value)
+        public struct UndoableSetAnimationSourceMix : IRevertableAction
+        {
+            public bool ReapplyWhenRevertedTo => true;
+
+            public AnimationEditor editor;
+            public AnimationSource source;
+            public float prevMix, newMix;
+
+            public UndoableSetAnimationSourceMix(AnimationEditor editor, AnimationSource source, float prevMix, float newMix)
+            {
+                this.editor = editor;
+                this.source = source;
+                this.prevMix = prevMix;
+                this.newMix = newMix;
+
+                undoState = false;
+            }
+
+            public void Reapply()
+            {
+                if (source == null) return;
+                source.SetMix(editor, newMix, false, true, false);
+            }
+
+            public void Revert()
+            {
+                if (source == null) return;
+                source.SetMix(editor, prevMix, false, true, false);
+            }
+
+            public void Perpetuate() { }
+            public void PerpetuateUndo() { }
+            public bool undoState;
+            public bool GetUndoState() => undoState;
+            public IRevertableAction SetUndoState(bool undone)
+            {
+                var newState = this;
+                newState.undoState = undone;
+                return newState;
+            }
+        }
+        public float GetMix()
         {
             if (listMember != null && listMember.rectTransform != null)
             {
                 var slider = listMember.rectTransform.GetComponentInChildren<Slider>();
-                if (slider != null) slider.value = value;
+                if (slider != null) mix = slider.value;              
             }
 
-            if (previewLayer != null) previewLayer.mix = value;
+            return mix;
+        }
+        public float GetMixRaw() => mix;
+        public void SetMix(AnimationEditor editor, float value, bool notifyListeners = true, bool updateSlider = true, bool undoable = true)
+        {
+            float prevMix = mix;
+
+            mix = value;
+            if (listMember != null && listMember.rectTransform != null)
+            {
+                if (updateSlider)
+                {
+                    var slider = listMember.rectTransform.GetComponentInChildren<Slider>();
+                    if (slider != null)
+                    {
+                        if (notifyListeners) slider.value = mix; else slider.SetValueWithoutNotify(mix);
+                    }
+                }
+            } 
+
+            if (previewLayer != null) previewLayer.mix = mix;
+
+            if (undoable && editor != null) editor.RecordRevertibleAction(new UndoableSetAnimationSourceMix(editor, this, prevMix, mix)); 
         }
 
         /// <summary>
@@ -242,7 +335,19 @@ namespace Swole.API.Unity.Animation
         /// <summary>
         /// The current preview position in the animation editor timeline.
         /// </summary>
-        public float playbackPosition;
+        protected float playbackPosition;
+        /// <summary>
+        /// The current preview position in the animation editor timeline.
+        /// </summary>
+        public float PlaybackPosition
+        {
+            get => playbackPosition;
+            set
+            {
+                if (locked) return;
+                playbackPosition = value;  
+            }
+        }
         public float playbackSpeed = 1;
 
         /// <summary>
@@ -258,6 +363,8 @@ namespace Swole.API.Unity.Animation
             set
             {
                 displayName = value;
+                listMember?.SetName(value); 
+
                 if (rawAnimation != null) 
                 {
                     var info = rawAnimation.ContentInfo;
@@ -270,17 +377,107 @@ namespace Swole.API.Unity.Animation
                     info.name = displayName;
                     compiledAnimation = (CustomAnimation)compiledAnimation.CreateCopyAndReplaceContentInfo(info);
                 }
+
+                MarkAsDirty();
+            }
+        }
+        public override string SerializedName => DisplayName;
+        public int SampleRate
+        {
+            get => rawAnimation == null ? CustomAnimation.DefaultJobCurveSampleRate : rawAnimation.jobCurveSampleRate;
+            set
+            {
+                if (rawAnimation == null) return;
+
+                if (rawAnimation != null) rawAnimation.jobCurveSampleRate = value;
+                if (compiledAnimation != null) compiledAnimation.jobCurveSampleRate = value;
+                
+                MarkAsDirty();
             }
         }
 
-        public bool visible;
+        protected bool visible;
+        public bool Visible => visible;
 
-        public void SetVisibility(AnimationEditor editor, bool visible)
+        protected bool locked;
+        public bool IsLocked => locked;
+
+        public VoidParameterlessDelegate refreshVisibilityButtons;
+
+        public struct UndoableSetVisibilityOfSource : IRevertableAction
         {
-            if (editor.IsPlayingPreview) editor.Pause();
+
+            public bool ReapplyWhenRevertedTo => true;
+
+            public AnimationEditor editor;
+            public int animatableIndex, sourceIndex;
+            public bool prevVisible, visible;
+            public bool prevLocked, locked;
+
+            public UndoableSetVisibilityOfSource(AnimationEditor editor, int animatableIndex, int sourceIndex, bool prevVisible, bool prevLocked, bool visible, bool locked)
+            {
+                this.editor = editor;
+                this.animatableIndex = animatableIndex;
+                this.sourceIndex = sourceIndex;
+
+                this.prevVisible = prevVisible;
+                this.prevLocked = prevLocked;
+                this.visible = visible;
+                this.locked = locked;
+
+                undoState = false;
+            }
+
+            public void Reapply()
+            {
+                var sesh = editor.CurrentSession;
+                if (sesh == null) return;
+
+                var obj = sesh.GetAnimatable(animatableIndex);
+                if (obj != null)
+                {
+                    obj.SetVisibilityOfSource(editor, sourceIndex, visible, locked, false);
+                }
+            }
+
+            public void Revert()
+            {
+                var sesh = editor.CurrentSession;
+                if (sesh == null) return;
+
+                var obj = sesh.GetAnimatable(animatableIndex);
+                if (obj != null)
+                {
+                    obj.SetVisibilityOfSource(editor, sourceIndex, prevVisible, prevLocked, false);
+                }
+            }
+
+            public void Perpetuate() { }
+            public void PerpetuateUndo() { }
+
+            public bool undoState;
+            public bool GetUndoState() => undoState;
+            public IRevertableAction SetUndoState(bool undone)
+            {
+                var newState = this;
+                newState.undoState = undone;
+                return newState;
+            }
+        }
+        public void SetVisibility(AnimationEditor editor, ImportedAnimatable animatable, bool visible, bool locked, bool undoable)
+        {
+            if (editor != null && editor.IsPlayingPreview) editor.Pause(undoable); 
+
+            bool prevVisible = this.visible;
+            bool prevLocked = this.locked;
 
             this.visible = visible;
+            this.locked = locked;
             if (previewLayer != null) previewLayer.SetActive(visible);
+
+            if (undoable && (prevVisible != visible || prevLocked != locked)) editor.RecordRevertibleAction(new UndoableSetVisibilityOfSource(editor, animatable.index, index, prevVisible, prevLocked, visible, locked));
+
+            refreshVisibilityButtons?.Invoke();
         }
 
         [SerializeField]
@@ -297,7 +494,7 @@ namespace Swole.API.Unity.Animation
             bool wasDirty = isDirty;
 
             isDirty = true;
-            isCompiled = false;
+            MarkForRecompilation(); 
 
             if (!wasDirty) OnBecomeDirty?.Invoke();
             OnMarkDirty?.Invoke();
@@ -306,39 +503,169 @@ namespace Swole.API.Unity.Animation
 
         [NonSerialized]
         public UICategorizedList.Member listMember;
+        public void RefreshListMemberPosition()
+        {
+            if (listMember == null) return;
+            listMember.Index = index;
+        }
 
         protected const string _packageLinkButtonTag = "link";
+        protected const string _deleteButtonTag = "Delete";
         public void CreateListMember(AnimationEditor editor, ImportedAnimatable animatable, bool force = false)
         {
             if (editor == null || editor.importedAnimatablesList == null || animatable == null || animatable.listCategory == null || (listMember != null && !force)) return;
 
             var session = editor.CurrentSession; 
-            listMember = editor.importedAnimatablesList.AddNewListMember(displayName, animatable.listCategory, () => {
+            listMember = editor.importedAnimatablesList.AddNewListMember(displayName, animatable.listCategory, null);
 
-                if (session == null || editor.CurrentSession != session) return;
-                if (animatable != null) animatable.SetCurrentlyEditedSource(editor, index);
-                session.SetActiveObject(editor, index, true, false);
-                editor.RefreshAnimatableListUI();
-
-            });
-
-            if (listMember != null && listMember.rectTransform != null)
+            if (listMember != null)
             {
-                var slider = listMember.rectTransform.GetComponentInChildren<Slider>(); 
-                if (slider != null)
+                if (listMember.buttonRT != null)
                 {
-                    slider.minValue = 0;
-                    slider.maxValue = 1;
-                    if (slider.onValueChanged == null) slider.onValueChanged = new Slider.SliderEvent();
-                    slider.onValueChanged.RemoveAllListeners();
-                    slider.onValueChanged.AddListener((float value) =>
+                    var pointerProxy = listMember.buttonRT.gameObject.AddOrGetComponent<PointerEventsProxy>();
+
+                    if (pointerProxy.OnLeftClick == null) pointerProxy.OnLeftClick = new UnityEvent(); else pointerProxy.OnLeftClick.RemoveAllListeners();
+                    pointerProxy.OnLeftClick.AddListener(() =>
                     {
-                        if (previewLayer == null) return;
-                        previewLayer.mix = value;
+                        if (session == null || editor.CurrentSession != session) return;
+                        if (animatable != null) animatable.SetCurrentlyEditedSource(editor, index, true);
+                        session.SetActiveObject(editor, animatable.index, true, false);
+                        editor.RefreshAnimatableListUI();
+                    });
+
+                    if (pointerProxy.OnRightClick == null) pointerProxy.OnRightClick = new UnityEvent(); else pointerProxy.OnRightClick.RemoveAllListeners();
+                    pointerProxy.OnRightClick.AddListener(() =>
+                    {
+                        if (session == null || editor.CurrentSession != session) return;
+                        if (animatable != null) animatable.SetCurrentlyEditedSource(editor, index, true);
+                        session.SetActiveObject(editor, animatable.index, true, false);
+                        editor.RefreshAnimatableListUI();
+
+                        // Open context menu when source list object is right clicked
+                        if (editor.contextMenuMain != null)
+                        {
+                            editor.OpenContextMenuMain();
+
+                            var moveUp = editor.contextMenuMain.FindDeepChildLiberal(AnimationEditor._moveUpContextMenuOptionName);
+                            if (moveUp != null)
+                            {
+                                CustomEditorUtils.SetButtonOnClickAction(moveUp, () =>
+                                {
+                                    if (animatable != null && animatable.animationBank != null)
+                                    {
+                                        animatable.RefreshBankIndices(0);
+                                        if (index > 0 && index < animatable.animationBank.Count && ReferenceEquals(this, animatable.animationBank[index]))
+                                        {
+                                            animatable.RepositionSource(editor, this, index - 1); 
+                                        }
+                                    }
+                                });
+                                moveUp.gameObject.SetActive(index > 0);
+                            }
+                            var moveDown = editor.contextMenuMain.FindDeepChildLiberal(AnimationEditor._moveDownContextMenuOptionName); 
+                            if (moveDown != null)
+                            {
+                                CustomEditorUtils.SetButtonOnClickAction(moveDown, () =>
+                                {
+                                    if (animatable != null && animatable.animationBank != null)
+                                    {
+                                        animatable.RefreshBankIndices(0);
+                                        if (index >= 0 && index < animatable.animationBank.Count - 1 && ReferenceEquals(this, animatable.animationBank[index]))
+                                        {
+                                            animatable.RepositionSource(editor, this, index + 1); 
+                                        }
+                                    }
+                                });
+                                moveDown.gameObject.SetActive(index < animatable.animationBank.Count - 1); 
+                            }
+
+                            var edit = editor.contextMenuMain.FindDeepChildLiberal(AnimationEditor._editSettingsContextMenuOptionName);
+                            if (edit != null)
+                            {
+                                edit.gameObject.SetActive(true);
+                                CustomEditorUtils.SetButtonOnClickAction(edit, () =>
+                                {
+                                    editor.OpenAnimationSettingsWindow();
+                                });
+                            }
+
+                        }
+
                     });
                 }
 
-                CustomEditorUtils.SetButtonOnClickActionByName(listMember.rectTransform, _packageLinkButtonTag, () => editor.OpenPackageLinkWindow(this)); 
+                if (listMember.rectTransform != null)
+                {
+                    var rt_visOn = listMember.rectTransform.FindDeepChildLiberal(AnimationEditor._visibilityOnTag);
+                    var rt_locked = listMember.rectTransform.FindDeepChildLiberal(AnimationEditor._lockedTag);
+                    var rt_visOff = listMember.rectTransform.FindDeepChildLiberal(AnimationEditor._visibilityOffTag);
+
+                    void RefreshVisibilityButtons()
+                    {
+                        if (rt_visOn != null) rt_visOn.gameObject.SetActive(Visible && !locked);
+                        if (rt_locked != null) rt_locked.gameObject.SetActive(locked);
+                        if (rt_visOff != null) rt_visOff.gameObject.SetActive(!Visible && !locked);
+                    }
+
+                    refreshVisibilityButtons = RefreshVisibilityButtons;
+                    CustomEditorUtils.SetButtonOnClickAction(rt_visOn, () => 
+                    {
+                        SetVisibility(editor, animatable, true, true, true);
+                    }, true, true, false);
+                    CustomEditorUtils.SetButtonOnClickAction(rt_locked, () => 
+                    { 
+                        SetVisibility(editor, animatable, false, false, true);
+                    }, true, true, false);
+                    CustomEditorUtils.SetButtonOnClickAction(rt_visOff, () => 
+                    {
+                        SetVisibility(editor, animatable, true, false, true);
+                    }, true, true, false);
+                    RefreshVisibilityButtons();  
+
+                    var slider = listMember.rectTransform.GetComponentInChildren<Slider>();
+                    if (slider != null)
+                    {
+                        slider.minValue = 0;
+                        slider.maxValue = 1;
+                        if (slider.onValueChanged == null) slider.onValueChanged = new Slider.SliderEvent();
+                        slider.onValueChanged.RemoveAllListeners();
+                        slider.SetValueWithoutNotify(GetMixRaw());
+                        LTDescr setMixDelayed = null;
+                        float prevMix = 0;
+                        slider.onValueChanged.AddListener((float value) =>
+                        {
+                            if (setMixDelayed != null /*&& LeanTween.isTweening(setMixDelayed.uniqueId)*/) 
+                            {
+                                LeanTween.cancel(setMixDelayed.uniqueId);
+                                setMixDelayed = null;
+                            } 
+                            else
+                            {
+                                prevMix = mix;
+                            }
+
+                            SetMix(editor, value, false, false, false);
+                            setMixDelayed = LeanTween.delayedCall(0.2f, () =>
+                            {
+                                editor.RecordRevertibleAction(new UndoableSetAnimationSourceMix(editor, this, prevMix, mix)); 
+                                editor.MarkSessionDirty();
+                                setMixDelayed = null;
+                                prevMix = 0;
+                            });
+                        });
+                    }
+
+                    CustomEditorUtils.SetButtonOnClickActionByName(listMember.rectTransform, _packageLinkButtonTag, () => editor.OpenPackageLinkWindow(this));
+
+                    void AskToDeleteSource()
+                    {
+                        void Delete() => animatable.RemoveAnimationSource(editor, this, true);
+                        editor.ShowPopupConfirmation($"Are you sure you want to delete '{DisplayName}'?", Delete);
+                    }
+
+                    CustomEditorUtils.SetButtonOnClickActionByName(listMember.rectTransform, _deleteButtonTag, AskToDeleteSource);
+
+                }
             }
         }
 
@@ -380,10 +707,214 @@ namespace Swole.API.Unity.Animation
         }
         [NonSerialized]
         private bool isCompiled;
+        public void MarkForRecompilation()
+        {
+            isCompiled = false;
+        }
         /// <summary>
         /// Have the latest changes to the source data been compiled?
         /// </summary>
         public bool IsCompiled => isCompiled && compiledAnimation != null;
+        public bool HasTimeCurve => rawAnimation != null && rawAnimation.timeCurve != null;
+        public void RemoveCompiledTimeCurve()
+        {
+            if (compiledAnimation == null || compiledAnimation.timeCurve == null) return;
+            compiledAnimation.timeCurve = null;
+            compiledAnimation.FlushJobData();
+        }
+        public void RestoreCompiledTimeCurve()
+        {
+            if (compiledAnimation == null || compiledAnimation.timeCurve != null || rawAnimation == null || (rawAnimation.timeCurve == null && compiledAnimation.timeCurve == null)) return; 
+            compiledAnimation.timeCurve = rawAnimation.timeCurve;  
+            compiledAnimation.FlushJobData();  
+        }
+        public bool IsCompiledWithTimeCurve => rawAnimation != null && compiledAnimation != null && ((rawAnimation.timeCurve == null && compiledAnimation.timeCurve == null) || compiledAnimation.timeCurve != null);
+        public bool IsCompiledWithoutTimeCurve => compiledAnimation != null && compiledAnimation.timeCurve == null;
+
+        [Serializable]
+        public class AudioSyncImport
+        {
+
+            public PersistentAudioPlayer.AudioSourceClaim sourceClaim;
+
+            public string path;
+            [NonSerialized]
+            private string prevPath;
+
+            public float playTime;
+
+            public string mixerPath;
+            [NonSerialized]
+            private string prevMixerPath;
+
+            [NonSerialized]
+            private AudioClip clip; 
+            public AudioClip Clip
+            {
+                get
+                {
+                    if (clip == null || prevPath != path)
+                    {
+                        prevPath = path;
+                        clip = null;
+
+                        var asset = swole.Engine.FindAsset<IAudioAsset>(path, swole.DefaultHost);
+                        if (asset != null)
+                        {
+                            if (asset is IAudioClipProxy proxy) clip = proxy.Clip; else if (asset.Asset is AudioClip clip_) clip = clip_;
+                        }
+                    }
+
+                    return clip;
+                }
+            }
+
+            [NonSerialized]
+            private AudioMixerGroup mixerGroup;
+            public AudioMixerGroup MixerGroup
+            {
+                get
+                {
+                    if (mixerGroup == null || prevMixerPath != mixerPath)
+                    {
+                        prevMixerPath = mixerPath;
+                        mixerGroup = null;
+
+                        var mainMixer = ResourceLib.DefaultAudioMixer; 
+
+                        if (mainMixer != null && mainMixer.Mixer != null)
+                        {
+
+                            if (string.IsNullOrEmpty(mixerPath))
+                            {
+                                mixerGroup = mainMixer.Mixer.outputAudioMixerGroup; 
+                            }
+                            else
+                            {
+                                var matches = mainMixer.Mixer.FindMatchingGroups(mixerPath);
+                                if (matches.Length > 0) mixerGroup = matches[0];
+                            }
+                        }
+                    }
+
+                    return mixerGroup;
+                }
+            }
+        }
+        protected List<AudioSyncImport> audioSyncImports = new List<AudioSyncImport>();
+        public int AudioSyncImportsCount => audioSyncImports == null ? 0 : audioSyncImports.Count;
+        public AudioSyncImport GetAudioSyncImport(int index) => audioSyncImports == null || index < 0 || index >= audioSyncImports.Count ? null : audioSyncImports[index];
+        public void AddAudioSyncImport(AudioSyncImport audioSyncImport)
+        {
+            if (audioSyncImports == null) audioSyncImports = new List<AudioSyncImport>(); 
+
+            audioSyncImports.Add(audioSyncImport);
+            MarkAsDirty();
+        }
+        public bool RemoveAudioSyncImport(AudioSyncImport audioSyncImport)
+        {
+            if (audioSyncImports == null) return false;
+
+            if (audioSyncImports.RemoveAll(i => ReferenceEquals(audioSyncImport, i)) > 0)
+            {
+                MarkAsDirty();
+                return true;
+            }
+
+            return false;
+        }
+
+        [Serializable]
+        public enum BaseDataType
+        {
+            Default, AnimationSource, AnimationSourceSnapshot
+        }
+
+        protected BaseDataType baseDataMode;
+        public BaseDataType BaseDataMode
+        {
+            get => baseDataMode;
+            set
+            {
+                if (value != baseDataMode)
+                {
+                    baseDataMode = value;
+                    MarkAsDirty();
+                }
+            }
+        }
+        [NonSerialized]
+        protected AnimationSource baseDataSource;
+        protected string baseDataSourceLoadedName;
+        public AnimationSource BaseDataSource
+        {
+            get 
+            {
+                if (baseDataSource != null && ReferenceEquals(this, baseDataSource.baseDataSource))
+                {
+                    swole.LogWarning($"{nameof(BaseDataSource)} for '{DisplayName}' was '{baseDataSource.DisplayName}', but '{DisplayName}' is the {nameof(BaseDataSource)} for '{baseDataSource.DisplayName}' already and would create a reference loop during compilation; so the reference was removed.");
+                    baseDataSource = null;
+                    MarkAsDirty();
+                }
+
+                return baseDataSource;
+            }
+            set
+            {
+                if (value != null && ReferenceEquals(this, value.baseDataSource))
+                {
+                    swole.LogWarning($"Tried to set {nameof(BaseDataSource)} for '{DisplayName}' to '{value.DisplayName}', but '{DisplayName}' is the {nameof(BaseDataSource)} for '{value.DisplayName}' and would create a reference loop during compilation!");
+                    value = null;
+                }
+                else if (ReferenceEquals(this, value))
+                {
+                    swole.LogWarning($"Tried to set {nameof(BaseDataSource)} for '{DisplayName}' to itself!");      
+                    value = null;
+                }
+
+                baseDataSource = value;
+                if (baseDataSource != null) baseDataSourceLoadedName = baseDataSource.displayName;
+                MarkAsDirty(); 
+            }
+        } 
+        public void ApplyBaseDataSourceFromLoadedName(ICollection<AnimationSource> sources)
+        {
+            if (string.IsNullOrEmpty(baseDataSourceLoadedName) || sources == null) return;
+
+            foreach(var source in sources)
+            {
+                if (source == null) continue;
+                if (source.DisplayName == baseDataSourceLoadedName)
+                {
+                    baseDataSource = source;
+                    return;
+                }
+            }
+
+            var temp = baseDataSourceLoadedName.AsID();
+            foreach (var source in sources)
+            {
+                if (source == null) continue;
+                if (source.DisplayName.AsID() == temp)
+                {
+                    baseDataSource = source;
+                    return;
+                }
+            }
+        }
+        protected float baseDataReferenceTime; 
+        public float BaseDataReferenceTime
+        {
+            get => baseDataReferenceTime;
+            set
+            {
+                if (baseDataReferenceTime != value)
+                {
+                    baseDataReferenceTime = value;
+                    MarkAsDirty();
+                }
+            }
+        }
 
         public List<AnimationUtils.LoopPoint> loopPoints;
 
@@ -406,16 +937,16 @@ namespace Swole.API.Unity.Animation
             return outputList;
         }
 
-        private static readonly List<AnimationUtils.LoopPoint> tempLPs = new List<AnimationUtils.LoopPoint>();
-        private static readonly List<TransformLinearCurve> transformLinearCurves = new List<TransformLinearCurve>();
-        private static readonly List<TransformCurve> transformCurves = new List<TransformCurve>();
-        private static readonly List<PropertyLinearCurve> propertyLinearCurves = new List<PropertyLinearCurve>();
-        private static readonly List<PropertyCurve> propertyCurves = new List<PropertyCurve>();
-        private static readonly List<CustomAnimation.CurveInfoPair> transformCurveInfo = new List<CustomAnimation.CurveInfoPair>();
-        private static readonly List<CustomAnimation.CurveInfoPair> propertyCurveInfo = new List<CustomAnimation.CurveInfoPair>();
-        private static readonly List<Keyframe> tempKeyframes = new List<Keyframe>();
-        private static readonly List<ITransformCurve.Frame> tempTransformFrames = new List<ITransformCurve.Frame>();
-        private static readonly List<IPropertyCurve.Frame> tempPropertyFrames = new List<IPropertyCurve.Frame>();
+        private readonly List<AnimationUtils.LoopPoint> tempLPs = new List<AnimationUtils.LoopPoint>();
+        private readonly List<TransformLinearCurve> transformLinearCurves = new List<TransformLinearCurve>();
+        private readonly List<TransformCurve> transformCurves = new List<TransformCurve>();
+        private readonly List<PropertyLinearCurve> propertyLinearCurves = new List<PropertyLinearCurve>();
+        private readonly List<PropertyCurve> propertyCurves = new List<PropertyCurve>();
+        private readonly List<CustomAnimation.CurveInfoPair> transformCurveInfo = new List<CustomAnimation.CurveInfoPair>();
+        private readonly List<CustomAnimation.CurveInfoPair> propertyCurveInfo = new List<CustomAnimation.CurveInfoPair>();
+        private readonly List<AnimationCurveEditor.KeyframeStateRaw> tempKeyframes = new List<AnimationCurveEditor.KeyframeStateRaw>();
+        private readonly List<ITransformCurve.Frame> tempTransformFrames = new List<ITransformCurve.Frame>();
+        private readonly List<IPropertyCurve.Frame> tempPropertyFrames = new List<IPropertyCurve.Frame>();
         public CustomAnimation Compile(bool removeEmptyCurves=true)
         {
             if (rawAnimation != null)
@@ -428,6 +959,7 @@ namespace Swole.API.Unity.Animation
                     isNew = true;
                     compiledAnimation = new CustomAnimation(rawAnimation.ContentInfo, rawAnimation.framesPerSecond, rawAnimation.jobCurveSampleRate, rawAnimation.timeCurve, null, null, null, null, rawAnimation.transformAnimationCurves, rawAnimation.propertyAnimationCurves, rawAnimation.events, rawAnimation.PackageInfo);
                 }
+                 
                 compiledAnimation.framesPerSecond = rawAnimation.framesPerSecond;
                 compiledAnimation.jobCurveSampleRate = rawAnimation.jobCurveSampleRate;
                 compiledAnimation.timeCurve = rawAnimation.timeCurve;
@@ -451,8 +983,352 @@ namespace Swole.API.Unity.Animation
 
                 transformCurveInfo.Clear();
                 if (rawAnimation.transformAnimationCurves != null) transformCurveInfo.AddRange(rawAnimation.transformAnimationCurves);
+
                 propertyCurveInfo.Clear();
                 if (rawAnimation.propertyAnimationCurves != null) propertyCurveInfo.AddRange(rawAnimation.propertyAnimationCurves);
+                 
+                #region Replace Base Data
+
+                CustomAnimation compiledBase;
+                switch (BaseDataMode)
+                {
+                    default:
+                        break;
+
+                    case BaseDataType.AnimationSource:
+                        if (baseDataSource != null)
+                        {
+                            compiledBase = baseDataSource.CompiledAnimation;                            
+                            if (compiledBase != null && compiledBase.transformAnimationCurves != null)
+                            {
+                                for (int a = 0; a < transformCurveInfo.Count; a++)
+                                {
+                                    var info = transformCurveInfo[a];
+                                    if (info.infoBase.curveIndex < 0) continue;
+
+                                    ITransformCurve currentBaseCurve = info.infoBase.isLinear ? transformLinearCurves[info.infoBase.curveIndex] : transformCurves[info.infoBase.curveIndex];
+                                    if (currentBaseCurve == null) continue;
+
+                                    foreach (var baseInfo in compiledBase.transformAnimationCurves)
+                                    {
+                                        if (baseInfo.infoMain.curveIndex < 0) continue;
+
+                                        // TODO: Add some kind of internal animation curve storage to animations, where external time curves and be stored and referenced by TransformCurves and the like; then base curves can use their original animation's time curve properly without requiring resampling of the base curve.
+                                        // For now, base curves do not reference their original time curves at all, so any dependent additive animations will not sync correctly with the parent animation if that parent uses a time curve.
+                                        ITransformCurve newBaseCurve = baseInfo.infoMain.isLinear ? compiledBase.transformLinearCurves[baseInfo.infoMain.curveIndex] : compiledBase.transformCurves[baseInfo.infoMain.curveIndex];
+                                        if (newBaseCurve == null || currentBaseCurve.TransformName.AsID() != newBaseCurve.TransformName.AsID()) continue;
+
+                                        newBaseCurve = (ITransformCurve)newBaseCurve.Clone();
+                                        if (newBaseCurve is TransformCurve tc)
+                                        {
+                                            if (tc.HasKeyframes)
+                                            {
+                                                tc = tc.Duplicate().RebuildCurveFromReference(currentBaseCurve, rawAnimation.framesPerSecond, true); 
+                                                if (info.infoBase.isLinear)
+                                                {
+                                                    var info_ = info.infoBase;
+                                                    info_.isLinear = false;
+                                                    info_.curveIndex = transformCurves.Count;
+                                                    info.infoBase = info_;
+
+                                                    transformCurves.Add(tc);
+                                                }
+                                                else
+                                                {
+                                                    transformCurves[info.infoBase.curveIndex] = tc;
+                                                }
+                                            }
+                                        }
+                                        else if (newBaseCurve is TransformLinearCurve tlc)
+                                        {
+                                            if (tlc.frames != null || tlc.frames.Length > 0)
+                                            {
+                                                if (!info.infoBase.isLinear)
+                                                {
+                                                    var info_ = info.infoBase;
+                                                    info_.isLinear = true;
+                                                    info_.curveIndex = transformLinearCurves.Count;
+                                                    info.infoBase = info_;
+
+                                                    transformLinearCurves.Add(tlc);
+                                                }
+                                                else
+                                                {
+                                                    transformLinearCurves[info.infoBase.curveIndex] = tlc;
+                                                }
+                                            }
+                                        }
+                                        break;
+                                    }
+
+                                    transformCurveInfo[a] = info;
+                                }
+
+                                for (int a = 0; a < propertyCurveInfo.Count; a++)
+                                {
+                                    var info = propertyCurveInfo[a];
+                                    if (info.infoBase.curveIndex < 0) continue;
+
+                                    IPropertyCurve currentBaseCurve = info.infoBase.isLinear ? propertyLinearCurves[info.infoBase.curveIndex] : propertyCurves[info.infoBase.curveIndex];
+                                    if (currentBaseCurve == null) continue;
+
+                                    foreach (var baseInfo in compiledBase.propertyAnimationCurves)
+                                    {
+                                        if (baseInfo.infoMain.curveIndex < 0) continue;
+
+                                        IPropertyCurve newBaseCurve = baseInfo.infoMain.isLinear ? compiledBase.propertyLinearCurves[baseInfo.infoMain.curveIndex] : compiledBase.propertyCurves[baseInfo.infoMain.curveIndex];
+                                        if (newBaseCurve == null || currentBaseCurve.PropertyString != newBaseCurve.PropertyString) continue;
+
+                                        newBaseCurve = (IPropertyCurve)newBaseCurve.Clone();
+                                        if (newBaseCurve is PropertyCurve pc)
+                                        {
+                                            if (pc.propertyValueCurve != null && pc.propertyValueCurve.length > 0)
+                                            {
+                                                if (info.infoBase.isLinear)
+                                                {
+                                                    var info_ = info.infoBase;
+                                                    info_.isLinear = false;
+                                                    info_.curveIndex = propertyCurves.Count;  
+                                                    info.infoBase = info_;
+
+                                                    propertyCurves.Add(pc);
+                                                }
+                                                else
+                                                {
+                                                    propertyCurves[info.infoBase.curveIndex] = pc;
+                                                }
+                                            }
+                                        }
+                                        else if (newBaseCurve is PropertyLinearCurve plc)
+                                        {
+                                            if (plc.frames != null && plc.frames.Length > 0)
+                                            {
+                                                if (!info.infoBase.isLinear)
+                                                {
+                                                    var info_ = info.infoBase;
+                                                    info_.isLinear = true;
+                                                    info_.curveIndex = propertyLinearCurves.Count;
+                                                    info.infoBase = info_;
+
+                                                    propertyLinearCurves.Add(plc);
+                                                }
+                                                else
+                                                {
+                                                    propertyLinearCurves[info.infoBase.curveIndex] = plc;
+                                                }
+                                            }
+                                        }
+                                        break;
+                                    }
+
+                                    propertyCurveInfo[a] = info;
+                                }
+                            }
+                            else
+                            {
+                                swole.LogWarning($"Failed to compile base source '{baseDataSource.DisplayName}' for animation '{DisplayName}'");
+                            }
+                        }
+                        break;
+
+                    case BaseDataType.AnimationSourceSnapshot:
+                        if (baseDataSource != null)
+                        {
+                            compiledBase = baseDataSource.CompiledAnimation;
+                            if (compiledBase != null && compiledBase.transformAnimationCurves != null)
+                            {
+                                for (int a = 0; a < transformCurveInfo.Count; a++)
+                                {
+                                    var info = transformCurveInfo[a];
+                                    if (info.infoBase.curveIndex < 0) continue;
+
+                                    ITransformCurve currentBaseCurve = info.infoBase.isLinear ? transformLinearCurves[info.infoBase.curveIndex] : transformCurves[info.infoBase.curveIndex];
+                                    if (currentBaseCurve == null) continue;
+                                    var origBaseLength = currentBaseCurve.GetLengthInSeconds(rawAnimation.framesPerSecond);
+
+                                    foreach (var baseInfo in compiledBase.transformAnimationCurves)
+                                    {
+                                        if (baseInfo.infoMain.curveIndex < 0) continue;
+                                        
+                                        ITransformCurve newBaseCurve = baseInfo.infoMain.isLinear ? compiledBase.transformLinearCurves[baseInfo.infoMain.curveIndex] : compiledBase.transformCurves[baseInfo.infoMain.curveIndex];
+                                        if (newBaseCurve == null || currentBaseCurve.TransformName.AsID() != newBaseCurve.TransformName.AsID()) continue;
+
+                                        var baseLength = newBaseCurve.GetLengthInSeconds(compiledAnimation.framesPerSecond);
+                                        if (newBaseCurve is TransformCurve tc)
+                                        {
+                                            var newCurve = TransformCurve.NewInstance;
+                                            newCurve.name = newBaseCurve.TransformName;
+
+                                            float newT = baseLength > 0 ? (BaseDataReferenceTime / baseLength) : 0;
+                                            float origT = origBaseLength > 0 ? (BaseDataReferenceTime / origBaseLength) : 0;
+                                            if (compiledAnimation.timeCurve != null && compiledAnimation.timeCurve.length > 0) newT = compiledAnimation.timeCurve.Evaluate(newT);
+
+                                            var snapshot = tc.Evaluate(newT);
+                                            var origSnapshot = currentBaseCurve.Evaluate(origT);
+
+                                            newCurve.localPositionCurveX.AddKey(0, tc.localPositionCurveX == null || tc.localPositionCurveX.length <= 0 ? origSnapshot.localPosition.x : snapshot.localPosition.x);
+                                            newCurve.localPositionCurveY.AddKey(0, tc.localPositionCurveY == null || tc.localPositionCurveY.length <= 0 ? origSnapshot.localPosition.y : snapshot.localPosition.y);
+                                            newCurve.localPositionCurveZ.AddKey(0, tc.localPositionCurveZ == null || tc.localPositionCurveZ.length <= 0 ? origSnapshot.localPosition.z : snapshot.localPosition.z);
+
+                                            newCurve.localRotationCurveX.AddKey(0, tc.localRotationCurveX == null || tc.localRotationCurveX.length <= 0 ? origSnapshot.localRotation.value.x : snapshot.localRotation.value.x);
+                                            newCurve.localRotationCurveY.AddKey(0, tc.localRotationCurveY == null || tc.localRotationCurveY.length <= 0 ? origSnapshot.localRotation.value.y : snapshot.localRotation.value.y);
+                                            newCurve.localRotationCurveZ.AddKey(0, tc.localRotationCurveZ == null || tc.localRotationCurveZ.length <= 0 ? origSnapshot.localRotation.value.z : snapshot.localRotation.value.z);
+                                            newCurve.localRotationCurveW.AddKey(0, tc.localRotationCurveW == null || tc.localRotationCurveW.length <= 0 ? origSnapshot.localRotation.value.w : snapshot.localRotation.value.w);
+
+                                            newCurve.localScaleCurveX.AddKey(0, tc.localScaleCurveX == null || tc.localScaleCurveX.length <= 0 ? origSnapshot.localScale.x : snapshot.localScale.x);
+                                            newCurve.localScaleCurveY.AddKey(0, tc.localScaleCurveY == null || tc.localScaleCurveY.length <= 0 ? origSnapshot.localScale.y : snapshot.localScale.y);
+                                            newCurve.localScaleCurveZ.AddKey(0, tc.localScaleCurveZ == null || tc.localScaleCurveZ.length <= 0 ? origSnapshot.localScale.z : snapshot.localScale.z);  
+
+                                            /*
+                                            if (tc.localPositionCurveX == null || tc.localPositionCurveX.length <= 0) Debug.Log($"Empty {nameof(tc.localPositionCurveX)} for base source at {tc.TransformName}, using default instead.");
+                                            if (tc.localPositionCurveY == null || tc.localPositionCurveY.length <= 0) Debug.Log($"Empty {nameof(tc.localPositionCurveY)} for base source at {tc.TransformName}, using default instead.");
+                                            if (tc.localPositionCurveZ == null || tc.localPositionCurveZ.length <= 0) Debug.Log($"Empty {nameof(tc.localPositionCurveZ)} for base source at {tc.TransformName}, using default instead.");
+
+                                            if (tc.localRotationCurveX == null || tc.localRotationCurveX.length <= 0) Debug.Log($"Empty {nameof(tc.localRotationCurveX)} for base source at {tc.TransformName}, using default instead.");
+                                            if (tc.localRotationCurveY == null || tc.localRotationCurveY.length <= 0) Debug.Log($"Empty {nameof(tc.localRotationCurveY)} for base source at {tc.TransformName}, using default instead.");
+                                            if (tc.localRotationCurveZ == null || tc.localRotationCurveZ.length <= 0) Debug.Log($"Empty {nameof(tc.localRotationCurveZ)} for base source at {tc.TransformName}, using default instead.");
+                                            if (tc.localRotationCurveW == null || tc.localRotationCurveW.length <= 0) Debug.Log($"Empty {nameof(tc.localRotationCurveW)} for base source at {tc.TransformName}, using default instead.");
+
+                                            if (tc.localScaleCurveX == null || tc.localScaleCurveX.length <= 0) Debug.Log($"Empty {nameof(tc.localScaleCurveX)} for base source at {tc.TransformName}, using default instead.");
+                                            if (tc.localScaleCurveY == null || tc.localScaleCurveY.length <= 0) Debug.Log($"Empty {nameof(tc.localScaleCurveY)} for base source at {tc.TransformName}, using default instead.");
+                                            if (tc.localScaleCurveZ == null || tc.localScaleCurveZ.length <= 0) Debug.Log($"Empty {nameof(tc.localScaleCurveZ)} for base source at {tc.TransformName}, using default instead.");
+                                            */
+
+                                            if (info.infoBase.isLinear)
+                                            {
+                                                var info_ = info.infoBase;
+                                                info_.isLinear = false;
+                                                info_.curveIndex = transformCurves.Count;
+                                                info.infoBase = info_;
+
+                                                transformCurves.Add(newCurve);
+                                            }
+                                            else
+                                            {
+                                                transformCurves[info.infoBase.curveIndex] = newCurve;
+                                            }
+                                        }
+                                        else if (newBaseCurve is TransformLinearCurve tlc)
+                                        {
+                                            if (tlc.frames != null && tlc.frames.Length > 0)
+                                            {
+                                                var newCurve = new TransformLinearCurve();
+                                                newCurve.name = newBaseCurve.TransformName;
+
+                                                float newT = baseLength > 0 ? (BaseDataReferenceTime / baseLength) : 0;
+                                                if (compiledAnimation.timeCurve != null && compiledAnimation.timeCurve.length > 0) newT = compiledAnimation.timeCurve.Evaluate(newT);
+
+                                                var snapshot = tlc.Evaluate(newT);
+                                                newCurve.AddFrame(new ITransformCurve.Frame() { timelinePosition = 0, data = snapshot }); 
+
+                                                if (!info.infoBase.isLinear)
+                                                {
+                                                    var info_ = info.infoBase;
+                                                    info_.isLinear = true;
+                                                    info_.curveIndex = transformLinearCurves.Count;
+                                                    info.infoBase = info_;
+
+                                                    transformLinearCurves.Add(newCurve);
+                                                }
+                                                else
+                                                {
+                                                    transformLinearCurves[info.infoBase.curveIndex] = newCurve;
+                                                }
+                                            }
+                                        }
+                                        break;
+                                    }
+
+                                    transformCurveInfo[a] = info;
+                                }
+
+                                for (int a = 0; a < propertyCurveInfo.Count; a++)
+                                {
+                                    var info = propertyCurveInfo[a];
+                                    if (info.infoBase.curveIndex < 0) continue;
+
+                                    IPropertyCurve currentBaseCurve = info.infoBase.isLinear ? propertyLinearCurves[info.infoBase.curveIndex] : propertyCurves[info.infoBase.curveIndex];
+                                    if (currentBaseCurve == null) continue;
+
+                                    foreach (var baseInfo in compiledBase.propertyAnimationCurves)
+                                    {
+                                        if (baseInfo.infoMain.curveIndex < 0) continue;
+
+                                        IPropertyCurve newBaseCurve = baseInfo.infoMain.isLinear ? compiledBase.propertyLinearCurves[baseInfo.infoMain.curveIndex] : compiledBase.propertyCurves[baseInfo.infoMain.curveIndex];
+                                        if (newBaseCurve == null || currentBaseCurve.PropertyString != newBaseCurve.PropertyString) continue;
+
+                                        var baseLength = newBaseCurve.GetLengthInSeconds(compiledAnimation.framesPerSecond);
+                                        if (newBaseCurve is PropertyCurve pc)
+                                        {
+                                            if (pc.propertyValueCurve != null && pc.propertyValueCurve.length > 0)
+                                            {
+                                                var newCurve = PropertyCurve.NewInstance;
+                                                newCurve.name = newBaseCurve.PropertyString;
+
+                                                float newT = baseLength > 0 ? (BaseDataReferenceTime / baseLength) : 0;
+                                                if (compiledAnimation.timeCurve != null && compiledAnimation.timeCurve.length > 0) newT = compiledAnimation.timeCurve.Evaluate(newT);
+
+                                                var snapshot = pc.Evaluate(newT); 
+                                                newCurve.propertyValueCurve.AddKey(0, snapshot);
+
+                                                if (info.infoBase.isLinear)
+                                                {
+                                                    var info_ = info.infoBase;
+                                                    info_.isLinear = false;
+                                                    info_.curveIndex = propertyCurves.Count;
+                                                    info.infoBase = info_;
+
+                                                    propertyCurves.Add(newCurve);
+                                                }
+                                                else
+                                                {
+                                                    propertyCurves[info.infoBase.curveIndex] = newCurve;
+                                                }
+                                            }
+                                        }
+                                        else if (newBaseCurve is PropertyLinearCurve plc)
+                                        {
+                                            if (plc.frames != null && plc.frames.Length > 0)
+                                            {
+                                                var newCurve = new PropertyLinearCurve();
+                                                newCurve.name = newBaseCurve.PropertyString;
+
+                                                float newT = baseLength > 0 ? (BaseDataReferenceTime / baseLength) : 0;
+                                                if (compiledAnimation.timeCurve != null && compiledAnimation.timeCurve.length > 0) newT = compiledAnimation.timeCurve.Evaluate(newT);
+
+                                                var snapshot = plc.Evaluate(newT);
+                                                newCurve.AddFrame(new IPropertyCurve.Frame() { timelinePosition = 0, value = snapshot });
+
+                                                if (!info.infoBase.isLinear)
+                                                {
+                                                    var info_ = info.infoBase;
+                                                    info_.isLinear = true;
+                                                    info_.curveIndex = propertyLinearCurves.Count;
+                                                    info.infoBase = info_;
+
+                                                    propertyLinearCurves.Add(newCurve);
+                                                }
+                                                else
+                                                {
+                                                    propertyLinearCurves[info.infoBase.curveIndex] = newCurve;
+                                                }
+                                            }
+                                        }
+                                        break;
+                                    }
+
+                                    propertyCurveInfo[a] = info;
+                                }
+                            }
+                            else
+                            {
+                                swole.LogWarning($"Failed to compile base source '{baseDataSource.DisplayName}' for animation '{DisplayName}'");
+                            }
+                        }
+                        break;
+                }
+
+                #endregion
 
                 if (removeEmptyCurves)
                 {
@@ -734,11 +1610,11 @@ namespace Swole.API.Unity.Animation
 
                 #region Bake Loop Points
 
-                Keyframe[] LoopCurve(List<AnimationUtils.LoopPoint> loopPoints, Keyframe[] oldKeyframes)
+                AnimationCurveEditor.KeyframeStateRaw[] LoopCurve(List<AnimationUtils.LoopPoint> loopPoints, AnimationCurveEditor.KeyframeStateRaw[] oldKeyframes)
                 {
                     if (oldKeyframes.Length <= 1 || loopPoints.Count <= 0) return null;
 
-                    List<Keyframe> keyframes = new List<Keyframe>(oldKeyframes);
+                    List<AnimationCurveEditor.KeyframeStateRaw> keyframes = new List<AnimationCurveEditor.KeyframeStateRaw>(oldKeyframes);
                     var firstFrame = keyframes[0];
 
                     for (int a = 0; a < loopPoints.Count; a++)
@@ -766,15 +1642,15 @@ namespace Swole.API.Unity.Animation
                     return keyframes.ToArray();
                 }
 
-                AnimationCurve LoopAnimationCurve(List<AnimationUtils.LoopPoint> loopPoints, AnimationCurve curve)
+                EditableAnimationCurve LoopAnimationCurve(List<AnimationUtils.LoopPoint> loopPoints, EditableAnimationCurve curve)
                 {
                     if (curve == null) return null;
 
-                    Keyframe[] newKeys = LoopCurve(loopPoints, curve.keys);
+                    AnimationCurveEditor.KeyframeStateRaw[] newKeys = LoopCurve(loopPoints, curve.Keys);
                     if (newKeys != null)
                     {
                         curve = curve.AsSerializableStruct();
-                        curve.keys = newKeys;
+                        curve.Keys = newKeys;
                     }
                     return curve;
                 }
@@ -784,7 +1660,7 @@ namespace Swole.API.Unity.Animation
                     if (curve == null) return null;
 
                     bool cloned = false;
-                    AnimationCurve LoopInnerCurve(AnimationCurve innerCurve, string suffix)
+                    EditableAnimationCurve LoopInnerCurve(EditableAnimationCurve innerCurve, string suffix)
                     {
                         tempLPs.Clear();
                         GetLoopPoints(curve.name + suffix, tempLPs);
@@ -800,7 +1676,7 @@ namespace Swole.API.Unity.Animation
                         return innerCurve;
                     }
 
-                    AnimationCurve curveOut;
+                    EditableAnimationCurve curveOut;
 
                     curveOut = LoopInnerCurve(curve.localPositionCurveX, ".localPosition.x");
                     curve.localPositionCurveX = curveOut;
@@ -966,7 +1842,7 @@ namespace Swole.API.Unity.Animation
                     }
                 }
 
-                #endregion
+                #endregion            
 
                 #region Ensure Animation Length
 
@@ -977,26 +1853,63 @@ namespace Swole.API.Unity.Animation
                 foreach (var curve in propertyLinearCurves) if (curve != null) currentLength = Mathf.Max(currentLength, curve.GetLengthInSeconds(rawAnimation.framesPerSecond));
                 foreach (var curve in propertyCurves) if (curve != null) currentLength = Mathf.Max(currentLength, curve.GetLengthInSeconds(rawAnimation.framesPerSecond));
 
+                /*List<Swole.Debugging.AnimationCurveInspector.CurveView> debugTransformCurves = new List<Debugging.AnimationCurveInspector.CurveView>(); // DEBUGGING (VIEWING COMPILED CURVES)
+                var temp = new GameObject($"VIEWER").AddComponent<Swole.Debugging.AnimationCurveInspector>();
+                foreach (var curve in transformCurves) 
+                {  
+                    if (curve.localPositionCurveX != null && curve.localPositionCurveX.length > 0) debugTransformCurves.Add(new Debugging.AnimationCurveInspector.CurveView() { name = curve.TransformName + "." + nameof(curve.localPositionCurveX), curve = curve.localPositionCurveX });
+                    if (curve.localPositionCurveY != null && curve.localPositionCurveY.length > 0) debugTransformCurves.Add(new Debugging.AnimationCurveInspector.CurveView() { name = curve.TransformName + "." + nameof(curve.localPositionCurveY), curve = curve.localPositionCurveY });
+                    if (curve.localPositionCurveZ != null && curve.localPositionCurveZ.length > 0) debugTransformCurves.Add(new Debugging.AnimationCurveInspector.CurveView() { name = curve.TransformName + "." + nameof(curve.localPositionCurveZ), curve = curve.localPositionCurveZ });
+
+                    if (curve.localRotationCurveX != null && curve.localRotationCurveX.length > 0) debugTransformCurves.Add(new Debugging.AnimationCurveInspector.CurveView() { name = curve.TransformName + "." + nameof(curve.localRotationCurveX), curve = curve.localRotationCurveX });
+                    if (curve.localRotationCurveY != null && curve.localRotationCurveY.length > 0) debugTransformCurves.Add(new Debugging.AnimationCurveInspector.CurveView() { name = curve.TransformName + "." + nameof(curve.localRotationCurveY), curve = curve.localRotationCurveY });
+                    if (curve.localRotationCurveZ != null && curve.localRotationCurveZ.length > 0) debugTransformCurves.Add(new Debugging.AnimationCurveInspector.CurveView() { name = curve.TransformName + "." + nameof(curve.localRotationCurveZ), curve = curve.localRotationCurveZ });
+                    if (curve.localRotationCurveW != null && curve.localRotationCurveW.length > 0) debugTransformCurves.Add(new Debugging.AnimationCurveInspector.CurveView() { name = curve.TransformName + "." + nameof(curve.localRotationCurveW), curve = curve.localRotationCurveW });
+
+                    if (curve.localScaleCurveX != null && curve.localScaleCurveX.length > 0) debugTransformCurves.Add(new Debugging.AnimationCurveInspector.CurveView() { name = curve.TransformName + "." + nameof(curve.localScaleCurveX), curve = curve.localScaleCurveX });
+                    if (curve.localScaleCurveY != null && curve.localScaleCurveY.length > 0) debugTransformCurves.Add(new Debugging.AnimationCurveInspector.CurveView() { name = curve.TransformName + "." + nameof(curve.localScaleCurveY), curve = curve.localScaleCurveY });
+                    if (curve.localScaleCurveZ != null && curve.localScaleCurveZ.length > 0) debugTransformCurves.Add(new Debugging.AnimationCurveInspector.CurveView() { name = curve.TransformName + "." + nameof(curve.localScaleCurveZ), curve = curve.localScaleCurveZ }); 
+                }
+                temp.curveViews = debugTransformCurves.ToArray();*/
+
                 if (currentLength < timelineLength)
                 {
-                    bool LengthenCurve(AnimationCurve curve, out AnimationCurve outCurve)
+                    bool LengthenCurve(EditableAnimationCurve curve, out EditableAnimationCurve outCurve)
                     {
                         outCurve = curve;
                         if (curve == null || curve.length <= 0 || !(curve.postWrapMode == WrapMode.Clamp || curve.postWrapMode == WrapMode.ClampForever || curve.postWrapMode == WrapMode.Once)) return false;
 
-                        outCurve = new AnimationCurve();
+                        outCurve = new EditableAnimationCurve();
                         outCurve.preWrapMode = curve.preWrapMode;
                         outCurve.postWrapMode = curve.postWrapMode;
 
                         tempKeyframes.Clear();
-                        for (int a = 0; a < curve.length; a++) tempKeyframes.Add(curve[a]);
+                        for (int a = 0; a < curve.length; a++) tempKeyframes.Add(curve.GetKey(a));
 
                         var finalKey = tempKeyframes[tempKeyframes.Count - 1];
                         finalKey.time = timelineLength;
-                        finalKey = AnimationCurveEditor.CalculateLinearInTangent(finalKey, tempKeyframes[tempKeyframes.Count - 1]);
-                        tempKeyframes[tempKeyframes.Count - 1] = AnimationCurveEditor.CalculateLinearOutTangent(tempKeyframes[tempKeyframes.Count - 1], finalKey);
+
+                        //finalKey = AnimationCurveEditor.CalculateLinearInTangent(finalKey, tempKeyframes[tempKeyframes.Count - 1]);
+                        var tempKey = AnimationCurveEditor.CalculateLinearInTangent(finalKey, tempKeyframes[tempKeyframes.Count - 1]);
+                        finalKey.tangentMode = (int)AnimationCurveEditor.TangentMode.Broken; 
+                        finalKey.inTangentMode = (int)AnimationCurveEditor.BrokenTangentMode.Linear; 
+                        finalKey.inWeight = tempKey.inWeight;
+                        finalKey.inTangent = tempKey.inTangent;
+
+                        //tempKeyframes[tempKeyframes.Count - 1] = AnimationCurveEditor.CalculateLinearOutTangent(tempKeyframes[tempKeyframes.Count - 1], finalKey);
+                        var prevFinalKey = tempKeyframes[tempKeyframes.Count - 1];
+                        tempKey = AnimationCurveEditor.CalculateLinearOutTangent(prevFinalKey, finalKey);
+                        prevFinalKey.tangentMode = (int)AnimationCurveEditor.TangentMode.Broken;
+                        prevFinalKey.outTangentMode = (int)AnimationCurveEditor.BrokenTangentMode.Linear;
+                        prevFinalKey.outWeight = tempKey.outWeight;
+                        prevFinalKey.outTangent = tempKey.outTangent;
+                        tempKeyframes[tempKeyframes.Count - 1] = prevFinalKey; 
+
                         tempKeyframes.Add(finalKey);
-                        outCurve.keys = tempKeyframes.ToArray();
+                        outCurve.Keys = tempKeyframes.ToArray();
+
+                        //var temp = new GameObject($"LENGTHENED CURVE VIEWER").AddComponent<Swole.Debugging.AnimationCurveInspector>();
+                        //temp.curve = outCurve;  
 
                         return true;
                     }
@@ -1007,7 +1920,7 @@ namespace Swole.API.Unity.Animation
                         var curve = transformCurves[a];
                         if (curve != null)
                         {
-                            AnimationCurve editedCurve;
+                            EditableAnimationCurve editedCurve;
                             if (LengthenCurve(curve.localPositionCurveX, out editedCurve))
                             {
                                 flag = false;
@@ -1081,7 +1994,7 @@ namespace Swole.API.Unity.Animation
                         for (int a = 0; a < propertyCurves.Count; a++)
                         {
                             var curve = propertyCurves[a];
-                            if (curve != null && LengthenCurve(curve.propertyValueCurve, out AnimationCurve editedCurve))
+                            if (curve != null && LengthenCurve(curve.propertyValueCurve, out EditableAnimationCurve editedCurve))
                             {
                                 flag = false;
                                 curve = curve.ShallowCopy();
@@ -1141,24 +2054,24 @@ namespace Swole.API.Unity.Animation
                 else if (currentLength > timelineLength)
                 {
 
-                    bool ShortenCurve(AnimationCurve curve, out AnimationCurve outCurve)
+                    bool ShortenCurve(EditableAnimationCurve curve, out EditableAnimationCurve outCurve)
                     {
                         outCurve = curve;
                         if (curve == null || curve.length <= 0 || curve[curve.length - 1].time <= timelineLength) return false;
 
-                        outCurve = new AnimationCurve();
+                        outCurve = new EditableAnimationCurve();//new AnimationCurve();
                         outCurve.preWrapMode = curve.preWrapMode;
                         outCurve.postWrapMode = curve.postWrapMode;
 
                         tempKeyframes.Clear();
-                        for (int a = 0; a < curve.length; a++) tempKeyframes.Add(curve[a]);
+                        for (int a = 0; a < curve.length; a++) tempKeyframes.Add(curve.GetKey(a));
 
                         while (tempKeyframes.Count > 1 && tempKeyframes[tempKeyframes.Count - 2].time > timelineLength) tempKeyframes.RemoveAt(tempKeyframes.Count - 1);
                         var finalKey = tempKeyframes[tempKeyframes.Count - 1];
                         finalKey.time = timelineLength;
                         tempKeyframes[tempKeyframes.Count - 1] = finalKey;
 
-                        outCurve.keys = tempKeyframes.ToArray();
+                        outCurve.Keys = tempKeyframes.ToArray();
                         return true;
                     }
 
@@ -1167,7 +2080,7 @@ namespace Swole.API.Unity.Animation
                         var curve = transformCurves[a];
                         if (curve != null)
                         {
-                            AnimationCurve editedCurve;
+                            EditableAnimationCurve editedCurve;
                             bool canCopy = true;
                             if (ShortenCurve(curve.localPositionCurveX, out editedCurve))
                             {
@@ -1269,7 +2182,7 @@ namespace Swole.API.Unity.Animation
                     for (int a = 0; a < propertyCurves.Count; a++)
                     {
                         var curve = propertyCurves[a];
-                        if (curve != null && ShortenCurve(curve.propertyValueCurve, out AnimationCurve editedCurve))
+                        if (curve != null && ShortenCurve(curve.propertyValueCurve, out EditableAnimationCurve editedCurve))
                         {
                             curve = curve.ShallowCopy();
                             curve.propertyValueCurve = editedCurve;
@@ -1312,7 +2225,7 @@ namespace Swole.API.Unity.Animation
 
                             curve.frames = tempPropertyFrames.ToArray();
 
-                            propertyLinearCurves[a] = curve;
+                            propertyLinearCurves[a] = curve; 
                         }
                     }
                 }
@@ -1361,7 +2274,7 @@ namespace Swole.API.Unity.Animation
             return compiledAnimation;
         }
 
-        public bool ContainsCurve(AnimationCurve curve)
+        public bool ContainsCurve(EditableAnimationCurve curve)
         {
             if (curve == null || rawAnimation == null) return false;
 
@@ -1450,31 +2363,36 @@ namespace Swole.API.Unity.Animation
 
         public void InsertKeyframes(bool createFromPreviousKeyIfApplicable, bool useReferencePose, ImportedAnimatable animatable, float time, IntFromDecimalDelegate getFrameIndex = null, bool onlyInsertChangedData = true, List<Transform> transformMask = null, WrapMode preWrapMode = WrapMode.Clamp, WrapMode postWrapMode = WrapMode.Clamp, bool verbose=false)
         {
+
             if (animatable == null) return;
             if (animatable.RestPose == null) 
             {
                 swole.LogWarning($"Tried to insert keyframes into source '{displayName}' using animatable '{animatable.displayName}', but the animatable has no rest pose!");
                 return;
             }
-
-            var originalPoseAtTime = animatable.RestPose.Duplicate();  
+               
+            AnimationUtils.Pose originalPoseAtTime = animatable.RestPose.Duplicate();
 
             if (rawAnimation != null)
             {
-                var compAnim = CompiledAnimation;
+                var compAnim = CompiledAnimation;  
                 if (compAnim != null) originalPoseAtTime.ApplyAnimation(compAnim, time, false, 1, null, preWrapMode, postWrapMode); // Get the current pose at this point in the animation
             }
-             
-            var newPose = originalPoseAtTime;
+
+            var newPose = originalPoseAtTime;   
 
             animatable.RefreshLastPose();
             if (animatable.lastPose != null) 
             {
                 if (animatable.referencePose != null && useReferencePose)
                 {
+                    //animatable.CreateSnapshot("referencePose", animatable.referencePose); // Debug 
+                    //animatable.CreateSnapshot("lastPose", animatable.lastPose);
+                    //animatable.CreateSnapshot("originalPoseAtTime", originalPoseAtTime);
                     // Applies the pose change in an additive fashion to the current pose at time in the animation. Allows for correct pose changes even if other animations have been played on the rig (in theory)
-                    var difference = animatable.referencePose.GetDifference(animatable.lastPose);
-                    newPose = originalPoseAtTime.Duplicate().ApplyDeltas(difference); 
+                    var difference = animatable.referencePose.GetDifference(animatable.lastPose); // lastPose - referencePose
+                    newPose = originalPoseAtTime.Duplicate().ApplyDeltas(difference);
+                    //animatable.CreateSnapshot("newPose", newPose);  
                     if (verbose) swole.Log($"Inserting key at [{time}] using difference between current pose and animator reference pose.");
                 } 
                 else 
@@ -1484,11 +2402,11 @@ namespace Swole.API.Unity.Animation
                 }
             }
 
-            InsertKeyframes(createFromPreviousKeyIfApplicable, time, getFrameIndex, newPose, animatable.RestPose, onlyInsertChangedData ? originalPoseAtTime : null, transformMask, preWrapMode, postWrapMode, verbose);
+            InsertKeyframes(animatable.animator == null ? null : animatable.animator.avatar, createFromPreviousKeyIfApplicable, time, getFrameIndex, newPose, animatable.RestPose, onlyInsertChangedData ? originalPoseAtTime : null, transformMask, preWrapMode, postWrapMode, verbose);
         }
-        public void InsertKeyframes(bool createFromPreviousKeyIfApplicable, float timelinePosition, IntFromDecimalDelegate getFrameIndex, AnimationUtils.Pose pose, AnimationUtils.Pose restPose, AnimationUtils.Pose originalPose = null, List<Transform> transformMask = null, WrapMode preWrapMode = WrapMode.Clamp, WrapMode postWrapMode = WrapMode.Clamp, bool verbose = false)
+        public void InsertKeyframes(CustomAvatar avatar, bool createFromPreviousKeyIfApplicable, float timelinePosition, IntFromDecimalDelegate getFrameIndex, AnimationUtils.Pose pose, AnimationUtils.Pose restPose, AnimationUtils.Pose originalPose = null, List<Transform> transformMask = null, WrapMode preWrapMode = WrapMode.Clamp, WrapMode postWrapMode = WrapMode.Clamp, bool verbose = false)
         {
-            var anim = GetOrCreateRawData();
+            var anim = GetOrCreateRawData(); 
             if (anim != null)
             {
                 if (restPose != null)
@@ -1498,11 +2416,12 @@ namespace Swole.API.Unity.Animation
                         float prevTime = anim.GetClosestKeyframeTime(timelinePosition, false, getFrameIndex); // Find the time of the key that comes before timelinePosition
                         //Debug.Log(prevTime + " -> " + timelinePosition); 
                         var prevKeyPose = restPose.Duplicate().ApplyAnimation(anim, prevTime, false, 1, null, preWrapMode, postWrapMode); // Get the pose of the key at prevTime
-                        var difference = prevKeyPose.GetDifference(pose); // Get the difference between the previous key and the new key
+                        var difference = prevKeyPose.GetDifference(pose); // Get the difference between the previous key and the new key (pose - prevKeyPose)
                         pose = prevKeyPose.ApplyDeltas(difference); // Apply the new pose on top of the previous so that the shortest rotation between the two will be used  
                     }
                 }
-                pose.Insert(anim, timelinePosition, restPose, originalPose, transformMask, getFrameIndex != null, getFrameIndex, verbose);
+                
+                pose.Insert(avatar, anim, timelinePosition, restPose, originalPose, transformMask, getFrameIndex != null, getFrameIndex, verbose);
             }
             MarkAsDirty();
         }

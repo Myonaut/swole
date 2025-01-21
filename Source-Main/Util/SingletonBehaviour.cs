@@ -42,13 +42,14 @@ namespace Swole
             }
 
         }
+        public static T InstanceOrNull => instance;
 
         public static bool IsCreated => instance != null; 
 
         private static void SetInstance(T newInstance, bool initialize = true)
         {
             instance = newInstance;
-            if (!instance.DestroyOnLoad) DontDestroyOnLoad(instance.gameObject);
+            if (Application.isPlaying && !instance.DestroyOnLoad) DontDestroyOnLoad(instance.gameObject); 
             if (initialize) instance.Init();
         }
 
@@ -285,12 +286,17 @@ namespace Swole
             }
         }
 
+        public static event VoidParameterlessDelegate PreUpdate;
+        public static event VoidParameterlessDelegate PostUpdate;
+
         /// <summary>
         /// Executes the OnUpdate call stack. Must be called manually if not using an engine.
         /// </summary>
         public override void OnUpdate()
         {
             if (behaviours == null || IsQuitting()) return;
+
+            PreUpdate?.Invoke();
 
             for (int i = 0; i < behaviours.Count; i++) 
             {
@@ -300,10 +306,22 @@ namespace Swole
                     hasNull = true;
                     continue;
                 }
-                behaviours[i].OnUpdate(); 
+                try
+                {
+                    behaviours[i].OnUpdate();
+                }
+                catch (Exception e)
+                {
+                    swole.LogError(e); 
+                }
             }
             RemoveNull();
+
+            PostUpdate?.Invoke();
         }
+
+        public static event VoidParameterlessDelegate PreLateUpdate;
+        public static event VoidParameterlessDelegate PostLateUpdate;
 
         /// <summary>
         /// Executes the OnLateUpdate call stack. Must be called manually if not using an engine.
@@ -312,18 +330,32 @@ namespace Swole
         {
             if (behaviours == null || IsQuitting()) return;
 
+            PreLateUpdate?.Invoke();
+
             for (int i = 0; i < behaviours.Count; i++)
             {
-                var behaviour = behaviours[i];
+                var behaviour = behaviours[i]; 
                 if (behaviour == null)
                 {
                     hasNull = true;
                     continue;
                 }
-                behaviours[i].OnLateUpdate();
+                try
+                {
+                    behaviours[i].OnLateUpdate();
+                } 
+                catch(Exception e)
+                {
+                    swole.LogError(e);
+                }
             }
             RemoveNull();
+
+            PostLateUpdate?.Invoke();
         }
+
+        public static event VoidParameterlessDelegate PreFixedUpdate;
+        public static event VoidParameterlessDelegate PostFixedUpdate;
 
         /// <summary>
         /// Executes the OnFixedUpdate call stack. Must be called manually if not using an engine.
@@ -331,6 +363,8 @@ namespace Swole
         public override void OnFixedUpdate()
         {
             if (behaviours == null || IsQuitting()) return;
+
+            PreFixedUpdate?.Invoke();
 
             for (int i = 0; i < behaviours.Count; i++)
             {
@@ -343,6 +377,8 @@ namespace Swole
                 behaviours[i].OnFixedUpdate();
             }
             RemoveNull();
+
+            PostFixedUpdate?.Invoke();
         }
 
         /* ---- Revised to be handled by the engine hook instead.

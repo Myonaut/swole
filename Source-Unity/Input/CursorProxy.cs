@@ -117,10 +117,25 @@ namespace Swole
 
             results.Clear();
 
-            if (updateRaycasters) UpdateRaycasterListLocal();
+            if (updateRaycasters) 
+            { 
+                UpdateRaycasterListLocal();
+                updateRaycasters = false;
+            }
             foreach (var raycaster in RaycastersList)
             {
-                raycaster.Raycast(eventData, results);
+                if (raycaster == null)
+                {
+                    updateRaycasters = true;
+                    continue;
+                }
+
+                raycaster.Raycast(eventData, results); 
+            }
+            if (updateRaycasters)
+            {
+                UpdateRaycasterListLocal();
+                updateRaycasters = false;
             }
 
             results.Sort((RaycastResult x, RaycastResult y) => (int)Mathf.Sign(y.depth - x.depth));

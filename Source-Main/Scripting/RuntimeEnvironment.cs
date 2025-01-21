@@ -11,7 +11,7 @@ using static Swole.Script.SwoleScriptSemantics;
 namespace Swole.Script
 {
 
-    public delegate void RuntimeEventListenerDelegate(string eventName, float val);
+    public delegate void RuntimeEventListenerDelegate(string eventName, float val, object sender);
     public delegate void CancelTokenDelegate(SwoleCancellationToken token);
     public class SwoleCancellationToken : IDisposable
     {

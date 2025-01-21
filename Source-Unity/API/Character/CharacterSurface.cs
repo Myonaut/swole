@@ -12,10 +12,10 @@ using Unity.Jobs;
 using Unity.Collections;
 using Unity.Burst;
 
+using Swole.DataStructures;
 using Swole.API.Unity.Animation;
 
 using static Swole.SharedMeshData;
-using static Swole.DataStructures;
 
 namespace Swole.API.Unity
 {
@@ -197,7 +197,7 @@ namespace Swole.API.Unity
         public SamplePoint GetSamplePointUnsafe(int samplePointIndex)
         {
 
-            Dependency.Complete();
+            OutputDependency.Complete();
 
             return GetSamplePointUnsafeUnchecked(samplePointIndex);
 
@@ -272,7 +272,7 @@ namespace Swole.API.Unity
                             int index = m_sharedMeshData.BoneWeights[boneIndex].boneIndex;
                             float weight = m_sharedMeshData.BoneWeights[boneIndex].weight;
 
-                            if (weight > 0) rigSampler.Track(index);
+                            //if (weight > 0) rigSampler.Track(index);
 
                             localBoneWeights.boneIndex0 = index;
                             localBoneWeights.boneWeight0 = weight;
@@ -287,7 +287,7 @@ namespace Swole.API.Unity
                             int index = m_sharedMeshData.BoneWeights[boneIndex].boneIndex;
                             float weight = m_sharedMeshData.BoneWeights[boneIndex].weight;
 
-                            if (weight > 0) rigSampler.Track(index);
+                            //if (weight > 0) rigSampler.Track(index);
 
                             localBoneWeights.boneIndex1 = index;
                             localBoneWeights.boneWeight1 = weight;
@@ -302,7 +302,7 @@ namespace Swole.API.Unity
                             int index = m_sharedMeshData.BoneWeights[boneIndex].boneIndex;
                             float weight = m_sharedMeshData.BoneWeights[boneIndex].weight;
 
-                            if (weight > 0) rigSampler.Track(index);
+                            //if (weight > 0) rigSampler.Track(index);
 
                             localBoneWeights.boneIndex2 = index;
                             localBoneWeights.boneWeight2 = weight;
@@ -317,7 +317,7 @@ namespace Swole.API.Unity
                             int index = m_sharedMeshData.BoneWeights[boneIndex].boneIndex;
                             float weight = m_sharedMeshData.BoneWeights[boneIndex].weight;
 
-                            if (weight > 0) rigSampler.Track(index);
+                            //if (weight > 0) rigSampler.Track(index);
 
                             localBoneWeights.boneIndex3 = index;
                             localBoneWeights.boneWeight3 = weight;
@@ -332,7 +332,7 @@ namespace Swole.API.Unity
                             int index = m_sharedMeshData.BoneWeights[boneIndex].boneIndex;
                             float weight = m_sharedMeshData.BoneWeights[boneIndex].weight;
 
-                            if (weight > 0) rigSampler.Track(index);
+                            //if (weight > 0) rigSampler.Track(index);
 
                             localBoneWeights.boneIndex4 = index;
                             localBoneWeights.boneWeight4 = weight;
@@ -347,7 +347,7 @@ namespace Swole.API.Unity
                             int index = m_sharedMeshData.BoneWeights[boneIndex].boneIndex;
                             float weight = m_sharedMeshData.BoneWeights[boneIndex].weight;
 
-                            if (weight > 0) rigSampler.Track(index);
+                            //if (weight > 0) rigSampler.Track(index);
 
                             localBoneWeights.boneIndex5 = index;
                             localBoneWeights.boneWeight5 = weight;
@@ -362,7 +362,7 @@ namespace Swole.API.Unity
                             int index = m_sharedMeshData.BoneWeights[boneIndex].boneIndex;
                             float weight = m_sharedMeshData.BoneWeights[boneIndex].weight;
 
-                            if (weight > 0) rigSampler.Track(index);
+                            //if (weight > 0) rigSampler.Track(index);
 
                             localBoneWeights.boneIndex6 = index;
                             localBoneWeights.boneWeight6 = weight;
@@ -377,7 +377,7 @@ namespace Swole.API.Unity
                             int index = m_sharedMeshData.BoneWeights[boneIndex].boneIndex;
                             float weight = m_sharedMeshData.BoneWeights[boneIndex].weight;
 
-                            if (weight > 0) rigSampler.Track(index);
+                            //if (weight > 0) rigSampler.Track(index);
 
                             localBoneWeights.boneIndex7 = index;
                             localBoneWeights.boneWeight7 = weight;
@@ -484,14 +484,14 @@ namespace Swole.API.Unity
             if (rigSampler != null)
             {
 
-                if (samplePoint.boneWeights.boneIndex0 >= 0 && samplePoint.boneWeights.boneWeight0 > 0) rigSampler.Untrack(samplePoint.boneWeights.boneIndex0);
+                /*if (samplePoint.boneWeights.boneIndex0 >= 0 && samplePoint.boneWeights.boneWeight0 > 0) rigSampler.Untrack(samplePoint.boneWeights.boneIndex0);
                 if (samplePoint.boneWeights.boneIndex1 >= 0 && samplePoint.boneWeights.boneWeight1 > 0) rigSampler.Untrack(samplePoint.boneWeights.boneIndex1);
                 if (samplePoint.boneWeights.boneIndex2 >= 0 && samplePoint.boneWeights.boneWeight2 > 0) rigSampler.Untrack(samplePoint.boneWeights.boneIndex2);
                 if (samplePoint.boneWeights.boneIndex3 >= 0 && samplePoint.boneWeights.boneWeight3 > 0) rigSampler.Untrack(samplePoint.boneWeights.boneIndex3);
                 if (samplePoint.boneWeights.boneIndex4 >= 0 && samplePoint.boneWeights.boneWeight4 > 0) rigSampler.Untrack(samplePoint.boneWeights.boneIndex4);
                 if (samplePoint.boneWeights.boneIndex5 >= 0 && samplePoint.boneWeights.boneWeight5 > 0) rigSampler.Untrack(samplePoint.boneWeights.boneIndex5);
                 if (samplePoint.boneWeights.boneIndex6 >= 0 && samplePoint.boneWeights.boneWeight6 > 0) rigSampler.Untrack(samplePoint.boneWeights.boneIndex6);
-                if (samplePoint.boneWeights.boneIndex7 >= 0 && samplePoint.boneWeights.boneWeight7 > 0) rigSampler.Untrack(samplePoint.boneWeights.boneIndex7);
+                if (samplePoint.boneWeights.boneIndex7 >= 0 && samplePoint.boneWeights.boneWeight7 > 0) rigSampler.Untrack(samplePoint.boneWeights.boneIndex7);*/
 
             }
 
@@ -542,31 +542,33 @@ namespace Swole.API.Unity
         public int LastRefreshFrame => m_LastRefreshFrame;
 
         protected JobHandle m_JobsHandle = default;
-        public JobHandle Dependency => m_JobsHandle;
+        public JobHandle OutputDependency => m_JobsHandle;
 
-        public virtual JobHandle Refresh(bool force = false)
+        public virtual JobHandle Refresh(bool isInLateUpdate, bool force = false)
         {
 
             int frame = Time.frameCount;
 
-            if (m_sharedMeshData == null || m_Renderer == null || LastRefreshFrame == frame && !force) return Dependency;
+            if (m_sharedMeshData == null || m_Renderer == null || LastRefreshFrame == frame && !force) return OutputDependency;
 
             m_LastRefreshFrame = frame;
 
-            Dependency.Complete();
+            OutputDependency.Complete();
 
             Rigs.Sampler rigSampler = Rigs.GetSampler(m_Renderer);
 
-            if (rigSampler == null || SamplePointCount <= 0) return Dependency;
+            if (rigSampler == null || SamplePointCount <= 0) return OutputDependency; 
 
             var animator = Animator;
-            m_JobsHandle = JobHandle.CombineDependencies(Dependency, rigSampler.Refresh(JobHandle.CombineDependencies(animator == null ? default : animator.OutputDependency, ProxyBoneJobs.OutputDependency)));
+            //m_JobsHandle = JobHandle.CombineDependencies(OutputDependency, rigSampler.Refresh(JobHandle.CombineDependencies(animator == null ? default : animator.OutputDependency, ProxyBoneJobs.OutputDependency)));
+            //m_JobsHandle = rigSampler.Refresh(isInLateUpdate);
+            m_JobsHandle = Rigs.OutputDependency;
 
             for (int a = 0; a < m_sharedMeshData.BlendShapeCount; a++) m_blendShapeWeights[a] = m_Renderer.GetBlendShapeWeight(a);// / m_sharedMeshData.BlendShapeFrameWeights[m_sharedMeshData.BlendShapeFrameWeights.Length - 1];
 
             m_JobsHandle = UpdateSurface(rigSampler, m_JobsHandle);
 
-            return Dependency;
+            return OutputDependency;
 
         }
 
