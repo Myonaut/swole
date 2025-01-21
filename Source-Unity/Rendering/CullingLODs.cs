@@ -164,7 +164,7 @@ namespace Swole
                     prevOutput = prevOutputCullLOD
                 };
                    
-                updateJobHandle = cullingLODJob.ScheduleAppend(updatedIndices, renderers.Count, 8, TransformTracking.JobDependency);
+                updateJobHandle = cullingLODJob.ScheduleAppend(updatedIndices, renderers.Count, TransformTracking.JobDependency);
                 TransformTracking.AddInputDependency(updateJobHandle); 
             }
 
@@ -363,7 +363,7 @@ namespace Swole
         /// adapted from source: https://ennogames.com/blog/frustum-culling-with-unity-jobs
         /// </summary>
         [BurstCompile]
-        struct CullingLODJob : IJobParallelForFilter
+        struct CullingLODJob : IJobFilter
         {
             public float3 cameraWorldPosition;
             public float4 frustrumPlane0;
