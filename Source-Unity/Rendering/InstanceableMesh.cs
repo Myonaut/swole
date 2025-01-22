@@ -11,6 +11,8 @@ using Unity.Collections.LowLevel.Unsafe;
 using UnityEngine;
 using UnityEngine.Rendering;
 
+using Unity.Jobs;
+
 using Swole.API.Unity;
 using Swole.DataStructures;
 
@@ -706,11 +708,22 @@ namespace Swole
         public void Grow(float multiplier = 2);
         public bool IsValid();
 
+        public void CompleteWriteRequests();
+
         public ComputeBuffer Buffer { get; }
         public int Size { get; }
         public int InstanceCount { get; }
         public int Stride { get; }
         public int ElementsPerInstance { get; }
+    }
+    public struct BufferWriteRequest<T> where T : unmanaged
+    {
+        public int localIndex;
+        public int writeStartIndex;
+        public int count;
+
+        public JobHandle preWriteJobHandle;
+        public NativeArray<T> localArray;
     }
     public class InstanceBuffer<T> : IInstanceBuffer where T : unmanaged
     {
@@ -750,6 +763,75 @@ namespace Swole
         public ComputeBuffer Buffer => buffer;
         public bool IsValid() => buffer != null && buffer.IsValid();
 
+        [NonSerialized]
+        protected int writeStart;
+        [NonSerialized]
+        protected int writeEnd;
+
+        [NonSerialized]
+        protected readonly List<BufferWriteRequest<T>> writeRequests = new List<BufferWriteRequest<T>>();
+        [NonSerialized]
+        protected bool queuedToWrite;
+
+        public void CompleteWriteRequests()
+        {
+            queuedToWrite = false;
+
+            try
+            {
+                int startIndex = buffer.count;
+                int endIndex = -1;
+
+                foreach (var request in writeRequests)
+                {
+                    startIndex = Mathf.Min(startIndex, request.writeStartIndex);
+                    endIndex = Mathf.Max(endIndex, request.writeStartIndex + request.count); 
+                }
+
+                int count = endIndex - startIndex;
+                if (startIndex >= 0 && count > 0 && count <= buffer.count)
+                {
+                    var writer = buffer.BeginWrite<T>(startIndex, count);
+
+                    foreach (var request in writeRequests)
+                    {
+                        request.preWriteJobHandle.Complete();
+                        NativeArray<T>.Copy(request.localArray, request.localIndex, writer, request.writeStartIndex, request.count);
+                    }
+
+                    buffer.EndWrite<T>(count);
+                }
+            }
+            finally
+            {
+                writeRequests.Clear();
+            }
+        }
+
+        public bool RequestWriteToBuffer(NativeArray<T> localArray, int localindex, int writeStartIndex, int count, JobHandle preWriteJobHandle = default)
+        {
+            if (!IsValid()) return false;
+
+            var request = new BufferWriteRequest<T>() 
+            { 
+                localArray = localArray,
+                localIndex = localindex,
+                writeStartIndex = writeStartIndex, 
+                count = count,
+                preWriteJobHandle = preWriteJobHandle
+            };
+             
+            writeRequests.Add(request);
+
+            if (!queuedToWrite) 
+            {
+                InstanceBufferUploader.Queue(this);
+                queuedToWrite = true;
+            }
+
+            return queuedToWrite;
+        }
+
         public int Size => buffer == null ? 0 : buffer.count;
         public int InstanceCount => Size / ElementsPerInstance;
 
@@ -767,6 +849,8 @@ namespace Swole
         public void Dispose()
         {
             boundMaterialProperties.Clear();
+
+            writeRequests.Clear();
 
             if (buffer != null && buffer.IsValid())
             {
@@ -1537,8 +1621,6 @@ namespace Swole
 
         public void ApplyBufferToMaterials(string propertyName, ICollection<int> materialSlots, ComputeBuffer buffer)
         {
-            if (buffer != null) Debug.Log(propertyName + " : " + buffer.count);
-
             if (meshGroups != null)
             {
                 if (materialSlots == null)
@@ -1647,7 +1729,6 @@ namespace Swole
 
         public void ApplyVectorToMaterials(string propertyName, ICollection<int> materialSlots, Vector4 value)
         {
-            Debug.Log(propertyName + " : " + value);
             if (meshGroups != null)
             {
                 if (materialSlots == null)
@@ -1755,6 +1836,57 @@ namespace Swole
             base.Initialize(); 
              
             ApplyBoneWeightsBufferToMaterials(SkinningDataPropertyName, null);  
+        }
+    }
+
+    public class InstanceBufferUploader : SingletonBehaviour<InstanceBufferUploader>
+    {
+
+        public override bool DestroyOnLoad => false;
+
+        public override int Priority => 999999999;
+
+        [NonSerialized]
+        protected readonly HashSet<IInstanceBuffer> bufferQueue = new HashSet<IInstanceBuffer>();
+
+        public void QueueLocal(IInstanceBuffer buffer)
+        {
+            bufferQueue.Add(buffer);  
+        }
+        public static void Queue(IInstanceBuffer buffer)
+        {
+            var instance = Instance;
+            if (instance == null) return;
+
+            instance.QueueLocal(buffer);
+        }
+
+        public override void OnFixedUpdate()
+        {
+        }
+
+        public override void OnLateUpdate()
+        {
+            foreach (var buffer in bufferQueue) 
+            {
+                try
+                {
+                    buffer.CompleteWriteRequests(); 
+                } 
+                catch(Exception ex)
+                {
+#if UNITY_EDITOR
+                    Debug.LogError(ex);
+#else
+                    swole.LogError(ex);
+#endif
+                }
+            }
+            bufferQueue.Clear();
+        }
+
+        public override void OnUpdate()
+        {
         }
     }
 }

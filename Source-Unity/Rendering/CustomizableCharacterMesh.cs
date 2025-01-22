@@ -893,39 +893,23 @@ namespace Swole.Morphing
 
             if (dirtyFlag_standaloneShapesControl)
             {
-                var writer = StandaloneShapeControlBuffer.Buffer.BeginWrite<float>(InstanceSlot * CharacterMeshData.StandaloneShapesCount, CharacterMeshData.StandaloneShapesCount);
-                StandaloneShapesControl.CopyTo(writer);
-                StandaloneShapeControlBuffer.Buffer.EndWrite<float>(CharacterMeshData.StandaloneShapesCount);
-
-                dirtyFlag_standaloneShapesControl = false;
+                if (StandaloneShapeControlBuffer.RequestWriteToBuffer(StandaloneShapesControl, 0, InstanceSlot * CharacterMeshData.StandaloneShapesCount, CharacterMeshData.StandaloneShapesCount)) dirtyFlag_standaloneShapesControl = false;
             }
 
             if (dirtyFlag_muscleGroupsControl)
             {
-                var writer = MuscleGroupsControlBuffer.Buffer.BeginWrite<MuscleDataLR>(InstanceSlot * CharacterMeshData.MuscleVertexGroupCount, CharacterMeshData.MuscleVertexGroupCount);
-                MuscleGroupsControl.CopyTo(writer);
-                MuscleGroupsControlBuffer.Buffer.EndWrite<MuscleDataLR>(CharacterMeshData.MuscleVertexGroupCount);
-
-                dirtyFlag_muscleGroupsControl = false;
+                if (MuscleGroupsControlBuffer.RequestWriteToBuffer(MuscleGroupsControl, 0, InstanceSlot * CharacterMeshData.MuscleVertexGroupCount, CharacterMeshData.MuscleVertexGroupCount)) dirtyFlag_muscleGroupsControl = false;
             }
 
             if (dirtyFlag_fatGroupsControl)
             {
-                var writer = FatGroupsControlBuffer.Buffer.BeginWrite<float3>(InstanceSlot * CharacterMeshData.FatVertexGroupCount, CharacterMeshData.FatVertexGroupCount);
-                FatGroupsControl.CopyTo(writer);
-                FatGroupsControlBuffer.Buffer.EndWrite<float3>(CharacterMeshData.FatVertexGroupCount);
-
-                dirtyFlag_fatGroupsControl = false;
+                if (FatGroupsControlBuffer.RequestWriteToBuffer(FatGroupsControl, 0, InstanceSlot * CharacterMeshData.FatVertexGroupCount, CharacterMeshData.FatVertexGroupCount)) dirtyFlag_fatGroupsControl = false; 
             }
 
             if (dirtyFlag_variationShapesControl)
             {
                 int count = CharacterMeshData.VariationShapesCount * CharacterMeshData.VariationVertexGroupCount;
-                var writer = VariationShapesControlBuffer.Buffer.BeginWrite<float2>(InstanceSlot * count, count);
-                VariationShapesControl.CopyTo(writer);
-                VariationShapesControlBuffer.Buffer.EndWrite<float2>(count);
-
-                dirtyFlag_variationShapesControl = false;
+                if (VariationShapesControlBuffer.RequestWriteToBuffer(VariationShapesControl, 0, InstanceSlot * count, count)) dirtyFlag_variationShapesControl = false;
             }
         }
     }
