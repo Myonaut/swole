@@ -235,6 +235,7 @@ namespace Swole.API.Unity
 
                     if (m_Buffer == null)
                     {
+                        Debug.Log("HUH");
                         if (m_Pose.Length <= 0)
                         {
                             swole.LogError($"Tried to create zero length compute buffer for rig sampler {ID}. Aborting...");
@@ -251,7 +252,7 @@ namespace Swole.API.Unity
 
             }
 
-            protected List<ComputeBufferWithStartIndex> m_Buffers;
+            /*protected List<ComputeBufferWithStartIndex> m_Buffers;
             public void AddWritableBuffer(ComputeBuffer buffer, int startIndex)
             {
                 if (m_Buffers == null) m_Buffers = new List<ComputeBufferWithStartIndex>();
@@ -263,7 +264,7 @@ namespace Swole.API.Unity
                 if (m_Buffers == null) return;
 
                 m_Buffers.RemoveAll(i => i == null || ReferenceEquals(i.Buffer, buffer));
-            }
+            }*/
             protected List<InstanceBufferWithStartIndex> m_InstanceBuffers;
             public void AddWritableInstanceBuffer(IInstanceBuffer buffer, int startIndex)
             {
@@ -283,7 +284,7 @@ namespace Swole.API.Unity
                 if (trackingGroup == null) return;
 
                 if (m_Buffer != null) trackingGroup.CopyIntoBuffer(m_Buffer, 0);
-                if (m_Buffers != null) trackingGroup.CopyIntoBuffers(m_Buffers);
+                //if (m_Buffers != null) trackingGroup.CopyIntoBuffers(m_Buffers);
                 if (m_InstanceBuffers != null) trackingGroup.CopyIntoBuffers(m_InstanceBuffers); 
             }
 
@@ -628,7 +629,7 @@ namespace Swole.API.Unity
 
                 if (isSequential)
                 {
-                    NativeArray<float4x4>.Copy(instance.globalPoseData, trackingIndices[0], poseArray, startIndex, trackingIndices.Count);
+                    NativeArray<float4x4>.Copy(instance.globalPoseData.AsArray(), trackingIndices[0], poseArray, startIndex, trackingIndices.Count);
                 } 
                 else
                 {
@@ -639,6 +640,37 @@ namespace Swole.API.Unity
                     }
                 }
             }
+            public void CopyIntoArrayNoChecks(NativeArray<float4x4> poseArray, int startIndex)
+            {
+                var instance = Rigs.InstanceOrNull;
+
+                if (isSequential)
+                {
+                    NativeArray<float4x4>.Copy(instance.globalPoseData.AsArray(), trackingIndices[0], poseArray, startIndex, trackingIndices.Count);
+                }
+                else
+                {
+                    for (int a = 0; a < trackingIndices.Count; a++)
+                    {
+                        var ind = trackingIndices[a];
+                        poseArray[startIndex + a] = instance.globalPoseData[ind];
+                    }
+                }
+            }
+            public void CopyIntoArrayNoChecksSequential(NativeArray<float4x4> poseArray, int startIndex)
+            {
+                var instance = Rigs.InstanceOrNull;
+                NativeArray<float4x4>.Copy(instance.globalPoseData.AsArray(), trackingIndices[0], poseArray, startIndex, trackingIndices.Count);
+            }
+            public void CopyIntoArrayNoChecksNonSequential(NativeArray<float4x4> poseArray, int startIndex)
+            {
+                var instance = Rigs.InstanceOrNull;
+                for (int a = 0; a < trackingIndices.Count; a++)
+                {
+                    var ind = trackingIndices[a];
+                    poseArray[startIndex + a] = instance.globalPoseData[ind];
+                }
+            }
             public void CopyIntoBuffer(ComputeBuffer buffer, int startIndex)
             {
                 var instance = Rigs.InstanceOrNull;
@@ -647,7 +679,7 @@ namespace Swole.API.Unity
                 var tempArray = buffer.BeginWrite<float4x4>(startIndex, trackingIndices.Count);
                 if (isSequential)
                 {
-                    NativeArray<float4x4>.Copy(instance.globalPoseData, trackingIndices[0], tempArray, 0, trackingIndices.Count);
+                    NativeArray<float4x4>.Copy(instance.globalPoseData.AsArray(), trackingIndices[0], tempArray, 0, trackingIndices.Count);
                 }
                 else
                 {
@@ -673,7 +705,7 @@ namespace Swole.API.Unity
                         {
                             while (enu0.MoveNext())
                             {
-                                NativeArray<float4x4>.Copy(instance.globalPoseData, trackingIndices[0], enu0.Current, 0, trackingIndices.Count);
+                                NativeArray<float4x4>.Copy(instance.globalPoseData.AsArray(), trackingIndices[0], enu0.Current, 0, trackingIndices.Count);
                             }
                         }
                         else
@@ -682,7 +714,7 @@ namespace Swole.API.Unity
                             {
                                 while (enu0.MoveNext() && enu1.MoveNext())
                                 {
-                                    NativeArray<float4x4>.Copy(instance.globalPoseData, trackingIndices[0], enu0.Current, enu1.Current, trackingIndices.Count);
+                                    NativeArray<float4x4>.Copy(instance.globalPoseData.AsArray(), trackingIndices[0], enu0.Current, enu1.Current, trackingIndices.Count);
                                 }
                             }
                         }
@@ -726,7 +758,7 @@ namespace Swole.API.Unity
             }
 
             private readonly List<NativeArray<float4x4>> tempArrays = new List<NativeArray<float4x4>>();
-            public void CopyIntoBuffers(ICollection<ComputeBuffer> buffers, ICollection<int> startIndices)
+            /*public void CopyIntoBuffers(ICollection<ComputeBuffer> buffers, ICollection<int> startIndices)
             {
                 var instance = Rigs.InstanceOrNull;
                 if (instance == null) return;
@@ -759,8 +791,8 @@ namespace Swole.API.Unity
 
                 foreach(var buffer in buffers) buffer.EndWrite<float4x4>(trackingIndices.Count);
                 tempArrays.Clear();
-            }
-            public void CopyIntoBuffers(ICollection<ComputeBufferWithStartIndex> buffers)
+            }*/
+            /*public void CopyIntoBuffers(ICollection<ComputeBufferWithStartIndex> buffers)
             {
                 var instance = Rigs.InstanceOrNull;
                 if (instance == null) return;
@@ -776,13 +808,13 @@ namespace Swole.API.Unity
 
                 foreach (var buffer in buffers) buffer.Buffer.EndWrite<float4x4>(trackingIndices.Count);
                 tempArrays.Clear();
-            }
+            }*/
             public void CopyIntoBuffers(ICollection<InstanceBufferWithStartIndex> buffers)
             {
                 var instance = Rigs.InstanceOrNull;
-                if (instance == null) return;
-
-                tempArrays.Clear();
+                if (instance == null) return; 
+                 
+                /*tempArrays.Clear();
                 foreach (var buffer in buffers)
                 {
                     var tempArray = buffer.Buffer.Buffer.BeginWrite<float4x4>(buffer.startIndex, trackingIndices.Count);
@@ -792,7 +824,21 @@ namespace Swole.API.Unity
                 CopyIntoArrays(tempArrays, null);
 
                 foreach (var buffer in buffers) buffer.Buffer.Buffer.EndWrite<float4x4>(trackingIndices.Count);
-                tempArrays.Clear();
+                tempArrays.Clear();*/
+                if (isSequential)
+                {
+                    foreach (var buffer in buffers)
+                    {
+                        if (buffer.Buffer is InstanceBuffer<float4x4> buffer4x4) buffer4x4.WriteToBufferCallback(buffer.startIndex, trackingIndices.Count, CopyIntoArrayNoChecksSequential); 
+                    }
+                } 
+                else
+                {
+                    foreach (var buffer in buffers)
+                    {
+                        if (buffer.Buffer is InstanceBuffer<float4x4> buffer4x4) buffer4x4.WriteToBufferCallback(buffer.startIndex, trackingIndices.Count, CopyIntoArrayNoChecksNonSequential);
+                    }
+                }
             }
         }
         public static TrackedTransformGroup Track(ICollection<Transform> transforms, ICollection<Matrix4x4> bindpose) => new TrackedTransformGroup(transforms, bindpose);
@@ -820,8 +866,8 @@ namespace Swole.API.Unity
 
             outputDependency = new UpdateGlobalPoseDataJob()
             {
-                poseData = globalPoseData,
-                bindPoseData = globalBindPoseData,
+                poseData = globalPoseData.AsArray(),
+                bindPoseData = globalBindPoseData.AsArray(),
             }.Schedule(globalTrackedTransforms, inputDeps);
 
             return outputDependency;

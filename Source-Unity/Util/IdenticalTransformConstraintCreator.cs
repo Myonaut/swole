@@ -29,6 +29,8 @@ namespace Swole
                     }
                 }
             }
+
+            Destroy(this);
         }
     }
 }

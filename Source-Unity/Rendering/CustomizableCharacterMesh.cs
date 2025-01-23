@@ -29,40 +29,40 @@ namespace Swole.Morphing
                 }
                 if (prevShapeWeightsEditor == null || prevShapeWeightsEditor.Length == 0)  
                 { 
-                    prevShapeWeightsEditor = new NamedFloat[StandaloneShapesControl.Length];
+                    prevShapeWeightsEditor = new NamedFloat[CharacterMeshData.StandaloneShapesCount];
                     for (int a = 0; a < prevShapeWeightsEditor.Length; a++) prevShapeWeightsEditor[a] = new NamedFloat() { name = CharacterMeshData.GetStandaloneShape(a).name };
                 }
                 if (shapeWeightsEditor == null || shapeWeightsEditor.Length == 0)
                 {
-                    shapeWeightsEditor = new NamedFloat[StandaloneShapesControl.Length];
+                    shapeWeightsEditor = new NamedFloat[CharacterMeshData.StandaloneShapesCount];
                     for (int a = 0; a < shapeWeightsEditor.Length; a++) shapeWeightsEditor[a] = new NamedFloat() { name = CharacterMeshData.GetStandaloneShape(a).name };
                 }
 
                 if (prevMuscleWeightsEditor == null || prevMuscleWeightsEditor.Length == 0)
                 {
-                    prevMuscleWeightsEditor = new NamedMuscleData[MuscleGroupsControl.Length];
+                    prevMuscleWeightsEditor = new NamedMuscleData[CharacterMeshData.MuscleVertexGroupCount];
                     for (int a = 0; a < prevMuscleWeightsEditor.Length; a++) prevMuscleWeightsEditor[a] = new NamedMuscleData() { name = CharacterMeshData.GetVertexGroup(a + CharacterMeshData.muscleVertexGroupsBufferRange.x).name };
                 }
                 if (muscleWeightsEditor == null || muscleWeightsEditor.Length == 0)
                 {
-                    muscleWeightsEditor = new NamedMuscleData[MuscleGroupsControl.Length];
+                    muscleWeightsEditor = new NamedMuscleData[CharacterMeshData.MuscleVertexGroupCount];
                     for (int a = 0; a < muscleWeightsEditor.Length; a++) muscleWeightsEditor[a] = new NamedMuscleData() { name = CharacterMeshData.GetVertexGroup(a + CharacterMeshData.muscleVertexGroupsBufferRange.x).name };
                 }
 
-                if (prevFatWeightsEditor == null || prevFatWeightsEditor.Length == 0)
+                if (prevFatWeightsEditor == null || prevFatWeightsEditor.Length == 0) 
                 {
-                    prevFatWeightsEditor = new NamedFloat[FatGroupsControl.Length];
+                    prevFatWeightsEditor = new NamedFloat[CharacterMeshData.FatVertexGroupCount];
                     for (int a = 0; a < prevFatWeightsEditor.Length; a++) prevFatWeightsEditor[a] = new NamedFloat() { name = CharacterMeshData.GetVertexGroup(a + CharacterMeshData.fatVertexGroupsBufferRange.x).name };
                 }
                 if (fatWeightsEditor == null || fatWeightsEditor.Length == 0)
                 {
-                    fatWeightsEditor = new NamedFloat[FatGroupsControl.Length];
+                    fatWeightsEditor = new NamedFloat[CharacterMeshData.FatVertexGroupCount];
                     for (int a = 0; a < fatWeightsEditor.Length; a++) fatWeightsEditor[a] = new NamedFloat() { name = CharacterMeshData.GetVertexGroup(a + CharacterMeshData.fatVertexGroupsBufferRange.x).name };
                 }
 
                 if (prevVariationWeightsEditor == null || prevVariationWeightsEditor.Length == 0)
                 {
-                    prevVariationWeightsEditor = new NamedFloat2[VariationShapesControl.Length]; 
+                    prevVariationWeightsEditor = new NamedFloat2[VariationShapesControlDataSize]; 
                     for (int a = 0; a < prevVariationWeightsEditor.Length; a++) 
                     {
                         int groupIndex = a / CharacterMeshData.VariationShapesCount;
@@ -72,7 +72,7 @@ namespace Swole.Morphing
                 }
                 if (variationWeightsEditor == null || variationWeightsEditor.Length == 0)
                 {
-                    variationWeightsEditor = new NamedFloat2[VariationShapesControl.Length];
+                    variationWeightsEditor = new NamedFloat2[VariationShapesControlDataSize];
                     for (int a = 0; a < variationWeightsEditor.Length; a++)
                     {
                         int groupIndex = a / CharacterMeshData.VariationShapesCount;
@@ -160,7 +160,7 @@ namespace Swole.Morphing
         {
             base.Dispose();
 
-            if (standaloneShapesControl.IsCreated)
+            /*if (standaloneShapesControl.IsCreated)
             {
                 standaloneShapesControl.Dispose();
                 standaloneShapesControl = default;
@@ -178,13 +178,21 @@ namespace Swole.Morphing
             if (variationShapesControl.IsCreated)
             {
                 variationShapesControl.Dispose();
-                variationShapesControl = default;
-            }
+                variationShapesControl = default;  
+            }*/
         }
 
         protected override void OnDestroyed()
         {
             base.OnDestroyed();
+
+            if (children != null)
+            {
+                children.Clear();
+                children = null;
+            }
+
+            if (characterInstanceReference != null) characterInstanceReference.RemoveChild(this); 
 
             if (animatablePropertiesController != null)
             {
@@ -197,9 +205,24 @@ namespace Swole.Morphing
             }
         }
 
-        protected virtual void LateUpdate()
+        /*protected virtual void LateUpdate()
         {
-            UpdateBuffers(); 
+            //UpdateBuffers(); // removed
+        }*/
+
+        protected List<CustomizableCharacterMesh> children;
+        public void AddChild(CustomizableCharacterMesh child)
+        {
+            if (child == null) return;
+
+            if (children == null) children = new List<CustomizableCharacterMesh>();
+            children.Add(child);
+        }
+        public void RemoveChild(CustomizableCharacterMesh child)
+        {
+            if (children == null) return;
+
+            children.RemoveAll(i => ReferenceEquals(i, child));
         }
 
         [NonSerialized]
@@ -215,11 +238,19 @@ namespace Swole.Morphing
         {
             bustSize = value;
 
-            if (CharacterMeshData.bustSizeShapeIndex >= 0) SetStandaloneShapeWeightUnsafe(CharacterMeshData.bustSizeShapeIndex, value);
-
-            if (instance != null && hasBustSizeProperty)
+            if (instance != null)
             {
-                instance.SetFloatOverride(CharacterMeshData.BustMixPropertyName, Mathf.Clamp01(value), true); 
+                if (CharacterMeshData.bustSizeShapeIndex >= 0) SetStandaloneShapeWeightUnsafe(CharacterMeshData.bustSizeShapeIndex, value);
+
+                if (hasBustSizeProperty)
+                {
+                    instance.SetFloatOverride(CharacterMeshData.BustMixPropertyName, Mathf.Clamp01(value), true);
+
+                    if (children != null)
+                    {
+                        foreach (var child in children) child.SetBustSize(value);
+                    }
+                }
             }
         }
         [NonSerialized]
@@ -237,7 +268,12 @@ namespace Swole.Morphing
 
             if (instance != null && hasHideNipplesProperty)
             {
-                instance.SetFloatOverride(CharacterMeshData.HideNipplesPropertyName, hideNipples ? 1 : 0, true);  
+                instance.SetFloatOverride(CharacterMeshData.HideNipplesPropertyName, hideNipples ? 1 : 0, true);
+
+                if (children != null)
+                {
+                    foreach (var child in children) child.SetHideNipples(value);
+                }
             }
         }
         [NonSerialized]
@@ -256,6 +292,11 @@ namespace Swole.Morphing
             if (instance != null && hasHideGenitalsProperty)
             {
                 instance.SetFloatOverride(CharacterMeshData.HideGenitalsPropertyName, hideGenitals ? 1 : 0, true);
+
+                if (children != null)
+                {
+                    foreach (var child in children) child.SetHideGenitals(value);
+                }
             }
         }
 
@@ -419,7 +460,6 @@ namespace Swole.Morphing
             base.OnStart();
 
             InitInstanceIDs();
-            InitBuffers();
         }
 
         public override string RigID => rigRoot.GetInstanceID().ToString();
@@ -520,7 +560,7 @@ namespace Swole.Morphing
             if (shapesInstanceReference != null) 
             { 
                 SetShapesInstanceID(shapesInstanceReference.InstanceSlot);
-                shapesInstanceReference.OnCreateInstanceID += SetShapesInstanceID; 
+                shapesInstanceReference.OnCreateInstanceID += SetShapesInstanceID;  
             }
             if (rigInstanceReference != null) 
             { 
@@ -531,6 +571,8 @@ namespace Swole.Morphing
             {
                 SetCharacterInstanceID(characterInstanceReference.InstanceSlot);
                 characterInstanceReference.OnCreateInstanceID += SetCharacterInstanceID;
+
+                characterInstanceReference.AddChild(this);
             }
         }
 
@@ -542,7 +584,9 @@ namespace Swole.Morphing
 
             instance.SetFloatOverride(CharacterMeshData.ShapesInstanceIDPropertyName, ShapesInstanceID, false);
             instance.SetFloatOverride(CharacterMeshData.RigInstanceIDPropertyName, RigInstanceID, false);
-            instance.SetFloatOverride(CharacterMeshData.CharacterInstanceIDPropertyName, CharacterInstanceID, true);
+            instance.SetFloatOverride(CharacterMeshData.CharacterInstanceIDPropertyName, CharacterInstanceID, true);  
+
+            InitBuffers();
         }
 
         protected Transform[] bones;
@@ -574,7 +618,7 @@ namespace Swole.Morphing
         public override Matrix4x4[] BindPose => meshData.ManagedBindPose;
 
 
-        protected bool dirtyFlag_standaloneShapesControl;
+        /*protected bool dirtyFlag_standaloneShapesControl;
         protected NativeArray<float> standaloneShapesControl;
         public NativeArray<float> StandaloneShapesControl
         {
@@ -589,23 +633,27 @@ namespace Swole.Morphing
 
                 return standaloneShapesControl;
             }
-        }
-        public float GetStandaloneShapeWeightUnsafe(int shapeIndex) => StandaloneShapesControl[shapeIndex];
+        }*/
+        public int FirstStandaloneShapesControlIndex => instance.slot * CharacterMeshData.StandaloneShapesCount;
+        public float GetStandaloneShapeWeightUnsafe(int shapeIndex) => StandaloneShapeControlBuffer[FirstStandaloneShapesControlIndex + shapeIndex];//StandaloneShapesControl[shapeIndex];
         public float GetStandaloneShapeWeight(int shapeIndex)
         {
-            if (shapeIndex < 0 || shapeIndex >= CharacterMeshData.StandaloneShapesCount) return 0;
+            if (instance == null || shapeIndex < 0 || shapeIndex >= CharacterMeshData.StandaloneShapesCount) return 0;
             return GetStandaloneShapeWeightUnsafe(shapeIndex);
         }
         public void SetStandaloneShapeWeightUnsafe(int shapeIndex, float weight)
         {
-            var array = StandaloneShapesControl;
-            array[shapeIndex] = weight;
+            //var array = StandaloneShapesControl;
+            //array[shapeIndex] = weight;
 
-            dirtyFlag_standaloneShapesControl = true;
+            if (shapesInstanceReference != null) return;
+            StandaloneShapeControlBuffer[FirstStandaloneShapesControlIndex + shapeIndex] = weight;  
+
+            //dirtyFlag_standaloneShapesControl = true;
         }
         public void SetStandaloneShapeWeight(int shapeIndex, float weight)
         {
-            if (shapeIndex < 0 || shapeIndex >= CharacterMeshData.StandaloneShapesCount) return; 
+            if (instance == null || shapeIndex < 0 || shapeIndex >= CharacterMeshData.StandaloneShapesCount) return; 
             SetStandaloneShapeWeightUnsafe(shapeIndex, weight);
         }
         internal readonly static Dictionary<string, InstanceBuffer<float>> _standaloneShapeControlBuffers = new Dictionary<string, InstanceBuffer<float>>();
@@ -621,7 +669,7 @@ namespace Swole.Morphing
                     string matProperty = CharacterMeshData.StandaloneShapesControlPropertyName;
                     if (!_standaloneShapeControlBuffers.TryGetValue(bufferID, out standaloneShapeControlBuffer) || standaloneShapeControlBuffer == null || !standaloneShapeControlBuffer.IsValid())
                     {
-                        meshGroup.CreateInstanceMaterialBuffer<float>(matProperty, CharacterMeshData.StandaloneShapesCount, out standaloneShapeControlBuffer);
+                        meshGroup.CreateInstanceMaterialBuffer<float>(matProperty, CharacterMeshData.StandaloneShapesCount, 2, out standaloneShapeControlBuffer);
                         _standaloneShapeControlBuffers[bufferID] = standaloneShapeControlBuffer;
 
                         meshGroup.SetRuntimeData(bufferID, true);
@@ -642,7 +690,7 @@ namespace Swole.Morphing
             }
         }
 
-        protected bool dirtyFlag_muscleGroupsControl;
+        /*protected bool dirtyFlag_muscleGroupsControl;
         protected NativeArray<MuscleDataLR> muscleGroupsControl;
         public NativeArray<MuscleDataLR> MuscleGroupsControl
         {
@@ -657,23 +705,27 @@ namespace Swole.Morphing
 
                 return muscleGroupsControl;
             }
-        }
-        public MuscleDataLR GetMuscleDataUnsafe(int groupIndex) => MuscleGroupsControl[groupIndex];
+        }*/
+        public int FirstMuscleGroupsControlIndex => instance.slot * CharacterMeshData.MuscleVertexGroupCount;
+        public MuscleDataLR GetMuscleDataUnsafe(int groupIndex) => MuscleGroupsControlBuffer[FirstMuscleGroupsControlIndex + groupIndex];//MuscleGroupsControl[groupIndex];
         public MuscleDataLR GetMuscleData(int groupIndex)
         {
-            if (groupIndex < 0 || groupIndex >= CharacterMeshData.MuscleVertexGroupCount) return default;
+            if (instance == null || groupIndex < 0 || groupIndex >= CharacterMeshData.MuscleVertexGroupCount) return default;
             return GetMuscleDataUnsafe(groupIndex);
         }
         public void SetMuscleDataUnsafe(int groupIndex, MuscleDataLR data)   
         {
-            var array = MuscleGroupsControl;
-            array[groupIndex] = data;
+            //var array = MuscleGroupsControl;
+            //array[groupIndex] = data;
 
-            dirtyFlag_muscleGroupsControl = true;
+            if (characterInstanceReference != null) return;
+            MuscleGroupsControlBuffer[FirstMuscleGroupsControlIndex + groupIndex] = data;
+
+            //dirtyFlag_muscleGroupsControl = true;
         }
         public void SetMuscleData(int groupIndex, MuscleDataLR data)
         {
-            if (groupIndex < 0 || groupIndex >= CharacterMeshData.MuscleVertexGroupCount) return;
+            if (instance == null || groupIndex < 0 || groupIndex >= CharacterMeshData.MuscleVertexGroupCount) return;
             SetMuscleDataUnsafe(groupIndex, data);
         }
         internal readonly static Dictionary<string, InstanceBuffer<MuscleDataLR>> _muscleGroupsControlBuffers = new Dictionary<string, InstanceBuffer<MuscleDataLR>>();
@@ -689,7 +741,7 @@ namespace Swole.Morphing
                     string matProperty = CharacterMeshData.MuscleGroupsControlPropertyName;
                     if (!_muscleGroupsControlBuffers.TryGetValue(bufferID, out muscleGroupsControlBuffer) || muscleGroupsControlBuffer == null || !muscleGroupsControlBuffer.IsValid())
                     {
-                        meshGroup.CreateInstanceMaterialBuffer<MuscleDataLR>(matProperty, CharacterMeshData.MuscleVertexGroupCount, out muscleGroupsControlBuffer);
+                        meshGroup.CreateInstanceMaterialBuffer<MuscleDataLR>(matProperty, CharacterMeshData.MuscleVertexGroupCount, 2, out muscleGroupsControlBuffer);
                         _muscleGroupsControlBuffers[bufferID] = muscleGroupsControlBuffer;
 
                         meshGroup.SetRuntimeData(bufferID, true);
@@ -710,7 +762,7 @@ namespace Swole.Morphing
             }
         }
 
-        protected bool dirtyFlag_fatGroupsControl;
+        /*protected bool dirtyFlag_fatGroupsControl;
         protected NativeArray<float3> fatGroupsControl;
         public NativeArray<float3> FatGroupsControl
         {
@@ -737,25 +789,32 @@ namespace Swole.Morphing
 
                 return fatGroupsControl;
             }
-        }
-        public float GetFatLevelUnsafe(int groupIndex) => FatGroupsControl[groupIndex].x;
+        }*/
+        public int FirstFatGroupsControlIndex => instance.slot * CharacterMeshData.FatVertexGroupCount;
+        public float GetFatLevelUnsafe(int groupIndex) => FatGroupsControlBuffer[FirstFatGroupsControlIndex + groupIndex].x;//FatGroupsControl[groupIndex].x;
         public float GetFatLevel(int groupIndex)
         {
-            if (groupIndex < 0 || groupIndex >= CharacterMeshData.FatVertexGroupCount) return 0;
+            if (instance == null || groupIndex < 0 || groupIndex >= CharacterMeshData.FatVertexGroupCount) return 0;
             return GetFatLevelUnsafe(groupIndex);
         }
         public void SetFatLevelUnsafe(int groupIndex, float level)
         {
-            var array = FatGroupsControl;
-            var val = array[groupIndex];
-            val.x = level;
-            array[groupIndex] = val;
+            //var array = FatGroupsControl;
+            //var val = array[groupIndex];
+            //val.x = level;
+            //array[groupIndex] = val;
 
-            dirtyFlag_fatGroupsControl = true;
+            if (characterInstanceReference != null) return;
+            int ind = FirstFatGroupsControlIndex + groupIndex;
+            var val = FatGroupsControlBuffer[ind];
+            val.x = level;
+            FatGroupsControlBuffer[ind] = val;
+
+            //dirtyFlag_fatGroupsControl = true;
         }
         public void SetFatLevel(int groupIndex, float level)
         {
-            if (groupIndex < 0 || groupIndex >= CharacterMeshData.FatVertexGroupCount) return;
+            if (instance == null || groupIndex < 0 || groupIndex >= CharacterMeshData.FatVertexGroupCount) return;
             SetFatLevelUnsafe(groupIndex, level); 
         }
         internal readonly static Dictionary<string, InstanceBuffer<float3>> _fatGroupsControlBuffers = new Dictionary<string, InstanceBuffer<float3>>();
@@ -771,7 +830,7 @@ namespace Swole.Morphing
                     string matProperty = CharacterMeshData.FatGroupsControlPropertyName;
                     if (!_fatGroupsControlBuffers.TryGetValue(bufferID, out fatGroupsControlBuffer) || fatGroupsControlBuffer == null || !fatGroupsControlBuffer.IsValid())
                     {
-                        meshGroup.CreateInstanceMaterialBuffer<float3>(matProperty, CharacterMeshData.FatVertexGroupCount, out fatGroupsControlBuffer);
+                        meshGroup.CreateInstanceMaterialBuffer<float3>(matProperty, CharacterMeshData.FatVertexGroupCount, 2, out fatGroupsControlBuffer);
                         _fatGroupsControlBuffers[bufferID] = fatGroupsControlBuffer;
 
                         meshGroup.SetRuntimeData(bufferID, true);
@@ -792,7 +851,7 @@ namespace Swole.Morphing
             }
         }
 
-        protected bool dirtyFlag_variationShapesControl;
+        /*protected bool dirtyFlag_variationShapesControl;
         protected NativeArray<float2> variationShapesControl;
         public NativeArray<float2> VariationShapesControl
         {
@@ -807,42 +866,54 @@ namespace Swole.Morphing
 
                 return variationShapesControl;
             }
-        }
-        public float2 GetVariationWeightUnsafe(int variationShapeIndex, int groupIndex) => VariationShapesControl[(groupIndex * CharacterMeshData.VariationShapesCount) + variationShapeIndex];
+        }*/
+        public int VariationShapesControlDataSize => CharacterMeshData.VariationShapesCount * CharacterMeshData.VariationVertexGroupCount;
+        public int FirstVariationShapesControlIndex => instance.slot * VariationShapesControlDataSize;
+        public float2 GetVariationWeightUnsafe(int variationShapeIndex, int groupIndex) => VariationShapesControlBuffer[FirstVariationShapesControlIndex + (groupIndex * CharacterMeshData.VariationShapesCount) + variationShapeIndex];//VariationShapesControl[(groupIndex * CharacterMeshData.VariationShapesCount) + variationShapeIndex];
         public float2 GetVariationWeight(int variationShapeIndex, int groupIndex)
         {
-            if (groupIndex < 0 || groupIndex >= CharacterMeshData.VariationVertexGroupCount || variationShapeIndex < 0 || variationShapeIndex >= CharacterMeshData.VariationShapesCount) return 0;
+            if (instance == null || groupIndex < 0 || groupIndex >= CharacterMeshData.VariationVertexGroupCount || variationShapeIndex < 0 || variationShapeIndex >= CharacterMeshData.VariationShapesCount) return 0;
             return GetVariationWeightUnsafe(variationShapeIndex, groupIndex); 
         }
         public void SetVariationWeightUnsafe(int variationShapeIndex, int groupIndex, float2 weight)
         {
-            var array = VariationShapesControl;
-            array[(groupIndex * CharacterMeshData.VariationShapesCount) + variationShapeIndex] = weight;
+            //var array = VariationShapesControl;
+            //array[(groupIndex * CharacterMeshData.VariationShapesCount) + variationShapeIndex] = weight;
 
-            dirtyFlag_variationShapesControl = true;
+            if (characterInstanceReference != null) return;
+            VariationShapesControlBuffer[FirstVariationShapesControlIndex + (groupIndex * CharacterMeshData.VariationShapesCount) + variationShapeIndex] = weight;
+
+            //dirtyFlag_variationShapesControl = true;
         }
         public void SetVariationWeight(int variationShapeIndex, int groupIndex, float2 weight)
         {
-            if (groupIndex < 0 || groupIndex >= CharacterMeshData.VariationVertexGroupCount || variationShapeIndex < 0 || variationShapeIndex >= CharacterMeshData.VariationShapesCount) return;
+            if (instance == null || groupIndex < 0 || groupIndex >= CharacterMeshData.VariationVertexGroupCount || variationShapeIndex < 0 || variationShapeIndex >= CharacterMeshData.VariationShapesCount) return;
             SetVariationWeightUnsafe(variationShapeIndex, groupIndex, weight);
         }
 
-        public float2 GetVariationWeightUnsafe(int indexInArray) => VariationShapesControl[indexInArray];
+        public float2 GetVariationWeightUnsafe(int indexInArray) => VariationShapesControlBuffer[FirstVariationShapesControlIndex + indexInArray]; //VariationShapesControl[indexInArray];
         public float2 GetVariationWeight(int indexInArray)
         {
-            if (indexInArray < 0 || indexInArray >= VariationShapesControl.Length) return 0;
+            if (indexInArray < 0 || indexInArray >= VariationShapesControlDataSize) return 0;
             return GetVariationWeightUnsafe(indexInArray);
         }
         public void SetVariationWeightUnsafe(int indexInArray, float2 weight)
         {
-            var array = VariationShapesControl;
-            array[indexInArray] = weight;
+            //var array = VariationShapesControl;
+            //array[indexInArray] = weight;
 
-            dirtyFlag_variationShapesControl = true; 
+            if (characterInstanceReference != null)
+            {
+                characterInstanceReference.SetVariationWeightUnsafe(indexInArray, weight);   
+                return;
+            }
+            VariationShapesControlBuffer[FirstVariationShapesControlIndex + indexInArray] = weight;
+
+            //dirtyFlag_variationShapesControl = true; 
         }
         public void SetVariationWeight(int indexInArray, float2 weight)
         {
-            if (indexInArray < 0 || indexInArray >= VariationShapesControl.Length) return;
+            if (indexInArray < 0 || indexInArray >= VariationShapesControlDataSize) return;
             SetVariationWeightUnsafe(indexInArray, weight);
         }
 
@@ -859,8 +930,8 @@ namespace Swole.Morphing
                     string matProperty = CharacterMeshData.VariationShapesControlPropertyName;
                     if (!_variationShapesControlBuffers.TryGetValue(bufferID, out variationShapesControlBuffer) || variationShapesControlBuffer == null || !variationShapesControlBuffer.IsValid())
                     {
-                        meshGroup.CreateInstanceMaterialBuffer<float2>(matProperty, CharacterMeshData.VariationShapesCount * CharacterMeshData.VariationVertexGroupCount, out variationShapesControlBuffer);  
-                        _variationShapesControlBuffers[bufferID] = variationShapesControlBuffer;
+                        meshGroup.CreateInstanceMaterialBuffer<float2>(matProperty, CharacterMeshData.VariationShapesCount * CharacterMeshData.VariationVertexGroupCount, 2, out variationShapesControlBuffer);  
+                        _variationShapesControlBuffers[bufferID] = variationShapesControlBuffer; 
 
                         meshGroup.SetRuntimeData(bufferID, true);
                     }
@@ -882,35 +953,58 @@ namespace Swole.Morphing
 
         protected void InitBuffers()
         {
-            /*standaloneShapeControlBuffer = StandaloneShapeControlBuffer;
+            standaloneShapeControlBuffer = StandaloneShapeControlBuffer;
             muscleGroupsControlBuffer = MuscleGroupsControlBuffer;
             fatGroupsControlBuffer = FatGroupsControlBuffer;
-            variationShapesControlBuffer = VariationShapesControlBuffer;*/
+            variationShapesControlBuffer = VariationShapesControlBuffer;
+
+            if (meshData.StandaloneShapesCount > 0) SetStandaloneShapeWeightUnsafe(0, 0);
+            if (meshData.MuscleVertexGroupCount > 0) SetMuscleDataUnsafe(0, new MuscleDataLR());
+            if (meshData.FatVertexGroupCount > 0) // Apply fat group modifiers (.y controls how much mass is nerfed by fat)
+            {
+                int indexStart = FirstFatGroupsControlIndex;
+                if (CharacterMeshData.fatGroupModifiers == null)
+                {
+                    for (int a = 0; a < CharacterMeshData.FatVertexGroupCount; a++) fatGroupsControlBuffer.WriteToBufferFast(indexStart + a, new float3(0, CustomizableCharacterMeshData.DefaultFatGroupModifier.x, CustomizableCharacterMeshData.DefaultFatGroupModifier.y));
+                }
+                else
+                {
+                    for (int a = 0; a < CharacterMeshData.FatVertexGroupCount; a++)
+                    {
+                        var modifier = CharacterMeshData.GetFatGroupModifier(a);
+                        fatGroupsControlBuffer.WriteToBufferFast(indexStart + a, new float3(0, modifier.x, modifier.y));
+                    }
+                }
+
+                fatGroupsControlBuffer.TrySetWriteIndices(indexStart, CharacterMeshData.FatVertexGroupCount);
+                fatGroupsControlBuffer.RequestUpload(); 
+            }
+            if (meshData.VariationVertexGroupCount > 0) SetVariationWeightUnsafe(0, 0);
         }
         public void UpdateBuffers()
         {
-            if (instance == null || IsDestroyed) return;
+            //if (instance == null || IsDestroyed) return;
 
-            if (dirtyFlag_standaloneShapesControl)
+            /*if (dirtyFlag_standaloneShapesControl)
             {
-                if (StandaloneShapeControlBuffer.RequestWriteToBuffer(StandaloneShapesControl, 0, InstanceSlot * CharacterMeshData.StandaloneShapesCount, CharacterMeshData.StandaloneShapesCount)) dirtyFlag_standaloneShapesControl = false;
+                if (StandaloneShapeControlBuffer.WriteToBuffer(StandaloneShapesControl, 0, InstanceSlot * CharacterMeshData.StandaloneShapesCount, CharacterMeshData.StandaloneShapesCount)) dirtyFlag_standaloneShapesControl = false;
             }
 
             if (dirtyFlag_muscleGroupsControl)
             {
-                if (MuscleGroupsControlBuffer.RequestWriteToBuffer(MuscleGroupsControl, 0, InstanceSlot * CharacterMeshData.MuscleVertexGroupCount, CharacterMeshData.MuscleVertexGroupCount)) dirtyFlag_muscleGroupsControl = false;
+                if (MuscleGroupsControlBuffer.WriteToBuffer(MuscleGroupsControl, 0, InstanceSlot * CharacterMeshData.MuscleVertexGroupCount, CharacterMeshData.MuscleVertexGroupCount)) dirtyFlag_muscleGroupsControl = false;
             }
 
             if (dirtyFlag_fatGroupsControl)
             {
-                if (FatGroupsControlBuffer.RequestWriteToBuffer(FatGroupsControl, 0, InstanceSlot * CharacterMeshData.FatVertexGroupCount, CharacterMeshData.FatVertexGroupCount)) dirtyFlag_fatGroupsControl = false; 
+                if (FatGroupsControlBuffer.WriteToBuffer(FatGroupsControl, 0, InstanceSlot * CharacterMeshData.FatVertexGroupCount, CharacterMeshData.FatVertexGroupCount)) dirtyFlag_fatGroupsControl = false; 
             }
 
             if (dirtyFlag_variationShapesControl)
             {
                 int count = CharacterMeshData.VariationShapesCount * CharacterMeshData.VariationVertexGroupCount;
-                if (VariationShapesControlBuffer.RequestWriteToBuffer(VariationShapesControl, 0, InstanceSlot * count, count)) dirtyFlag_variationShapesControl = false;
-            }
+                if (VariationShapesControlBuffer.WriteToBuffer(VariationShapesControl, 0, InstanceSlot * count, count)) dirtyFlag_variationShapesControl = false;
+            }*/
         }
     }
 

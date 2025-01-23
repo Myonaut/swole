@@ -17,6 +17,8 @@ namespace Swole
 
         protected override void DisposeLocal()
         {
+            base.DisposeLocal();
+
             if (morphShapes != null)
             {
                 foreach (var shape in morphShapes) if (shape != null) shape.Dispose(); 

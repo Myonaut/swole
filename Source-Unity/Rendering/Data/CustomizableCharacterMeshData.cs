@@ -15,6 +15,8 @@ namespace Swole
 
         protected override void DisposeLocal()
         {
+            base.DisposeLocal();
+
             try
             {
                 if (variationGroupIndicesBuffer != null && variationGroupIndicesBuffer.IsValid())
@@ -91,7 +93,9 @@ namespace Swole
             ApplyFloatToMaterials(GenitalMaskVertexGroupIndexPropertyName, genitalMaskVertexGroupIndex); 
 
             ApplyFloatToMaterials(FatMuscleBlendShapeIndexPropertyName, fatMuscleBlendShapeIndex);
-            ApplyVectorToMaterials(FatMuscleBlendWeightRangePropertyName, new Vector4(fatMuscleBlendWeightRange.x, fatMuscleBlendWeightRange.y, 0, 0)); 
+            ApplyVectorToMaterials(FatMuscleBlendWeightRangePropertyName, new Vector4(fatMuscleBlendWeightRange.x, fatMuscleBlendWeightRange.y, 0, 0));
+
+            ApplyFloatToMaterials(DefaultShapeMuscleWeightPropertyName, defaultShapeMuscleWeight);         
 
             ApplyVectorToMaterials(VertexGroupsBufferRangePropertyName, new Vector4(vertexGroupsBufferRange.x, vertexGroupsBufferRange.y, 0, 0));
             ApplyVectorToMaterials(MuscleVertexGroupsBufferRangePropertyName, new Vector4(muscleVertexGroupsBufferRange.x, muscleVertexGroupsBufferRange.y, 0, 0));
@@ -249,7 +253,9 @@ namespace Swole
             return vertexGroups[fatVertexGroupsBufferRange.x + index];
         }
         public static float2 DefaultFatGroupModifier => new float2(1, 0);
-        public float2 GetFatGroupModifier(int index)
+        /// <summary>
+        /// modifier.x is how much to nerf muscle mass by based on fat level
+        public float2 GetFatGroupModifier(int index) 
         {
             if (index < 0 || fatGroupModifiers == null || index >= fatGroupModifiers.Length) return DefaultFatGroupModifier;
             return fatGroupModifiers[index];
@@ -297,6 +303,12 @@ namespace Swole
         public string fatMuscleBlendWeightRangePropertyNameOverride;
         public string FatMuscleBlendWeightRangePropertyName => string.IsNullOrWhiteSpace(fatMuscleBlendWeightRangePropertyNameOverride) ? _fatMuscleBlendWeightRangeDefaultPropertyName : fatMuscleBlendWeightRangePropertyNameOverride;
         public Vector2 fatMuscleBlendWeightRange;
+
+        public const string _defaultShapeMuscleWeightDefaultPropertyName = "_DefaultShapeMuscleWeight";
+        public string defaultShapeMuscleWeightPropertyNameOverride;
+        public string DefaultShapeMuscleWeightPropertyName => string.IsNullOrWhiteSpace(defaultShapeMuscleWeightPropertyNameOverride) ? _defaultShapeMuscleWeightDefaultPropertyName : defaultShapeMuscleWeightPropertyNameOverride;
+        public float defaultShapeMuscleWeight;
+        
 
         public const string _variationGroupCountDefaultPropertyName = "_VariationGroupCount";
         public string variationGroupCountPropertyNameOverride;

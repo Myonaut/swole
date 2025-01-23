@@ -134,11 +134,11 @@ namespace Swole
         {
             if (instance != null) instance.Dispose();
             if (cullLODs != null) cullLODs.Dispose();
-            
+
             instance = MeshGroup.NewInstance(subMeshIndex, transform, floatOverrides, colorOverrides, vectorOverrides);
             cullLODs = CullingLODs.GetCameraCullLOD(Camera.main).AddRenderer(BoundsRootTransform, MeshData.boundsCenter, MeshData.boundsExtents, MeshData.LODs); 
             cullLODs.OnLODChange += instance.SetLOD2;
-            cullLODs.OnVisibilityChange += instance.SetVisibility;
+            cullLODs.OnVisibilityChange += instance.SetVisibility; 
 
             OnCreateInstance?.Invoke(instance);
             OnCreateInstanceID?.Invoke(instance.slot);
@@ -166,7 +166,7 @@ namespace Swole
                     string matricesProperty = SkinnedMeshData.SkinningMatricesPropertyName; 
                     if (!_skinningMatricesBuffers.TryGetValue(bufferID, out skinningMatricesBuffer) || skinningMatricesBuffer == null || !skinningMatricesBuffer.IsValid()) 
                     {
-                        meshGroup.CreateInstanceMaterialBuffer<float4x4>(matricesProperty, BoneCount, out skinningMatricesBuffer);
+                        meshGroup.CreateInstanceMaterialBuffer<float4x4>(matricesProperty, BoneCount, 3, out skinningMatricesBuffer);
                         _skinningMatricesBuffers[bufferID] = skinningMatricesBuffer; 
 
                         string boneCountPropertyName = MeshData.BoneCountPropertyName;
@@ -361,14 +361,14 @@ namespace Swole
         protected readonly List<IInstanceBuffer> instanceBuffersMO = new List<IInstanceBuffer>();
         protected void EnsureInstanceBufferSizesMO()
         {
-            foreach (var buffer in instanceBuffersMO) while (buffer.InstanceCount < instancesMO.Count) buffer.Grow();
+            foreach (var buffer in instanceBuffersMO) while (buffer.InstanceCount < instancesMO.Count) buffer.Grow(2, 0);
         }
         public int InstanceBufferCountMO => instanceBuffersMO.Count;
         public IInstanceBuffer GetInstanceBufferMO(int index) => instanceBuffersMO[index];
-        public int CreateInstanceMaterialBufferMO<T>(string propertyName, int elementsPerInstance, out InstanceBuffer<T> buffer) where T : unmanaged => CreateInstanceMaterialBufferMO(propertyName, null, elementsPerInstance, out buffer);
-        public int CreateInstanceMaterialBufferMO<T>(string propertyName, ICollection<int> materialSlots, int elementsPerInstance, out InstanceBuffer<T> buffer) where T : unmanaged
+        public int CreateInstanceMaterialBufferMO<T>(string propertyName, int elementsPerInstance, int bufferPoolSize, out InstanceBuffer<T> buffer) where T : unmanaged => CreateInstanceMaterialBufferMO(propertyName, null, elementsPerInstance, bufferPoolSize, out buffer);
+        public int CreateInstanceMaterialBufferMO<T>(string propertyName, ICollection<int> materialSlots, int elementsPerInstance, int bufferPoolSize, out InstanceBuffer<T> buffer) where T : unmanaged
         {
-            buffer = new InstanceBuffer<T>(propertyName, instancesMO.Count, elementsPerInstance, ComputeBufferType.Structured, ComputeBufferMode.Dynamic);
+            buffer = new InstanceBuffer<T>(propertyName, instancesMO.Count, elementsPerInstance, bufferPoolSize, ComputeBufferType.Structured, ComputeBufferMode.Dynamic);
 
             if (materialSlots == null)
             {
@@ -428,14 +428,14 @@ namespace Swole
         protected readonly List<IInstanceBuffer> instanceBuffersRL = new List<IInstanceBuffer>();
         protected void EnsureInstanceBufferSizesRL()
         {
-            foreach (var buffer in instanceBuffersRL) while (buffer.InstanceCount < instancesRL.Count) buffer.Grow();
+            foreach (var buffer in instanceBuffersRL) while (buffer.InstanceCount < instancesRL.Count) buffer.Grow(2, 0);
         }
         public int InstanceBufferCountRL => instanceBuffersRL.Count;
         public IInstanceBuffer GetInstanceBufferRL(int index) => instanceBuffersRL[index];
-        public int CreateInstanceMaterialBufferRL<T>(string propertyName, int elementsPerInstance, out InstanceBuffer<T> buffer) where T : unmanaged => CreateInstanceMaterialBufferRL(propertyName, null, elementsPerInstance, out buffer);
-        public int CreateInstanceMaterialBufferRL<T>(string propertyName, ICollection<int> materialSlots, int elementsPerInstance, out InstanceBuffer<T> buffer) where T : unmanaged
+        public int CreateInstanceMaterialBufferRL<T>(string propertyName, int elementsPerInstance, int bufferPoolSize, out InstanceBuffer<T> buffer) where T : unmanaged => CreateInstanceMaterialBufferRL(propertyName, null, elementsPerInstance, bufferPoolSize, out buffer);
+        public int CreateInstanceMaterialBufferRL<T>(string propertyName, ICollection<int> materialSlots, int elementsPerInstance, int bufferPoolSize, out InstanceBuffer<T> buffer) where T : unmanaged
         {
-            buffer = new InstanceBuffer<T>(propertyName, instancesRL.Count, elementsPerInstance, ComputeBufferType.Structured, ComputeBufferMode.Dynamic);
+            buffer = new InstanceBuffer<T>(propertyName, instancesRL.Count, elementsPerInstance, bufferPoolSize, ComputeBufferType.Structured, ComputeBufferMode.Dynamic);
 
             if (materialSlots == null)
             {
@@ -495,14 +495,15 @@ namespace Swole
         protected readonly List<IInstanceBuffer> instanceBuffers = new List<IInstanceBuffer>();
         protected void EnsureInstanceBufferSizes()
         {
-            foreach (var buffer in instanceBuffers) while (buffer.InstanceCount < instances.Count) buffer.Grow();
+            foreach (var buffer in instanceBuffers) while (buffer.InstanceCount < instances.Count) buffer.Grow(2, 0); 
+            
         }
         public int InstanceBufferCount => instanceBuffers.Count;
         public IInstanceBuffer GetInstanceBuffer(int index) => instanceBuffers[index];
-        public int CreateInstanceMaterialBuffer<T>(string propertyName, int elementsPerInstance, out InstanceBuffer<T> buffer) where T : unmanaged => CreateInstanceMaterialBuffer(propertyName, null, elementsPerInstance, out buffer);
-        public int CreateInstanceMaterialBuffer<T>(string propertyName, ICollection<int> materialSlots, int elementsPerInstance, out InstanceBuffer<T> buffer) where T : unmanaged
+        public int CreateInstanceMaterialBuffer<T>(string propertyName, int elementsPerInstance, int bufferPoolSize, out InstanceBuffer<T> buffer) where T : unmanaged => CreateInstanceMaterialBuffer(propertyName, null, elementsPerInstance, bufferPoolSize, out buffer);
+        public int CreateInstanceMaterialBuffer<T>(string propertyName, ICollection<int> materialSlots, int elementsPerInstance, int bufferPoolSize, out InstanceBuffer<T> buffer) where T : unmanaged
         {
-            buffer = new InstanceBuffer<T>(propertyName, instances.Count, elementsPerInstance, ComputeBufferType.Structured, ComputeBufferMode.SubUpdates);
+            buffer = new InstanceBuffer<T>(propertyName, instances.Count, elementsPerInstance, bufferPoolSize, ComputeBufferType.Structured, ComputeBufferMode.SubUpdates);
 
             if (materialSlots == null)
             {
@@ -705,26 +706,24 @@ namespace Swole
     {
         public void BindMaterialProperty(Material material, string propertyName);
         public void UnbindMaterialProperty(Material material, string propertyName);
-        public void Grow(float multiplier = 2);
+        public void Grow(float multiplier = 2, int updateActiveBufferFrameDelay = 0);
         public bool IsValid();
 
-        public void CompleteWriteRequests();
 
-        public ComputeBuffer Buffer { get; }
+        /// <summary>
+        /// The write indices determine which portion of the internal data to upload to the buffers and GPU. The minimum and maximim indices remain persistent until the buffer pool has made a full rotation.
+        /// </summary>
+        public void TrySetWriteIndices(int startIndex, int count);
+
+        public void RequestUpload();
+
+
         public int Size { get; }
         public int InstanceCount { get; }
         public int Stride { get; }
         public int ElementsPerInstance { get; }
     }
-    public struct BufferWriteRequest<T> where T : unmanaged
-    {
-        public int localIndex;
-        public int writeStartIndex;
-        public int count;
 
-        public JobHandle preWriteJobHandle;
-        public NativeArray<T> localArray;
-    }
     public class InstanceBuffer<T> : IInstanceBuffer where T : unmanaged
     {
         public struct BoundMaterialProperty
@@ -739,12 +738,17 @@ namespace Swole
         /// </summary>
         public void BindMaterialProperty(Material material, string propertyName)
         {
-            material.SetBuffer(propertyName, buffer);
+            material.SetBuffer(propertyName, bufferPool.ActiveBuffer);
             boundMaterialProperties.Add(new BoundMaterialProperty() { material = material, propertyName = propertyName });
         }
         public void UnbindMaterialProperty(Material material, string propertyName)
         {
             boundMaterialProperties.RemoveAll(i => (i.material == material && i.propertyName == propertyName));
+        }
+
+        protected void OnBufferSwap(ComputeBuffer newBuffer)
+        {
+            foreach (var binding in boundMaterialProperties) binding.material.SetBuffer(binding.propertyName, newBuffer);
         }
 
         protected ComputeBufferType bufferType;
@@ -753,146 +757,116 @@ namespace Swole
         protected ComputeBufferMode bufferMode;
         public ComputeBufferMode BufferMode => bufferMode;
 
-        protected int stride;
-        public int Stride => stride;
+        public int Stride => bufferPool.Stride;
 
         protected int elementsPerInstance;
         public int ElementsPerInstance => elementsPerInstance;
 
-        protected ComputeBuffer buffer;
-        public ComputeBuffer Buffer => buffer;
-        public bool IsValid() => buffer != null && buffer.IsValid();
-
-        [NonSerialized]
-        protected int writeStart;
-        [NonSerialized]
-        protected int writeEnd;
-
-        [NonSerialized]
-        protected readonly List<BufferWriteRequest<T>> writeRequests = new List<BufferWriteRequest<T>>();
-        [NonSerialized]
-        protected bool queuedToWrite;
-
-        public void CompleteWriteRequests()
+        protected DynamicComputeBufferPool<T> bufferPool;
+        public T this[int index]
         {
-            queuedToWrite = false;
+            get => bufferPool[index];
+            set => bufferPool[index] = value;
+        }
+        public bool IsValid() => bufferPool != null && bufferPool.IsValid();
 
-            try
-            {
-                int startIndex = buffer.count;
-                int endIndex = -1;
 
-                foreach (var request in writeRequests)
-                {
-                    startIndex = Mathf.Min(startIndex, request.writeStartIndex);
-                    endIndex = Mathf.Max(endIndex, request.writeStartIndex + request.count); 
-                }
-
-                int count = endIndex - startIndex;
-                if (startIndex >= 0 && count > 0 && count <= buffer.count)
-                {
-                    var writer = buffer.BeginWrite<T>(startIndex, count);
-
-                    foreach (var request in writeRequests)
-                    {
-                        request.preWriteJobHandle.Complete();
-                        NativeArray<T>.Copy(request.localArray, request.localIndex, writer, request.writeStartIndex, request.count);
-                    }
-
-                    buffer.EndWrite<T>(count);
-                }
-            }
-            finally
-            {
-                writeRequests.Clear();
-            }
+        public bool WriteToBuffer(int index, T data)
+        {
+            bufferPool.Write(index, data);
+            return true;
+        }
+        /// <summary>
+        /// WARNING: Does not update write indices or request upload to the gpu!
+        /// </summary>
+        public bool WriteToBufferFast(int index, T data)
+        {
+            bufferPool.WriteFast(index, data);
+            return true;
         }
 
-        public bool RequestWriteToBuffer(NativeArray<T> localArray, int localindex, int writeStartIndex, int count, JobHandle preWriteJobHandle = default)
+        public bool WriteToBuffer(NativeArray<T> localArray, int localIndex, int writeStartIndex, int count)
         {
-            if (!IsValid()) return false;
-
-            var request = new BufferWriteRequest<T>() 
-            { 
-                localArray = localArray,
-                localIndex = localindex,
-                writeStartIndex = writeStartIndex, 
-                count = count,
-                preWriteJobHandle = preWriteJobHandle
-            };
-             
-            writeRequests.Add(request);
-
-            if (!queuedToWrite) 
-            {
-                InstanceBufferUploader.Queue(this);
-                queuedToWrite = true;
-            }
-
-            return queuedToWrite;
+            bufferPool.Write(localArray, localIndex, writeStartIndex, count);
+            return true;
+        }
+        /// <summary>
+        /// WARNING: Does not update write indices or request upload to the gpu!
+        /// </summary>
+        public bool WriteToBufferFast(NativeArray<T> localArray, int localIndex, int writeStartIndex, int count)
+        {
+            bufferPool.WriteFast(localArray, localIndex, writeStartIndex, count);
+            return true;
         }
 
-        public int Size => buffer == null ? 0 : buffer.count;
+        public bool WriteToBufferCallback(int writeStartIndex, int count, WriteToBufferDataDelegate<T> callback)
+        {
+            bufferPool.Write(callback, writeStartIndex, count);
+            return true;
+        }
+        /// <summary>
+        /// WARNING: Does not update write indices or request upload to the gpu!
+        /// </summary>
+        public bool WriteToBufferCallbackFast(int writeStartIndex, int count, WriteToBufferDataDelegate<T> callback)
+        {
+            bufferPool.WriteFast(callback, writeStartIndex, count);
+            return true;
+        }
+        public bool WriteToBufferCallback(int writeStartIndex, int count, WriteToBufferDataFromStartIndexDelegate<T> callback)
+        {
+            bufferPool.Write(callback, writeStartIndex, count);
+            return true;
+        }
+        /// <summary>
+        /// WARNING: Does not update write indices or request upload to the gpu!
+        /// </summary>
+        public bool WriteToBufferCallbackFast(int writeStartIndex, int count, WriteToBufferDataFromStartIndexDelegate<T> callback)
+        {
+            bufferPool.WriteFast(callback, writeStartIndex, count);
+            return true;
+        }
+
+        /// <summary>
+        /// The write indices determine which portion of the internal data to upload to the buffers and GPU. The minimum and maximim indices remain persistent until the buffer pool has made a full rotation.
+        /// </summary>
+        public void TrySetWriteIndices(int startIndex, int count) => bufferPool.TrySetWriteIndices(startIndex, count);
+
+        public void RequestUpload() => bufferPool.RequestUpload();
+
+        public int Size => bufferPool == null ? 0 : bufferPool.Size;
         public int InstanceCount => Size / ElementsPerInstance;
 
         public string name;
 
-        public InstanceBuffer(string name, int initialSize, int elementPerInstance, ComputeBufferType bufferType, ComputeBufferMode bufferMode)
+        public InstanceBuffer(string name, int initialSize, int elementPerInstance, int bufferPoolSize, ComputeBufferType bufferType, ComputeBufferMode bufferMode)
         {
-            stride = UnsafeUtility.SizeOf(typeof(T));
             this.elementsPerInstance = elementPerInstance;
             this.bufferType = bufferType;
             this.bufferMode = bufferMode;
-            buffer = new ComputeBuffer(Mathf.Max(1, initialSize) * elementPerInstance, stride, bufferType, bufferMode);
+            bufferPool = new DynamicComputeBufferPool<T>(name, Mathf.Max(1, initialSize) * elementPerInstance, Mathf.Max(1, bufferPoolSize), bufferType, bufferMode);
+            bufferPool.ListenForBufferSwap(OnBufferSwap);
         }
 
         public void Dispose()
         {
             boundMaterialProperties.Clear();
 
-            writeRequests.Clear();
-
-            if (buffer != null && buffer.IsValid())
+            if (bufferPool != null && bufferPool.IsValid())
             {
-                buffer.Dispose();
-                buffer = null;
+                bufferPool.Dispose();
+                bufferPool = null;
             }
         }
 
-        unsafe public void Grow(float multiplier = 2)
+        unsafe public void Grow(float multiplier = 2, int updateActiveBufferFrameDelay = 0)
         {
             multiplier = Mathf.Max(1, multiplier);
-            int size = ElementsPerInstance;
-
-            var oldBuffer = buffer;
-            bool oldBufferIsValid = false;
-            if (oldBuffer != null && oldBuffer.IsValid()) 
-            {
-                size = Mathf.Max(1, Mathf.CeilToInt(((oldBuffer.count / (float)ElementsPerInstance) * multiplier))) * ElementsPerInstance;  
-                oldBufferIsValid = true;
-            }
+            int size = Mathf.Max(1, Mathf.CeilToInt(((bufferPool.Size / (float)ElementsPerInstance) * multiplier))) * ElementsPerInstance;
 
 #if UNITY_EDITOR
             Debug.Log($"RESIZING BUFFER {name} TO {size} .... element size: {Stride}");
 #endif
-            buffer = new ComputeBuffer(size, Stride, bufferType, bufferMode);
-            if (oldBufferIsValid) // copy old buffer data into new buffer
-            {
-                //var data = NativeArrayUnsafeUtility.ConvertExistingDataToNativeArray<T>(oldBuffer.GetNativeBufferPtr().ToPointer(), oldBuffer.count, Allocator.Invalid); // invalid means no new ptr is created and the array cannot be disposed
-                var data = (T[])Array.CreateInstance(typeof(T), oldBuffer.count);  
-                oldBuffer.GetData(data);
-                var writer = buffer.BeginWrite<T>(0, data.Length);
-                //data.CopyTo(writer);
-                writer.CopyFrom(data);
-                buffer.EndWrite<T>(data.Length);
-                oldBuffer.Dispose();
-            }
-
-            foreach(var bind in boundMaterialProperties)
-            {
-                if (bind.material == null) continue;
-                bind.material.SetBuffer(bind.propertyName, buffer); // set property values for bound material properties to use new buffer instance
-            }
+            bufferPool.SetSize(size, updateActiveBufferFrameDelay);
         }
     }
 
@@ -1836,57 +1810,6 @@ namespace Swole
             base.Initialize(); 
              
             ApplyBoneWeightsBufferToMaterials(SkinningDataPropertyName, null);  
-        }
-    }
-
-    public class InstanceBufferUploader : SingletonBehaviour<InstanceBufferUploader>
-    {
-
-        public override bool DestroyOnLoad => false;
-
-        public override int Priority => 999999999;
-
-        [NonSerialized]
-        protected readonly HashSet<IInstanceBuffer> bufferQueue = new HashSet<IInstanceBuffer>();
-
-        public void QueueLocal(IInstanceBuffer buffer)
-        {
-            bufferQueue.Add(buffer);  
-        }
-        public static void Queue(IInstanceBuffer buffer)
-        {
-            var instance = Instance;
-            if (instance == null) return;
-
-            instance.QueueLocal(buffer);
-        }
-
-        public override void OnFixedUpdate()
-        {
-        }
-
-        public override void OnLateUpdate()
-        {
-            foreach (var buffer in bufferQueue) 
-            {
-                try
-                {
-                    buffer.CompleteWriteRequests(); 
-                } 
-                catch(Exception ex)
-                {
-#if UNITY_EDITOR
-                    Debug.LogError(ex);
-#else
-                    swole.LogError(ex);
-#endif
-                }
-            }
-            bufferQueue.Clear();
-        }
-
-        public override void OnUpdate()
-        {
         }
     }
 }
