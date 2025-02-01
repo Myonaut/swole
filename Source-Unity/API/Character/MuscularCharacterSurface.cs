@@ -13,6 +13,7 @@ using Unity.Mathematics;
 
 using Swole.DataStructures;
 using static Swole.SharedMeshData;
+using Swole.API.Unity.Animation;
 
 namespace Swole.API.Unity
 {

@@ -20,7 +20,7 @@ namespace Swole
     {
 
         public override bool ExecuteInStack => true;
-        public static int ExecutionPriority => CustomAnimatorUpdater.FinalAnimationBehaviourPriority + 1; // update after animation
+        public static int ExecutionPriority => CustomAnimatorUpdater.FinalAnimationBehaviourPriority + 5; // update after animation
         public override int Priority => ExecutionPriority; 
 
         public override void OnFixedUpdate()

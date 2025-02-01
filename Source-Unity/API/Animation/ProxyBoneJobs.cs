@@ -22,7 +22,7 @@ namespace Swole.API.Unity
     public class ProxyBoneJobs : SingletonBehaviour<ProxyBoneJobs>, IDisposable
     {
 
-        public static int ExecutionPriority => CustomIKManagerUpdater.ExecutionPriority + 1; // Update after animators and ik
+        public static int ExecutionPriority => CustomIKManagerUpdater.ExecutionPriority + 5; // Update after animators and ik
         public override int Priority => ExecutionPriority;
         //public override bool DestroyOnLoad => false; 
 
@@ -91,6 +91,7 @@ namespace Swole.API.Unity
             public bool applyFullRotationThenRevert;
 
             public bool applyInWorldSpace;
+            public bool applyScale;
 
             [NonSerialized]
             public int proxyParentIndex;
@@ -102,6 +103,8 @@ namespace Swole.API.Unity
             public float3 rotationWeights;
 
             public float3 positionWeights;
+
+            public float3 scaleWeights;
 
             public float3 startPosition;
             public float3 startProxyPosition;
@@ -117,6 +120,13 @@ namespace Swole.API.Unity
             [NonSerialized]
             public quaternion rotationOffset;
 
+            public float3 startScale;
+            public float3 startProxyScale;
+            [NonSerialized]
+            public float3 currentProxyScale;
+            [NonSerialized]
+            public float3 scaleOffset;
+
         }
 
         [StructLayout(LayoutKind.Sequential)]
@@ -126,6 +136,8 @@ namespace Swole.API.Unity
             public float3 currentProxyParentWorldPosition;
 
             public quaternion currentProxyParentWorldRotation;
+
+            public float3 currentProxyParentLocalScale;
 
         }
 
@@ -464,6 +476,8 @@ namespace Swole.API.Unity
                 header = instance.proxyBindingHeaders[proxyIndex];
             }
 
+            var newIndRef = new ProxyBoneIndex(proxy, proxyIndex);
+
             header.x = proxy.bindings.Length; // binding count
             if (header.y < 0) // if it's negative then give it a new startIndex in the boneBindings array
             {
@@ -483,17 +497,48 @@ namespace Swole.API.Unity
                 for (int a = 0; a < instance.boneBindings.Length; a++) tempBindings.Add(instance.boneBindings[a]);
             }
 
+            Binding InitBinding(Binding binding)
+            {
+                binding.proxyParentIndex = -1;
+                if (binding.applyInWorldSpace)
+                {
+
+                    Transform proxyParentTransform = proxyTransform.parent;
+                    if (proxyParentTransform != null)
+                    {
+                        int proxyParentIndex = instance.AddOrGetProxyIndex(proxyParentTransform, -1);
+                        var proxyParentHeader = instance.proxyBindingHeaders[proxyParentIndex];
+                        proxyParentHeader.z = instance.proxyParentWorldTransforms.Length;
+                        instance.proxyBindingHeaders[proxyParentIndex] = proxyParentHeader;
+                        instance.proxyParentWorldTransforms.Add(new ProxyParentWorldTransform() { currentProxyParentWorldPosition = proxyParentTransform.position, currentProxyParentWorldRotation = proxyParentTransform.rotation });
+
+                        binding.proxyParentIndex = proxyParentIndex; // the header index of this proxy's parent
+#if UNITY_EDITOR
+                        //Debug.Log($"Proxy {proxy.name}, binding {a} has parent index {proxyParentIndex}");
+#endif
+                    }
+                    else
+                    {
+                        binding.applyInWorldSpace = false;
+                    }
+                }
+
+                binding.firstRun = true;
+
+                return binding;
+            }
+
             for (int a = 0; a < proxy.bindings.Length; a++)
             {
 
                 var binding = proxy.bindings[a];
 
-                var bindingJobData = binding.binding;
+                var bindingJobData = binding.binding; 
 
                 if (!proxy.hasStartingPose)
                 {
 
-                    if (binding.binding.applyInWorldSpace)
+                    /*if (binding.binding.applyInWorldSpace)
                     {
                         bindingJobData.startPosition = proxyTransform.parent == null ? binding.bone.position : proxyTransform.parent.InverseTransformPoint(binding.bone.position);
                         bindingJobData.startRotation = proxyTransform.parent == null ? binding.bone.rotation : (Quaternion.Inverse(proxyTransform.parent.rotation) * binding.bone.rotation);
@@ -503,13 +548,18 @@ namespace Swole.API.Unity
                         bindingJobData.startPosition = binding.bone.localPosition;
                         bindingJobData.startRotation = binding.bone.localRotation;
                     }
+                    bindingJobData.startScale = binding.bone.localScale;
 
                     bindingJobData.startProxyPosition = proxyTransform.localPosition;
                     bindingJobData.startProxyRotation = proxyTransform.localRotation;
+                    bindingJobData.startProxyScale = proxyTransform.localScale;*/
+
+                    binding.ReinitializeStartPosition(proxyTransform); // ^ replaced comment above
+                    bindingJobData = binding.binding; 
 
                 }
-                
-                bindingJobData.proxyParentIndex = -1; 
+
+                /*bindingJobData.proxyParentIndex = -1; 
                 if (bindingJobData.applyInWorldSpace)
                 {
 
@@ -534,7 +584,9 @@ namespace Swole.API.Unity
 
                 }
 
-                bindingJobData.firstRun = true;
+                bindingJobData.firstRun = true;*/
+
+                bindingJobData = InitBinding(bindingJobData); // ^ replaced comment above
 
                 binding.binding = bindingJobData;
 
@@ -542,16 +594,54 @@ namespace Swole.API.Unity
 
                 if (isNew)
                 {
+                    int index = instance.transforms.length;
+
                     instance.boneBindings.Add(binding.binding); 
                     instance.transforms.Add(binding.bone);
                     //Debug.Log(proxy.name + " : " + binding.bone.name + " : add " + (instance.boneBindings.Length - 1)); 
+
+                    binding.ClearAllListeners();
+                    binding.OnReinitBinding += (Binding newBinding) =>
+                    {
+                        if (!newIndRef.IsValid) return;
+
+                        instance.lastJobHandle.Complete();
+
+                        newBinding = InitBinding(newBinding);
+
+                        var jobBinding = instance.boneBindings[index];
+
+                        newBinding.currentProxyPosition = jobBinding.currentProxyPosition;
+                        newBinding.currentProxyRotation = jobBinding.currentProxyRotation;
+                        newBinding.currentProxyScale = jobBinding.currentProxyScale;
+
+                        instance.boneBindings[index] = newBinding;
+                    };
                 } 
                 else
                 {
                     int index = header.y + a;
                     //Debug.Log(proxy.name + " : " + binding.bone.name + " : ins " + index);
                     /*if (index >= tempBindings.Count) tempBindings.Add(binding.binding); else */tempBindings.Insert(index, binding.binding);
-                    /*if (index >= tempTransforms.Count) tempTransforms.Add(binding.bone); else */tempTransforms.Insert(index, binding.bone);   
+                    /*if (index >= tempTransforms.Count) tempTransforms.Add(binding.bone); else */tempTransforms.Insert(index, binding.bone);
+
+                    binding.ClearAllListeners();
+                    binding.OnReinitBinding += (Binding newBinding) =>
+                    {
+                        if (!newIndRef.IsValid) return;
+
+                        instance.lastJobHandle.Complete();
+
+                        newBinding = InitBinding(newBinding);
+
+                        var jobBinding = instance.boneBindings[index];
+
+                        newBinding.currentProxyPosition = jobBinding.currentProxyPosition;
+                        newBinding.currentProxyRotation = jobBinding.currentProxyRotation; 
+                        newBinding.currentProxyScale = jobBinding.currentProxyScale; 
+
+                        instance.boneBindings[index] = newBinding;
+                    };
                 }
 
             }
@@ -568,8 +658,7 @@ namespace Swole.API.Unity
 #endif
 
             if (instance.proxyBoneIndices.TryGetValue(proxyIndex, out var ind) && ind != null) ind.Invalidate();
-            ind = new ProxyBoneIndex(proxy, proxyIndex);
-            instance.proxyBoneIndices[proxyIndex] = ind;  
+            instance.proxyBoneIndices[proxyIndex] = newIndRef;  
             return ind;
         }
 
@@ -726,6 +815,7 @@ namespace Swole.API.Unity
 
                 float3 proxyLocalPosition = transform.localPosition;
                 quaternion proxyLocalRotation = transform.localRotation;
+                float3 proxyLocalScale = transform.localScale;
 
                 for (int a = 0; a < bindingCount; a++)
                 {
@@ -736,6 +826,7 @@ namespace Swole.API.Unity
 
                     binding.currentProxyPosition = proxyLocalPosition;
                     binding.currentProxyRotation = proxyLocalRotation;
+                    binding.currentProxyScale = proxyLocalScale;
 
 
                     boneBindings[bindingIndex] = binding;
@@ -749,7 +840,8 @@ namespace Swole.API.Unity
                     {
 
                         currentProxyParentWorldPosition = transform.position,
-                        currentProxyParentWorldRotation = transform.rotation
+                        currentProxyParentWorldRotation = transform.rotation,
+                        currentProxyParentLocalScale = proxyLocalScale
 
                     };
 
@@ -782,9 +874,11 @@ namespace Swole.API.Unity
 
                 float3 posWeights = binding.positionWeights * binding.baseWeight;
                 float3 rotWeights = binding.rotationWeights * binding.baseWeight;
+                float3 scaWeights = binding.scaleWeights * binding.baseWeight;
 
                 float3 localPosition = transform.localPosition;
                 quaternion localRotation = transform.localRotation;
+                float3 localScale = transform.localScale;
 
                 quaternion currentRotation = math.mul(math.inverse(binding.startProxyRotation), binding.currentProxyRotation);
 
@@ -867,6 +961,7 @@ namespace Swole.API.Unity
                     // binding is relative and this isn't the first execution, so undo previous changes before applying new ones
                     localPosition = localPosition - binding.positionOffset;
                     localRotation = math.mul(localRotation, math.inverse(binding.rotationOffset));
+                    localScale = localScale - binding.scaleOffset;
 
                 }
                 else
@@ -876,14 +971,17 @@ namespace Swole.API.Unity
 
                     localPosition = binding.startPosition;
                     localRotation = binding.startRotation;
+                    localScale = binding.startScale;
 
                 }
 
                 binding.positionOffset = (binding.currentProxyPosition - binding.startProxyPosition) * posWeights;
                 binding.rotationOffset = currentRotation;
+                binding.scaleOffset = (binding.currentProxyScale - binding.startProxyScale) * scaWeights;
 
                 localPosition = localPosition + binding.positionOffset;
                 localRotation = math.mul(localRotation, binding.rotationOffset);
+                localScale = localScale + binding.scaleOffset;
 
                 if (binding.applyInWorldSpace)
                 {
@@ -899,6 +997,7 @@ namespace Swole.API.Unity
                     transform.SetLocalPositionAndRotation(localPosition, localRotation);
 
                 }
+                if (binding.applyScale) transform.localScale = localScale;
 
                 boneBindings[index] = binding;
 

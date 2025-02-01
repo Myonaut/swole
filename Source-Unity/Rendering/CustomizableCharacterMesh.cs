@@ -1,3 +1,5 @@
+#if (UNITY_STANDALONE || UNITY_EDITOR)
+
 using System;
 using System.Collections;
 using System.Collections.Generic;
@@ -8,7 +10,6 @@ using Unity.Mathematics;
 using Swole.API.Unity.Animation;
 using Unity.Collections;
 using System.Runtime.InteropServices;
-using Swole.API.Unity;
 
 namespace Swole.Morphing
 {
@@ -192,7 +193,22 @@ namespace Swole.Morphing
                 children = null;
             }
 
-            if (characterInstanceReference != null) characterInstanceReference.RemoveChild(this); 
+            if (shapesInstanceReference != null)
+            {
+                shapesInstanceReference.OnCreateInstanceID -= SetShapesInstanceID;
+                shapesInstanceReference = null;
+            }
+            if (rigInstanceReference != null)
+            {
+                rigInstanceReference.OnCreateInstanceID -= SetRigInstanceID;
+                rigInstanceReference = null;
+            }
+            if (characterInstanceReference != null)
+            {
+                characterInstanceReference.OnCreateInstanceID -= SetCharacterInstanceID;
+                characterInstanceReference.RemoveChild(this);
+                characterInstanceReference = null; 
+            }
 
             if (animatablePropertiesController != null)
             {
@@ -303,7 +319,7 @@ namespace Swole.Morphing
         [SerializeField]
         protected CustomizableCharacterMeshData meshData;
         public void SetMeshData(CustomizableCharacterMeshData data) => meshData = data;
-        public override InstanceableMeshData MeshData => meshData;
+        public override InstanceableMeshDataBase MeshData => meshData;
         public virtual CustomizableCharacterMeshData CharacterMeshData => meshData;
         public override InstancedMeshGroup MeshGroup => meshData.meshGroups[meshGroupIndex];
 
@@ -331,7 +347,7 @@ namespace Swole.Morphing
                 return rigRoot;
             }
         }
-        public override Transform BoundsRootTransform => rigRoot;
+        public override Transform BoundsRootTransform => RigRoot;
 
         [SerializeField]
         protected DynamicAnimationProperties animatablePropertiesController;
@@ -873,7 +889,7 @@ namespace Swole.Morphing
         public float2 GetVariationWeight(int variationShapeIndex, int groupIndex)
         {
             if (instance == null || groupIndex < 0 || groupIndex >= CharacterMeshData.VariationVertexGroupCount || variationShapeIndex < 0 || variationShapeIndex >= CharacterMeshData.VariationShapesCount) return 0;
-            return GetVariationWeightUnsafe(variationShapeIndex, groupIndex); 
+            return GetVariationWeightUnsafe(variationShapeIndex, groupIndex);  
         }
         public void SetVariationWeightUnsafe(int variationShapeIndex, int groupIndex, float2 weight)
         {
@@ -894,7 +910,7 @@ namespace Swole.Morphing
         public float2 GetVariationWeightUnsafe(int indexInArray) => VariationShapesControlBuffer[FirstVariationShapesControlIndex + indexInArray]; //VariationShapesControl[indexInArray];
         public float2 GetVariationWeight(int indexInArray)
         {
-            if (indexInArray < 0 || indexInArray >= VariationShapesControlDataSize) return 0;
+            if (indexInArray < 0 || instance == null || indexInArray >= VariationShapesControlDataSize) return 0;
             return GetVariationWeightUnsafe(indexInArray);
         }
         public void SetVariationWeightUnsafe(int indexInArray, float2 weight)
@@ -913,7 +929,7 @@ namespace Swole.Morphing
         }
         public void SetVariationWeight(int indexInArray, float2 weight)
         {
-            if (indexInArray < 0 || indexInArray >= VariationShapesControlDataSize) return;
+            if (indexInArray < 0 || instance == null || indexInArray >= VariationShapesControlDataSize) return;
             SetVariationWeightUnsafe(indexInArray, weight);
         }
 
@@ -958,28 +974,38 @@ namespace Swole.Morphing
             fatGroupsControlBuffer = FatGroupsControlBuffer;
             variationShapesControlBuffer = VariationShapesControlBuffer;
 
-            if (meshData.StandaloneShapesCount > 0) SetStandaloneShapeWeightUnsafe(0, 0);
-            if (meshData.MuscleVertexGroupCount > 0) SetMuscleDataUnsafe(0, new MuscleDataLR());
-            if (meshData.FatVertexGroupCount > 0) // Apply fat group modifiers (.y controls how much mass is nerfed by fat)
+            if (instance != null)
             {
-                int indexStart = FirstFatGroupsControlIndex;
-                if (CharacterMeshData.fatGroupModifiers == null)
+                if (shapesInstanceReference == null)
                 {
-                    for (int a = 0; a < CharacterMeshData.FatVertexGroupCount; a++) fatGroupsControlBuffer.WriteToBufferFast(indexStart + a, new float3(0, CustomizableCharacterMeshData.DefaultFatGroupModifier.x, CustomizableCharacterMeshData.DefaultFatGroupModifier.y));
-                }
-                else
-                {
-                    for (int a = 0; a < CharacterMeshData.FatVertexGroupCount; a++)
-                    {
-                        var modifier = CharacterMeshData.GetFatGroupModifier(a);
-                        fatGroupsControlBuffer.WriteToBufferFast(indexStart + a, new float3(0, modifier.x, modifier.y));
-                    }
+                    if (meshData.StandaloneShapesCount > 0) SetStandaloneShapeWeightUnsafe(0, 0);
                 }
 
-                fatGroupsControlBuffer.TrySetWriteIndices(indexStart, CharacterMeshData.FatVertexGroupCount);
-                fatGroupsControlBuffer.RequestUpload(); 
+                if (characterInstanceReference == null)
+                {
+                    if (meshData.MuscleVertexGroupCount > 0) SetMuscleDataUnsafe(0, new MuscleDataLR()); 
+                    if (meshData.FatVertexGroupCount > 0) // Apply fat group modifiers (.y controls how much mass is nerfed by fat)
+                    {
+                        int indexStart = FirstFatGroupsControlIndex;
+                        if (CharacterMeshData.fatGroupModifiers == null)
+                        {
+                            for (int a = 0; a < CharacterMeshData.FatVertexGroupCount; a++) fatGroupsControlBuffer.WriteToBufferFast(indexStart + a, new float3(0, CustomizableCharacterMeshData.DefaultFatGroupModifier.x, CustomizableCharacterMeshData.DefaultFatGroupModifier.y));
+                        }
+                        else
+                        {
+                            for (int a = 0; a < CharacterMeshData.FatVertexGroupCount; a++)
+                            {
+                                var modifier = CharacterMeshData.GetFatGroupModifier(a);
+                                fatGroupsControlBuffer.WriteToBufferFast(indexStart + a, new float3(0, modifier.x, modifier.y));
+                            }
+                        }
+
+                        fatGroupsControlBuffer.TrySetWriteIndices(indexStart, CharacterMeshData.FatVertexGroupCount);
+                        fatGroupsControlBuffer.RequestUpload();
+                    }
+                    if (meshData.VariationVertexGroupCount > 0) SetVariationWeightUnsafe(0, 0);
+                }
             }
-            if (meshData.VariationVertexGroupCount > 0) SetVariationWeightUnsafe(0, 0);
         }
         public void UpdateBuffers()
         {
@@ -1060,3 +1086,5 @@ namespace Swole.Morphing
     }
 
 }
+
+#endif

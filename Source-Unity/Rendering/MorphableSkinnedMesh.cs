@@ -1,3 +1,5 @@
+#if (UNITY_STANDALONE || UNITY_EDITOR)
+
 using System;
 using System.Collections;
 using System.Collections.Generic;
@@ -13,13 +15,14 @@ namespace Swole.Morphing
     {
 
         public override void Dispose()
-        {  
+        {
+            base.Dispose();
         }
 
         [SerializeField]
         protected MorphableMeshData meshData;
         public void SetMeshData(MorphableMeshData data) => meshData = data;
-        public override InstanceableMeshData MeshData => meshData;
+        public override InstanceableMeshDataBase MeshData => meshData;
         public override InstancedMeshGroup MeshGroup => meshData.meshGroups[meshGroupIndex];
 
         [SerializeField]
@@ -77,3 +80,5 @@ namespace Swole.Morphing
     }
 
 }
+
+#endif

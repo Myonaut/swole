@@ -12,9 +12,8 @@ using UnityEngine;
 using UnityEngine.Rendering;
 
 using Unity.Jobs;
-
-using Swole.API.Unity;
 using Swole.DataStructures;
+using Swole.API.Unity.Animation;
 
 namespace Swole
 {
@@ -25,8 +24,8 @@ namespace Swole
         public const string _instanceIdDefaultPropertyName = "_InstanceID"; 
 
         [SerializeField]
-        protected InstanceableMeshData meshData;
-        public override InstanceableMeshData MeshData => meshData;
+        protected InstanceableMeshDataBase meshData;
+        public override InstanceableMeshDataBase MeshData => meshData;
 
         public override InstancedMeshGroup MeshGroup => meshData.meshGroups[meshGroupIndex];
 
@@ -76,7 +75,7 @@ namespace Swole
 
         protected virtual void OnDestroyed() { }
 
-        public abstract InstanceableMeshData MeshData { get; }
+        public abstract InstanceableMeshDataBase MeshData { get; }
         public abstract InstancedMeshGroup MeshGroup { get; }
 
         [SerializeField]
@@ -93,6 +92,52 @@ namespace Swole
         public InstancedMesh Instance => instance;
         public int InstanceSlot => instance == null ? -1 : instance.Slot;
 
+        protected bool visible;
+        public bool Visible
+        {
+            get => visible;
+            set => SetVisible(value);
+        }
+
+        protected bool inViewOfCamera;
+        public bool InViewOfCamera => inViewOfCamera;
+
+        public bool IsRendering => (instance != null && instance.IsVisible);
+        public bool IsRendered => IsRendering && InViewOfCamera;
+
+        public virtual void SetVisible(bool visible)
+        {
+            this.visible = visible;
+            if (visibleOnEnable && !visible) visibleOnEnable = false; 
+
+            if (instance == null) return;
+
+            if (visible && InViewOfCamera && enabled)
+            {
+                instance.StartRendering();
+            }
+            else
+            {
+                instance.StopRendering();
+            }
+        }
+
+        public void StartRenderingInstance()
+        {
+            if (instance != null) instance.StartRendering();
+        }
+        public void StopRenderingInstance()
+        {
+            if (instance != null) instance.StopRendering();
+        }
+
+        protected virtual void SetInViewOfCamera(bool isInView)
+        {
+            inViewOfCamera = isInView;
+
+            SetVisible(Visible); // toggles rendering if in view of camera or not
+        }
+
         public virtual Transform BoundsRootTransform => transform;
 
         protected void Awake()
@@ -104,20 +149,45 @@ namespace Swole
         }
 
         public bool autoCreateInstance = true; 
+        public bool startRenderingImmediately = true;
         protected void Start()
         {
             var meshData = MeshData;
             if (meshData != null) meshData.Initialize();
 
             if (autoCreateInstance && instance == null) CreateInstance();
+            if (startRenderingImmediately) SetVisible(true); 
 
             OnStart();  
+        }
+
+        private bool visibleOnEnable; 
+        protected void OnEnable()
+        {
+            if (visibleOnEnable) StartRenderingInstance();
+            visibleOnEnable = false; 
+
+            OnEnabled();
+        }
+        protected void OnDisable()
+        {
+            visibleOnEnable = Visible;
+            StopRenderingInstance();
+
+            OnDisabled();
         }
 
         protected virtual void OnAwake()
         {
         }
         protected virtual void OnStart()
+        {
+        }
+
+        protected virtual void OnEnabled()
+        {
+        }
+        protected virtual void OnDisabled()
         {
         }
 
@@ -138,7 +208,7 @@ namespace Swole
             instance = MeshGroup.NewInstance(subMeshIndex, transform, floatOverrides, colorOverrides, vectorOverrides);
             cullLODs = CullingLODs.GetCameraCullLOD(Camera.main).AddRenderer(BoundsRootTransform, MeshData.boundsCenter, MeshData.boundsExtents, MeshData.LODs); 
             cullLODs.OnLODChange += instance.SetLOD2;
-            cullLODs.OnVisibilityChange += instance.SetVisibility; 
+            cullLODs.OnVisibilityChange += SetInViewOfCamera; 
 
             OnCreateInstance?.Invoke(instance);
             OnCreateInstanceID?.Invoke(instance.slot);
@@ -201,7 +271,7 @@ namespace Swole
         protected override void CreateInstance(List<InstancedRendering.MaterialPropertyInstanceOverride<float>> floatOverrides, List<InstancedRendering.MaterialPropertyInstanceOverride<Color>> colorOverrides, List<InstancedRendering.MaterialPropertyInstanceOverride<Vector4>> vectorOverrides)
         {
             base.CreateInstance(floatOverrides, colorOverrides, vectorOverrides);
-            if (instance != null) instance.StartRenderingInFrontOfCamera(); // forces the mesh to always be drawn (will get culled by custom system)
+            if (instance != null) instance.StartRenderingInFrontOfCamera(); // forces the mesh to never get culled by unity (will get culled by custom system)
 
             var matricesBuffer = SkinningMatricesBuffer;
             if (RigSampler != null) rigSampler.AddWritableInstanceBuffer(matricesBuffer, RigInstanceID * BoneCount);
@@ -219,7 +289,7 @@ namespace Swole
             }
         }
         
-        public InstanceableSkinnedMeshData SkinnedMeshData => ((InstanceableSkinnedMeshData)MeshData);
+        public virtual InstanceableSkinnedMeshDataBase SkinnedMeshData => ((InstanceableSkinnedMeshDataBase)MeshData);
 
         protected Rigs.StandaloneSampler rigSampler;
         public virtual Rigs.StandaloneSampler RigSampler
@@ -648,7 +718,7 @@ namespace Swole
         }
 
         [NonSerialized]
-        internal InstanceableMeshData meshData; 
+        internal InstanceableMeshDataBase meshData; 
 
         internal InstancedRendering.RenderGroup<InstancedRendering.InstanceDataMatrixAndMotionVectors> GetRenderGroup(int subMesh, int LOD) => InstancedRendering.GetRenderGroup<InstancedRendering.InstanceDataMatrixAndMotionVectors>(meshData.GetMesh(LOD), subMesh);
         internal InstancedRendering.RenderingInstance<InstancedRendering.InstanceDataMatrixAndMotionVectors> CreateNewInstance(int subMesh, int LOD, InstancedRendering.InstanceDataMatrixAndMotionVectors instanceData,
@@ -884,10 +954,12 @@ namespace Swole
 
         public virtual void SetLOD(int detailLevel)
         {
+            bool isVisible = IsVisible;
+
             StopRendering();
             LOD = detailLevel;
-            StartRendering();
-
+            if (isVisible) StartRendering();
+            
             Debug.Log("SET LOD " + detailLevel);  
         }
         public virtual void SetLOD2(int prevDetailLevel, int detailLevel) => SetLOD(detailLevel);
@@ -1078,6 +1150,7 @@ namespace Swole
             if (renderInstance == null)
             {
                 renderInstance = CreateRenderingInstance();
+                if (renderInFrontOfCamera) renderInstance.RenderGroup.StartRenderingInFrontOfCamera();
             }
         }
         internal abstract InstancedRendering.IRenderingInstance CreateRenderingInstance();
@@ -1089,6 +1162,8 @@ namespace Swole
                 renderInstance = null;
             }
         }
+
+        public bool IsVisible => renderInstance != null && renderInstance.Valid;
 
         protected Transform boundTransform;
         /// <summary>
@@ -1251,7 +1326,7 @@ namespace Swole
         public Mesh mesh;
         public float minDistance;
     }
-    public class InstanceableMeshData : ScriptableObject, IDisposable
+    public abstract class InstanceableMeshDataBase : ScriptableObject, IDisposable
     {
 
         public InstancedMeshGroup[] meshGroups; 
@@ -1774,7 +1849,7 @@ namespace Swole
         public void ApplyColorToMaterials(string propertyName, Color value) => ApplyColorToMaterials(propertyName, null, value);
 
     }
-    public class InstanceableSkinnedMeshData : InstanceableMeshData
+    public abstract class InstanceableSkinnedMeshDataBase : InstanceableMeshDataBase
     {
         public const string _skinningMatricesDefaultPropertyName = "_SkinningMatrices";
         public string skinningMatricesPropertyNameOverride;

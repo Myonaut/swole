@@ -341,10 +341,15 @@ namespace Swole
             else
             {
                 T val = default;
-                internalData.AddReplicate(in val, size - internalData.Length);  
+#if UNITY_2022_3_OR_NEWER
+                internalData.AddReplicate(in val, size - internalData.Length);
+#else
+                int count = size - internalData.Length;
+                for (int a = 0; a < count; a++) internalData.Add(val);
+#endif
             }
 
-            for(int a = 0; a < bufferPool.Length; a++)
+            for (int a = 0; a < bufferPool.Length; a++)
             {
                 var buffer = bufferPool[a];
                 if (buffer != null && buffer.IsValid()) buffer.Dispose();

@@ -1,3 +1,5 @@
+#if (UNITY_STANDALONE || UNITY_EDITOR)
+
 using System;
 using System.Collections;
 using System.Collections.Generic;
@@ -467,9 +469,8 @@ namespace Swole
         public string shapesInstanceIDPropertyNameOverride;
         public string ShapesInstanceIDPropertyName => string.IsNullOrWhiteSpace(shapesInstanceIDPropertyNameOverride) ? _shapesInstanceIDPropertyName : shapesInstanceIDPropertyNameOverride;
 
-        public const string _rigInstanceIDPropertyName = "_RigInstanceID";
         public string rigInstanceIDPropertyNameOverride;
-        public string RigInstanceIDPropertyName => string.IsNullOrWhiteSpace(rigInstanceIDPropertyNameOverride) ? _rigInstanceIDPropertyName : rigInstanceIDPropertyNameOverride;
+        public string RigInstanceIDPropertyName => string.IsNullOrWhiteSpace(rigInstanceIDPropertyNameOverride) ? InstancedSkinnedMeshData._rigInstanceIDPropertyName : rigInstanceIDPropertyNameOverride;
 
         public const string _characterInstanceIDPropertyName = "_CharacterInstanceID";
         public string characterInstanceIDPropertyNameOverride;
@@ -477,3 +478,5 @@ namespace Swole
 
     }
 }
+
+#endif

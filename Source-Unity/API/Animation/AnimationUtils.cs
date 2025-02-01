@@ -108,6 +108,111 @@ namespace Swole.API.Unity.Animation
                 this.localRotation = localRotation;
                 this.localScale = localScale;
             }
+            public TransformState(Transform t)
+            {
+                t.GetLocalPositionAndRotation(out localPosition, out localRotation);
+                this.localScale = t.localScale;
+            }
+
+            public void Apply(Transform t)
+            {
+                t.SetLocalPositionAndRotation(localPosition, localRotation);
+                t.localScale = localScale;
+            }
+            public void ApplyPosition(Transform t)
+            {
+                t.localPosition = localPosition;
+            }
+            public void ApplyRotation(Transform t)
+            {
+                t.localRotation = localRotation;
+            }
+            public void ApplyScale(Transform t)
+            {
+                t.localScale = localScale;
+            }
+
+            public static TransformStateDelta operator -(TransformState stateA, TransformState stateB) => new TransformStateDelta(stateA, stateB);
+            public static TransformState operator +(TransformState state, TransformStateDelta delta)
+            {
+                state.localPosition = state.localPosition + delta.deltaPosition;
+                state.localRotation = delta.deltaRotation * state.localRotation;
+                state.localScale = state.localScale + delta.deltaScale;
+
+                return state;
+            }
+
+            public static implicit operator TransformStateDelta(TransformState state) => new TransformStateDelta(state.localPosition, state.localRotation, state.localScale);
+            public static implicit operator TransformState(TransformStateDelta delta) => new TransformState(delta.deltaPosition, delta.deltaRotation, delta.deltaScale);
+        }
+
+        [Serializable]
+        public struct TransformStateDelta
+        {
+            public Vector3 deltaPosition;
+            public Quaternion deltaRotation;
+            public Vector3 deltaScale;
+
+            public TransformStateDelta(Vector3 deltaPosition, Quaternion deltaRotation, Vector3 deltaScale)
+            {
+                this.deltaPosition = deltaPosition;
+                this.deltaRotation = deltaRotation;
+                this.deltaScale = deltaScale;
+            }
+            public TransformStateDelta(Vector3 localPositionA, Quaternion localRotationA, Vector3 localScaleA, Vector3 localPositionB, Quaternion localRotationB, Vector3 localScaleB)
+            {
+                deltaPosition = localPositionB - localPositionA;
+                deltaRotation = Quaternion.Inverse(localRotationA) * localRotationB; 
+                deltaScale = localScaleB - localScaleA;
+            }
+            public TransformStateDelta(TransformState stateA, TransformState stateB)
+            {
+                deltaPosition = stateB.localPosition - stateA.localPosition;
+                deltaRotation = Quaternion.Inverse(stateA.localRotation) * stateB.localRotation;
+                deltaScale = stateB.localScale - stateA.localScale; 
+            }
+
+            public static TransformStateDelta operator -(TransformStateDelta deltaA, TransformStateDelta deltaB) => new TransformStateDelta(deltaA, deltaB);
+            public static TransformStateDelta operator +(TransformStateDelta deltaA, TransformStateDelta deltaB)
+            {
+                deltaA.deltaPosition = deltaA.deltaPosition + deltaB.deltaPosition;
+                deltaA.deltaRotation = deltaB.deltaRotation * deltaA.deltaRotation; 
+                deltaA.deltaScale = deltaA.deltaScale + deltaB.deltaScale;
+
+                return deltaA;
+            }
+
+            public void Apply(Transform t)
+            {
+                t.GetLocalPositionAndRotation(out var localPosition, out var localRotation);
+                var localScale = t.localScale;
+
+                localPosition = localPosition + deltaPosition;
+                localRotation = deltaRotation * localRotation;
+                localScale = localScale + deltaScale;
+
+                t.SetLocalPositionAndRotation(localPosition, localRotation);
+                t.localScale = localScale;
+            }
+
+            public void ApplyPosition(Transform t)
+            {
+                var localPosition = t.localPosition;
+                localPosition = deltaPosition + localPosition;
+                t.localPosition = localPosition;
+            }
+            public void ApplyRotation(Transform t)
+            {
+                var localRotation = t.localRotation;
+                localRotation = deltaRotation * localRotation;
+                t.localRotation = localRotation;
+            }
+            public void ApplyScale(Transform t)
+            {
+                var localScale = t.localScale;
+                localScale = deltaScale + localScale;
+                t.localScale = localScale;
+            }
         }
 
         [Serializable]

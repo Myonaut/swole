@@ -163,7 +163,7 @@ namespace Swole.API.Unity
 
     public class ProxyTransformSingleton : SingletonBehaviour<ProxyTransformSingleton>
     {
-        public static int ExecutionPriority => ProxyBoneJobs.ExecutionPriority + 1; // Update after animators and proxy bones
+        public static int ExecutionPriority => ProxyBoneJobs.ExecutionPriority + 5; // Update after animators and proxy bones
         public override int Priority => ExecutionPriority;
         //public override bool DestroyOnLoad => false;
 

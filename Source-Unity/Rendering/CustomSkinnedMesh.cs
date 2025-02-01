@@ -9,7 +9,6 @@ using UnityEngine;
 using Unity.Collections;
 using Unity.Collections.LowLevel.Unsafe;
 using Unity.Mathematics;
-using Swole.API.Unity;
 using Swole.API.Unity.Animation;
 
 namespace Swole

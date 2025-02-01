@@ -1,3 +1,5 @@
+#if (UNITY_STANDALONE || UNITY_EDITOR)
+
 using System;
 using System.Collections;
 using System.Collections.Generic;
@@ -12,7 +14,7 @@ using Unity.Collections.LowLevel.Unsafe;
 namespace Swole
 {
     [CreateAssetMenu(fileName = "MorphableMeshData", menuName = "InstancedMeshData/MorphableMeshData", order = 3)]
-    public class MorphableMeshData : InstanceableSkinnedMeshData
+    public class MorphableMeshData : InstanceableSkinnedMeshDataBase
     {
 
         protected override void DisposeLocal()
@@ -496,3 +498,5 @@ namespace Swole
     }
 
 }
+
+#endif
