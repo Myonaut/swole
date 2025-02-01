@@ -10,6 +10,7 @@ using Unity.Jobs;
 using Unity.Collections;
 using Unity.Mathematics;
 using Unity.Burst;
+
 using Swole.API.Unity.Animation;
 
 namespace Swole
@@ -162,8 +163,12 @@ namespace Swole
                     output = outputCullLOD,
                     prevOutput = prevOutputCullLOD
                 };
-                   
+
+#if UNITY_2022_3_OR_NEWER
                 updateJobHandle = cullingLODJob.ScheduleAppend(updatedIndices, renderers.Count, TransformTracking.JobDependency);
+#else
+                updateJobHandle = cullingLODJob.ScheduleAppend(updatedIndices, renderers.Count, 4, TransformTracking.JobDependency);
+#endif
                 TransformTracking.AddInputDependency(updateJobHandle); 
             }
 
