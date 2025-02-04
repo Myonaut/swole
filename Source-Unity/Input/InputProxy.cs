@@ -351,7 +351,7 @@ namespace Swole
         {
             get
             {
-                return Mathf.Clamp(((MoveForwardKey ? 1 : 0) - (MoveBackwardKey ? 1 : 0)) - MainLeftJoystickVertical, -1, 1);
+                return Mathf.Clamp(((MoveForwardKey ? 1 : 0) - (MoveBackwardKey ? 1 : 0)) + MainLeftJoystickVertical, -1, 1);
             }
         }
 
@@ -539,6 +539,28 @@ namespace Swole
 #else
                 return Input.GetKeyUp(KeyCode.R);
 #endif
+            }
+        }
+
+        #endregion
+
+        #region Isometric
+
+        private static KeyCode RotateClockwiseKeyCode = KeyCode.Q;
+        public static bool RotateClockwiseKey { get { return Input.GetKey(RotateClockwiseKeyCode); } }
+        public static bool RotateClockwiseKeyDown { get { return Input.GetKeyDown(RotateClockwiseKeyCode); } }
+        public static bool RotateClockwiseKeyUp { get { return Input.GetKeyUp(RotateClockwiseKeyCode); } }
+
+        private static KeyCode RotateCounterClockwiseKeyCode = KeyCode.E;
+        public static bool RotateCounterClockwiseKey { get { return Input.GetKey(RotateCounterClockwiseKeyCode); } }
+        public static bool MRotateCounterClockwiseKeyDown { get { return Input.GetKeyDown(RotateCounterClockwiseKeyCode); } }
+        public static bool RotateCounterClockwiseKeyUp { get { return Input.GetKeyUp(RotateCounterClockwiseKeyCode); } }  
+
+        public static float IsometricCameraRotationFactor
+        {
+            get
+            {
+                return Mathf.Clamp(((RotateClockwiseKey ? 1 : 0) - (RotateCounterClockwiseKey ? 1 : 0)) - MainRightJoystickHorizontal, -1, 1);
             }
         }
 

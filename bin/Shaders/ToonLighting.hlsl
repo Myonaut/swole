@@ -36,6 +36,19 @@ void ToonBasicLitFragmentShadows_float(half4 inColor, float3 positionWS, float3 
             #pragma multi_compile _ SHADOWS_SHADOWMASK
             #pragma multi_compile _ DYNAMICLIGHTMAP_ON
 
+
+
+#if UNITY_VERSION < 202220
+/*
+GetMeshRenderingLayer() is only available in 2022.2+
+Previous versions need to use GetMeshRenderingLightLayer()
+*/
+uint GetMeshRenderingLayer()
+{
+	return GetMeshRenderingLightLayer();
+}
+#endif
+
 half3 ComputeRadiance(Light light, half3 normalWS)
 {
     half NdotL = saturate(dot(normalWS, light.direction));
@@ -54,7 +67,7 @@ void ToonBasicLitFragment_float(half4 inColor, float3 positionWS, float3 normalW
 
     //half4 shadowMask = CalculateShadowMask(inputData);
     //float4 shadowCoord = TransformWorldToShadowCoord(positionWS);
-    uint meshRenderingLayers = GetMeshRenderingLightLayer();
+    uint meshRenderingLayers = GetMeshRenderingLayer();
     //Light mainLight = GetMainLight(shadowCoord, positionWS, shadowMask);
     Light mainLight = GetMainLight();
 
@@ -88,7 +101,7 @@ void ToonBasicLitFragmentShadows_float(half4 inColor, float3 positionWS, float3 
     inputData.shadowMask = half4(1, 1, 1, 1);
     half4 shadowMask = CalculateShadowMask(inputData);
     float4 shadowCoord = TransformWorldToShadowCoord(positionWS);
-    uint meshRenderingLayers = GetMeshRenderingLightLayer();
+    uint meshRenderingLayers = GetMeshRenderingLayer();
     Light mainLight = GetMainLight(shadowCoord, positionWS, shadowMask);
 
     if (IsMatchingLightLayer(mainLight.layerMask, meshRenderingLayers))

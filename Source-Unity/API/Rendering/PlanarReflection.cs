@@ -131,8 +131,10 @@ namespace Swole.API.Unity
             {
                 uac.renderPostProcessing = false;
             }
-            uac.antialiasing = UnityEngine.Rendering.Universal.AntialiasingMode.None; 
+            uac.antialiasing = UnityEngine.Rendering.Universal.AntialiasingMode.None;
+#if UNITY_2022_3_OR_NEWER
             uac.allowHDROutput = mainUAC.allowHDROutput;
+#endif
             uac.dithering = mainUAC.dithering;
             uac.renderShadows = mainUAC.renderShadows; 
             uac.stopNaN = mainUAC.stopNaN;

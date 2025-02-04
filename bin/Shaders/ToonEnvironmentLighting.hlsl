@@ -31,6 +31,18 @@ void ToonEnvironmentLitFragmentPBR_float(half4 inColor, float3 positionWS, float
             #pragma multi_compile _ SHADOWS_SHADOWMASK
             #pragma multi_compile _ DYNAMICLIGHTMAP_ON
 
+
+#if UNITY_VERSION < 202220
+/*
+GetMeshRenderingLayer() is only available in 2022.2+
+Previous versions need to use GetMeshRenderingLightLayer()
+*/
+uint GetMeshRenderingLayer()
+{
+	return GetMeshRenderingLightLayer();
+}
+#endif
+
 // Copied from Lighting.hlsl (UniversalFragmentPBR)
 half4 UniversalFragmentPBRCustom(InputData inputData, SurfaceData surfaceData)
 {
@@ -48,7 +60,7 @@ half4 UniversalFragmentPBRCustom(InputData inputData, SurfaceData surfaceData)
     BRDFData brdfDataClearCoat = CreateClearCoatBRDFData(surfaceData, brdfData);
     half4 shadowMask = CalculateShadowMask(inputData);
     AmbientOcclusionFactor aoFactor = (AmbientOcclusionFactor)1;//CreateAmbientOcclusionFactor(inputData, surfaceData); // this is probably already done in the unlit shader graph? also doesn't work without correct inputData.normalizedScreenSpaceUV
-    uint meshRenderingLayers = GetMeshRenderingLightLayer(); 
+    uint meshRenderingLayers = GetMeshRenderingLayer(); 
     Light mainLight = GetMainLight(inputData, shadowMask, aoFactor);
 
     // NOTE: We don't apply AO to the GI here because it's done in the lighting calculation below...
