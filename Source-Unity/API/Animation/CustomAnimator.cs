@@ -777,7 +777,7 @@ namespace Swole.API.Unity.Animation
         }
 
         [Serializable, StructLayout(LayoutKind.Sequential)]
-        public struct TransformState
+        public struct TransformAnimationState
         {
 
             public float3 unmodifiedLocalPosition;
@@ -817,7 +817,7 @@ namespace Swole.API.Unity.Animation
             }
 
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            public TransformState Reset(TransformAccess transform)
+            public TransformAnimationState Reset(TransformAccess transform)
             {
 
                 var state = this;
@@ -831,7 +831,7 @@ namespace Swole.API.Unity.Animation
             }
 
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            public TransformState ResetModifiedData()
+            public TransformAnimationState ResetModifiedData()
             {
 
                 var state = this;
@@ -845,7 +845,7 @@ namespace Swole.API.Unity.Animation
             }
 
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            public TransformState Apply(ITransformCurve.Data data)
+            public TransformAnimationState Apply(ITransformCurve.Data data)
             {
 
                 var state = this;
@@ -859,7 +859,7 @@ namespace Swole.API.Unity.Animation
             }
 
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            public TransformState ApplyMix(ITransformCurve.Data data, float mix)
+            public TransformAnimationState ApplyMix(ITransformCurve.Data data, float mix)
             {
 
                 var state = this;
@@ -873,7 +873,7 @@ namespace Swole.API.Unity.Animation
             }
 
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            public TransformState ApplyAdditive(ITransformCurve.Data data)
+            public TransformAnimationState ApplyAdditive(ITransformCurve.Data data)
             {
 
                 var state = this;
@@ -887,7 +887,7 @@ namespace Swole.API.Unity.Animation
             }
 
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            public TransformState ApplyAdditiveMix(ITransformCurve.Data data, float mix)
+            public TransformAnimationState ApplyAdditiveMix(ITransformCurve.Data data, float mix)
             {
 
                 var state = this;
@@ -904,7 +904,7 @@ namespace Swole.API.Unity.Animation
             /// Only apply valid data to the state. If a curve is null or has no keyframes it is invalid.
             /// </summary>
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            public TransformState Swizzle(TransformState newState, bool3 validityPosition, bool4 validityRotation, bool3 validityScale)
+            public TransformAnimationState Swizzle(TransformAnimationState newState, bool3 validityPosition, bool4 validityRotation, bool3 validityScale)
             {
 
                 var state = this;
@@ -1306,8 +1306,8 @@ namespace Swole.API.Unity.Animation
         [NonSerialized]
         protected Dictionary<Transform, TransformStateReference> m_transformStateReferences = new Dictionary<Transform, TransformStateReference>();
         [NonSerialized]
-        protected NativeList<TransformState> m_transformStates;
-        public NativeList<TransformState> TransformStates => m_transformStates;
+        protected NativeList<TransformAnimationState> m_transformStates;
+        public NativeList<TransformAnimationState> TransformStates => m_transformStates;
         [NonSerialized]
         protected TransformAccessArray m_transforms;
 
@@ -1333,7 +1333,7 @@ namespace Swole.API.Unity.Animation
 
         }
 
-        public TransformState GetTransformState(int index)
+        public TransformAnimationState GetTransformState(int index)
         {
 
             if (!m_transformStates.IsCreated || index < 0 || index >= m_transformStates.Length) return default;
@@ -1342,7 +1342,7 @@ namespace Swole.API.Unity.Animation
 
         }
 
-        public void SetTransformState(int index, TransformState state)
+        public void SetTransformState(int index, TransformAnimationState state)
         {
 
             if (!m_transformStates.IsCreated || index < 0 || index >= m_transformStates.Length) return;
@@ -1430,11 +1430,11 @@ namespace Swole.API.Unity.Animation
 
                 m_jobHandle.Complete();
 
-                if (!m_transformStates.IsCreated) m_transformStates = new NativeList<TransformState>(Allocator.Persistent);
+                if (!m_transformStates.IsCreated) m_transformStates = new NativeList<TransformAnimationState>(Allocator.Persistent);
 
                 state = new TransformStateReference(this);
                 state.index = m_transformStates.Length;
-                m_transformStates.Add(new TransformState());
+                m_transformStates.Add(new TransformAnimationState());
 
                 if (!m_transforms.isCreated)
                 {
@@ -1708,7 +1708,7 @@ namespace Swole.API.Unity.Animation
         {
 
             [NativeDisableParallelForRestriction]
-            public NativeList<TransformState> transformStates;
+            public NativeList<TransformAnimationState> transformStates;
 
             public void Execute(int index, TransformAccess transform)
             {
@@ -1729,7 +1729,7 @@ namespace Swole.API.Unity.Animation
         {
 
             [NativeDisableParallelForRestriction]
-            public NativeList<TransformState> transformStates;
+            public NativeList<TransformAnimationState> transformStates;
 
             public void Execute(int index, TransformAccess transform)
             {
@@ -1824,7 +1824,7 @@ namespace Swole.API.Unity.Animation
         {
 
             [NativeDisableParallelForRestriction]
-            public NativeList<TransformState> transformStates;
+            public NativeList<TransformAnimationState> transformStates;
 
             public void Execute(int index, TransformAccess transform)
             {

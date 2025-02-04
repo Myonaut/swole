@@ -2171,7 +2171,7 @@ namespace Swole.API.Unity.Animation
             public float normalizedTime;
 
             [NativeDisableParallelForRestriction]
-            public NativeList<TransformState> transformStates;
+            public NativeList<TransformAnimationState> transformStates;
 
             [ReadOnly]
             public NativeArray<ITransformCurve.Data> curveSamples;
@@ -2212,7 +2212,7 @@ namespace Swole.API.Unity.Animation
             public float mix;
 
             [NativeDisableParallelForRestriction]
-            public NativeList<TransformState> transformStates;
+            public NativeList<TransformAnimationState> transformStates;
 
             [ReadOnly]
             public NativeArray<ITransformCurve.Data> curveSamples;
@@ -2251,7 +2251,7 @@ namespace Swole.API.Unity.Animation
             public float normalizedTime;
 
             [NativeDisableParallelForRestriction]
-            public NativeList<TransformState> transformStates;
+            public NativeList<TransformAnimationState> transformStates;
 
             [ReadOnly]
             public NativeArray<ITransformCurve.Data> curveSamples;
@@ -2295,7 +2295,7 @@ namespace Swole.API.Unity.Animation
             public float mix;
 
             [NativeDisableParallelForRestriction]
-            public NativeList<TransformState> transformStates;
+            public NativeList<TransformAnimationState> transformStates;
 
             [ReadOnly]
             public NativeArray<ITransformCurve.Data> curveSamples;
@@ -2338,7 +2338,7 @@ namespace Swole.API.Unity.Animation
             public float normalizedTime;
 
             [NativeDisableParallelForRestriction]
-            public NativeList<TransformState> transformStates;
+            public NativeList<TransformAnimationState> transformStates;
 
             [ReadOnly]
             public NativeArray<ITransformCurve.Data> curveSamples;
@@ -2381,7 +2381,7 @@ namespace Swole.API.Unity.Animation
             public float mix;
 
             [NativeDisableParallelForRestriction]
-            public NativeList<TransformState> transformStates;
+            public NativeList<TransformAnimationState> transformStates;
 
             [ReadOnly]
             public NativeArray<ITransformCurve.Data> curveSamples;
@@ -2422,7 +2422,7 @@ namespace Swole.API.Unity.Animation
             public float normalizedTime;
 
             [NativeDisableParallelForRestriction]
-            public NativeList<TransformState> transformStates;
+            public NativeList<TransformAnimationState> transformStates;
 
             [ReadOnly]
             public NativeArray<ITransformCurve.Data> curveSamples;
@@ -2468,7 +2468,7 @@ namespace Swole.API.Unity.Animation
             public float mix;
 
             [NativeDisableParallelForRestriction]
-            public NativeList<TransformState> transformStates;
+            public NativeList<TransformAnimationState> transformStates;
 
             [ReadOnly]
             public NativeArray<ITransformCurve.Data> curveSamples;

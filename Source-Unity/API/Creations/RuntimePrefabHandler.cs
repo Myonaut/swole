@@ -96,7 +96,9 @@ namespace Swole.API.Unity
             }
         }
 
+#if BULKOUT_ENV
         protected readonly Dictionary<RTPrefabLib, PrefabCollectionSource> libSources = new Dictionary<RTPrefabLib, PrefabCollectionSource>();
+#endif
 
         public PrefabCollectionSource GetCollectionSource(int libIndex)
         {

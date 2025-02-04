@@ -3,6 +3,7 @@
 using System;
 using System.Collections;
 using System.Collections.Generic;
+using System.Runtime.CompilerServices;
 
 using UnityEngine;
 using UnityEngine.Jobs;
@@ -245,6 +246,246 @@ namespace Swole
             }
         }
     }
+
+    [Serializable]
+    public struct TransformState : IEquatable<TransformState>
+    {
+        public Vector3 position;
+        public Quaternion rotation;
+        public Vector3 localScale;
+        public TransformState(Vector3 position, Quaternion rotation, Vector3 localScale)
+        {
+            this.position = position;
+            this.rotation = rotation;
+            this.localScale = localScale;
+        }
+        public TransformState(Transform t, bool worldSpace = false)
+        {
+            if (worldSpace)
+            {
+                t.GetPositionAndRotation(out position, out rotation);
+            } 
+            else
+            {
+                t.GetLocalPositionAndRotation(out position, out rotation);
+            }
+            this.localScale = t.localScale;
+        }
+
+
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public override bool Equals(object other)
+        {
+            if (!(other is TransformState))
+            {
+                return false;
+            }
+
+            return Equals((TransformState)other);
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public bool Equals(TransformState other)
+        {
+            return position == other.position && rotation == other.rotation && localScale == other.localScale; 
+        }
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public override int GetHashCode() => base.GetHashCode();
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static bool operator ==(TransformState lhs, TransformState rhs)
+        {
+            return lhs.Equals(rhs);
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static bool operator !=(TransformState lhs, TransformState rhs)
+        {
+            return !(lhs == rhs);
+        }
+
+
+
+        public void ApplyLocal(Transform t)
+        {
+            t.SetLocalPositionAndRotation(position, rotation);
+            t.localScale = localScale;
+        }
+        public void ApplyLocalPosition(Transform t)
+        {
+            t.localPosition = position;
+        }
+        public void ApplyLocalRotation(Transform t)
+        {
+            t.localRotation = rotation;
+        }
+        public void ApplyScale(Transform t)
+        {
+            t.localScale = localScale;
+        }
+
+        public void ApplyWorld(Transform t)
+        {
+            t.SetPositionAndRotation(position, rotation);
+            t.localScale = localScale;
+        }
+        public void ApplyWorldPosition(Transform t)
+        {
+            t.position = position;
+        }
+        public void ApplyWorldRotation(Transform t)
+        {
+            t.rotation = rotation;
+        }
+
+        public static TransformStateDelta operator -(TransformState stateA, TransformState stateB) => new TransformStateDelta(stateA, stateB);
+        public static TransformState operator +(TransformState state, TransformStateDelta delta)
+        {
+            state.position = state.position + delta.deltaPosition;
+            state.rotation = delta.deltaRotation * state.rotation;
+            state.localScale = state.localScale + delta.deltaScale;
+
+            return state;
+        }
+
+        public static implicit operator TransformStateDelta(TransformState state) => new TransformStateDelta(state.position, state.rotation, state.localScale);
+        public static implicit operator TransformState(TransformStateDelta delta) => new TransformState(delta.deltaPosition, delta.deltaRotation, delta.deltaScale);
+
+
+    }
+
+    [Serializable]
+    public struct TransformStateDelta : IEquatable<TransformStateDelta>
+    {
+        public Vector3 deltaPosition;
+        public Quaternion deltaRotation;
+        public Vector3 deltaScale;
+
+        public TransformStateDelta(Vector3 deltaPosition, Quaternion deltaRotation, Vector3 deltaScale)
+        {
+            this.deltaPosition = deltaPosition;
+            this.deltaRotation = deltaRotation;
+            this.deltaScale = deltaScale;
+        }
+        public TransformStateDelta(Vector3 localPositionA, Quaternion localRotationA, Vector3 localScaleA, Vector3 localPositionB, Quaternion localRotationB, Vector3 localScaleB)
+        {
+            deltaPosition = localPositionB - localPositionA;
+            deltaRotation = Quaternion.Inverse(localRotationA) * localRotationB;
+            deltaScale = localScaleB - localScaleA;
+        }
+        public TransformStateDelta(TransformState stateA, TransformState stateB)
+        {
+            deltaPosition = stateB.position - stateA.position;
+            deltaRotation = Quaternion.Inverse(stateA.rotation) * stateB.rotation;
+            deltaScale = stateB.localScale - stateA.localScale;
+        }
+
+        public static TransformStateDelta operator -(TransformStateDelta deltaA, TransformStateDelta deltaB) => new TransformStateDelta(deltaA, deltaB);
+        public static TransformStateDelta operator +(TransformStateDelta deltaA, TransformStateDelta deltaB)
+        {
+            deltaA.deltaPosition = deltaA.deltaPosition + deltaB.deltaPosition;
+            deltaA.deltaRotation = deltaB.deltaRotation * deltaA.deltaRotation;
+            deltaA.deltaScale = deltaA.deltaScale + deltaB.deltaScale;
+
+            return deltaA;
+        }
+
+
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public override bool Equals(object other)
+        {
+            if (!(other is TransformStateDelta))
+            {
+                return false;
+            }
+
+            return Equals((TransformStateDelta)other);
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public bool Equals(TransformStateDelta other)
+        {
+            return deltaPosition == other.deltaPosition && deltaRotation == other.deltaRotation && deltaScale == other.deltaScale;
+        }
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public override int GetHashCode() => base.GetHashCode();
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static bool operator ==(TransformStateDelta lhs, TransformStateDelta rhs)
+        {
+            return lhs.Equals(rhs);
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static bool operator !=(TransformStateDelta lhs, TransformStateDelta rhs)
+        {
+            return !(lhs == rhs);
+        }
+
+
+
+        public void ApplyLocal(Transform t)
+        {
+            t.GetLocalPositionAndRotation(out var localPosition, out var localRotation);
+            var localScale = t.localScale;
+
+            localPosition = localPosition + deltaPosition;
+            localRotation = deltaRotation * localRotation;
+            localScale = localScale + deltaScale;
+
+            t.SetLocalPositionAndRotation(localPosition, localRotation);
+            t.localScale = localScale;
+        }
+
+        public void ApplyLocalPosition(Transform t)
+        {
+            var localPosition = t.localPosition;
+            localPosition = deltaPosition + localPosition;
+            t.localPosition = localPosition;
+        }
+        public void ApplyLocalRotation(Transform t)
+        {
+            var localRotation = t.localRotation;
+            localRotation = deltaRotation * localRotation;
+            t.localRotation = localRotation;
+        }
+        public void ApplyScale(Transform t)
+        {
+            var localScale = t.localScale;
+            localScale = deltaScale + localScale;
+            t.localScale = localScale;
+        }
+
+        public void ApplyWorld(Transform t)
+        {
+            t.GetPositionAndRotation(out var position, out var rotation);
+            var localScale = t.localScale;
+
+            position = position + deltaPosition;
+            rotation = deltaRotation * rotation;
+            localScale = localScale + deltaScale;
+
+            t.SetPositionAndRotation(position, rotation);
+            t.localScale = localScale;
+        }
+
+        public void ApplyWorldPosition(Transform t)
+        {
+            var position = t.position;
+            position = deltaPosition + position;
+            t.position = position;
+        }
+        public void ApplyWorldRotation(Transform t)
+        {
+            var rotation = t.rotation;
+            rotation = deltaRotation * rotation;
+            t.rotation = rotation;
+        }
+
+    }
+
 }
 
 #endif

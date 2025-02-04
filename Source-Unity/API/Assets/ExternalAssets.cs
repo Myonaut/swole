@@ -267,10 +267,10 @@ namespace Swole.API.Unity {
                     }
                 }
             }
+#endif
 
             public abstract bool IsValid { get; }
             public abstract void Dispose();
-#endif
         }
 
         public interface ILoader : IDisposable
