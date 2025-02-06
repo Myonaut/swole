@@ -435,6 +435,8 @@ namespace Swole.Script
             }
             public double value;
         }
+
+#if SWOLE_ENV
         public static void RunExternally(string debugName, TAC.Machine machine, ValFunction function, Value resultStorage = null, List<Value> arguments = null, ExecutionThrottle throttle = null)
         {
             machine.ManuallyPushCall(function, null, arguments);
@@ -465,6 +467,7 @@ namespace Swole.Script
                 throttle = System.Math.Min(throttle * _eventThrottlePromotionWeight, _eventMaxTimeout);
             }*/
         }
+#endif
 
         private static bool initialized;
         public static void Initialize()

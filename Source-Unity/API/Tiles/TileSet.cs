@@ -8,8 +8,9 @@ using UnityEngine;
 
 #if BULKOUT_ENV
 using RLD;
-using Swole.Script;
 #endif
+
+using Swole.Script;
 
 #if UNITY_EDITOR
 using UnityEditor;

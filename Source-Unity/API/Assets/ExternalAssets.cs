@@ -229,9 +229,11 @@ namespace Swole.API.Unity {
 
                 return null;
             }
+#endif
 
             public abstract IList<string> Extensions { get; }
 
+#if BULKOUT_ENV
             protected ExtensionFilter[] GetExtensions()
             {
                 var extensions = Extensions;
@@ -390,7 +392,8 @@ namespace Swole.API.Unity {
                 OnError = onError;
                 OnBeginLoad = onBeginLoad;
                 AssetLoaderOptions = assetLoaderOptions;
-                HaltTask = haltTask;
+                HaltTask = haltTask; 
+#if BULKOUT_ENV
                 try
                 {
                     StandaloneFileBrowser.OpenFilePanelAsync(title, startDirectory, GetExtensions(), allowMultipleImages, OnItemsWithStreamSelected);
@@ -400,6 +403,7 @@ namespace Swole.API.Unity {
                     TriLibCore.Utils.Dispatcher.InvokeAsync(DestroyMe);
                     throw;
                 }
+#endif
             }
 
             public override bool IsValid => this != null;
@@ -518,13 +522,15 @@ namespace Swole.API.Unity {
                     return context;
                 }
             }
-#endif
 
             public LoadedBytes output;
+#endif
 
             public void Setup()
             {
+#if BULKOUT_ENV
                 Context.Setup();
+#endif
             }
 
         }
@@ -753,7 +759,9 @@ namespace Swole.API.Unity {
             public bool isPNG;
             public Texture2D texture;
         }
+#if BULKOUT_ENV
         public static TextureAssetCreationResult CreateNewTextureAsset(ILoaderContext assetLoaderContext, LoadedBytes bytes, bool attemptToCompress = true) => CreateNewTextureAsset(assetLoaderContext, bytes.bytes, attemptToCompress);
+#endif
         public static TextureAssetCreationResult CreateNewTextureAsset(ILoaderContext assetLoaderContext, byte[] bytes = null, bool attemptToCompress = true)
         {
             // disable compression for now as it's leading to larger file sizes

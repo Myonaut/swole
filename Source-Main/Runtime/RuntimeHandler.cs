@@ -45,6 +45,7 @@ namespace Swole
                 return instance.FindPostEventListener(_delegate, handler);
             }
 
+#if SWOLE_ENV
             public RuntimeEventListener FindPreEventListener(ValFunction function, IRuntimeEventHandler handler)
             {
                 if (instance == null) return null;
@@ -56,6 +57,7 @@ namespace Swole
                 if (instance == null) return null;
                 return instance.FindPostEventListener(function, handler);
             }
+#endif
 
             public bool HasEventHandler => EventHandler != null;
             public IRuntimeEventHandler EventHandler => instance == null ? null : instance.EventHandler;

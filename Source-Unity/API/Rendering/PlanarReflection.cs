@@ -11,6 +11,8 @@ namespace Swole.API.Unity
     public class PlanarReflection : MonoBehaviour
     {
 
+        public const string _ReflectionTag = "Reflection";
+
 #if UNITY_EDITOR
         protected void OnDrawGizmosSelected()
         {
@@ -119,7 +121,8 @@ namespace Swole.API.Unity
         public virtual void SetReflectionCamera(Camera camera)
         {
             reflectionCamera = camera;
-            reflectionCameraTransform = camera == null ? null : camera.transform;
+            reflectionCamera.tag = _ReflectionTag;
+            reflectionCameraTransform = camera == null ? null : camera.transform; 
 
             UnityEngine.Rendering.Universal.UniversalAdditionalCameraData mainUAC = mainCamera.GetComponent<UnityEngine.Rendering.Universal.UniversalAdditionalCameraData>();
             UnityEngine.Rendering.Universal.UniversalAdditionalCameraData uac = camera.gameObject.AddOrGetComponent<UnityEngine.Rendering.Universal.UniversalAdditionalCameraData>();
@@ -141,6 +144,8 @@ namespace Swole.API.Unity
 
             camera.cullingMask = useCustomCullingMask ? cullingMask : mainCamera.cullingMask;
             uac.volumeLayerMask = useCustomVolumeMask ? volumeMask : mainUAC.volumeLayerMask;
+
+            camera.depth = -10;
 
             reflectionCamera.targetTexture = reflectionTexture;
         }
@@ -188,12 +193,15 @@ namespace Swole.API.Unity
             if (reflectionCamera == null) 
             {
                 reflectionCamera = new GameObject(name + "_reflectionCamera").AddComponent<Camera>();
+
                 reflectionCamera.nearClipPlane = mainCamera.nearClipPlane;
                 reflectionCamera.farClipPlane = mainCamera.farClipPlane;
                 reflectionCamera.allowHDR = mainCamera.allowHDR;
                 reflectionCamera.allowMSAA = mainCamera.allowMSAA;
                 reflectionCamera.backgroundColor = mainCamera.backgroundColor;
                 reflectionCamera.clearFlags = mainCamera.clearFlags;
+
+                //reflectionCamera.gameObject.hideFlags = HideFlags.DontSave; // HideFlags.HideAndDontSave // hide in scene hierarchy
             }
             SetReflectionCamera(reflectionCamera);
             SetReflectionTexture(reflectionTexture);
@@ -206,6 +214,26 @@ namespace Swole.API.Unity
             PlanarReflections.Unregister(this);
         }
 
+        protected void OnEnable()
+        {
+            SetUpdateMode(updateMode);
+        }
+        protected void OnDisable()
+        {
+            PlanarReflections.Unregister(this);
+            if (reflectionCamera != null) reflectionCamera.enabled = false; 
+        }
+
+        // Given position/normal of the plane, calculates plane in camera space.
+        private Vector4 CameraSpacePlane(Camera cam, Vector3 pos, Vector3 normal, float clipPlaneOffset, float sideSign)
+        {
+            var offsetPos = pos + normal * clipPlaneOffset;
+            var m = cam.worldToCameraMatrix;
+            var cameraPosition = m.MultiplyPoint(offsetPos);
+            var cameraNormal = m.MultiplyVector(normal).normalized * sideSign;
+            return new Vector4(cameraNormal.x, cameraNormal.y, cameraNormal.z, -Vector3.Dot(cameraPosition, cameraNormal));
+        }
+
         public virtual void Redraw() => Redraw(new TransformState(mainCameraTransform, true));
         public virtual void Redraw(TransformState mainCameraTransformState)
         {
@@ -214,8 +242,8 @@ namespace Swole.API.Unity
             var targetHeight = TargetResolutionHeight;
             if (targetWidth != lastResolutionWidth || targetHeight != lastResolutionHeight) SetResolutionScale(resolutionScale);
 
-            Vector3 upAxis = transform.up;
-            Quaternion toLocal = Quaternion.FromToRotation(upAxis, Vector3.up); 
+            Vector3 planeNormal = transform.up;
+            Quaternion toLocal = Quaternion.FromToRotation(planeNormal, Vector3.up); 
             Quaternion toWorld = Quaternion.Inverse(toLocal);
 
             Quaternion reflectedCameraRotation = toLocal * mainCameraTransformState.rotation;
@@ -223,13 +251,19 @@ namespace Swole.API.Unity
             reflectedCameraRotation = Quaternion.Euler(-euler.x, euler.y, -euler.z); 
             reflectedCameraRotation = toWorld * reflectedCameraRotation;
 
-            reflectionCamera.fieldOfView = mainCamera.fieldOfView; 
+            reflectionCamera.fieldOfView = mainCamera.fieldOfView;
 
-            float localHeight = Vector3.Dot(transform.position, upAxis);
-            float camHeight = Vector3.Dot(mainCameraTransformState.position, upAxis) - localHeight;
+            var planePos = transform.position;
+            float localHeight = Vector3.Dot(planePos, planeNormal);
+            float camHeight = Vector3.Dot(mainCameraTransformState.position, planeNormal) - localHeight;
             var mainCamPos = mainCameraTransformState.position;
-            mainCamPos = mainCamPos - (upAxis * Vector3.Dot(mainCamPos, upAxis)); 
-            reflectionCameraTransform.SetPositionAndRotation(mainCamPos + (upAxis * (localHeight + heightOffset + (camHeight * -1))), reflectedCameraRotation);
+            mainCamPos = mainCamPos - (planeNormal * Vector3.Dot(mainCamPos, planeNormal));
+
+            reflectionCameraTransform.SetPositionAndRotation(mainCamPos + (planeNormal * (localHeight + heightOffset + (camHeight * -1))), reflectedCameraRotation);
+
+            var clipPlane = CameraSpacePlane(reflectionCamera, planePos, planeNormal, heightOffset, 1.0f);
+            var projection = mainCamera.CalculateObliqueMatrix(clipPlane); 
+            reflectionCamera.projectionMatrix = projection;
 
             if (!reflectionCamera.enabled) reflectionCamera.Render(); 
 
