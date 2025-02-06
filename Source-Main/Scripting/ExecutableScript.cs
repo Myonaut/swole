@@ -45,6 +45,7 @@ namespace Swole.Script
 
             Recompile(default, source, isPreParsed, topAuthor, autoIndentation, startIndentation, localScripts);
         }
+#endif
 
         protected List<PackageIdentifier> dependencies;
         protected PackageIdentifier[] outputDependencies;
@@ -57,6 +58,8 @@ namespace Swole.Script
                 return outputDependencies;
             } 
         }
+
+#if SWOLE_ENV
         public void Recompile(ExecutionLayer layer, string source, bool isPreParsed = false, string topAuthor = null, int autoIndentation = SwoleScriptSemantics.ssDefaultAutoIndentation, int startIndentation = SwoleScriptSemantics.ssDefaultStartIndentation, ICollection<SourceScript> localScripts = null) => Recompile(source, isPreParsed, topAuthor, autoIndentation, startIndentation, localScripts);
         public void Recompile(string source, bool isPreParsed = false, string topAuthor = null, int autoIndentation = SwoleScriptSemantics.ssDefaultAutoIndentation, int startIndentation = SwoleScriptSemantics.ssDefaultStartIndentation, ICollection<SourceScript> localScripts = null)
         {
@@ -100,14 +103,18 @@ namespace Swole.Script
         {
             isDisposed = true;
             OnComplete = null;
+#if SWOLE_ENV
             interpreter?.Stop();
             interpreter?.Reset(string.Empty);
             interpreter = null;
+#endif
         }
 
         public virtual void Restart() 
         {
+#if SWOLE_ENV
             interpreter?.Restart();
+#endif
         }
         public void Restart(ExecutionLayer layer) => Restart();
 

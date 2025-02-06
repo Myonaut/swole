@@ -2429,6 +2429,7 @@ namespace Swole
                 return instance.FindPostEventListener(_delegate, handler);
             }
 
+#if SWOLE_ENV
             public RuntimeEventListener FindPreEventListener(ValFunction function, IRuntimeEventHandler handler)
             {
                 if (IsDestroyed) return null;
@@ -2440,6 +2441,7 @@ namespace Swole
                 if (IsDestroyed) return null;
                 return instance.FindPostEventListener(function, handler);
             }
+#endif
 
             public void ListenForQuit(VoidParameterlessDelegate listener)
             {

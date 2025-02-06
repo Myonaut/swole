@@ -357,6 +357,7 @@ namespace Swole.API.Unity
             return m_environment.FindPostEventListener(_delegate, handler);
         }
 
+#if SWOLE_ENV
         public RuntimeEventListener FindPreEventListener(ValFunction function, IRuntimeEventHandler handler)
         {
             if (Environment == null) return null;
@@ -368,6 +369,7 @@ namespace Swole.API.Unity
             if (Environment == null) return null;
             return m_environment.FindPostEventListener(function, handler);
         }
+#endif
 
         public bool HasEventHandler => true;
         public IRuntimeEventHandler EventHandler => this;
@@ -483,13 +485,16 @@ namespace Swole.API.Unity
             }
         }
 
+#if SWOLE_ENV
         protected static ValNumber var_deltaTime = new ValNumber(0);
         protected static ValNumber var_fixedDeltaTime = new ValNumber(0);
+#endif
         public const string varId_deltaTime = "deltaTime";
         public const string varId_fixedDeltaTime = varId_deltaTime;
         protected void PreExecute(ExecutionLayer layer)
         {
-            switch(layer)
+#if SWOLE_ENV
+            switch (layer)
             {
                 default:
                     var_deltaTime.value = Time.deltaTime;
@@ -501,6 +506,7 @@ namespace Swole.API.Unity
                     m_environment.SetLocalVar(varId_fixedDeltaTime, var_fixedDeltaTime);
                     break;
             }
+#endif
             OnPreRuntimeEvent?.Invoke(layer.ToString(), (int)layer, this);
         }
         protected void PostExecute(ExecutionLayer layer)

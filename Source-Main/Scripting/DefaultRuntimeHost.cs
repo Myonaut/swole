@@ -90,6 +90,7 @@ namespace Swole.Script
             return environment.FindPostEventListener(_delegate, handler);
         }
 
+#if SWOLE_ENV
         public RuntimeEventListener FindPreEventListener(ValFunction function, IRuntimeEventHandler handler)
         {
             if (Environment == null) return null;
@@ -101,6 +102,7 @@ namespace Swole.Script
             if (Environment == null) return null;
             return environment.FindPostEventListener(function, handler);
         }
+#endif
 
         public bool HasEventHandler => EventHandler != null;
         public IRuntimeEventHandler EventHandler => null;
