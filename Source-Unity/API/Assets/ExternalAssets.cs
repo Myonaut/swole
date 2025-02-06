@@ -788,7 +788,9 @@ namespace Swole.API.Unity {
                 isLinear = imageLoaderContext.options.linearColorSpace;
                 useMipMaps = !imageLoaderContext.options.noMipMaps;
 
+#if BULKOUT_ENV
                 if (bytes == null) bytes = imageLoaderContext.output.bytes;
+#endif
             }
 
             Texture2D tex = null;

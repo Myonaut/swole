@@ -396,7 +396,9 @@ namespace Swole.Script
         {
             isDisposed = true; 
             if (globalVars != null) for (int a = 0; a < globalVars.Length; a++) globalVars[a] = null;
+#if SWOLE_ENV
             localVars = null;
+#endif
 
             if (activeListeners != null) 
             { 
