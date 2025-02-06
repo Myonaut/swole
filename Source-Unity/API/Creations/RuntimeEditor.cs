@@ -317,12 +317,16 @@ namespace Swole.API.Unity
         {
             if (disable)
             {
+#if BULKOUT_ENV
                 if (rld != null) rld.gameObject.SetActive(false);
+#endif
                 gameObject.SetActive(false);
             } 
             else
             {
+#if BULKOUT_ENV
                 if (rld != null) rld.gameObject.SetActive(true);
+#endif
                 gameObject.SetActive(true);
             }
         }

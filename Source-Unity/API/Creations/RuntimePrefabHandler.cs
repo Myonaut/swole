@@ -285,7 +285,9 @@ namespace Swole.API.Unity
                     var prefabObj = tileSet.CreatePreRuntimeTilePrefab(tileIndex, tileSource);
                     if (prefabObj == null) continue;
 
-                    AddCollectionPrefab(lib.Name, prefabObj); 
+#if BULKOUT_ENV
+                    AddCollectionPrefab(lib.Name, prefabObj);
+#endif
 
                     var prototype = prefabObj.AddOrGetComponent<TilePrototype>();
                     prototype.tileSet = tileSet;
@@ -313,9 +315,9 @@ namespace Swole.API.Unity
 
 #if BULKOUT_ENV
             if (setAsActiveCollection) rtLib.SetActiveLib(lib);
-#endif
 
             libSources[lib] = new PrefabCollectionSource() { id = collection.ID, isPackage = false };
+#endif
             return AddTileCollectionResult.Success;
 
         }
@@ -391,7 +393,9 @@ namespace Swole.API.Unity
 
                 if (prefabObj == null) continue;
 
+#if BULKOUT_ENV
                 AddCollectionPrefab(lib.Name, prefabObj);
+#endif
 
 #if BULKOUT_ENV // Paid Asset Integration https://assetstore.unity.com/packages/tools/modeling/runtime-level-design-52325
                 var prefab = lib.CreatePrefab(prefabObj, previewTexture);
@@ -413,15 +417,18 @@ namespace Swole.API.Unity
             }
             if (count <= 0)
             {
+#if BULKOUT_ENV
                 rtLib.Remove(lib);
+#endif
                 return AddPackageContentResult.EmptyPackage;
             }
 
 #if BULKOUT_ENV
             if (setAsActiveCollection) rtLib.SetActiveLib(lib); 
+
+            libSources[lib] = new PrefabCollectionSource() { id = package.GetIdentityString(), isPackage = true };
 #endif
 
-            libSources[lib] = new PrefabCollectionSource() { id = package.GetIdentityString(), isPackage = true };  
             return AddPackageContentResult.Success;
 
         }

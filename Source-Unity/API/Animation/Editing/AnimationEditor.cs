@@ -7937,13 +7937,17 @@ namespace Swole.API.Unity.Animation
                 if (!playFlag)
                 {
                     playFlag = true;
+#if BULKOUT_ENV
                     RTScene.Get.SetRootObjectIgnored(activeAnimator.gameObject, true);
+#endif
                 }
                 activeAnimator.UpdateStep(Time.deltaTime);
             } else if (playFlag)
             {
                 playFlag = false;
-                RTScene.Get.SetRootObjectIgnored(activeAnimator.gameObject, false);
+#if BULKOUT_ENV
+                RTScene.Get.SetRootObjectIgnored(activeAnimator.gameObject, false); 
+#endif
             }
         }
 

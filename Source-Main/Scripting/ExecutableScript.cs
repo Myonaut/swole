@@ -31,21 +31,23 @@ namespace Swole.Script
             this.interpreter = interpreter;
             this.priority = priority;
         }
+#endif
         public ExecutableScript(SourceScript script, int priority, SwoleLogger logger = null, bool isPreParsed = false, string topAuthor = null, int autoIndentation = SwoleScriptSemantics.ssDefaultAutoIndentation, int startIndentation = SwoleScriptSemantics.ssDefaultStartIndentation, ICollection<SourceScript> localScripts = null) : this((script.packageInfo.NameIsValid ? script.packageInfo.name + "." : "") + (script.NameIsValid ? script.Name : ""), script.source, priority, logger, isPreParsed, topAuthor, autoIndentation, startIndentation, localScripts) { }
         public ExecutableScript(string identity, string source, int priority, SwoleLogger logger = null, bool isPreParsed = false, string topAuthor = null, int autoIndentation = SwoleScriptSemantics.ssDefaultAutoIndentation, int startIndentation = SwoleScriptSemantics.ssDefaultStartIndentation, ICollection<SourceScript> localScripts = null)
         {
             this.identity = identity;
             this.priority = priority;
 
+#if SWOLE_ENV
             if (logger == null) logger = swole.DefaultLogger;
             interpreter = new Interpreter();
             interpreter.hostData = new DefaultRuntimeHost() { identifier = identity };
             interpreter.standardOutput = interpreter.implicitOutput = (s, ignored) => logger.Log(s);
             interpreter.errorOutput = (s, ignored) => logger.LogError(s);
+#endif
 
             Recompile(default, source, isPreParsed, topAuthor, autoIndentation, startIndentation, localScripts);
         }
-#endif
 
         protected List<PackageIdentifier> dependencies;
         protected PackageIdentifier[] outputDependencies;

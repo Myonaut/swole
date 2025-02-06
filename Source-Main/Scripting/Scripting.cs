@@ -1,11 +1,11 @@
-#if SWOLE_ENV
-
 using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.Reflection;
 
+#if SWOLE_ENV
 using Miniscript;
+#endif
 
 using static Swole.EngineInternal;
  
@@ -32,6 +32,7 @@ namespace Swole.Script
             return false;
         }
 
+#if SWOLE_ENV
         #region MiniScript
 
         /// <summary>
@@ -550,9 +551,8 @@ namespace Swole.Script
         }
 
         #endregion
+#endif
 
     }
 
 }
-
-#endif

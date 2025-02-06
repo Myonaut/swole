@@ -1914,6 +1914,7 @@ namespace Swole.API.Unity
 
                 if (cancel) yield break;
 
+#if BULKOUT_ENV
                 if (finalContext is ExternalAssets.ImageLoaderContext ilc && ilc.output.bytes != null)
                 {
                     var res = ExternalAssets.CreateNewTextureAsset(ilc, ilc.output, true);
@@ -1942,6 +1943,7 @@ namespace Swole.API.Unity
                         swole.LogError(ex);
                     }
                 }
+#endif
             }
 
             CoroutineProxy.Start(WaitForLoad());

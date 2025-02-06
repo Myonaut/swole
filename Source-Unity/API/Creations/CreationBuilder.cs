@@ -1953,7 +1953,9 @@ namespace Swole.API.Unity
                                     ICurve curve = null;
                                     if (typeStr == str_bezier.AsID())
                                     {
+#if BULKOUT_ENV
                                         curve = new ExternalBezierCurve();
+#endif
                                     }
                                     else if (typeStr == str_time.AsID())
                                     {

@@ -576,11 +576,13 @@ namespace Swole.API.Unity.Animation
 
                 if (cachedDependencies == null) 
                 {
+#if SWOLE_ENV
                     int startIndex = dependencies.Count;
                     swole.ExtractPackageDependencies(source, dependencies);
                     int count = dependencies.Count - startIndex;
                     cachedDependencies = new PackageIdentifier[count];
                     for (int a = startIndex; a < dependencies.Count; a++) cachedDependencies[a] = dependencies[a];
+#endif
                 } 
                 else
                 {

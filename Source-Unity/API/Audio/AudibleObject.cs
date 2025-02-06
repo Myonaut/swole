@@ -617,21 +617,25 @@ namespace Swole.API.Unity
             return FadeVolumeLT(time, targetVolume, audioSource, easeIn, easeOut);
 
         }
+#endif
 
         public void FadeIn(float time)
         {
 
+#if SWOLE_ENV
             FadeIn(time, 1);
+#endif
 
         }
 
         public void FadeOut(float time)
         {
 
+#if SWOLE_ENV
             FadeOut(time, 0);
+#endif
 
         }
-#endif
 
         private int lastPlayedClip;
         private int lastPlayedBundle;
@@ -874,6 +878,7 @@ namespace Swole.API.Unity
         {
 
             AudioPlayLooping(id);
+
 
             FadeIn(defaultFadeInTime);
 
