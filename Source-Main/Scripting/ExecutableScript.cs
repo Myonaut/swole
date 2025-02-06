@@ -59,11 +59,11 @@ namespace Swole.Script
             } 
         }
 
-#if SWOLE_ENV
         public void Recompile(ExecutionLayer layer, string source, bool isPreParsed = false, string topAuthor = null, int autoIndentation = SwoleScriptSemantics.ssDefaultAutoIndentation, int startIndentation = SwoleScriptSemantics.ssDefaultStartIndentation, ICollection<SourceScript> localScripts = null) => Recompile(source, isPreParsed, topAuthor, autoIndentation, startIndentation, localScripts);
         public void Recompile(string source, bool isPreParsed = false, string topAuthor = null, int autoIndentation = SwoleScriptSemantics.ssDefaultAutoIndentation, int startIndentation = SwoleScriptSemantics.ssDefaultStartIndentation, ICollection<SourceScript> localScripts = null)
         {
 
+#if SWOLE_ENV
             if (!isPreParsed) 
             { 
                 source = swole.ParseSource(source, ref dependencies, topAuthor, default, autoIndentation, startIndentation, localScripts);
@@ -84,9 +84,8 @@ namespace Swole.Script
                 interpreter.errorOutput($"{ssMsgPrefix_Error} Failed to compile {(string.IsNullOrEmpty(identity) ? "an unidentified script" : "'" + identity + "'")}", false);
                 //Dispose();
             }
-        }
-
 #endif
+        }
 
         protected bool disable;
         public virtual bool Enabled
