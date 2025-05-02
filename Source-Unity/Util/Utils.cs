@@ -37,11 +37,15 @@ namespace Swole
 
         private const string _underscoreStr = "_";
         private const string _periodStr = ".";
+        private const string _spaceStr = " ";
 
         public const string _leftTagInnerUnderscore = "_L_";
         public const string _leftTagSuffixUnderscore = "_L";
         public const string _rightTagInnerUnderscore = "_R_";
-        public const string _rightTagSuffixUnderscore = "_R"; 
+        public const string _rightTagSuffixUnderscore = "_R";
+
+        public const string _leftWord = "Left";
+        public const string _rightWord = "Right";
 
 
         public static string GetMirroredName(string name, string delimiter, bool includeLeft = true, bool includeRight = true) => GetMirroredName(name, _leftTagInnerUnderscore.Replace(_underscoreStr, delimiter), _leftTagSuffixUnderscore.Replace(_underscoreStr, delimiter), _rightTagInnerUnderscore.Replace(_underscoreStr, delimiter), _rightTagSuffixUnderscore.Replace(_underscoreStr, delimiter), includeLeft, includeRight);     
@@ -60,10 +64,105 @@ namespace Swole
             return mirroredName;
         }
 
+        public static string GetMirroredNameAdvanced(string name, string leftTag, string rightTag, bool includeLeft = true, bool includeRight = true, bool caseInsensitive = true)
+        {
+            string mirroredName = name;
+            string mirroredNameLower = caseInsensitive ? mirroredName.ToLower() : mirroredName;
+            string leftTagLower = caseInsensitive ? leftTag.ToLower() : leftTag;
+            string rightTagLower = caseInsensitive ? rightTag.ToLower() : rightTag;
+
+            if (includeRight && mirroredNameLower.StartsWith(leftTagLower))
+            {
+                // Replace if the tag is at the start
+                mirroredName = rightTag + mirroredName.Substring(leftTag.Length);
+            }
+            else if (includeLeft && mirroredNameLower.StartsWith(rightTagLower))
+            {
+                // Replace if the tag is at the start
+                mirroredName = leftTag + mirroredName.Substring(rightTag.Length);
+            }
+            else if (includeRight && mirroredNameLower.EndsWith(leftTagLower))
+            {
+                // Replace if the tag is at the end
+                mirroredName = mirroredName.Substring(0, mirroredName.Length - leftTag.Length) + rightTag;
+            }
+            else if (includeLeft && mirroredNameLower.EndsWith(rightTagLower))
+            {
+                // Replace if the tag is at the end
+                mirroredName = mirroredName.Substring(0, mirroredName.Length - rightTag.Length) + leftTag;
+            }
+            else if (includeRight && ContainsTagWithConditions(mirroredName, leftTag))
+            {
+                // Replace if the tag meets the conditions
+                mirroredName = ReplaceTagWithConditions(mirroredName, leftTag, rightTag);
+            }
+            else if (includeLeft && ContainsTagWithConditions(mirroredName, rightTag))
+            {
+                // Replace if the tag meets the conditions
+                mirroredName = ReplaceTagWithConditions(mirroredName, rightTag, leftTag);
+            }
+
+            return mirroredName;
+        }
+
+        private static bool ContainsTagWithConditions(string name, string tag)
+        {
+            for (int i = 0; i <= name.Length - tag.Length; i++)
+            {
+                if (name.Substring(i, tag.Length) == tag)
+                {
+                    // Check if the tag starts with an uppercase letter
+                    if (char.IsUpper(tag[0]))
+                    {
+                        // Check if the tag is preceded by a non-alphanumeric character or is at the start
+                        bool isPrecededByNonAlpha = i == 0 || !char.IsLetterOrDigit(name[i - 1]);
+
+                        // Check if the tag is followed by an uppercase letter
+                        bool isFollowedByUppercase = i + tag.Length < name.Length && char.IsUpper(name[i + tag.Length]);
+
+                        if (isPrecededByNonAlpha && isFollowedByUppercase)
+                        {
+                            return true;
+                        }
+                    }
+                }
+            }
+            return false;
+        }
+
+        private static string ReplaceTagWithConditions(string name, string oldTag, string newTag)
+        {
+            for (int i = 0; i <= name.Length - oldTag.Length; i++)
+            {
+                if (name.Substring(i, oldTag.Length) == oldTag)
+                {
+                    // Check if the tag starts with an uppercase letter
+                    if (char.IsUpper(oldTag[0]))
+                    {
+                        // Check if the tag is preceded by a non-alphanumeric character or is at the start
+                        bool isPrecededByNonAlpha = i == 0 || !char.IsLetterOrDigit(name[i - 1]);
+
+                        // Check if the tag is followed by an uppercase letter
+                        bool isFollowedByUppercase = i + oldTag.Length < name.Length && char.IsUpper(name[i + oldTag.Length]);
+
+                        if (isPrecededByNonAlpha && isFollowedByUppercase)
+                        {
+                            // Replace the tag
+                            return name.Substring(0, i) + newTag + name.Substring(i + oldTag.Length);
+                        }
+                    }
+                }
+            }
+            return name;
+        }
+
         public static string GetMirroredName(string name, bool includeLeft = true, bool includeRight = true)
         {
-            string mirroredName = GetMirroredName(name, _underscoreStr, includeLeft, includeRight);
-            if (mirroredName == name) mirroredName = GetMirroredName(name, _periodStr, includeLeft, includeRight);   
+            string mirroredName = GetMirroredName(name, _underscoreStr, includeLeft, includeRight); 
+            if (mirroredName == name) mirroredName = GetMirroredName(name, _periodStr, includeLeft, includeRight);
+            if (mirroredName == name) mirroredName = GetMirroredName(name, _spaceStr, includeLeft, includeRight); 
+            if (mirroredName == name) mirroredName = GetMirroredNameAdvanced(mirroredName, _leftWord, _rightWord, includeLeft, includeRight, true);
+            
             return mirroredName;
         }
 

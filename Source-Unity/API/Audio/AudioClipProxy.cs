@@ -12,7 +12,7 @@ namespace Swole.API.Unity
     {
         public AudioClip Clip { get; set; }
     }
-    [Serializable, CreateAssetMenu(fileName = "audioClipProxy", menuName = "Audio/AudioClipProxy", order = 1)]
+    [Serializable, CreateAssetMenu(fileName = "audioClipProxy", menuName = "Swole/Audio/AudioClipProxy", order = 1)]
     public class AudioClipProxy : ScriptableObject, IAudioClipProxy
     {
 
@@ -27,6 +27,15 @@ namespace Swole.API.Unity
             set => isNotInternalAsset = !value;
         }
 
+        [SerializeField]
+        protected string collectionId;
+        public string CollectionID
+        {
+            get => collectionId;
+            set => collectionId = value;
+        }
+        public bool HasCollectionID => !string.IsNullOrWhiteSpace(CollectionID);
+
         public bool IsValid => !disposed;
         public void Dispose() 
         { 
@@ -36,6 +45,7 @@ namespace Swole.API.Unity
             }
             disposed = true;
         }
+        public void DisposeSelf() => Dispose();
         public void Delete() => Dispose();
 
         public AudioClip clip;
@@ -44,8 +54,6 @@ namespace Swole.API.Unity
             get => clip;
             set => clip = value; 
         }
-
-        public string collectionId;
 
         #region IContent
 
@@ -61,6 +69,8 @@ namespace Swole.API.Unity
         public string Name => clip == null ? string.Empty : clip.name;
 
         public IContent CreateCopyAndReplaceContentInfo(ContentInfo info) => this;
+        public IContent CreateShallowCopyAndReplaceContentInfo(ContentInfo info) => this;
+
         public List<PackageIdentifier> ExtractPackageDependencies(List<PackageIdentifier> dependencies = null)
         {
             if (dependencies == null) dependencies = new List<PackageIdentifier>();
@@ -69,6 +79,8 @@ namespace Swole.API.Unity
 
         public IContent SetOriginPath(string path) => this;
         public IContent SetRelativePath(string path) => this;
+
+        public bool IsIdenticalAsset(ISwoleAsset asset) => ReferenceEquals(this, asset);
 
         #endregion
     }
@@ -81,8 +93,16 @@ namespace Swole.API.Unity
 
         public bool IsInternalAsset { get => true; set { } }
 
+        public string CollectionID
+        {
+            get => string.Empty;
+            set { }
+        }
+        public bool HasCollectionID => false;
+
         public bool IsValid => clip != null;
         public void Dispose() { }
+        public void DisposeSelf() { }
         public void Delete() => Dispose();
 
         public AudioClip clip;
@@ -114,6 +134,8 @@ namespace Swole.API.Unity
         public string Name => clip == null ? string.Empty : clip.name;
 
         public IContent CreateCopyAndReplaceContentInfo(ContentInfo info) => this;
+        public IContent CreateShallowCopyAndReplaceContentInfo(ContentInfo info) => this;
+
         public List<PackageIdentifier> ExtractPackageDependencies(List<PackageIdentifier> dependencies = null)
         {
             if (dependencies == null) dependencies = new List<PackageIdentifier>();
@@ -122,6 +144,8 @@ namespace Swole.API.Unity
 
         public IContent SetOriginPath(string path) => this;
         public IContent SetRelativePath(string path) => this;
+
+        public bool IsIdenticalAsset(ISwoleAsset asset) => false;
 
         #endregion
     }

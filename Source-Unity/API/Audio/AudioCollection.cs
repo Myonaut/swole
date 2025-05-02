@@ -15,7 +15,7 @@ using UnityEditor;
 namespace Swole.API.Unity
 {
 
-    [CreateAssetMenu(fileName = "NewAudioCollection", menuName = "Audio/AudioCollection", order = 3)]
+    [CreateAssetMenu(fileName = "NewAudioCollection", menuName = "Swole/Audio/AudioCollection", order = 3)]
     public class AudioCollection : ScriptableObject
     {
 
@@ -28,21 +28,27 @@ namespace Swole.API.Unity
 
                 string localFolder = Path.GetDirectoryName(AssetDatabase.GetAssetPath(this));
 
-                List<InternalResources.Locator> validAssets = new List<InternalResources.Locator>(); 
+                List<InternalResources.Locator> validAssets = new List<InternalResources.Locator>();
 
-                foreach(var clip in clips)
+                if (clips != null)
                 {
-                    if (string.IsNullOrEmpty(clip.path)) continue;
-                    validAssets.Add(clip);
+                    foreach (var clip in clips)
+                    {
+                        if (string.IsNullOrEmpty(clip.path)) continue;
+                        validAssets.Add(clip);
+                    }
                 }
                 InternalResources.GetResourcesInFolder<AudioClip>(localFolder, includeChildFolders, validAssets);
                 clips = validAssets.ToArray();
 
                 validAssets.Clear();
-                foreach (var mixer in mixers)
+                if (mixers != null)
                 {
-                    if (string.IsNullOrEmpty(mixer.path)) continue; 
-                    validAssets.Add(mixer);
+                    foreach (var mixer in mixers)
+                    {
+                        if (string.IsNullOrEmpty(mixer.path)) continue;
+                        validAssets.Add(mixer);
+                    }
                 }
                 InternalResources.GetResourcesInFolder<AudioMixer>(localFolder, includeChildFolders, validAssets);
                 mixers = validAssets.ToArray();
@@ -115,7 +121,7 @@ namespace Swole.API.Unity
                     }
                     proxy.clip = clip;
 
-                    proxy.collectionId = id;
+                    proxy.CollectionID = id;
                     proxy.IsInternalAsset = true;
 
                     return proxy;
@@ -236,7 +242,7 @@ namespace Swole.API.Unity
                     }
                     proxy.mixer = mixer;
 
-                    proxy.collectionId = id;
+                    proxy.CollectionID = id;
                     //proxy.IsInternalAsset = true;
 
                     return proxy;

@@ -6,6 +6,10 @@ using System.Collections.Generic;
 
 using UnityEngine;
 
+#if UNITY_EDITOR
+using UnityEditor;
+#endif
+
 namespace Swole.Unity
 {
 
@@ -70,10 +74,9 @@ namespace Swole.Unity
 
 #if UNITY_EDITOR
 
-                if (string.IsNullOrEmpty(savePath)) savePath = ""; 
-
-                UnityEditor.AssetDatabase.CreateAsset(outputTexture, (savePath.StartsWith("Assets") ? "" : "Assets/") + savePath + (savePath.EndsWith("/") ? "" : "/") + $"{outputTexture.name}.asset");
-
+                if (string.IsNullOrEmpty(savePath)) savePath = "";
+ 
+                outputTexture = outputTexture.CreateOrReplaceAsset((savePath.StartsWith("Assets") ? "" : "Assets/") + savePath + (savePath.EndsWith("/") ? "" : "/") + $"{outputTexture.name}.asset");
                 UnityEditor.AssetDatabase.SaveAssetIfDirty(outputTexture);
 
 #endif

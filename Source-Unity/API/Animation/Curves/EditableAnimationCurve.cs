@@ -32,6 +32,8 @@ namespace Swole.API.Unity
         public int AddKey(float time, float value, bool notifyListeners = true);
 
         public void FixNaN();
+
+        public void ClearKeys();
     }
 
     public class EditableAnimationCurve : SwoleObject<EditableAnimationCurve, SerializedAnimationCurve>, ICloneable, IAnimationCurveProxy
@@ -390,8 +392,7 @@ namespace Swole.API.Unity
             if (state.keyframes == null || state.keyframes.Length <= 0)
             {
                 state.keyframes = new AnimationCurveEditor.KeyframeStateRaw[1];
-                state.keyframes[0] = keyState;  
-
+                state.keyframes[0] = keyState;
                 if (syncWithUnityCurve) SyncWithUnityCurve();
                 if (notifyListeners) NotifyStateChange();
                 return 0;
@@ -417,7 +418,7 @@ namespace Swole.API.Unity
                     for(int a = 0; a < pos; a++) temp[a] = state.keyframes[a];
                     temp[pos] = keyState;
                     for (int a = pos; a < state.keyframes.Length; a++) temp[a + 1] = state.keyframes[a];
-                    state.keyframes = temp; 
+                    state.keyframes = temp;
                 }
 
                 if (syncWithUnityCurve) SyncWithUnityCurve();
@@ -467,6 +468,16 @@ namespace Swole.API.Unity
         }
         public void FixNaN(bool notifyListeners) => FixNaN(notifyListeners, true);
         public void FixNaN() => FixNaN(true, true);
+
+        public void ClearKeys() => ClearKeys(true, true);
+        public void ClearKeys(bool notifyListeners) => ClearKeys(notifyListeners, true);
+        public void ClearKeys(bool notifyListeners, bool syncWithUnityCurve)
+        {
+            state.keyframes = null;
+
+            if (syncWithUnityCurve) SyncWithUnityCurve();
+            if (notifyListeners) NotifyStateChange();
+        }
 
     }
 
@@ -627,6 +638,13 @@ namespace Swole.API.Unity
             if (changed) unityCurve.keys = keys;
         }
         public void FixNaN() => FixNaN(true);
+
+        public void ClearKeys()
+        {
+            if (unityCurve == null) return;
+
+            unityCurve.ClearKeys();
+        }
 
     }
 

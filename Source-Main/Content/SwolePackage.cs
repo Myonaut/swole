@@ -33,6 +33,19 @@ namespace Swole
         protected readonly List<IContent> contentViewer = new List<IContent>();
 
         protected readonly List<IContent> orphanedContent = new List<IContent>();
+        private static readonly List<IContent> disposeSelfOnly = new List<IContent>();
+        private static bool TryUnorphanContent(IContent content, IContent validContent)
+        {
+            if (ReferenceEquals(content, validContent)) return true;
+
+            if (validContent.IsIdenticalAsset(content))
+            {
+                disposeSelfOnly.Add(content);
+                return true;
+            }
+
+            return false;
+        }
         public void DisposeOrphanedContent()
         {
             if (orphanedContent != null)
@@ -41,18 +54,33 @@ namespace Swole
                 {
                     contentViewer.Clear();
                     immutable.CopyIntoList(contentViewer);
-                    for(int a = 0; a < contentViewer.Count; a++)
+                    disposeSelfOnly.Clear();
+                    for (int a = 0; a < contentViewer.Count; a++)
                     {
-                        var content = contentViewer[a];
-                        if (content == null) continue;
-                        orphanedContent.RemoveAll(i => i == content);
+                        var c = contentViewer[a];
+                        if (c == null) continue;
+
+                        orphanedContent.RemoveAll(i => TryUnorphanContent(i, c));
                     }
+                    foreach (var selfOrphan in disposeSelfOnly)
+                    {
+                        try
+                        {
+                            selfOrphan.DisposeSelf();
+                        }
+                        catch (Exception ex)
+                        {
+                            swole.LogError(ex);
+                        }
+                    }
+                    disposeSelfOnly.Clear();
                     contentViewer.Clear();
                 }
                 for (int a = 0; a < orphanedContent.Count; a++)
                 {
                     var content = orphanedContent[a];
                     if (content == null) continue;
+
                     try
                     {
                         content.Dispose();
@@ -160,7 +188,8 @@ namespace Swole
                     var content = contentViewer[a];
                     if (content != null && (ReferenceEquals(newContent, content) || (content.Name == newContent.Name && content.GetType() == newContent.GetType())))
                     {
-                        if (orphanReplacedContent && !ReferenceEquals(newContent, content)) orphanedContent.Add(content);
+                        if (orphanReplacedContent && !ReferenceEquals(newContent, content) && !content.IsIdenticalAsset(newContent)) orphanedContent.Add(content);
+
                         contentViewer[a] = newContent;
                         replaced = true;
                         break;
@@ -189,7 +218,7 @@ namespace Swole
                         var content = contentViewer[a];
                         if (content != null && (ReferenceEquals(newContent, content) || (content.Name == newContent.Name && content.GetType() == newContent.GetType())))
                         {
-                            if (orphanReplacedContent && !ReferenceEquals(newContent, content)) orphanedContent.Add(content);
+                            if (orphanReplacedContent && !ReferenceEquals(newContent, content) && !content.IsIdenticalAsset(newContent)) orphanedContent.Add(content);
                             contentViewer[a] = newContent;
                             replaced = true;
                             break;

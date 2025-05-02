@@ -17,12 +17,25 @@ namespace Swole.API.Unity.Animation
 
         public const string _localPositionProperty = ".localPosition";
         public const string _localRotationProperty = ".localRotation";
-        public const string _localScaleProperty = ".localScale";
+        public const string _localScaleProperty = ".localScale"; 
 
         public const string _propertyX = ".x";
         public const string _propertyY = ".y";
         public const string _propertyZ = ".z";
         public const string _propertyW = ".w";
+
+        public static string TransformLocalPositionXKey(string transformName) => $"{transformName}{_localPositionProperty}{_propertyX}";
+        public static string TransformLocalPositionYKey(string transformName) => $"{transformName}{_localPositionProperty}{_propertyY}";
+        public static string TransformLocalPositionZKey(string transformName) => $"{transformName}{_localPositionProperty}{_propertyZ}";
+
+        public static string TransformLocalRotationXKey(string transformName) => $"{transformName}{_localRotationProperty}{_propertyX}";
+        public static string TransformLocalRotationYKey(string transformName) => $"{transformName}{_localRotationProperty}{_propertyY}";
+        public static string TransformLocalRotationZKey(string transformName) => $"{transformName}{_localRotationProperty}{_propertyZ}";
+        public static string TransformLocalRotationWKey(string transformName) => $"{transformName}{_localRotationProperty}{_propertyW}";
+
+        public static string TransformLocalScaleXKey(string transformName) => $"{transformName}{_localScaleProperty}{_propertyX}";
+        public static string TransformLocalScaleYKey(string transformName) => $"{transformName}{_localScaleProperty}{_propertyY}";
+        public static string TransformLocalScaleZKey(string transformName) => $"{transformName}{_localScaleProperty}{_propertyZ}";
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static float WrapTimeForward(float time, float length, WrapMode wrapMode)
@@ -221,8 +234,8 @@ namespace Swole.API.Unity.Animation
 
             curve.Keys = _tempKeyframeStates.ToArray();
         }
-        public static void InsertKey(this AnimationCurve curve, Keyframe keyframe, bool addTimeZeroKeyframeIfEmpty = false, bool useNewDataForTimeZeroKey = false, Keyframe timeZeroKey = default, InsertAutoSmoothBehaviour autoSmooth = default, bool fixNaN = true) => InsertKey(new AnimationCurveProxy(curve), keyframe, addTimeZeroKeyframeIfEmpty, useNewDataForTimeZeroKey, timeZeroKey, autoSmooth, fixNaN);
-        public static void InsertKey(this IAnimationCurveProxy curve, AnimationCurveEditor.KeyframeStateRaw keyframe, bool addTimeZeroKeyframeIfEmpty = false, bool useNewDataForTimeZeroKey = false, AnimationCurveEditor.KeyframeStateRaw timeZeroKey = default, InsertAutoSmoothBehaviour autoSmooth = default, bool fixNaN = true)
+        public static void InsertKey(this AnimationCurve curve, Keyframe keyframe, bool addTimeZeroKeyframeIfEmpty = false, bool useNewDataForTimeZeroKey = false, Keyframe timeZeroKey = default, InsertAutoSmoothBehaviour autoSmooth = default, bool fixNaN = true, bool useReferenceKey = false, AnimationCurveEditor.KeyframeStateRaw referenceKey = default) => InsertKey(new AnimationCurveProxy(curve), keyframe, addTimeZeroKeyframeIfEmpty, useNewDataForTimeZeroKey, timeZeroKey, autoSmooth, fixNaN, useReferenceKey, referenceKey);
+        public static void InsertKey(this IAnimationCurveProxy curve, AnimationCurveEditor.KeyframeStateRaw keyframe, bool addTimeZeroKeyframeIfEmpty = false, bool useNewDataForTimeZeroKey = false, AnimationCurveEditor.KeyframeStateRaw timeZeroKey = default, InsertAutoSmoothBehaviour autoSmooth = default, bool fixNaN = true, bool useReferenceKey = false, AnimationCurveEditor.KeyframeStateRaw referenceKey = default)
         {
             if (curve == null) return;
             var keyframes = curve.Keys;
@@ -270,7 +283,14 @@ namespace Swole.API.Unity.Animation
                     autoSmooth_ = !replace;
                     break;
             }
-            if (autoSmooth_)
+
+            if (useReferenceKey)
+            {
+                referenceKey.time = keyframe.time;
+                referenceKey.value = keyframe.value;
+                keyframe = referenceKey;
+            }
+            else if (autoSmooth_)
             {
                 keyframe = AutoSmoothKeyframe(keyframe, pos > 0, pos < keyframes.Length - 1, pos > 0 ? keyframes[pos - 1] : keyframe, pos < keyframes.Length - 1 ? keyframes[keyframes.Length - 1] : keyframe);
                 keyframes[pos] = keyframe;
@@ -279,8 +299,8 @@ namespace Swole.API.Unity.Animation
             curve.Keys = keyframes;
             if (fixNaN) curve.FixNaN();
         }
-        public static void AddOrReplaceKey(this AnimationCurve curve, float time, float value, bool addTimeZeroKeyframeIfEmpty = false, bool useNewDataForTimeZeroKey = false, float timeZeroData = 0, InsertAutoSmoothBehaviour autoSmooth = default, bool fixNaN = true) => AddOrReplaceKey(new AnimationCurveProxy(curve), time, value, addTimeZeroKeyframeIfEmpty, useNewDataForTimeZeroKey, timeZeroData, autoSmooth, fixNaN);
-        public static void AddOrReplaceKey(this IAnimationCurveProxy curve, float time, float value, bool addTimeZeroKeyframeIfEmpty = false, bool useNewDataForTimeZeroKey = false, float timeZeroData = 0, InsertAutoSmoothBehaviour autoSmooth = default, bool fixNaN = true)
+        public static void AddOrReplaceKey(this AnimationCurve curve, float time, float value, bool addTimeZeroKeyframeIfEmpty = false, bool useNewDataForTimeZeroKey = false, float timeZeroData = 0, InsertAutoSmoothBehaviour autoSmooth = default, bool fixNaN = true, bool useReferenceKey = false, AnimationCurveEditor.KeyframeStateRaw referenceKey = default) => AddOrReplaceKey(new AnimationCurveProxy(curve), time, value, addTimeZeroKeyframeIfEmpty, useNewDataForTimeZeroKey, timeZeroData, autoSmooth, fixNaN, useReferenceKey, referenceKey);
+        public static void AddOrReplaceKey(this IAnimationCurveProxy curve, float time, float value, bool addTimeZeroKeyframeIfEmpty = false, bool useNewDataForTimeZeroKey = false, float timeZeroData = 0, InsertAutoSmoothBehaviour autoSmooth = default, bool fixNaN = true, bool useReferenceKey = false, AnimationCurveEditor.KeyframeStateRaw referenceKey = default)
         {
             if (curve == null) return;
 
@@ -317,7 +337,19 @@ namespace Swole.API.Unity.Animation
                     autoSmooth_ = !replace;
                     break;
             }
-            if (autoSmooth_)
+
+            if (useReferenceKey)
+            {
+                if (keyframes == null) keyframes = curve.Keys;
+
+                var keyframe = keyframes[pos];
+                referenceKey.time = keyframe.time;
+                referenceKey.value = keyframe.value;
+                keyframes[pos] = referenceKey;
+
+                curve.Keys = keyframes;
+            } 
+            else if (autoSmooth_)
             {
                 if (keyframes == null) keyframes = curve.Keys;
 
@@ -332,15 +364,24 @@ namespace Swole.API.Unity.Animation
             if (fixNaN) curve.FixNaN(); 
         }
 
-        public static bool HasKeyAtTime(this IAnimationCurveProxy prox, decimal time) => HasKeyAtTime(prox, (float)time);
-        public static bool HasKeyAtTime(this IAnimationCurveProxy prox, float time)
+        public static bool HasKeyAtTime(this IAnimationCurveProxy prox, decimal time) => HasKeyAtTime(prox, time, out _, out _);
+        public static bool HasKeyAtTime(this IAnimationCurveProxy prox, float time) => HasKeyAtTime(prox, time, out _, out _);
+        public static bool HasKeyAtTime(this IAnimationCurveProxy prox, decimal time, out AnimationCurveEditor.KeyframeStateRaw keyframe, out int keyIndex) => HasKeyAtTime(prox, (float)time, out keyframe, out keyIndex);
+        public static bool HasKeyAtTime(this IAnimationCurveProxy prox, float time, out AnimationCurveEditor.KeyframeStateRaw keyframe, out int keyIndex)
         {
+            keyIndex = -1;
+            keyframe = default;
             if (prox.length <= 0) return false;
 
             for (int a = 0; a < prox.length; a++)
             {
                 var key = prox[a];
-                if (key.time == time) return true; 
+                if (key.time == time) 
+                {
+                    keyIndex = a;
+                    keyframe = key;
+                    return true;
+                }
             }
 
             return false;
@@ -378,15 +419,24 @@ namespace Swole.API.Unity.Animation
         }
 
 
-        public static bool HasKeyAtTime(this AnimationCurve curve, decimal time) => HasKeyAtTime(curve, (float)time);
-        public static bool HasKeyAtTime(this AnimationCurve curve, float time)
+        public static bool HasKeyAtTime(this AnimationCurve curve, decimal time) => HasKeyAtTime(curve, time, out _, out _);
+        public static bool HasKeyAtTime(this AnimationCurve curve, float time) => HasKeyAtTime(curve, time, out _, out _);
+        public static bool HasKeyAtTime(this AnimationCurve curve, decimal time, out Keyframe keyframe, out int keyIndex) => HasKeyAtTime(curve, (float)time, out keyframe, out keyIndex);
+        public static bool HasKeyAtTime(this AnimationCurve curve, float time, out Keyframe keyframe, out int keyIndex)
         {
+            keyIndex = -1;
+            keyframe = default;
             if (curve.length <= 0) return false;
 
             for (int a = 0; a < curve.length; a++)
             {
                 var key = curve[a];
-                if (key.time == time) return true;
+                if (key.time == time) 
+                {
+                    keyIndex = a;
+                    keyframe = key;
+                    return true;
+                }
             }
 
             return false;
@@ -1063,6 +1113,35 @@ namespace Swole.API.Unity.Animation
             return frame;
         }
 
+        public static float CalculateAmplitude(IEnumerable<Keyframe> keys)
+        {
+            float amp = 0;
+            foreach(var key in keys) if (Mathf.Abs(key.value) > amp) amp = Mathf.Abs(key.value);
+            return amp;
+        }
+        public static float CalculateAmplitude(IEnumerable<AnimationCurveEditor.KeyframeState> keys)
+        {
+            float amp = 0;
+            foreach (var key in keys) if (Mathf.Abs(key.data.value) > amp) amp = Mathf.Abs(key.data.value);
+            return amp;
+        }
+        public static float CalculateAmplitude(IEnumerable<AnimationCurveEditor.KeyframeStateRaw> keys)
+        {
+            float amp = 0;
+            foreach (var key in keys) if (Mathf.Abs(key.value) > amp) amp = Mathf.Abs(key.value);
+            return amp;
+        }
+        public static float CalculateAmplitude(AnimationCurve curve)
+        {
+            float amp = 0;
+            for(int a = 0; a < curve.length; a++) 
+            {
+                var key = curve[a];
+                if (Mathf.Abs(key.value) > amp) amp = Mathf.Abs(key.value);
+            }
+            return amp;
+        }
+
         public class Pose : SwoleObject<Pose, Pose.Serialized>, ICloneable
         {
 
@@ -1150,7 +1229,7 @@ namespace Swole.API.Unity.Animation
             /// <summary>
             /// Get the delta element values between the two poses, using a special case for rotation elements.
             /// </summary>
-            public List<AnimatableElementDelta> GetDifference(Pose to, List<AnimatableElementDelta> list = null, bool ignoreNonEntries = false)
+            public List<AnimatableElementDelta> GetDifference(Pose to, List<AnimatableElementDelta> list = null, bool ignoreNonEntries = false, bool ensureShortestRotationPath = true)
             {
                 if (list == null) list = new List<AnimatableElementDelta>();
                 if (to == null || to.elements == null) return list; 
@@ -1225,6 +1304,8 @@ namespace Swole.API.Unity.Animation
                             {
                                 Quaternion rotA = new Quaternion(localRotX_A, localRotY_A, localRotZ_A, localRotW_A);
                                 Quaternion rotB = new Quaternion(localRotX_B, localRotY_B, localRotZ_B, localRotW_B);
+
+                                if (ensureShortestRotationPath) rotB = Maths.EnsureQuaternionContinuity(rotA, rotB);
 
                                 //Quaternion difference = Maths.ShortestRotationGlobal(rotA, rotB);     
                                 Quaternion difference = Maths.ShortestRotationLocal(rotA, rotB); 
@@ -1351,7 +1432,7 @@ namespace Swole.API.Unity.Animation
 
                 return this;
             }
-            public Pose ApplyRotationElements(string prefix, Quaternion rotation, bool4 validity, bool isAdditive, float mix = 1)
+            public Pose ApplyRotationElements(string prefix, Quaternion rotation, bool4 validity, bool isAdditive, float mix = 1, bool useShortestRotationPath = true)
             {
                 string propX = prefix + _propertyX;
                 string propY = prefix + _propertyY;
@@ -1379,7 +1460,9 @@ namespace Swole.API.Unity.Animation
                 rotation.w = validity.w ? rotation.w : defaultW;
 
                 rotation = Quaternion.SlerpUnclamped(currentRot, rotation, mix);
-                 
+
+                if (useShortestRotationPath) rotation = Maths.EnsureQuaternionContinuity(currentRot, rotation);             
+                
                 if (validity.x) elements[propX] = rotation.x;
                 if (validity.y) elements[propY] = rotation.y;
                 if (validity.z) elements[propZ] = rotation.z;
@@ -1414,7 +1497,7 @@ namespace Swole.API.Unity.Animation
             /// <summary>
             /// Apply delta element values to the pose, using a special case for rotation elements.
             /// </summary>
-            public Pose ApplyDeltas(ICollection<AnimatableElementDelta> deltas, float mix = 1)
+            public Pose ApplyDeltas(ICollection<AnimatableElementDelta> deltas, float mix = 1, bool useShortestRotationPath = true)
             {
                 bool TryFindDeltaValue(string key, out float value)
                 {
@@ -1486,10 +1569,13 @@ namespace Swole.API.Unity.Animation
                             rotOffset = new Quaternion(localRotOffsetX, localRotOffsetY, localRotOffsetZ, localRotOffsetW);
                         }
 
+                        var startRot = rot;
                         //var temp = rot;
                         //rot = Quaternion.SlerpUnclamped(rot, rot * rotOffset, mix); 
                         rot = Quaternion.SlerpUnclamped(rot, rotOffset * rot, mix);
                         //Debug.Log(Quaternion.Angle(temp, rot) + " : " + Quaternion.Angle(Quaternion.identity, rotOffset));  // Debug 
+
+                        if (useShortestRotationPath) rot = Maths.EnsureQuaternionContinuity(startRot, rot);
 
                         ApplyDelta(new AnimatableElementDelta() { id = keyRotX, change = rot.x, isAbsolute = true }, 1);
                         ApplyDelta(new AnimatableElementDelta() { id = keyRotY, change = rot.y, isAbsolute = true }, 1);
@@ -1938,55 +2024,178 @@ namespace Swole.API.Unity.Animation
             /// <summary>
             /// Insert the pose as keyframes in the animation's curve data.
             /// </summary>
-            /// <param name="animation"></param>
+            /// <param name="animation">The target animation</param>
             /// <param name="time">The timeline position at which to insert keyframes.</param>
             /// <param name="restPose">An optional pose that serves as the additive base data for new curves.</param>
             /// <param name="originalPose">An optional pose that only allows deviations from itself to be considered for insertion.</param>
             /// <param name="useFrameIndices">Use passed in getFrameIndex method to get frame indices from time values, and use those for insertion instead.</param>
             /// <param name="minDeltaThreshold">The minimum value by which element values must differ to be considered for insertion when using an original pose</param>
-            public Pose Insert(CustomAvatar avatar, CustomAnimation animation, float time, Pose restPose = null, Pose originalPose = null, List<Transform> transformMask = null, bool useFrameIndices = false, IntFromDecimalDelegate getFrameIndex = null, bool verbose = false, float minDeltaThreshold = 0.00001f)
+            public Pose Insert(CustomAvatar avatar, CustomAnimation animation, float time, Pose restPose = null, Pose originalPose = null, List<Transform> transformMask = null, bool useFrameIndices = false, IntFromDecimalDelegate getFrameIndex = null, bool verbose = false, bool allowTranslation = true, bool allowRotation = true, bool allowScaling = true, bool useReferenceKeyframe = false, AnimationCurveEditor.KeyframeStateRaw referenceKeyframe = default, InsertAutoSmoothBehaviour autoSmooth = InsertAutoSmoothBehaviour.Always, float minDeltaThreshold = 0.00001f)
             {
                 if (animation == null) return this;
                 useFrameIndices = useFrameIndices && getFrameIndex != null;
+                /*
                 int frameIndex = 0;
                 if (useFrameIndices)
                 {
                     frameIndex = getFrameIndex((decimal)time);
                 }
+                */
 
-                void InsertElement(KeyValuePair<string, float> element)
+                if (transformMask == null)
                 {
-                    float diff = 0;
-                    bool contained = false;
-                    if (originalPose != null) // Make sure element has changed if main pose is provided
+                    foreach (var element in elements)
                     {
-                        if (originalPose.TryGetValue(element.Key, out float mainValue))
+                        InsertElement(element, avatar, animation, time, restPose, originalPose, useFrameIndices, getFrameIndex, verbose, allowTranslation, allowRotation, allowScaling, useReferenceKeyframe, referenceKeyframe, autoSmooth, minDeltaThreshold);
+                    }
+                } 
+                else
+                {
+                    void TryInsertByID(string id)
+                    {
+                        if (elements.TryGetValue(id, out float val))
                         {
-                            contained = true;
-                            diff = element.Value - mainValue;
-
-                            if (float.IsNaN(element.Value)) { swole.LogError($"NaN element '{element.Key}' {element.Value} - {mainValue} = {diff}"); return; }
-                            if (float.IsNaN(mainValue)) { swole.LogError($"NaN orig pose element '{element.Key}' {element.Value} - {mainValue} = {diff}"); return; }
-                            if (float.IsNaN(diff)) { swole.LogError($"NaN element difference '{element.Key}' {element.Value} - {mainValue} = {diff}"); return; }    
-
-                            if (/*mainValue == element.Value*/Mathf.Abs(diff) < minDeltaThreshold) return; // Element has not changed from main pose so do not create a keyframe for this element
+                            InsertElement(new KeyValuePair<string, float>(id, val), avatar, animation, time, restPose, originalPose, useFrameIndices, getFrameIndex, verbose, allowTranslation, allowRotation, allowScaling, useReferenceKeyframe, referenceKeyframe, autoSmooth, minDeltaThreshold);
+                        } 
+                        else if (elements.TryGetValue(id.AsID(), out val))
+                        {
+                            InsertElement(new KeyValuePair<string, float>(id, val), avatar, animation, time, restPose, originalPose, useFrameIndices, getFrameIndex, verbose, allowTranslation, allowRotation, allowScaling, useReferenceKeyframe, referenceKeyframe, autoSmooth, minDeltaThreshold); 
                         }
                     }
-
-                    if (verbose)
+                    foreach(var transform in transformMask)
                     {
-                        swole.Log($"Adding element '{element.Key}' [new:{!contained}] [val:{element.Value}] [delta:{diff}] [newCount:{elements.Count}] {(originalPose == null || originalPose.elements == null ? "" : $"[oldCount:{originalPose.elements.Count}")}]"); // Debug
+                        if (transform == null) continue;
+
+                        string transformName = avatar == null ? transform.name : avatar.Remap(transform.name); 
+
+                        TryInsertByID(TransformLocalPositionXKey(transformName));
+                        TryInsertByID(TransformLocalPositionYKey(transformName));
+                        TryInsertByID(TransformLocalPositionZKey(transformName));
+
+                        TryInsertByID(TransformLocalRotationXKey(transformName));
+                        TryInsertByID(TransformLocalRotationYKey(transformName));
+                        TryInsertByID(TransformLocalRotationZKey(transformName));
+                        TryInsertByID(TransformLocalRotationWKey(transformName));
+
+                        TryInsertByID(TransformLocalScaleXKey(transformName));
+                        TryInsertByID(TransformLocalScaleYKey(transformName));
+                        TryInsertByID(TransformLocalScaleZKey(transformName));
                     }
-                     
-                    string id = element.Key.ToLower();
-                    string id_untrimmed = id; // Preserve length to match up with original key 
-                    id = id.Trim();
-                    int subIndex = id_untrimmed.IndexOf(_localPositionProperty.ToLower());
+                }
+
+                return this;
+            }
+
+            /// <summary>
+            /// Insert the pose element as a keyframe in the animation's curve data.
+            /// </summary>
+            /// <param name="animation">The target animation</param>
+            /// <param name="time">The timeline position at which to insert keyframes.</param>
+            /// <param name="restPose">An optional pose that serves as the additive base data for new curves.</param>
+            /// <param name="originalPose">An optional pose that only allows deviations from itself to be considered for insertion.</param>
+            /// <param name="useFrameIndices">Use passed in getFrameIndex method to get frame indices from time values, and use those for insertion instead.</param>
+            /// <param name="minDeltaThreshold">The minimum value by which element values must differ to be considered for insertion when using an original pose</param>
+            public static void InsertElement(KeyValuePair<string, float> element, CustomAvatar avatar, CustomAnimation animation, float time, Pose restPose = null, Pose originalPose = null, bool useFrameIndices = false, IntFromDecimalDelegate getFrameIndex = null, bool verbose = false, bool allowTranslation = true, bool allowRotation = true, bool allowScaling = true, bool useReferenceKeyframe = false, AnimationCurveEditor.KeyframeStateRaw referenceKeyframe = default, InsertAutoSmoothBehaviour autoSmooth = InsertAutoSmoothBehaviour.Always, float minDeltaThreshold = 0.00001f)
+            {
+                float diff = 0;
+                bool contained = false;
+                if (originalPose != null) // Make sure element has changed if main pose is provided
+                {
+                    if (originalPose.TryGetValue(element.Key, out float mainValue))
+                    {
+                        contained = true;
+                        diff = element.Value - mainValue;
+
+                        if (float.IsNaN(element.Value)) { swole.LogError($"NaN element '{element.Key}' {element.Value} - {mainValue} = {diff}"); return; }
+                        if (float.IsNaN(mainValue)) { swole.LogError($"NaN orig pose element '{element.Key}' {element.Value} - {mainValue} = {diff}"); return; }
+                        if (float.IsNaN(diff)) { swole.LogError($"NaN element difference '{element.Key}' {element.Value} - {mainValue} = {diff}"); return; }
+
+                        if (/*mainValue == element.Value*/Mathf.Abs(diff) < minDeltaThreshold) return; // Element has not changed from main pose so do not create a keyframe for this element
+                    }
+                }
+
+                if (verbose)
+                {
+                    swole.Log($"Adding element '{element.Key}' [new:{!contained}] [val:{element.Value}] [delta:{diff}]]"); // Debug
+                }
+
+                string id = element.Key.ToLower();
+                string id_untrimmed = id; // Preserve length to match up with original key 
+                id = id.Trim();
+                int subIndex = id_untrimmed.IndexOf(_localPositionProperty.ToLower());
+                if (subIndex >= 0)
+                {
+                    // element is related to transform local position
+                    string transformName = element.Key.Substring(0, subIndex);
+                    if (allowTranslation && !string.IsNullOrEmpty(transformName))
+                    {
+                        InsertIntoTransformCurve(transformName, animation, (ITransformCurve transformCurve) =>
+                        {
+                            if (typeof(TransformCurve).IsAssignableFrom(transformCurve.GetType()))
+                            {
+                                TransformCurve curve = (TransformCurve)transformCurve;
+                                if (id.EndsWith(_propertyX.ToLower()))
+                                {
+                                    if (curve.localPositionCurveX == null) curve.localPositionCurveX = new EditableAnimationCurve();//new AnimationCurve();
+                                    if (useFrameIndices) curve.localPositionCurveX.DeleteKeysAt(time, getFrameIndex);
+                                    curve.localPositionCurveX.AddOrReplaceKey(time, element.Value, true, true, (restPose != null && restPose.TryGetValue(element.Key, out var defaultVal)) ? defaultVal : element.Value, autoSmooth, true, useReferenceKeyframe, referenceKeyframe);
+                                }
+                                else if (id.EndsWith(_propertyY.ToLower()))
+                                {
+                                    if (curve.localPositionCurveY == null) curve.localPositionCurveY = new EditableAnimationCurve();//new AnimationCurve();
+                                    if (useFrameIndices) curve.localPositionCurveY.DeleteKeysAt(time, getFrameIndex);
+                                    curve.localPositionCurveY.AddOrReplaceKey(time, element.Value, true, true, (restPose != null && restPose.TryGetValue(element.Key, out var defaultVal)) ? defaultVal : element.Value, autoSmooth, true, useReferenceKeyframe, referenceKeyframe);
+                                }
+                                else if (id.EndsWith(_propertyZ.ToLower()))
+                                {
+                                    if (curve.localPositionCurveZ == null) curve.localPositionCurveZ = new EditableAnimationCurve();//new AnimationCurve();
+                                    if (useFrameIndices) curve.localPositionCurveZ.DeleteKeysAt(time, getFrameIndex);
+                                    curve.localPositionCurveZ.AddOrReplaceKey(time, element.Value, true, true, (restPose != null && restPose.TryGetValue(element.Key, out var defaultVal)) ? defaultVal : element.Value, autoSmooth, true, useReferenceKeyframe, referenceKeyframe);
+                                }
+                                curve.RefreshCachedLength(animation.framesPerSecond);
+                            }
+                            else if (typeof(TransformLinearCurve).IsAssignableFrom(transformCurve.GetType()))
+                            {
+                                TransformLinearCurve curve = (TransformLinearCurve)transformCurve;
+                                ITransformCurve.Frame defaultFrame = GetPoseTransformFrame(transformName, restPose);
+                                var frame = curve.GetOrCreateKeyframe(Mathf.FloorToInt(time * animation.framesPerSecond), true, defaultFrame != null, defaultFrame);
+                                if (frame != null)
+                                {
+                                    var data = frame.data;
+                                    var v = data.localPosition;
+
+                                    if (id.EndsWith(_propertyX.ToLower()))
+                                    {
+                                        v.x = element.Value;
+                                    }
+                                    else if (id.EndsWith(_propertyY.ToLower()))
+                                    {
+                                        v.y = element.Value;
+                                    }
+                                    else if (id.EndsWith(_propertyZ.ToLower()))
+                                    {
+                                        v.z = element.Value;
+                                    }
+
+                                    data.localPosition = v;
+                                    frame.data = data;
+                                }
+                                curve.RefreshCachedLength(animation.framesPerSecond);
+                            }
+                        }, restPose);
+                    }
+
+                    return;
+                }
+                else
+                {
+
+                    subIndex = id_untrimmed.IndexOf(_localRotationProperty.ToLower());
                     if (subIndex >= 0)
                     {
-                        // element is related to transform local position
+                        // element is related to transform local rotation
                         string transformName = element.Key.Substring(0, subIndex);
-                        if (!string.IsNullOrEmpty(transformName))
+                        if (allowRotation && !string.IsNullOrEmpty(transformName))
                         {
                             InsertIntoTransformCurve(transformName, animation, (ITransformCurve transformCurve) =>
                             {
@@ -1995,21 +2204,27 @@ namespace Swole.API.Unity.Animation
                                     TransformCurve curve = (TransformCurve)transformCurve;
                                     if (id.EndsWith(_propertyX.ToLower()))
                                     {
-                                        if (curve.localPositionCurveX == null) curve.localPositionCurveX = new EditableAnimationCurve();//new AnimationCurve();
-                                        if (useFrameIndices) curve.localPositionCurveX.DeleteKeysAt(time, getFrameIndex);
-                                        curve.localPositionCurveX.AddOrReplaceKey(time, element.Value, true, true, (restPose != null && restPose.TryGetValue(element.Key, out var defaultVal)) ? defaultVal : element.Value);
+                                        if (curve.localRotationCurveX == null) curve.localRotationCurveX = new EditableAnimationCurve();//new AnimationCurve();
+                                        if (useFrameIndices) curve.localRotationCurveX.DeleteKeysAt(time, getFrameIndex);
+                                        curve.localRotationCurveX.AddOrReplaceKey(time, element.Value, true, true, (restPose != null && restPose.TryGetValue(element.Key, out var defaultVal)) ? defaultVal : element.Value, autoSmooth, true, useReferenceKeyframe, referenceKeyframe);
                                     }
                                     else if (id.EndsWith(_propertyY.ToLower()))
                                     {
-                                        if (curve.localPositionCurveY == null) curve.localPositionCurveY = new EditableAnimationCurve();//new AnimationCurve();
-                                        if (useFrameIndices) curve.localPositionCurveY.DeleteKeysAt(time, getFrameIndex);
-                                        curve.localPositionCurveY.AddOrReplaceKey(time, element.Value, true, true, (restPose != null && restPose.TryGetValue(element.Key, out var defaultVal)) ? defaultVal : element.Value);
+                                        if (curve.localRotationCurveY == null) curve.localRotationCurveY = new EditableAnimationCurve();//new AnimationCurve();
+                                        if (useFrameIndices) curve.localRotationCurveY.DeleteKeysAt(time, getFrameIndex);
+                                        curve.localRotationCurveY.AddOrReplaceKey(time, element.Value, true, true, (restPose != null && restPose.TryGetValue(element.Key, out var defaultVal)) ? defaultVal : element.Value, autoSmooth, true, useReferenceKeyframe, referenceKeyframe);
                                     }
                                     else if (id.EndsWith(_propertyZ.ToLower()))
                                     {
-                                        if (curve.localPositionCurveZ == null) curve.localPositionCurveZ = new EditableAnimationCurve();//new AnimationCurve();
-                                        if (useFrameIndices) curve.localPositionCurveZ.DeleteKeysAt(time, getFrameIndex);
-                                        curve.localPositionCurveZ.AddOrReplaceKey(time, element.Value, true, true, (restPose != null && restPose.TryGetValue(element.Key, out var defaultVal)) ? defaultVal : element.Value);
+                                        if (curve.localRotationCurveZ == null) curve.localRotationCurveZ = new EditableAnimationCurve();//new AnimationCurve();
+                                        if (useFrameIndices) curve.localRotationCurveZ.DeleteKeysAt(time, getFrameIndex);
+                                        curve.localRotationCurveZ.AddOrReplaceKey(time, element.Value, true, true, (restPose != null && restPose.TryGetValue(element.Key, out var defaultVal)) ? defaultVal : element.Value, autoSmooth, true, useReferenceKeyframe, referenceKeyframe);
+                                    }
+                                    else if (id.EndsWith(_propertyW.ToLower()))
+                                    {
+                                        if (curve.localRotationCurveW == null) curve.localRotationCurveW = new EditableAnimationCurve();//new AnimationCurve();
+                                        if (useFrameIndices) curve.localRotationCurveW.DeleteKeysAt(time, getFrameIndex);
+                                        curve.localRotationCurveW.AddOrReplaceKey(time, element.Value, true, true, (restPose != null && restPose.TryGetValue(element.Key, out var defaultVal)) ? defaultVal : element.Value, autoSmooth, true, useReferenceKeyframe, referenceKeyframe);
                                     }
                                     curve.RefreshCachedLength(animation.framesPerSecond);
                                 }
@@ -2021,7 +2236,7 @@ namespace Swole.API.Unity.Animation
                                     if (frame != null)
                                     {
                                         var data = frame.data;
-                                        var v = data.localPosition;
+                                        var v = data.localRotation.value;
 
                                         if (id.EndsWith(_propertyX.ToLower()))
                                         {
@@ -2035,25 +2250,29 @@ namespace Swole.API.Unity.Animation
                                         {
                                             v.z = element.Value;
                                         }
+                                        else if (id.EndsWith(_propertyW.ToLower()))
+                                        {
+                                            v.w = element.Value;
+                                        }
 
-                                        data.localPosition = v;
+                                        data.localRotation = new quaternion(v.x, v.y, v.z, v.w);
                                         frame.data = data;
                                     }
                                     curve.RefreshCachedLength(animation.framesPerSecond);
                                 }
                             }, restPose);
                         }
+
                         return;
                     }
                     else
                     {
-
-                        subIndex = id_untrimmed.IndexOf(_localRotationProperty.ToLower());
+                        subIndex = id_untrimmed.IndexOf(_localScaleProperty.ToLower());
                         if (subIndex >= 0)
                         {
-                            // element is related to transform local rotation
+                            // element is related to transform local scale
                             string transformName = element.Key.Substring(0, subIndex);
-                            if (!string.IsNullOrEmpty(transformName))
+                            if (allowScaling && !string.IsNullOrEmpty(transformName))
                             {
                                 InsertIntoTransformCurve(transformName, animation, (ITransformCurve transformCurve) =>
                                 {
@@ -2062,27 +2281,21 @@ namespace Swole.API.Unity.Animation
                                         TransformCurve curve = (TransformCurve)transformCurve;
                                         if (id.EndsWith(_propertyX.ToLower()))
                                         {
-                                            if (curve.localRotationCurveX == null) curve.localRotationCurveX = new EditableAnimationCurve();//new AnimationCurve();
-                                            if (useFrameIndices) curve.localRotationCurveX.DeleteKeysAt(time, getFrameIndex);
-                                            curve.localRotationCurveX.AddOrReplaceKey(time, element.Value, true, true, (restPose != null && restPose.TryGetValue(element.Key, out var defaultVal)) ? defaultVal : element.Value);
+                                            if (curve.localScaleCurveX == null) curve.localScaleCurveX = new EditableAnimationCurve();//new AnimationCurve();
+                                            if (useFrameIndices) curve.localScaleCurveX.DeleteKeysAt(time, getFrameIndex);
+                                            curve.localScaleCurveX.AddOrReplaceKey(time, element.Value, true, true, (restPose != null && restPose.TryGetValue(element.Key, out var defaultVal)) ? defaultVal : element.Value, autoSmooth, true, useReferenceKeyframe, referenceKeyframe);
                                         }
                                         else if (id.EndsWith(_propertyY.ToLower()))
                                         {
-                                            if (curve.localRotationCurveY == null) curve.localRotationCurveY = new EditableAnimationCurve();//new AnimationCurve();
-                                            if (useFrameIndices) curve.localRotationCurveY.DeleteKeysAt(time, getFrameIndex);
-                                            curve.localRotationCurveY.AddOrReplaceKey(time, element.Value, true, true, (restPose != null && restPose.TryGetValue(element.Key, out var defaultVal)) ? defaultVal : element.Value);
+                                            if (curve.localScaleCurveY == null) curve.localScaleCurveY = new EditableAnimationCurve();//new AnimationCurve();
+                                            if (useFrameIndices) curve.localScaleCurveY.DeleteKeysAt(time, getFrameIndex);
+                                            curve.localScaleCurveY.AddOrReplaceKey(time, element.Value, true, true, (restPose != null && restPose.TryGetValue(element.Key, out var defaultVal)) ? defaultVal : element.Value, autoSmooth, true, useReferenceKeyframe, referenceKeyframe);
                                         }
                                         else if (id.EndsWith(_propertyZ.ToLower()))
                                         {
-                                            if (curve.localRotationCurveZ == null) curve.localRotationCurveZ = new EditableAnimationCurve();//new AnimationCurve();
-                                            if (useFrameIndices) curve.localRotationCurveZ.DeleteKeysAt(time, getFrameIndex);
-                                            curve.localRotationCurveZ.AddOrReplaceKey(time, element.Value, true, true, (restPose != null && restPose.TryGetValue(element.Key, out var defaultVal)) ? defaultVal : element.Value);
-                                        }
-                                        else if (id.EndsWith(_propertyW.ToLower()))
-                                        {
-                                            if (curve.localRotationCurveW == null) curve.localRotationCurveW = new EditableAnimationCurve();//new AnimationCurve();
-                                            if (useFrameIndices) curve.localRotationCurveW.DeleteKeysAt(time, getFrameIndex);
-                                            curve.localRotationCurveW.AddOrReplaceKey(time, element.Value, true, true, (restPose != null && restPose.TryGetValue(element.Key, out var defaultVal)) ? defaultVal : element.Value);
+                                            if (curve.localScaleCurveZ == null) curve.localScaleCurveZ = new EditableAnimationCurve();//new AnimationCurve();
+                                            if (useFrameIndices) curve.localScaleCurveZ.DeleteKeysAt(time, getFrameIndex);
+                                            curve.localScaleCurveZ.AddOrReplaceKey(time, element.Value, true, true, (restPose != null && restPose.TryGetValue(element.Key, out var defaultVal)) ? defaultVal : element.Value, autoSmooth, true, useReferenceKeyframe, referenceKeyframe);
                                         }
                                         curve.RefreshCachedLength(animation.framesPerSecond);
                                     }
@@ -2094,7 +2307,7 @@ namespace Swole.API.Unity.Animation
                                         if (frame != null)
                                         {
                                             var data = frame.data;
-                                            var v = data.localRotation.value;
+                                            var v = data.localScale;
 
                                             if (id.EndsWith(_propertyX.ToLower()))
                                             {
@@ -2108,12 +2321,8 @@ namespace Swole.API.Unity.Animation
                                             {
                                                 v.z = element.Value;
                                             }
-                                            else if (id.EndsWith(_propertyW.ToLower()))
-                                            {
-                                                v.w = element.Value;
-                                            }
 
-                                            data.localRotation = new quaternion(v.x, v.y, v.z, v.w);
+                                            data.localScale = v;
                                             frame.data = data;
                                         }
                                         curve.RefreshCachedLength(animation.framesPerSecond);
@@ -2122,144 +2331,35 @@ namespace Swole.API.Unity.Animation
                             }
                             return;
                         }
-                        else
-                        {
-                            subIndex = id_untrimmed.IndexOf(_localScaleProperty.ToLower());
-                            if (subIndex >= 0)
-                            {
-                                // element is related to transform local scale
-                                string transformName = element.Key.Substring(0, subIndex);
-                                if (!string.IsNullOrEmpty(transformName))
-                                {
-                                    InsertIntoTransformCurve(transformName, animation, (ITransformCurve transformCurve) =>
-                                    {
-                                        if (typeof(TransformCurve).IsAssignableFrom(transformCurve.GetType()))
-                                        {
-                                            TransformCurve curve = (TransformCurve)transformCurve;
-                                            if (id.EndsWith(_propertyX.ToLower()))
-                                            {
-                                                if (curve.localScaleCurveX == null) curve.localScaleCurveX = new EditableAnimationCurve();//new AnimationCurve();
-                                                if (useFrameIndices) curve.localScaleCurveX.DeleteKeysAt(time, getFrameIndex);
-                                                curve.localScaleCurveX.AddOrReplaceKey(time, element.Value, true, true, (restPose != null && restPose.TryGetValue(element.Key, out var defaultVal)) ? defaultVal : element.Value);
-                                            }
-                                            else if (id.EndsWith(_propertyY.ToLower()))
-                                            {
-                                                if (curve.localScaleCurveY == null) curve.localScaleCurveY = new EditableAnimationCurve();//new AnimationCurve();
-                                                if (useFrameIndices) curve.localScaleCurveY.DeleteKeysAt(time, getFrameIndex);
-                                                curve.localScaleCurveY.AddOrReplaceKey(time, element.Value, true, true, (restPose != null && restPose.TryGetValue(element.Key, out var defaultVal)) ? defaultVal : element.Value);
-                                            }
-                                            else if (id.EndsWith(_propertyZ.ToLower()))
-                                            {
-                                                if (curve.localScaleCurveZ == null) curve.localScaleCurveZ = new EditableAnimationCurve();//new AnimationCurve();
-                                                if (useFrameIndices) curve.localScaleCurveZ.DeleteKeysAt(time, getFrameIndex);
-                                                curve.localScaleCurveZ.AddOrReplaceKey(time, element.Value, true, true, (restPose != null && restPose.TryGetValue(element.Key, out var defaultVal)) ? defaultVal : element.Value);
-                                            }
-                                            curve.RefreshCachedLength(animation.framesPerSecond);
-                                        }
-                                        else if (typeof(TransformLinearCurve).IsAssignableFrom(transformCurve.GetType()))
-                                        {
-                                            TransformLinearCurve curve = (TransformLinearCurve)transformCurve;
-                                            ITransformCurve.Frame defaultFrame = GetPoseTransformFrame(transformName, restPose);
-                                            var frame = curve.GetOrCreateKeyframe(Mathf.FloorToInt(time * animation.framesPerSecond), true, defaultFrame != null, defaultFrame);
-                                            if (frame != null)
-                                            {
-                                                var data = frame.data;
-                                                var v = data.localScale;
-
-                                                if (id.EndsWith(_propertyX.ToLower()))
-                                                {
-                                                    v.x = element.Value;
-                                                }
-                                                else if (id.EndsWith(_propertyY.ToLower()))
-                                                {
-                                                    v.y = element.Value;
-                                                }
-                                                else if (id.EndsWith(_propertyZ.ToLower()))
-                                                {
-                                                    v.z = element.Value;
-                                                }
-
-                                                data.localScale = v;
-                                                frame.data = data;
-                                            }
-                                            curve.RefreshCachedLength(animation.framesPerSecond);
-                                        }
-                                    }, restPose);
-                                }
-                                return;
-                            }
-                        }
-                    }
-
-                    // element is a property
-                    InsertIntoPropertyCurve(element.Key, animation, (IPropertyCurve propertyCurve) =>
-                    {
-                        if (typeof(PropertyCurve).IsAssignableFrom(propertyCurve.GetType()))
-                        {
-                            PropertyCurve curve = (PropertyCurve)propertyCurve;
-
-                            if (curve.propertyValueCurve == null) curve.propertyValueCurve = new EditableAnimationCurve();//new AnimationCurve();
-                            if (useFrameIndices) curve.propertyValueCurve.DeleteKeysAt(time, getFrameIndex);
-                            curve.propertyValueCurve.AddOrReplaceKey(time, element.Value, true, true, (restPose != null && restPose.TryGetValue(element.Key, out var defaultVal)) ? defaultVal : element.Value);
-
-                            curve.RefreshCachedLength(animation.framesPerSecond);
-                        }
-                        else if (typeof(PropertyLinearCurve).IsAssignableFrom(propertyCurve.GetType()))
-                        {
-                            PropertyLinearCurve curve = (PropertyLinearCurve)propertyCurve;
-                            IPropertyCurve.Frame defaultFrame = GetPosePropertyFrame(element.Key, restPose);
-                            var frame = curve.GetOrCreateKeyframe(Mathf.FloorToInt(time * animation.framesPerSecond), true, defaultFrame != null, defaultFrame);
-                            if (frame != null)
-                            {
-                                frame.value = element.Value;
-                            }
-                            curve.RefreshCachedLength(animation.framesPerSecond);
-                        }
-                    }, restPose);
-                }
-
-                if (transformMask == null)
-                {
-                    foreach (var element in elements)
-                    {
-                        InsertElement(element);
-                    }
-                } 
-                else
-                {
-                    void TryInsertByID(string id)
-                    {
-                        if (elements.TryGetValue(id, out float val))
-                        {
-                            InsertElement(new KeyValuePair<string, float>(id, val));
-                        } 
-                        else if (elements.TryGetValue(id.AsID(), out val))
-                        {
-                            InsertElement(new KeyValuePair<string, float>(id, val)); 
-                        }
-                    }
-                    foreach(var transform in transformMask)
-                    {
-                        if (transform == null) continue;
-
-                        string transformName = avatar == null ? transform.name : avatar.Remap(transform.name); 
-
-                        TryInsertByID($"{transformName}{_localPositionProperty}{_propertyX}");
-                        TryInsertByID($"{transformName}{_localPositionProperty}{_propertyY}");
-                        TryInsertByID($"{transformName}{_localPositionProperty}{_propertyZ}");
-
-                        TryInsertByID($"{transformName}{_localRotationProperty}{_propertyX}");
-                        TryInsertByID($"{transformName}{_localRotationProperty}{_propertyY}");
-                        TryInsertByID($"{transformName}{_localRotationProperty}{_propertyZ}");
-                        TryInsertByID($"{transformName}{_localRotationProperty}{_propertyW}");
-
-                        TryInsertByID($"{transformName}{_localScaleProperty}{_propertyX}");
-                        TryInsertByID($"{transformName}{_localScaleProperty}{_propertyY}");
-                        TryInsertByID($"{transformName}{_localScaleProperty}{_propertyZ}");
                     }
                 }
 
-                return this;
+                // element is a property
+                InsertIntoPropertyCurve(element.Key, animation, (IPropertyCurve propertyCurve) =>
+                {
+                    if (typeof(PropertyCurve).IsAssignableFrom(propertyCurve.GetType()))
+                    {
+                        PropertyCurve curve = (PropertyCurve)propertyCurve;
+
+                        if (curve.propertyValueCurve == null) curve.propertyValueCurve = new EditableAnimationCurve();//new AnimationCurve();
+                        if (useFrameIndices) curve.propertyValueCurve.DeleteKeysAt(time, getFrameIndex);
+                        curve.propertyValueCurve.AddOrReplaceKey(time, element.Value, true, true, (restPose != null && restPose.TryGetValue(element.Key, out var defaultVal)) ? defaultVal : element.Value, autoSmooth, true, useReferenceKeyframe, referenceKeyframe);
+
+                        curve.RefreshCachedLength(animation.framesPerSecond);
+                    }
+                    else if (typeof(PropertyLinearCurve).IsAssignableFrom(propertyCurve.GetType()))
+                    {
+                        PropertyLinearCurve curve = (PropertyLinearCurve)propertyCurve;
+                        IPropertyCurve.Frame defaultFrame = GetPosePropertyFrame(element.Key, restPose);
+                        var frame = curve.GetOrCreateKeyframe(Mathf.FloorToInt(time * animation.framesPerSecond), true, defaultFrame != null, defaultFrame);
+                        if (frame != null)
+                        {
+                            frame.value = element.Value;
+                        }
+                        curve.RefreshCachedLength(animation.framesPerSecond);
+                    }
+                }, restPose);
+
             }
 
         }

@@ -15,9 +15,73 @@ using Swole.Script;
 
 namespace Swole.API.Unity.Animation
 {
-    [CreateAssetMenu(fileName = "CustomAnimationController", menuName = "SwoleAnimation/CustomAnimationController", order = 1)]
+    [CreateAssetMenu(fileName = "CustomAnimationController", menuName = "Swole/Animation/CustomAnimationController", order = 1)]
     public class CustomAnimationController : ScriptableObject, IAnimationController
     {
+
+        public static CustomAnimationController BuildDefaultController(string prefix, ICollection<CustomAnimationAsset> animations, float defaultMix = 1, bool additiveLayers = false)
+        {
+            CustomAnimation[] anims = new CustomAnimation[animations.Count];
+
+            int i = 0;
+            foreach(var asset in animations)
+            {
+                anims[i] = asset.Animation;
+                i++;
+            }
+
+            return BuildDefaultController(prefix, anims, defaultMix, additiveLayers);
+        }
+        public static CustomAnimationController BuildDefaultController(string prefix, IEnumerable<CustomAnimation> animations, float defaultMix = 1, bool additiveLayers = false)
+        {
+            var controller = ScriptableObject.CreateInstance<CustomAnimationController>();
+            controller.name = prefix;
+
+            List<CustomMotionController.AnimationReference> animationReferences = new List<CustomMotionController.AnimationReference>();
+            int i = 0;
+            foreach(var anim in animations)
+            {
+                string animName = anim.Name;
+                if (string.IsNullOrWhiteSpace(animName))
+                {
+                    animName = $"anim_{i}";
+                }
+
+                animationReferences.Add(new CustomMotionController.AnimationReference(animName, anim, AnimationLoopMode.Loop));
+            }
+
+            List<CustomAnimationLayer> animationLayers = new List<CustomAnimationLayer>();
+            for(int index = 0; index < animationReferences.Count; index++)
+            {
+                var anim = animationReferences[index];
+
+                string animName = anim.Name;
+                if (string.IsNullOrWhiteSpace(animName))
+                {
+                    animName = $"anim_{index}";  
+                }
+
+                CustomAnimationLayer layer = new CustomAnimationLayer();
+
+                layer.SetActive(true);
+                layer.name = animName;
+                layer.blendParameterIndex = -1;
+                layer.entryStateIndex = 0;
+                layer.mix = defaultMix;
+                layer.IsAdditive = additiveLayers;
+                layer.motionControllerIdentifiers = new MotionControllerIdentifier[] { new MotionControllerIdentifier() { index = index, type = MotionControllerType.AnimationReference } };
+
+                CustomStateMachine previewStateMachine = new CustomStateMachine() { name = $"{animName}_state", motionControllerIndex = 0 };
+                layer.stateMachines = new CustomStateMachine[] { previewStateMachine };
+
+                animationLayers.Add(layer);
+            }
+
+            controller.animationReferences = animationReferences.ToArray();
+            controller.layers = animationLayers.ToArray();
+
+            return controller;
+        }
 
         #region IEngineObject
 

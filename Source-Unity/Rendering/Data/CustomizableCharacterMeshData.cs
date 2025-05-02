@@ -11,7 +11,7 @@ using Unity.Mathematics;
 
 namespace Swole
 {
-    [CreateAssetMenu(fileName = "CustomizableCharacterMeshData", menuName = "InstancedMeshData/CustomizableCharacterMeshData", order = 3)]
+    [CreateAssetMenu(fileName = "CustomizableCharacterMeshData", menuName = "Swole/InstancedMeshData/CustomizableCharacterMeshData", order = 3)]
     public class CustomizableCharacterMeshData : MorphableMeshData
     {
 
@@ -91,6 +91,7 @@ namespace Swole
             ApplyBufferToMaterials(VariationGroupIndicesPropertyName, VariationGroupIndicesBuffer);
 
             ApplyFloatToMaterials(BustVertexGroupIndexPropertyName, bustVertexGroupIndex);
+            ApplyFloatToMaterials(BustNerfVertexGroupIndexPropertyName, bustNerfVertexGroupIndex);
             ApplyFloatToMaterials(NippleMaskVertexGroupIndexPropertyName, nippleMaskVertexGroupIndex);
             ApplyFloatToMaterials(GenitalMaskVertexGroupIndexPropertyName, genitalMaskVertexGroupIndex); 
 
@@ -286,6 +287,11 @@ namespace Swole
         public int bustVertexGroupIndex;
         public int bustSizeShapeIndex;
 
+        public const string _bustNerfVertexGroupIndexDefaultPropertyName = "_BustNerfVertexGroupIndex";
+        public string bustNerfVertexGroupIndexPropertyNameOverride;
+        public string BustNerfVertexGroupIndexPropertyName => string.IsNullOrWhiteSpace(bustNerfVertexGroupIndexPropertyNameOverride) ? _bustNerfVertexGroupIndexDefaultPropertyName : bustNerfVertexGroupIndexPropertyNameOverride;
+        public int bustNerfVertexGroupIndex;
+
         public const string _nippleMaskVertexGroupIndexDefaultPropertyName = "_NippleMaskVertexGroupIndex";
         public string nippleMaskVertexGroupIndexPropertyNameOverride;
         public string NippleMaskVertexGroupIndexPropertyName => string.IsNullOrWhiteSpace(nippleMaskVertexGroupIndexPropertyNameOverride) ? _nippleMaskVertexGroupIndexDefaultPropertyName : nippleMaskVertexGroupIndexPropertyNameOverride;
@@ -340,6 +346,12 @@ namespace Swole
 
                 return variationGroupIndicesBuffer;
             }
+        }
+
+        public VertexGroup GetVariationVertexGroup(int index)
+        {
+            if (index < 0 || index >= VariationVertexGroupCount) return null;
+            return vertexGroups[variationGroupIndices[index]];
         }
 
 

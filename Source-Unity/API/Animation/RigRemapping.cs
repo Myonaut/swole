@@ -16,14 +16,68 @@ namespace Swole.API.Unity
     /// <summary>
     /// Translates bone names from one rig to another. Useful for remapping animations.
     /// </summary>
-    [CreateAssetMenu(fileName = "RigRemapping", menuName = "Rigs/Remapping", order = 1)]
-    public class RigRemapping : ScriptableObject
+    [CreateAssetMenu(fileName = "RigRemapping", menuName = "Swole/Rigs/Remapping", order = 1)]
+    public class RigRemapping : ScriptableObject, ISwoleSerialization<RigRemapping, RigRemapping.Serialized>
     {
+
+        #region Serialization
+
+        public string AsJSON(bool prettyPrint = false) => AsSerializableStruct().AsJSON(prettyPrint);
+
+        [Serializable]
+        public struct Serialized : ISerializableContainer<RigRemapping, RigRemapping.Serialized>
+        {
+
+            public string name;
+
+            public Remapping[] remappedBones;
+
+            public string SerializedName => name;
+
+            public RigRemapping AsOriginalType(PackageInfo packageInfo = default) => NewInstance(this, packageInfo);
+            public string AsJSON(bool prettyPrint = false) => swole.Engine.ToJson(this, prettyPrint);
+
+            public object AsNonserializableObject(PackageInfo packageInfo = default) => AsOriginalType(packageInfo);
+
+        }
+
+        public static implicit operator Serialized(RigRemapping asset)
+        {
+            Serialized s = new Serialized();
+
+            s.name = asset.name;
+            s.remappedBones = asset.remappedBones;
+
+            return s;
+        }
+
+        public RigRemapping.Serialized AsSerializableStruct() => this;
+        public object AsSerializableObject() => AsSerializableStruct();
+
+        public static RigRemapping NewInstance(RigRemapping.Serialized serializable, PackageInfo packageInfo = default)
+        {
+            var inst = NewInstance();
+
+            inst.name = serializable.name;
+            inst.remappedBones = serializable.remappedBones;
+
+            return inst;
+        }
+
+        public string SerializedName => name;
+
+        #endregion
+
+        public static RigRemapping NewInstance()
+        {
+            RigRemapping asset = ScriptableObject.CreateInstance<RigRemapping>();
+            return asset;
+        }
 
         public static RigRemapping Create(string path = null, string fileName = null, bool incrementIfExists = false)
         {
 
-            RigRemapping asset = ScriptableObject.CreateInstance<RigRemapping>();
+            RigRemapping asset = NewInstance();
 
 #if UNITY_EDITOR
             if (!string.IsNullOrEmpty(path) && !string.IsNullOrEmpty(fileName))

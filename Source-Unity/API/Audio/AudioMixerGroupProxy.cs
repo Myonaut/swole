@@ -12,7 +12,7 @@ namespace Swole
     {
         public AudioMixerGroup MixerGroup { get; set; }
     }
-    [Serializable, CreateAssetMenu(fileName = "audioMixerGroupProxy", menuName = "Audio/AudioMixerGroupProxy", order = 3)]
+    [Serializable, CreateAssetMenu(fileName = "audioMixerGroupProxy", menuName = "Swole/Audio/AudioMixerGroupProxy", order = 3)]
     public class AudioMixerGroupProxy : ScriptableObject, IAudioMixerGroupProxy
     {
         public AudioMixerGroup mixerGroup; 
@@ -52,6 +52,15 @@ namespace Swole
             set => isNotInternalAsset = !value;
         }
 
+        [SerializeField]
+        protected string collectionId;
+        public string CollectionID
+        {
+            get => collectionId;
+            set => collectionId = value;
+        }
+        public bool HasCollectionID => !string.IsNullOrWhiteSpace(CollectionID);
+
         public bool IsValid => !disposed;
         public void Dispose()
         {
@@ -61,7 +70,10 @@ namespace Swole
             }
             disposed = true;
         }
+        public void DisposeSelf() => Dispose();
         public void Delete() => Dispose();
+
+        public bool IsIdenticalAsset(ISwoleAsset asset) => ReferenceEquals(this, asset);
 
         #endregion
 
@@ -107,9 +119,19 @@ namespace Swole
 
         public bool IsInternalAsset { get => true; set { } }
 
+        public string CollectionID
+        {
+            get => string.Empty;
+            set { }
+        }
+        public bool HasCollectionID => false;
+
         public bool IsValid => mixerGroup != null;
         public void Dispose() { }
+        public void DisposeSelf() { }
         public void Delete() => Dispose();
+
+        public bool IsIdenticalAsset(ISwoleAsset asset) => (asset is IAudioMixerGroup x && ReferenceEquals(x.Instance, Instance));
 
         #endregion
 

@@ -114,6 +114,18 @@ namespace Swole.API.Unity
 
         public static string GetInputFieldText(Transform rootObject, bool includeInactive = true) => AnimationCurveEditorUtils.GetInputFieldText(rootObject, includeInactive);
         public static string GetInputFieldText(GameObject rootObject, bool includeInactive = true) => AnimationCurveEditorUtils.GetInputFieldText(rootObject, includeInactive);
+        public static string GetInputFieldTextByName(Transform rootObject, string componentName, bool includeInactive = true) => GetInputFieldTextByName(rootObject == null ? null : rootObject.gameObject, componentName, includeInactive);
+        public static string GetInputFieldTextByName(GameObject rootObject, string componentName, bool includeInactive = true)
+        {
+            if (rootObject == null) return string.Empty;
+             
+            TMP_InputField tmpInput = rootObject.FindFirstComponentUnderChild<TMP_InputField>(componentName, includeInactive);
+            if (tmpInput != null) return tmpInput.text;
+            InputField input = rootObject.FindFirstComponentUnderChild<InputField>(componentName, includeInactive);
+            if (input != null) return input.text;
+
+            return string.Empty;
+        }
 
         public static void SetComponentText(Transform rootObject, string text, bool includeInactive = true) => AnimationCurveEditorUtils.SetComponentText(rootObject, text, includeInactive);
         public static void SetComponentText(GameObject rootObject, string text, bool includeInactive = true) => AnimationCurveEditorUtils.SetComponentText(rootObject, text, includeInactive);
@@ -464,6 +476,115 @@ namespace Swole.API.Unity
 
         public static void SetAllRaycastTargets(Transform rootTransform, bool enabled) => AnimationCurveEditorUtils.SetAllRaycastTargets(rootTransform, enabled);
         public static void SetAllRaycastTargets(GameObject rootObject, bool enabled) => AnimationCurveEditorUtils.SetAllRaycastTargets(rootObject, enabled);
+
+        public static void SetSliderOnValueChangeAction(GameObject rootObject, UnityAction<float> action, bool includeInactive = true, bool removeAllListeners = true) => SetSliderOnValueChangeAction(rootObject.transform, action, includeInactive, removeAllListeners);
+        public static void SetSliderOnValueChangeAction(Transform rootObject, UnityAction<float> action, bool includeInactive = true, bool removeAllListeners = true)
+        {
+            if (rootObject == null) return;
+
+            Slider slider = rootObject.GetComponentInChildren<Slider>(includeInactive);
+            if (slider != null)
+            {
+                if (slider.onValueChanged == null) slider.onValueChanged = new Slider.SliderEvent(); else if (removeAllListeners) slider.onValueChanged.RemoveAllListeners();
+                if (action != null) slider.onValueChanged.AddListener(action);
+            }
+        }
+
+        public static void SetSliderOnValueChangeActionByName(GameObject rootObject, string componentName, UnityAction<float> action, bool includeInactive = true, bool removeAllListeners = true) => SetSliderOnValueChangeActionByName(rootObject == null ? null : rootObject.transform, componentName, action, includeInactive, removeAllListeners);
+        public static void SetSliderOnValueChangeActionByName(Transform rootObject, string componentName, UnityAction<float> action, bool includeInactive = true, bool removeAllListeners = true)
+        {
+            if (rootObject == null) return;
+
+            Slider slider = rootObject.FindFirstComponentUnderChild<Slider>(componentName, includeInactive);
+            if (slider != null)
+            {
+                if (slider.onValueChanged == null) slider.onValueChanged = new Slider.SliderEvent(); else if (removeAllListeners) slider.onValueChanged.RemoveAllListeners();
+                if (action != null) slider.onValueChanged.AddListener(action);
+            }
+        }
+
+        public static void SetSliderValue(Transform rootObject, float value, bool includeInactive = true, bool withoutNotify = true) => SetSliderValue(rootObject == null ? null : rootObject.gameObject, value, includeInactive, withoutNotify);
+        public static void SetSliderValue(GameObject rootObject, float value, bool includeInactive = true, bool withoutNotify = true)
+        {
+            if (rootObject == null) return;
+
+            Slider slider = rootObject.GetComponentInChildren<Slider>(includeInactive);
+            if (slider != null)
+            {
+                if (withoutNotify)
+                {
+                    slider.SetValueWithoutNotify(value);
+                } 
+                else
+                {
+                    slider.value = value; 
+                }
+            }
+        }
+        public static void SetSliderValueByName(Transform rootObject, string componentName, float value, bool includeInactive = true, bool withoutNotify = true) => SetSliderValueByName(rootObject == null ? null : rootObject.gameObject, componentName, value, includeInactive, withoutNotify);
+        public static void SetSliderValueByName(GameObject rootObject, string componentName, float value, bool includeInactive = true, bool withoutNotify = true)
+        {
+            if (rootObject == null) return;
+
+            Slider slider = rootObject.FindFirstComponentUnderChild<Slider>(componentName, includeInactive);
+            if (slider != null)
+            {
+                if (withoutNotify)
+                {
+                    slider.SetValueWithoutNotify(value);
+                }
+                else
+                {
+                    slider.value = value;
+                }
+            }
+        }
+
+        public static float GetSliderValue(Transform rootObject, bool includeInactive = true) => GetSliderValue(rootObject.gameObject, includeInactive);
+        public static float GetSliderValue(GameObject rootObject, bool includeInactive = true)
+        {
+            if (rootObject == null) return 0f;
+
+            Slider slider = rootObject.GetComponentInChildren<Slider>(includeInactive);
+            if (slider != null) return slider.value;
+
+            return 0f;
+        }
+        public static float GetSliderValueByName(Transform rootObject, string componentName, bool includeInactive = true) => GetSliderValueByName(rootObject.gameObject, componentName, includeInactive);
+        public static float GetSliderValueByName(GameObject rootObject, string componentName, bool includeInactive = true)
+        {
+            if (rootObject == null) return 0f;
+
+            Slider slider = rootObject.FindFirstComponentUnderChild<Slider>(componentName, includeInactive);
+            if (slider != null) return slider.value;
+
+            return 0f;
+        }
+
+        public static void SetSliderMinMaxValue(Transform rootObject, float min, float max, bool includeInactive = true, bool withoutNotify = true) => SetSliderMinMaxValue(rootObject == null ? null : rootObject.gameObject, min, max, includeInactive, withoutNotify);
+        public static void SetSliderMinMaxValue(GameObject rootObject, float min, float max, bool includeInactive = true, bool withoutNotify = true)
+        {
+            if (rootObject == null) return;
+
+            Slider slider = rootObject.GetComponentInChildren<Slider>(includeInactive);
+            if (slider != null)
+            {
+                slider.minValue = min;
+                slider.maxValue = max;
+            }
+        }
+        public static void SetSliderMinMaxValueByName(Transform rootObject, string componentName, float min, float max, bool includeInactive = true, bool withoutNotify = true) => SetSliderMinMaxValueByName(rootObject == null ? null : rootObject.gameObject, componentName, min, max, includeInactive, withoutNotify);
+        public static void SetSliderMinMaxValueByName(GameObject rootObject, string componentName, float min, float max, bool includeInactive = true, bool withoutNotify = true)
+        {
+            if (rootObject == null) return;
+
+            Slider slider = rootObject.FindFirstComponentUnderChild<Slider>(componentName, includeInactive);
+            if (slider != null)
+            {
+                slider.minValue = min;
+                slider.maxValue = max;
+            }
+        }
 
     }
 }

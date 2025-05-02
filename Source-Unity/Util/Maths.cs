@@ -172,6 +172,12 @@ namespace Swole
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static float3 GetPosition(this float4x4 matrix)
+        {
+            return matrix.c3.xyz;
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static quaternion GetRotation(this float4x4 matrix)
         {
 
@@ -181,6 +187,19 @@ namespace Swole
 
             return quaternion.LookRotation(forward, up);
 
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static float3 GetScale(this float4x4 matrix)
+        {
+            float3 scale = new Vector3(math.length(matrix.c0), math.length(matrix.c1), math.length(matrix.c2));
+
+            if (math.any(math.normalize(math.cross(math.length(matrix.c0), math.length(matrix.c1))) != math.normalize(matrix.c2).xyz))
+            {
+                scale.x *= -1;
+            }
+
+            return scale;
         }
 
         #region Source: https://gamedev.stackexchange.com/questions/23743/whats-the-most-efficient-way-to-find-barycentric-coordinates
@@ -204,6 +223,13 @@ namespace Swole
             return new float3(u, v, w);
 
         }
+
+        public static bool IsInTriangle(float3 barycentricCoords, float errorMargin = 0) 
+        { 
+            float upperBound = 1 + errorMargin; 
+            return barycentricCoords.x >= -errorMargin && barycentricCoords.y >= -errorMargin && barycentricCoords.z >= -errorMargin && barycentricCoords.x <= upperBound && barycentricCoords.y <= upperBound && barycentricCoords.z <= upperBound; 
+        }
+        public static bool IsInTriangle(float3 p, float3 a, float3 b, float3 c, float errorMargin = 0) => IsInTriangle(BarycentricCoords(p, a, b, c), errorMargin);
         #endregion
 
         #region Source: https://gist.github.com/keenanwoodall/c37ce12e0b7c08bd59f7235ec9614562
@@ -416,6 +442,39 @@ namespace Swole
             m[13] = 0.0F;
             m[14] = 0.0F;
             m[15] = 1.0F;
+        }
+
+        public static Quaternion EnsureQuaternionContinuity(Quaternion lastQ, Quaternion q)
+        {
+            Quaternion flipped = new Quaternion(-q.x, -q.y, -q.z, -q.w);
+
+            Quaternion midQ = new Quaternion(
+                Mathf.Lerp(lastQ.x, q.x, 0.5f),
+                Mathf.Lerp(lastQ.y, q.y, 0.5f),
+                Mathf.Lerp(lastQ.z, q.z, 0.5f),
+                Mathf.Lerp(lastQ.w, q.w, 0.5f)
+                );
+
+            Quaternion midQFlipped = new Quaternion(
+                Mathf.Lerp(lastQ.x, flipped.x, 0.5f),
+                Mathf.Lerp(lastQ.y, flipped.y, 0.5f),
+                Mathf.Lerp(lastQ.z, flipped.z, 0.5f),
+                Mathf.Lerp(lastQ.w, flipped.w, 0.5f)
+                );
+
+            float angle = Quaternion.Angle(lastQ, midQ);
+            float angleFlipped = Quaternion.Angle(lastQ, midQFlipped);
+
+            return angleFlipped < angle ? flipped : q;
+        }
+
+        public static Quaternion EnsureQuaternionContinuity2(Quaternion last, Quaternion curr)
+        {
+            if (last.x * curr.x + last.y * curr.y + last.z * curr.z + last.w * curr.w < 0f)
+            {
+                return new Quaternion(-curr.x, -curr.y, -curr.z, -curr.w);
+            }
+            return curr;
         }
 
         /// <summary>

@@ -924,6 +924,7 @@ namespace Swole.UI
             if (refresh) Refresh();
         }
 
+        public void FilterMembersByStartString(string str) => FilterMembersByStartString(str, false, true); 
         public void FilterMembersByStartString(string str, bool caseSensitive = false, bool refresh = true)
         {
             if (string.IsNullOrWhiteSpace(str))

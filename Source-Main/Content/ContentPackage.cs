@@ -12,26 +12,54 @@ namespace Swole
     {
 
         private List<IContent> orphanedContent;
+        private static readonly List<IContent> disposeSelfOnly = new List<IContent>();
+        private static bool TryUnorphanContent(IContent content, IContent validContent)
+        {
+            if (ReferenceEquals(content, validContent)) return true;
+
+            if (validContent.IsIdenticalAsset(content))
+            {
+                disposeSelfOnly.Add(content); 
+                return true;
+            }
+
+            return false;
+        }
         public void DisposeOrphanedContent()
         {
             if (orphanedContent != null) 
             {
                 if (content != null)
                 {
+                    disposeSelfOnly.Clear();
                     for (int a = 0; a < content.Length; a++)
                     {
                         var c = content[a];
                         if (c == null) continue;
-                        orphanedContent.RemoveAll(i => i == c);
+
+                        orphanedContent.RemoveAll(i => TryUnorphanContent(i, c));  
                     }
+                    foreach (var selfOrphan in disposeSelfOnly)
+                    {
+                        try
+                        {
+                            selfOrphan.DisposeSelf();
+                        }
+                        catch (Exception ex)
+                        {
+                            swole.LogError(ex);
+                        }
+                    }
+                    disposeSelfOnly.Clear();
                 }
                 for (int a = 0; a < orphanedContent.Count; a++)
                 {
-                    var content = orphanedContent[a];
-                    if (content == null) continue;
+                    var orphan = orphanedContent[a];
+                    if (orphan == null) continue;
+
                     try
                     {
-                        content.Dispose();
+                        orphan.Dispose();
                     }
                     catch (Exception ex)
                     {
@@ -43,9 +71,32 @@ namespace Swole
             } 
         }
 
-        private SourcePackage cachedSourcePackage;
+        public void DisposeContent()
+        {
+            if (content != null)
+            {
+                foreach (var c in content) if (c != null) 
+                    {
+                        try
+                        {
+                            c.Dispose();
+                        }
+                        catch (Exception ex)
+                        {
+                            swole.LogError(ex);
+                        }
+                    }
+            }
 
-        private static readonly List<SourceScript> _tempScripts = new List<SourceScript>();
+            content = null;
+
+            DisposeOrphanedContent();
+        }
+
+        private SourcePackage cachedSourcePackage;
+        public SourcePackage CachedSourcePackage => cachedSourcePackage;
+
+        private static readonly List<SourceScript> _tempScripts = new List<SourceScript>(); 
         /// <summary>
         /// Returns a SourcePackage containing all of the scripts in the ContentPackage.
         /// </summary>
@@ -214,7 +265,8 @@ namespace Swole
         public string Description => Manifest.Description;
         public string[] Tags => Manifest.Tags;
 
-        protected readonly IContent[] content;
+        [NonSerialized]
+        protected IContent[] content;
 
         public List<IContent> AsList(List<IContent> list = null)
         {

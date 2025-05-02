@@ -419,7 +419,7 @@ namespace Swole.API.Unity
 
                     if (info != projectInfo)
                     {
-                        cachedAsset = (Creation)cachedAsset.CreateCopyAndReplaceContentInfo(projectInfo); 
+                        cachedAsset = (Creation)cachedAsset.CreateShallowCopyAndReplaceContentInfo(projectInfo); 
                     }
 
                     cachedAsset.previewTexturePath = previewTexturePath;
@@ -460,7 +460,7 @@ namespace Swole.API.Unity
                     }
                     _tilePrototypes.RemoveAll(i => i.prototype.tileSet == tileSet); 
 
-                    TileSpawnGroup group = new TileSpawnGroup(tileSet.ID, _objectSpawners, tileSet.collectionId);  
+                    TileSpawnGroup group = new TileSpawnGroup(tileSet.ID, _objectSpawners, tileSet.CollectionID);  
                     _spawnGroups.Add(group);  
                 }
 

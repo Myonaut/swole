@@ -963,7 +963,7 @@ namespace Swole.Modding
             if (BoneMatricesArray == null) return;
 
             if (perVertexSkinningMatricesArray == null) perVertexSkinningMatricesArray = new Matrix4x4[BonesPerVertex.Length];
-            perVertexSkinningMatricesArray = RealtimeMesh.GetPerVertexSkinningMatrices(boneMatricesArray, BoneWeights, BonesPerVertex, perVertexSkinningMatricesArray);
+            perVertexSkinningMatricesArray = RealtimeMesh.GetPerVertexSkinningMatrices(boneMatricesArray, BoneWeights.AsArray(), BonesPerVertex.AsArray(), perVertexSkinningMatricesArray);
             if (perVertexSkinningMatricesInverseArray == null) perVertexSkinningMatricesInverseArray = new Matrix4x4[perVertexSkinningMatricesArray.Length];
             for (int a = 0; a < perVertexSkinningMatricesArray.Length; a++) perVertexSkinningMatricesInverseArray[a] = perVertexSkinningMatricesArray[a].inverse;
              
@@ -998,7 +998,7 @@ namespace Swole.Modding
             if (VerticesArray == null || PerVertexSkinningMatricesArray == null) return;
 
             if (skinnedVerticesArray == null) skinnedVerticesArray = new SkinnedVertex[verticesArray.Length];
-            skinnedVerticesArray = MeshEditing.GetSkinnedVertexData(verticesArray, BoneWeights, BonesPerVertex, perVertexSkinningMatricesArray, skinnedVerticesArray);
+            skinnedVerticesArray = MeshEditing.GetSkinnedVertexData(verticesArray, BoneWeights.AsArray(), BonesPerVertex.AsArray(), perVertexSkinningMatricesArray, skinnedVerticesArray);
         }
         protected NativeList<SkinnedVertex8Reference> skinnedVertices;
         public NativeList<SkinnedVertex8Reference> SkinnedVertices
@@ -1020,7 +1020,7 @@ namespace Swole.Modding
 
             if (!skinnedVertices.IsCreated) skinnedVertices = new NativeList<SkinnedVertex8Reference>(verticesArray.Length, Allocator.Persistent); 
             skinnedVertices.Clear();
-            skinnedVertices = MeshEditing.GetSkinnedVertex8DataAsList(meshViewerSkinnedRenderer, verticesArray, BoneWeights, BonesPerVertex, perVertexSkinningMatricesArray, skinnedVertices);
+            skinnedVertices = MeshEditing.GetSkinnedVertex8DataAsList(meshViewerSkinnedRenderer, verticesArray, BoneWeights.AsArray(), BonesPerVertex.AsArray(), perVertexSkinningMatricesArray, skinnedVertices);
         }
         
         protected MeshDataTools.MergedVertex[] mergedVerticesArray;
@@ -1276,7 +1276,7 @@ namespace Swole.Modding
             if (!previousEditedBlendShapeDeltas.IsCreated) previousEditedBlendShapeDeltas = new NativeList<ShapeVertexDelta>(editedMesh.vertexCount, Allocator.Persistent);
 
             previousEditedBlendShapeDeltas.Clear();
-            previousEditedBlendShapeDeltas.AddRange(editedBlendShapeDeltas); 
+            previousEditedBlendShapeDeltas.AddRange(editedBlendShapeDeltas.AsArray()); 
         }
         protected NativeList<int> editedBlendShapeFrameCounts;
         protected NativeList<int> editedBlendShapeStartIndices;

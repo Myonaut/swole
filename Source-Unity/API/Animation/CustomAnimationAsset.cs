@@ -28,6 +28,15 @@ namespace Swole.API.Unity.Animation
             set => isNotInternalAsset = !value;
         }
 
+        [SerializeField]
+        protected string collectionId;
+        public string CollectionID
+        {
+            get => collectionId;
+            set => collectionId = value;
+        }
+        public bool HasCollectionID => !string.IsNullOrWhiteSpace(CollectionID);
+
         protected bool invalid;
         public bool IsValid => !invalid;
         public void Dispose()
@@ -36,9 +45,11 @@ namespace Swole.API.Unity.Animation
             {
                 GameObject.Destroy(this);
             }
+
             disposed = true;
             invalid = true;
         }
+        public void DisposeSelf() => Dispose();
         public void Delete() => Dispose();
 
         #region IContent
@@ -59,12 +70,18 @@ namespace Swole.API.Unity.Animation
 
         public string RelativePath => animation == null ? default : animation.RelativePath;
 
-        public string Name => animation == null ? default : animation.Name;
+        public string Name => animation == null ? name : animation.Name;
 
         public IContent CreateCopyAndReplaceContentInfo(ContentInfo info)
         {
             var obj = NewExternalInstance();
             if (animation != null) obj.animation = (CustomAnimation)animation.CreateCopyAndReplaceContentInfo(info);
+            return obj;
+        }
+        public IContent CreateShallowCopyAndReplaceContentInfo(ContentInfo info)
+        {
+            var obj = NewExternalInstance();
+            if (animation != null) obj.animation = (CustomAnimation)animation.CreateShallowCopyAndReplaceContentInfo(info);
             return obj;
         }
 
@@ -85,6 +102,8 @@ namespace Swole.API.Unity.Animation
             if (animation == null) return dependencies == null ? new List<PackageIdentifier>() : dependencies;
             return animation.ExtractPackageDependencies(dependencies);
         }
+
+        public bool IsIdenticalAsset(ISwoleAsset asset) => ReferenceEquals(this, asset);
 
         #endregion
 
@@ -114,10 +133,13 @@ namespace Swole.API.Unity.Animation
             asset.animation = animation;
 
 #if UNITY_EDITOR
-            string fullPath = $"{path + (path.EndsWith('/') ? "" : "/")}{fileName}.asset";
-            if (incrementIfExists) fullPath = AssetDatabase.GenerateUniqueAssetPath(fullPath);
-            AssetDatabase.CreateAsset(asset, fullPath);
-            AssetDatabase.SaveAssets();
+            if (!string.IsNullOrWhiteSpace(path) && !string.IsNullOrWhiteSpace(fileName))
+            {
+                string fullPath = $"{path + (path.EndsWith('/') ? "" : "/")}{fileName}.asset";
+                if (incrementIfExists) fullPath = AssetDatabase.GenerateUniqueAssetPath(fullPath);
+                AssetDatabase.CreateAsset(asset, fullPath);
+                AssetDatabase.SaveAssets();
+            }
 #endif
 
             return asset;

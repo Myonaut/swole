@@ -398,7 +398,13 @@ namespace Swole.API.Unity.Animation
             {
                 foreach(var ik in finalIKComponents)
                 {
-                    if (ik == null || ik.component == null) continue;
+                    if (ik == null || ik.component == null) continue; 
+                    var solver = ik.component.GetIKSolver();
+                    if (solver != null && !solver.initiated)
+                    {
+                        solver.Initiate(ik.component.transform); // Initialize the solver
+                    }
+
                     ik.component.enabled = false;
 
                     ik.SetPositionWeight(ik.positionWeight);

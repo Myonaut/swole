@@ -4627,7 +4627,7 @@ namespace Swole.Script
                 _curveType = new SwoleScriptType(type_Curve, type); 
                 var typeName = new ValString(type_Curve);
 
-                Intrinsic f;
+                //Intrinsic f;
                 Dictionary<string, AssignmentOverrideDelegate> assignOverrideDelegates = new Dictionary<string, AssignmentOverrideDelegate>();
 
                 var fields = type.GetFields(BindingFlags.Public | BindingFlags.Instance | BindingFlags.Static);

@@ -7,7 +7,7 @@ using UnityEngine;
 namespace Swole.API.Unity
 {
 
-    [CreateAssetMenu(fileName = "TileSetSource", menuName = "Environment/TileSetSource", order = 1)]
+    [CreateAssetMenu(fileName = "TileSetSource", menuName = "Swole/Environment/TileSetSource", order = 1)]
     public class TileSetSource : ScriptableObject
     {
 

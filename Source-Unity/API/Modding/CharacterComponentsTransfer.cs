@@ -28,23 +28,71 @@ namespace Swole.Modding
             {
                 apply = false;
 
-                TransferComponents(rootToCopy, rootTarget);
+                Transfer(rootToCopy, rootTarget); 
             }
+        }
+
+        public virtual void Transfer(GameObject rootToCopy, GameObject rootTarget)
+        {
+            if (rootTarget == null) rootTarget = gameObject;
+            TransferComponents(rootToCopy, rootTarget);
         }
 
         public static void TransferComponents(GameObject rootToCopy, GameObject rootTarget)
         {
 
-            ProxyBone[] proxyBones = rootToCopy.GetComponentsInChildren<ProxyBone>(true);
+            //Transform rootToCopyTransform = rootToCopy.transform;
+            Transform rootTransform = rootTarget.transform;
+
+            Transform FindTransform(GameObject equivalent) => ReferenceEquals(rootToCopy, equivalent) ? rootTransform : rootTransform.FindDeepChild(equivalent.name);
+
+            IdenticalTransformConstraintCreator[] identicalTransformConstraintCreators = rootToCopy.GetComponentsInChildren<IdenticalTransformConstraintCreator>(true);
+            foreach (var itcc in identicalTransformConstraintCreators)
+            {
+                var target = FindTransform(itcc.gameObject);
+                if (target == null) continue;
+
+                var targetITCC = target.gameObject.GetComponent<IdenticalTransformConstraintCreator>();
+                if (targetITCC != null) continue;
+
+                targetITCC = target.gameObject.AddComponent<IdenticalTransformConstraintCreator>();
+
+                targetITCC.rootObject = itcc.rootObject == null ? null : FindTransform(itcc.rootObject.gameObject);
+                if (itcc.transformsToConstrain != null)
+                {
+                    targetITCC.transformsToConstrain = new List<Transform>();
+                    foreach (var t in itcc.transformsToConstrain)
+                    {
+                        targetITCC.transformsToConstrain.Add(FindTransform(t.gameObject));
+                    }
+                }
+            }
+
+            SetParent[] setParents = rootToCopy.GetComponentsInChildren<SetParent>(true);
+            foreach (var sp in setParents)
+            {
+                var target = FindTransform(sp.gameObject);
+                if (target == null) continue;
+
+                var targetSP = target.gameObject.GetComponent<SetParent>();
+                if (targetSP != null) continue;
+
+                targetSP = target.gameObject.AddComponent<SetParent>();
+
+                targetSP.onAwake = sp.onAwake;
+                targetSP.parent = sp.parent == null ? null : FindTransform(sp.parent.gameObject);
+            }
+
+            ProxyBone[] proxyBones = rootToCopy.GetComponentsInChildren<ProxyBone>(true);  
             foreach (var pb in proxyBones)
             {
-                var target = rootTarget.transform.FindDeepChildLiberal(pb.name);
+                var target = FindTransform(pb.gameObject);
                 if (target == null) continue;
 
                 var targetPB = target.gameObject.GetComponent<ProxyBone>();
                 if (targetPB != null) continue;
 
-                targetPB = target.gameObject.AddComponent<ProxyBone>();
+                targetPB = target.gameObject.AddComponent<ProxyBone>(); 
 
                 targetPB.hasStartingPose = pb.hasStartingPose;
                 targetPB.skipAutoRegister = pb.skipAutoRegister;
@@ -57,7 +105,7 @@ namespace Swole.Modding
                         var binding = pb.bindings[a];
                         var targetBinding = new ProxyBone.BoneBinding();
 
-                        targetBinding.bone = binding.bone == null ? null : rootTarget.transform.FindDeepChildLiberal(binding.bone.name);
+                        targetBinding.bone = binding.bone == null ? null : FindTransform(binding.bone.gameObject);
                         targetBinding.binding = binding.binding;
 
                         targetPB.bindings[a] = targetBinding;
@@ -68,7 +116,7 @@ namespace Swole.Modding
             ProxyTransform[] proxyTransforms = rootToCopy.GetComponentsInChildren<ProxyTransform>(true);
             foreach (var pt in proxyTransforms)
             {
-                var target = rootTarget.transform.FindDeepChildLiberal(pt.name);
+                var target = FindTransform(pt.gameObject);
                 if (target == null) continue;
 
                 var targetPT = target.gameObject.GetComponent<ProxyTransform>();
@@ -77,7 +125,7 @@ namespace Swole.Modding
                 targetPT = target.gameObject.AddComponent<ProxyTransform>();
 
                 targetPT.priority = pt.priority;
-                targetPT.transformToCopy = pt.transformToCopy == null ? null : rootTarget.transform.FindDeepChildLiberal(pt.transformToCopy.name);
+                targetPT.transformToCopy = pt.transformToCopy == null ? null : FindTransform(pt.transformToCopy.gameObject);
                 targetPT.applyInWorldSpace = pt.applyInWorldSpace;
                 targetPT.preserveChildTransforms = pt.preserveChildTransforms;
                 targetPT.ignorePosition = pt.ignorePosition;
@@ -88,11 +136,10 @@ namespace Swole.Modding
             }
 
 #if BULKOUT_ENV
-
             TrigonometricIK[] trigIKs = rootToCopy.GetComponentsInChildren<TrigonometricIK>(true);
             foreach (var ik in trigIKs)
             {
-                var target = rootTarget.transform.FindDeepChildLiberal(ik.name);
+                var target = FindTransform(ik.gameObject);
                 if (target == null) continue;
 
                 var targetIK = target.gameObject.GetComponent<TrigonometricIK>();
@@ -102,13 +149,13 @@ namespace Swole.Modding
 
                 var solver = new IKSolverTrigonometric();
                  
-                solver.target = ik.solver.target == null ? null : rootTarget.transform.FindDeepChildLiberal(ik.solver.target.name); 
+                solver.target = ik.solver.target == null ? null : FindTransform(ik.solver.target.gameObject);
                 solver.IKRotationWeight = ik.solver.IKRotationWeight;
                 solver.IKRotation = ik.solver.IKRotation;
                 solver.bendNormal = ik.solver.bendNormal;
-                solver.bone1 = new IKSolverTrigonometric.TrigonometricBone() { transform = ik.solver.bone1.transform == null ? null : rootTarget.transform.FindDeepChildLiberal(ik.solver.bone1.transform.name), weight = ik.solver.bone1.weight };
-                solver.bone2 = new IKSolverTrigonometric.TrigonometricBone() { transform = ik.solver.bone2.transform == null ? null : rootTarget.transform.FindDeepChildLiberal(ik.solver.bone2.transform.name), weight = ik.solver.bone2.weight };
-                solver.bone3 = new IKSolverTrigonometric.TrigonometricBone() { transform = ik.solver.bone3.transform == null ? null : rootTarget.transform.FindDeepChildLiberal(ik.solver.bone3.transform.name), weight = ik.solver.bone3.weight };
+                solver.bone1 = new IKSolverTrigonometric.TrigonometricBone() { transform = ik.solver.bone1.transform == null ? null : FindTransform(ik.solver.bone1.transform.gameObject), weight = ik.solver.bone1.weight };
+                solver.bone2 = new IKSolverTrigonometric.TrigonometricBone() { transform = ik.solver.bone2.transform == null ? null : FindTransform(ik.solver.bone2.transform.gameObject), weight = ik.solver.bone2.weight };
+                solver.bone3 = new IKSolverTrigonometric.TrigonometricBone() { transform = ik.solver.bone3.transform == null ? null : FindTransform(ik.solver.bone3.transform.gameObject), weight = ik.solver.bone3.weight };
 
                 targetIK.solver = solver;
             }

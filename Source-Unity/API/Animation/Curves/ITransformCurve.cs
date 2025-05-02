@@ -162,6 +162,7 @@ namespace Swole.API.Unity.Animation
             #endregion
 
             public int timelinePosition;
+            public float GetTime(int framesPerSecond) => timelinePosition / (float)framesPerSecond;
 
             public EditableAnimationCurve interpolationCurve;
 
@@ -240,7 +241,10 @@ namespace Swole.API.Unity.Animation
         public float GetClosestKeyframeTime(float referenceTime, int framesPerSecond, bool includeReferenceTime = true, IntFromDecimalDelegate getFrameIndex = null);
 
         public List<float> GetFrameTimes(int framesPerSecond, List<float> inputList = null);
-        public List<CustomAnimation.FrameHeader> GetFrameTimes(int framesPerSecond, List<CustomAnimation.FrameHeader> inputList); 
+        public List<CustomAnimation.FrameHeader> GetFrameTimes(int framesPerSecond, List<CustomAnimation.FrameHeader> inputList);
+
+        public void ClearKeys();
+        public void ClearTransformKeys();
 
     }
 }

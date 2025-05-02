@@ -145,6 +145,11 @@ namespace Swole
 
         public override Matrix4x4[] BindPose => meshData.ManagedBindPose;
 
+        protected override void SetupSkinnedMeshSyncs()
+        {
+            throw new NotImplementedException();
+        }
+
     }
 }
 

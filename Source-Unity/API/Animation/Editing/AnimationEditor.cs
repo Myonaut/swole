@@ -3335,7 +3335,7 @@ namespace Swole.API.Unity.Animation
         public void RefreshBoneGroupVisibility() 
         {
             var activeObj = ActiveAnimatable;
-            if (activeObj == null) return;
+            if (activeObj == null || renderedBonesManager == null) return;
 
             if (activeObj.animator != null && activeObj.animator.avatar != null)
             {
@@ -3353,10 +3353,10 @@ namespace Swole.API.Unity.Animation
                         {
                             isFkIk = true;
 
-                            int ind = FindPoseableBoneIndex(ikBone.name);
+                            int ind = renderedBonesManager.FindPoseableBoneIndex(ikBone.name);
                             if (ind >= 0)
                             {
-                                bone = poseableBones[ind]; // set to ik equivalent
+                                bone = renderedBonesManager.poseableBones[ind]; // set to ik equivalent
                                 invert = true; // if the ik controller is active this will hide the fk bone
                             }
                         }
@@ -3379,7 +3379,7 @@ namespace Swole.API.Unity.Animation
                     return true;
                 }
 
-                foreach(var bone in poseableBones)
+                foreach(var bone in renderedBonesManager.poseableBones)
                 {
                     if (bone == null || bone.transform == null || !activeObj.animator.avatar.TryGetBoneInfo(bone.name, out var boneInfo)) continue;
                     var boneGroup = activeObj.animator.avatar.GetBoneGroup(bone.transform);//activeObj.animator.avatar.GetBoneGroup(boneInfo.boneGroup);
@@ -3390,7 +3390,7 @@ namespace Swole.API.Unity.Animation
                     bone.SetActive(activate);
                     if (bone.parent >= 0)
                     {
-                        var parent = poseableBones[bone.parent];
+                        var parent = renderedBonesManager.poseableBones[bone.parent];
                         if (parent != null && activeObj.animator.avatar.TryGetBoneInfo(parent.name, out boneInfo)) 
                         {
                             boneGroup = activeObj.animator.avatar.GetBoneGroup(parent.transform);//activeObj.animator.avatar.GetBoneGroup(boneInfo.boneGroup);
@@ -3529,7 +3529,7 @@ namespace Swole.API.Unity.Animation
 
         public void RefreshIKControllerActivation(bool force = false)
         {
-            if ((IsPlayingPreview && !force) || CurrentSession == null) return;
+            if ((IsPlayingPreview && !force) || CurrentSession == null || renderedBonesManager == null) return;
 
             foreach (var obj in CurrentSession.importedObjects)
             {
@@ -3565,13 +3565,13 @@ namespace Swole.API.Unity.Animation
                             }
                         }
 
-                        var poseableIndex = FindPoseableBoneIndex(ikTransform);
-                        if (poseableIndex >= 0) poseableBones[poseableIndex].SetActive(boneVisible);
+                        var poseableIndex = renderedBonesManager.FindPoseableBoneIndex(ikTransform);
+                        if (poseableIndex >= 0) renderedBonesManager.poseableBones[poseableIndex].SetActive(boneVisible);
 
                         if (obj.animator.avatar != null && obj.animator.avatar.IsIkBone(obj.animator.avatar.Remap(ikTransform.name), out var ikBone) && ikBone.type == CustomAvatar.IKBoneType.Target && !string.IsNullOrWhiteSpace(ikBone.fkParent)) // Hide fk bone when ik is active, and vice versa (for Target ik bone types only)
                         {
-                            poseableIndex = FindPoseableBoneIndex(ikBone.fkParent);
-                            if (poseableIndex >= 0) poseableBones[poseableIndex].SetActive(group != null ? (!boneVisible && !group.active) : !boneVisible);     
+                            poseableIndex = renderedBonesManager.FindPoseableBoneIndex(ikBone.fkParent);
+                            if (poseableIndex >= 0) renderedBonesManager.poseableBones[poseableIndex].SetActive(group != null ? (!boneVisible && !group.active) : !boneVisible);     
                         }
                     }
 
@@ -4020,19 +4020,19 @@ namespace Swole.API.Unity.Animation
 
             var activeAnimator = ActiveAnimator;
 
-            for (int a = 0; a < poseableBones.Count; a++)
+            for (int a = 0; a < renderedBonesManager.poseableBones.Count; a++)
             {
                 int i = a;
-                var bone = poseableBones[a];
+                var bone = renderedBonesManager.poseableBones[a];
                 if (bone.transform == null) continue;
                 boneDropdownList.AddNewMember(bone.name, () => SetSelectedBoneInUI(i));  
             }
             boneDropdownList.Refresh();
 
             string selectedBoneName = "null";
-            if (selectedBoneUI >= 0 && selectedBoneUI < poseableBones.Count) 
+            if (selectedBoneUI >= 0 && selectedBoneUI < renderedBonesManager.poseableBones.Count) 
             {
-                var bone = poseableBones[selectedBoneUI];
+                var bone = renderedBonesManager.poseableBones[selectedBoneUI];
                 if (bone != null && bone.transform != null) selectedBoneName = bone.name; 
             }
             SetComponentTextByName(boneDropdownListRoot, _currentTextObjName, selectedBoneName);
@@ -4102,9 +4102,9 @@ namespace Swole.API.Unity.Animation
             if (boneDropdownListRoot != null)
             {
                 string boneName = "null";
-                if (poseableBones != null && index >= 0 && index < poseableBones.Count)
+                if (renderedBonesManager.poseableBones != null && index >= 0 && index < renderedBonesManager.poseableBones.Count)
                 {
-                    var bone = poseableBones[index];
+                    var bone = renderedBonesManager.poseableBones[index];
                     if (bone != null) boneName = bone.name;
                 }
                 SetComponentTextByName(boneDropdownListRoot, _currentTextObjName, boneName); 
@@ -4353,8 +4353,8 @@ namespace Swole.API.Unity.Animation
                     RefreshBoneCurveDropdowns();
                     if (curveRenderer != null)
                     {
-                        flag = selectedBoneUI >= 0 && selectedBoneUI < poseableBones.Count && animatable != null && source != null;
-                        var bone = flag ? poseableBones[selectedBoneUI] : null;
+                        flag = selectedBoneUI >= 0 && selectedBoneUI < renderedBonesManager.poseableBones.Count && animatable != null && source != null;
+                        var bone = flag ? renderedBonesManager.poseableBones[selectedBoneUI] : null;
                         flag = flag && bone != null && bone.transform != null; 
                         if (flag)
                         {
@@ -4640,9 +4640,6 @@ namespace Swole.API.Unity.Animation
         public GameObject boneRootPrototype;
         public GameObject boneLeafPrototype;
 
-        private PrefabPool boneRootPool;
-        private PrefabPool boneLeafPool;
-
         [Header("Events"), SerializeField]
         private UnityEvent OnSetupSuccess = new UnityEvent();
         [SerializeField]
@@ -4832,13 +4829,10 @@ namespace Swole.API.Unity.Animation
                 timelineWindow.OnSetLength.AddListener(OnSetTimelineLength);
             }
 
-            if (boneRootPool == null) boneRootPool = new GameObject("boneRootPool").AddComponent<PrefabPool>();
-            boneRootPool.transform.SetParent(transform, false);
-            boneRootPool.Reinitialize(boneRootPrototype, PoolGrowthMethod.Incremental, 1, 1, 2048);
-
-            if (boneLeafPool == null) boneLeafPool = new GameObject("boneLeafPool").AddComponent<PrefabPool>();
-            boneLeafPool.transform.SetParent(transform, false);
-            boneLeafPool.Reinitialize(boneLeafPrototype, PoolGrowthMethod.Incremental, 1, 1, 2048);
+            if (renderedBonesManager == null)
+            {
+                renderedBonesManager = new RenderedBonesManager(boneRootPrototype, boneLeafPrototype, null, null);
+            }
 
             if (keyframePool == null) keyframePool = new GameObject("keyframePool").AddComponent<PrefabPool>();
             keyframePool.transform.SetParent(transform, false);
@@ -5026,8 +5020,11 @@ namespace Swole.API.Unity.Animation
                 runtimeEditor = null;
             }
 
-            DisposeColoredMeshes();
-
+            if (renderedBonesManager != null)
+            {
+                renderedBonesManager.Dispose();
+                renderedBonesManager = null;
+            }
         }
 
         #region Keyframe Logic
@@ -5858,7 +5855,7 @@ namespace Swole.API.Unity.Animation
 
                         if (editMode == EditMode.BONE_KEYS)
                         {
-                            if (selectedBoneUI >= 0 && selectedBoneUI < poseableBones.Count) AddBoneKeys(poseableBones[selectedBoneUI]);
+                            if (selectedBoneUI >= 0 && selectedBoneUI < renderedBonesManager.poseableBones.Count) AddBoneKeys(renderedBonesManager.poseableBones[selectedBoneUI]);
                         } 
                         else if (editMode == EditMode.SELECTED_BONE_KEYS)
                         {
@@ -5872,9 +5869,9 @@ namespace Swole.API.Unity.Animation
                     break;
 
                 case EditMode.BONE_CURVES:
-                    if (selectedBoneUI >= 0 && selectedBoneUI < poseableBones.Count)
+                    if (selectedBoneUI >= 0 && selectedBoneUI < renderedBonesManager.poseableBones.Count)
                     {
-                        var bone = poseableBones[selectedBoneUI];
+                        var bone = renderedBonesManager.poseableBones[selectedBoneUI];
                         if (bone != null && bone.transform != null)
                         {
                             activeSource.rawAnimation.TryGetTransformCurves(bone.name, out _, out _, out ITransformCurve mainCurve, out _);
@@ -5991,7 +5988,9 @@ namespace Swole.API.Unity.Animation
             if (popup != null) popup.Elevate();
         }
 
-        public static void DisableAllProceduralAnimationComponents(GameObject gameObject)
+        public static void DisableAllProceduralAnimationComponents(GameObject gameObject) => SetActiveStateOfAllProceduralAnimationComponents(gameObject, false);
+        public static void EnableAllProceduralAnimationComponents(GameObject gameObject) => SetActiveStateOfAllProceduralAnimationComponents(gameObject, true);
+        public static void SetActiveStateOfAllProceduralAnimationComponents(GameObject gameObject, bool active)
         {
             var components = gameObject.GetComponentsInChildren<MonoBehaviour>();
             foreach (var component in components)
@@ -6001,7 +6000,7 @@ namespace Swole.API.Unity.Animation
                 {
                     if (type.Name.IndexOf("Cloth") >= 0)
                     {
-                        component.enabled = false; 
+                        component.enabled = active;
                         break;
                     }
                     type = type.BaseType;
@@ -6009,14 +6008,14 @@ namespace Swole.API.Unity.Animation
             }
         }
 
-        public static void AddAnimatableToScene(AnimatableAsset animatable, out GameObject instance, out CustomAnimator animator)
+        public static void AddAnimatableToScene(AnimatableAsset animatable, out GameObject instance, out CustomAnimator animator, bool overrideUpdateCalls = true)
         {
             instance = null;
             animator = null;
 
             if (animatable == null) return;
 
-            instance = GameObject.Instantiate(animatable.prefab);
+            instance = GameObject.Instantiate(animatable.Prefab);
             DisableAllProceduralAnimationComponents(instance);
 
             Transform transform = instance.transform;
@@ -6027,7 +6026,7 @@ namespace Swole.API.Unity.Animation
             animator = instance.GetComponentInChildren<CustomAnimator>();
             if (animator != null)
             {
-                animator.OverrideUpdateCalls = true;
+                animator.OverrideUpdateCalls = overrideUpdateCalls;
                 animator.disableMultithreading = false;
                 animator.enabled = false;
 
@@ -6035,13 +6034,17 @@ namespace Swole.API.Unity.Animation
             }
         }
 
-        public static ImportedAnimatable AddAnimatableToScene(AnimatableAsset animatable, int copy=0)
+        public static ImportedAnimatable AddAnimatableToScene(AnimatableAsset animatable, int copy=0, bool overrideUpdateCalls = true)
         {
             if (animatable == null) return null; 
 
             ImportedAnimatable obj = new ImportedAnimatable() { id = animatable.name, displayName = animatable.name + (copy <= 0 ? "" : $" ({copy})"), index = -1 };
 
             obj.Initialize(animatable);
+            if (obj.animator != null)
+            {
+                if (obj.animator.OverrideUpdateCalls != overrideUpdateCalls) obj.animator.OverrideUpdateCalls = overrideUpdateCalls;
+            } 
 
             return obj;
         }
@@ -6309,7 +6312,7 @@ namespace Swole.API.Unity.Animation
                     if (obj == null) continue;
                     var asset = AnimationLibrary.FindAnimatable(obj.id);
                     if (asset == null) continue;
-                    obj.instance = GameObject.Instantiate(asset.prefab);
+                    obj.instance = GameObject.Instantiate(asset.Prefab);
                     Transform transform = obj.instance.transform;
                     transform.localPosition = Vector3.zero;
                     transform.localRotation = Quaternion.identity;
@@ -7106,7 +7109,7 @@ namespace Swole.API.Unity.Animation
                 if (activeObj.selectedBoneIndices != null)
                 {
                     tempGameObjects.Clear(); 
-                    foreach (var selectedBoneIndex in activeObj.selectedBoneIndices) if (selectedBoneIndex >= 0 && selectedBoneIndex < poseableBones.Count && poseableBones[selectedBoneIndex].transform != null) tempGameObjects.Add(poseableBones[selectedBoneIndex].transform.gameObject);
+                    foreach (var selectedBoneIndex in activeObj.selectedBoneIndices) if (selectedBoneIndex >= 0 && selectedBoneIndex < renderedBonesManager.poseableBones.Count && renderedBonesManager.poseableBones[selectedBoneIndex].transform != null) tempGameObjects.Add(renderedBonesManager.poseableBones[selectedBoneIndex].transform.gameObject);
 
                     runtimeEditor.DeselectAll();
                     runtimeEditor.Select(tempGameObjects);
@@ -7279,7 +7282,7 @@ namespace Swole.API.Unity.Animation
                 }
                 if (lastSelected != null)
                 {
-                    int boneIndex = FindPoseableBoneIndex(lastSelected); 
+                    int boneIndex = renderedBonesManager.FindPoseableBoneIndex(lastSelected); 
                     if (boneIndex >= 0)
                     {
                         selectedBoneUI = boneIndex;
@@ -7298,7 +7301,7 @@ namespace Swole.API.Unity.Animation
 
                 foreach (var selectedObj in fullSelection)
                 {
-                    int boneIndex = FindPoseableBoneIndex(selectedObj);
+                    int boneIndex = renderedBonesManager.FindPoseableBoneIndex(selectedObj);
                     if (boneIndex >= 0)
                     {
                         activeObj.selectedBoneIndices.Add(boneIndex);
@@ -7312,8 +7315,8 @@ namespace Swole.API.Unity.Animation
             }
         }
 
-        private readonly HashSet<GameObject> objectSetA = new HashSet<GameObject>();
-        protected void OnPreSelectCustomize(int selectReason, List<GameObject> toSelect, List<GameObject> toIgnore)
+        private static readonly HashSet<GameObject> objectSetA = new HashSet<GameObject>();
+        public static void OnPreSelectCustomize(int selectReason, List<GameObject> toSelect, List<GameObject> toIgnore)
         {
 
             objectSetA.Clear();
@@ -7390,32 +7393,13 @@ namespace Swole.API.Unity.Animation
             public Transform leafSelectable;
         }
 
-        protected void AlignLeafTransform(Transform leaf, Transform childBone)
+        public static void AlignLeafTransform(Transform leaf, Transform childBone)
         {
             leaf.localPosition = Vector3.zero;
             leaf.localRotation = Quaternion.FromToRotation(Vector3.up, childBone.localPosition.normalized);
             leaf.localScale = new Vector3(1, childBone.localPosition.magnitude, 1);
         }
 
-        private readonly List<PoseableBone> poseableBones = new List<PoseableBone>();
-        public int FindPoseableBoneIndex(string boneName)
-        {
-            for (int i = 0; i < poseableBones.Count; i++) if (poseableBones[i].name == boneName || poseableBones[i].transform.name == boneName) return i;
-            boneName = boneName.AsID();
-            for (int i = 0; i < poseableBones.Count; i++) if (poseableBones[i].name.AsID() == boneName || poseableBones[i].transform.name.AsID() == boneName) return i; 
-            return -1;
-        }
-        public int FindPoseableBoneIndex(GameObject obj) => FindPoseableBoneIndex(obj.transform);
-        public int FindPoseableBoneIndex(Transform boneTransform)
-        {
-            for(int i = 0; i < poseableBones.Count; i++) if (poseableBones[i].transform == boneTransform || poseableBones[i].rootSelectable == boneTransform) return i;
-            return -1;
-        }
-        public PoseableBone FindPoseableBone(Transform boneTransform)
-        {
-            int i = FindPoseableBoneIndex(boneTransform);
-            return i < 0 ? null : poseableBones[i];
-        }
         private static readonly List<GameObject> _boneQuery = new List<GameObject>();
         public int SelectedBoneCount
         {
@@ -7426,50 +7410,81 @@ namespace Swole.API.Unity.Animation
                 runtimeEditor.QueryActiveSelection(_boneQuery);
 
                 int count = 0; 
-                foreach (var bone in _boneQuery) if (bone != null && FindPoseableBoneIndex(bone) >= 0) count++;
+                foreach (var bone in _boneQuery) if (bone != null && renderedBonesManager.FindPoseableBoneIndex(bone) >= 0) count++;
                 _boneQuery.Clear();
 
                 return count;
             }
         }
-        private readonly List<GameObject> visibleRootBones = new List<GameObject>();
-        private readonly List<GameObject> visibleLeafBones = new List<GameObject>();
 
         public void IgnorePreviewObjects()
         {
+            if (currentSession == null) return;
+
+            tempGameObjects.Clear();
+
+            if (currentSession.importedObjects != null)
+            {
+                foreach (var obj in currentSession.importedObjects)
+                {
+                    if (obj.animator == null) continue;
+                    tempGameObjects.Add(obj.animator.gameObject);   
+                }
+            }
+
+            IgnorePreviewObjects(runtimeEditor, tempGameObjects);
+        }
+        public static void IgnorePreviewObjects(RuntimeEditor runtimeEditor, IEnumerable<GameObject> objectsToIgnore)
+        {
             runtimeEditor.DisableSceneUpdates = true;
             runtimeEditor.DisableMultiSelect = true;
-            if (currentSession == null) return;
 #if BULKOUT_ENV
             var rtScene = RTScene.Get;
             if (rtScene != null)
             {
-                if (currentSession.importedObjects != null)
+                if (objectsToIgnore != null)
                 {
-                    foreach (var obj in currentSession.importedObjects)
+                    foreach (var obj in objectsToIgnore)
                     {
-                        if (obj.animator == null) continue;
-                        rtScene.SetRootObjectIgnored(obj.animator.gameObject, true); // Make RLD ignore the animation bones      
+                        if (obj == null) continue;
+                        rtScene.SetRootObjectIgnored(obj, true);    
                     }
                 }
             }
 #endif
         }
+         
         public void StopIgnoringPreviewObjects()
+        {
+            if (currentSession == null) return;
+
+            tempGameObjects.Clear();
+
+            if (currentSession.importedObjects != null)
+            {
+                foreach (var obj in currentSession.importedObjects)
+                {
+                    if (obj.animator == null) continue;
+                    tempGameObjects.Add(obj.animator.gameObject);
+                }
+            }
+
+            StopIgnoringPreviewObjects(runtimeEditor, tempGameObjects);
+        }
+        public static void StopIgnoringPreviewObjects(RuntimeEditor runtimeEditor, IEnumerable<GameObject> objectsToIgnore)
         {
             runtimeEditor.DisableSceneUpdates = false;
             runtimeEditor.DisableMultiSelect = false; 
-            if (currentSession == null) return;
 #if BULKOUT_ENV
             var rtScene = RTScene.Get;
             if (rtScene != null)
             {
-                if (currentSession.importedObjects != null)
+                if (objectsToIgnore != null)
                 {
-                    foreach (var obj in currentSession.importedObjects)
+                    foreach (var obj in objectsToIgnore)
                     {
-                        if (obj.animator == null) continue;
-                        rtScene.SetRootObjectIgnored(obj.animator.gameObject, false); // Make RLD no longer ignore the animation bones      
+                        if (obj == null) continue;
+                        rtScene.SetRootObjectIgnored(obj, false);  
                     }
                 }
             }
@@ -7479,47 +7494,120 @@ namespace Swole.API.Unity.Animation
         protected CustomAnimator activeAnimator;
         public CustomAnimator ActiveAnimator => activeAnimator;
 
-        private readonly Dictionary<Color, Mesh> coloredRoots = new Dictionary<Color, Mesh>();
-        private readonly Dictionary<Color, Mesh> coloredLeaves = new Dictionary<Color, Mesh>();
-        public void DisposeColoredMeshes()
+        public class RenderedBonesManager : IDisposable
         {
-            foreach (var pair in coloredRoots) if (pair.Value != null) Destroy(pair.Value);
-            foreach (var pair in coloredLeaves) if (pair.Value != null) Destroy(pair.Value);
 
-            coloredRoots.Clear();
-            coloredLeaves.Clear();
-        }
-        public Mesh GetColoredRootMesh(Color color)
-        {
-            if (coloredRoots.TryGetValue(color, out var mesh)) return mesh;
+            public GameObject boneRootPrototype;
+            public GameObject boneLeafPrototype;
 
-            var filter = boneRootPrototype.GetComponentInChildren<MeshFilter>();
-            mesh = MeshUtils.DuplicateMesh(filter == null || filter.sharedMesh == null ? UnityPrimitiveMesh.Get(PrimitiveType.Sphere) : filter.sharedMesh);
-            Color[] vcolors = new Color[mesh.vertexCount];
-            for (int a = 0; a < vcolors.Length; a++) vcolors[a] = color;
-            mesh.colors = vcolors;
-            coloredRoots[color] = mesh;
+            public PrefabPool boneRootPool;
+            private bool boneRootPoolIsLocal;
 
-            return mesh;
-        }
-        public Mesh GetColoredLeafMesh(Color color)
-        {
-            if (coloredLeaves.TryGetValue(color, out var mesh)) return mesh;
+            public PrefabPool boneLeafPool;
+            private bool boneLeafPoolIsLocal;
 
-            var filter = boneLeafPrototype.GetComponentInChildren<MeshFilter>();
-            mesh = MeshUtils.DuplicateMesh(filter == null || filter.sharedMesh == null ? UnityPrimitiveMesh.Get(PrimitiveType.Cylinder) : filter.sharedMesh);
-            Color[] vcolors = new Color[mesh.vertexCount];
-            for (int a = 0; a < vcolors.Length; a++) vcolors[a] = color;
-            mesh.colors = vcolors;
-            coloredLeaves[color] = mesh;
-
-            return mesh;
-        }
-        public void SetActiveAnimator(CustomAnimator animator)
-        {
-            if (activeAnimator != animator)
+            public RenderedBonesManager(GameObject boneRootPrototype, GameObject boneLeafPrototype, PrefabPool boneRootPool = null, PrefabPool boneLeafPool = null)
             {
-                recordingStates.Clear(); 
+                this.boneRootPrototype = boneRootPrototype;
+                this.boneLeafPrototype = boneLeafPrototype;
+
+                if (boneRootPool == null) 
+                {
+                    boneRootPool = new GameObject("boneRootPool").AddComponent<PrefabPool>();
+                    boneRootPoolIsLocal=true;
+                }
+                boneRootPool.Reinitialize(boneRootPrototype, PoolGrowthMethod.Incremental, 1, 1, 2048);
+
+                if (boneLeafPool == null) 
+                {
+                    boneLeafPool = new GameObject("boneLeafPool").AddComponent<PrefabPool>();
+                    boneLeafPoolIsLocal=true;
+                }
+                boneLeafPool.Reinitialize(boneLeafPrototype, PoolGrowthMethod.Incremental, 1, 1, 2048);
+
+                this.boneRootPool = boneRootPool;
+                this.boneLeafPool = boneLeafPool;
+            }
+
+            private readonly Dictionary<Color, Mesh> coloredRoots = new Dictionary<Color, Mesh>();
+            private readonly Dictionary<Color, Mesh> coloredLeaves = new Dictionary<Color, Mesh>();
+            public void DisposeColoredMeshes()
+            {
+                foreach (var pair in coloredRoots) if (pair.Value != null) Destroy(pair.Value);
+                foreach (var pair in coloredLeaves) if (pair.Value != null) Destroy(pair.Value);
+
+                coloredRoots.Clear();
+                coloredLeaves.Clear();
+            }
+            public void Dispose()
+            {
+                DisposeColoredMeshes();
+
+                if (boneRootPool != null)
+                {
+                    if (boneRootPoolIsLocal) GameObject.Destroy(boneRootPool.gameObject);
+                    boneRootPool = null;
+                }
+
+                if (boneLeafPool != null)
+                {
+                    if (boneLeafPoolIsLocal) GameObject.Destroy(boneLeafPool.gameObject);
+                    boneLeafPool = null;
+                }
+            }
+
+            public Mesh GetColoredRootMesh(Color color)
+            {
+                if (coloredRoots.TryGetValue(color, out var mesh)) return mesh;
+
+                var filter = boneRootPrototype.GetComponentInChildren<MeshFilter>();
+                mesh = MeshUtils.DuplicateMesh(filter == null || filter.sharedMesh == null ? UnityPrimitiveMesh.Get(PrimitiveType.Sphere) : filter.sharedMesh);
+                Color[] vcolors = new Color[mesh.vertexCount];
+                for (int a = 0; a < vcolors.Length; a++) vcolors[a] = color;
+                mesh.colors = vcolors;
+                coloredRoots[color] = mesh;
+
+                return mesh;
+            }
+            public Mesh GetColoredLeafMesh(Color color)
+            {
+                if (coloredLeaves.TryGetValue(color, out var mesh)) return mesh;
+
+                var filter = boneLeafPrototype.GetComponentInChildren<MeshFilter>();
+                mesh = MeshUtils.DuplicateMesh(filter == null || filter.sharedMesh == null ? UnityPrimitiveMesh.Get(PrimitiveType.Cylinder) : filter.sharedMesh);
+                Color[] vcolors = new Color[mesh.vertexCount];
+                for (int a = 0; a < vcolors.Length; a++) vcolors[a] = color;
+                mesh.colors = vcolors;
+                coloredLeaves[color] = mesh;
+
+                return mesh;
+            }
+
+            public readonly List<PoseableBone> poseableBones = new List<PoseableBone>();
+            public int FindPoseableBoneIndex(string boneName)
+            {
+                for (int i = 0; i < poseableBones.Count; i++) if (poseableBones[i].name == boneName || poseableBones[i].transform.name == boneName) return i;
+                boneName = boneName.AsID();
+                for (int i = 0; i < poseableBones.Count; i++) if (poseableBones[i].name.AsID() == boneName || poseableBones[i].transform.name.AsID() == boneName) return i;
+                return -1;
+            }
+            public int FindPoseableBoneIndex(GameObject obj) => FindPoseableBoneIndex(obj.transform);
+            public int FindPoseableBoneIndex(Transform boneTransform)
+            {
+                for (int i = 0; i < poseableBones.Count; i++) if (poseableBones[i].transform == boneTransform || poseableBones[i].rootSelectable == boneTransform) return i;
+                return -1;
+            }
+            public PoseableBone FindPoseableBone(Transform boneTransform)
+            {
+                int i = FindPoseableBoneIndex(boneTransform);
+                return i < 0 ? null : poseableBones[i];
+            }
+
+            public readonly List<GameObject> visibleRootBones = new List<GameObject>();
+            public readonly List<GameObject> visibleLeafBones = new List<GameObject>();
+
+            public void Clear()
+            {
 
                 foreach (GameObject obj in visibleRootBones) if (obj != null)
                     {
@@ -7530,20 +7618,176 @@ namespace Swole.API.Unity.Animation
                 foreach (GameObject obj in visibleLeafBones) if (obj != null)
                     {
                         boneLeafPool.Release(obj);
-                        obj.transform.SetParent(null); 
+                        obj.transform.SetParent(null);
                         obj.SetActive(false);
                     }
 
                 visibleRootBones.Clear();
                 visibleLeafBones.Clear();
+
+                poseableBones.Clear();
+
             }
-            else return;
+
+        }
+
+        private RenderedBonesManager renderedBonesManager;
+        public delegate Color PoseableBoneColorOverrideDelegate(PoseableRig.BoneInfo boneInfo, Transform bone);
+        public static bool TryCreatePoseableBone(CustomAnimator animator, Transform bone, int boneOverlayLayer, RenderedBonesManager renderedBonesManager, out PoseableBone poseableBone, bool overrideColor = false, Color colorOverride = default)
+        {
+            PoseableBoneColorOverrideDelegate colorOverride_ = overrideColor ? ((PoseableRig.BoneInfo boneInfo, Transform bone) => colorOverride) : null;
+            return TryCreatePoseableBone(animator, bone, boneOverlayLayer, renderedBonesManager, out poseableBone, colorOverride_);
+        }
+        public static bool TryCreatePoseableBone(CustomAnimator animator, Transform bone, int boneOverlayLayer, RenderedBonesManager renderedBonesManager, out PoseableBone poseableBone, PoseableBoneColorOverrideDelegate colorOverride)
+        {
+            poseableBone = null;
+
+            if (bone == null || !animator.avatar.TryGetBoneInfo(bone.name, out var boneInfo)) return false;
+
+            if (renderedBonesManager.boneRootPool.TryGetNewInstance(out GameObject rootInst))
+            {
+
+                var nonDefaultParentBoneInfo = animator.avatar.GetNonDefaultParentBoneInfo(bone, out var nonDefaultParentBone);
+
+                var boneGroup = animator.avatar.GetBoneGroup(boneInfo.isDefault && nonDefaultParentBoneInfo.defaultChildrenToSameGroup ? nonDefaultParentBoneInfo.boneGroup : boneInfo.boneGroup);
+                var filter = rootInst.GetComponentInChildren<MeshFilter>();
+                if (filter != null) filter.sharedMesh = renderedBonesManager.GetColoredRootMesh(colorOverride == null ? boneGroup.color : colorOverride(boneInfo, bone));
+
+                var proxy = rootInst.AddOrGetComponent<SelectionProxy>();
+                proxy.includeSelf = false;
+                if (proxy.toSelect == null) proxy.toSelect = new List<GameObject>();
+                proxy.toSelect.Clear();
+                proxy.toSelect.Add(bone.gameObject);
+
+                renderedBonesManager.visibleRootBones.Add(rootInst);
+                rootInst.SetLayerAllChildren(boneOverlayLayer);
+
+                var rootT = rootInst.transform;
+                rootT.SetParent(bone, false);
+                rootT.localPosition = boneInfo.offset;//Vector3.zero;
+                rootT.localRotation = Quaternion.identity;
+                float scale = nonDefaultParentBoneInfo.childScale * (boneInfo.isDefault ? nonDefaultParentBoneInfo.scale : boneInfo.scale);
+                rootT.localScale = new Vector3(scale, scale, scale);
+
+                int parentIndex = -1;
+                if (bone.parent != null) parentIndex = renderedBonesManager.FindPoseableBoneIndex(bone.parent);
+                PoseableBone parentPoseable = null;
+                if (parentIndex >= 0)
+                {
+                    parentPoseable = renderedBonesManager.poseableBones[parentIndex];
+                    if (parentPoseable.children != null)
+                    {
+                        for (int a = 0; a < parentPoseable.children.Length; a++)
+                        {
+                            var child = parentPoseable.children[a];
+                            if (child.transform != bone) continue;
+
+                            child.rootSelectable = rootT;
+                            parentPoseable.children[a] = child;
+                            break;
+                        }
+                    }
+                }
+
+                bool isIkFk = animator.avatar.IsIkBoneFkEquivalent(animator.avatar.Remap(bone.name), out var ikBone);
+                Transform ikBoneTransform = null;
+                if (isIkFk)
+                {
+                    int ind = renderedBonesManager.FindPoseableBoneIndex(ikBone.name);
+                    if (ind >= 0)
+                    {
+                        var ikPosable = renderedBonesManager.poseableBones[ind];
+                        if (ikPosable != null && ikPosable.transform != null) ikBoneTransform = ikPosable.transform; else isIkFk = false;
+                    }
+                    else
+                    {
+                        isIkFk = false;
+                    }
+                }
+
+                boneInfo.dontDrawChildConnections = boneInfo.isDefault ? nonDefaultParentBoneInfo.dontDrawChildConnections : boneInfo.dontDrawChildConnections; // inherit from first non-default parent if not defined
+
+                ChildBone[] children = null;
+                int childCount = bone.childCount;
+                //if (!boneInfo.dontDrawChildConnections)
+                //{
+                children = new ChildBone[childCount];
+                for (int j = 0; j < children.Length; j++)
+                {
+                    var childBone = bone.GetChild(j);
+
+                    if (childBone == null) continue;
+
+                    int childIndex = renderedBonesManager.FindPoseableBoneIndex(childBone);
+                    PoseableBone childPoseable = null;
+                    if (childIndex >= 0)
+                    {
+                        childPoseable = renderedBonesManager.poseableBones[childIndex];
+                        childPoseable.parent = renderedBonesManager.poseableBones.Count;
+                    }
+
+                    if (!animator.avatar.IsPoseableBone(childBone.name) || !animator.avatar.TryGetBoneInfo(childBone.name, out var childBoneInfo) || (childBoneInfo.dontDrawConnection || (boneInfo.dontDrawChildConnections && childBoneInfo.isDefault))) continue;
+
+                    if (renderedBonesManager.boneLeafPool.TryGetNewInstance(out GameObject leafInst))
+                    {
+                        var filterLeaf = leafInst.GetComponentInChildren<MeshFilter>();
+                        if (filterLeaf != null) filterLeaf.sharedMesh = renderedBonesManager.GetColoredLeafMesh(colorOverride == null ? boneGroup.color : colorOverride(boneInfo, bone));
+
+                        var proxyLeaf = leafInst.AddOrGetComponent<SelectionProxy>(); 
+                        proxyLeaf.includeSelf = false;
+                        if (proxyLeaf.toSelect == null) proxyLeaf.toSelect = new List<GameObject>();
+                        proxyLeaf.toSelect.Clear();
+                        proxyLeaf.toSelect.Add(bone.gameObject);
+                        if (isIkFk)
+                        {
+                            proxyLeaf.onlyActive = true;
+                            proxyLeaf.toSelect.Add(ikBoneTransform.gameObject);
+                        }
+
+
+                        renderedBonesManager.visibleLeafBones.Add(leafInst);
+                        leafInst.SetLayerAllChildren(boneOverlayLayer);
+
+                        var leafT = leafInst.transform;
+                        leafT.SetParent(bone, false);
+                        AlignLeafTransform(leafT, childBone);
+
+                        children[j] = new ChildBone() { index = childIndex, transform = childBone, leafSelectable = leafT, rootSelectable = childPoseable == null ? null : childPoseable.rootSelectable };
+                    }
+                }
+                //}
+                //else
+                //{
+
+                //    for (int j = 0; j < childCount; j++)
+                //    {
+                //        var childBone = bone.GetChild(j);
+
+                //        if (childBone == null) continue;
+
+                //        int childIndex = FindPoseableBoneIndex(childBone);
+                //        if (childIndex >= 0) poseableBones[childIndex].parent = poseableBones.Count;
+                //    }
+                //}
+
+                poseableBone = new PoseableBone() { name = animator.RemapBoneName(bone.name), rootSelectable = rootT, transform = bone, parent = parentIndex, children = children };
+                renderedBonesManager.poseableBones.Add(poseableBone);
+            }
+
+            return true;
+        }
+
+        public void SetActiveAnimator(CustomAnimator animator)
+        {
+            if (activeAnimator == animator) return;
+
+            recordingStates.Clear();
+            if (renderedBonesManager != null) renderedBonesManager.Clear();
 
             if (activeAnimator != null && activeAnimator.IkManager != null) activeAnimator.IkManager.PostLateUpdate -= RecordChanges;           
 
             overrideRecordCall = false;
             activeAnimator = animator;
-            poseableBones.Clear();
 
             if (animator != null && animator.Bones != null)
             {
@@ -7562,140 +7806,10 @@ namespace Swole.API.Unity.Animation
                         for (int i = 0; i < bones.Length; i++)
                         {
                             var bone = bones[i];
-                            if (bone == null || !animator.avatar.TryGetBoneInfo(bone.name, out var boneInfo)) continue;
-
-                            if (boneRootPool.TryGetNewInstance(out GameObject rootInst))
-                            {
-
-                                var nonDefaultParentBoneInfo = animator.avatar.GetNonDefaultParentBoneInfo(bone, out var nonDefaultParentBone);
-
-                                var boneGroup = animator.avatar.GetBoneGroup(boneInfo.isDefault && nonDefaultParentBoneInfo.defaultChildrenToSameGroup ? nonDefaultParentBoneInfo.boneGroup : boneInfo.boneGroup); 
-                                var filter = rootInst.GetComponentInChildren<MeshFilter>();
-                                if (filter != null) filter.sharedMesh = GetColoredRootMesh(boneGroup.color);  
-
-                                var proxy = rootInst.AddOrGetComponent<SelectionProxy>();
-                                proxy.includeSelf = false;
-                                if (proxy.toSelect == null) proxy.toSelect = new List<GameObject>();
-                                proxy.toSelect.Clear();
-                                proxy.toSelect.Add(bone.gameObject);
-
-                                visibleRootBones.Add(rootInst);
-                                rootInst.SetLayerAllChildren(boneOverlayLayer);
-
-                                var rootT = rootInst.transform;
-                                rootT.SetParent(bone, false);
-                                rootT.localPosition = boneInfo.offset;//Vector3.zero;
-                                rootT.localRotation = Quaternion.identity;
-                                float scale = nonDefaultParentBoneInfo.childScale * (boneInfo.isDefault ? nonDefaultParentBoneInfo.scale : boneInfo.scale);
-                                rootT.localScale = new Vector3(scale, scale, scale);
-
-                                int parentIndex = -1;
-                                if (bone.parent != null) parentIndex = FindPoseableBoneIndex(bone.parent);
-                                PoseableBone parentPoseable = null;
-                                if (parentIndex >= 0)
-                                {
-                                    parentPoseable = poseableBones[parentIndex];
-                                    if (parentPoseable.children != null)
-                                    {
-                                        for (int a = 0; a < parentPoseable.children.Length; a++)
-                                        {
-                                            var child = parentPoseable.children[a];
-                                            if (child.transform != bone) continue;
-
-                                            child.rootSelectable = rootT;
-                                            parentPoseable.children[a] = child;
-                                            break;
-                                        }
-                                    }
-                                }
-
-                                bool isIkFk = animator.avatar.IsIkBoneFkEquivalent(animator.avatar.Remap(bone.name), out var ikBone);
-                                Transform ikBoneTransform = null;
-                                if (isIkFk)
-                                {
-                                    int ind = FindPoseableBoneIndex(ikBone.name);
-                                    if (ind >= 0)
-                                    {
-                                        var ikPosable = poseableBones[ind];
-                                        if (ikPosable != null && ikPosable.transform != null) ikBoneTransform = ikPosable.transform; else isIkFk = false;
-                                    }
-                                    else
-                                    {
-                                        isIkFk = false;
-                                    }
-                                } 
-
-                                boneInfo.dontDrawChildConnections = boneInfo.isDefault ? nonDefaultParentBoneInfo.dontDrawChildConnections : boneInfo.dontDrawChildConnections; // inherit from first non-default parent if not defined
-
-                                ChildBone[] children = null;
-                                int childCount = bone.childCount;
-                                //if (!boneInfo.dontDrawChildConnections)
-                                //{
-                                    children = new ChildBone[childCount];
-                                    for (int j = 0; j < children.Length; j++)
-                                    {
-                                        var childBone = bone.GetChild(j);
-
-                                        if (childBone == null) continue;
-
-                                        int childIndex = FindPoseableBoneIndex(childBone);
-                                        PoseableBone childPoseable = null;
-                                        if (childIndex >= 0)
-                                        {
-                                            childPoseable = poseableBones[childIndex];
-                                            childPoseable.parent = poseableBones.Count;
-                                        }
-
-                                        if (!animator.avatar.IsPoseableBone(childBone.name) || !animator.avatar.TryGetBoneInfo(childBone.name, out var childBoneInfo) || (childBoneInfo.dontDrawConnection || (boneInfo.dontDrawChildConnections && childBoneInfo.isDefault))) continue; 
-
-                                        if (boneLeafPool.TryGetNewInstance(out GameObject leafInst))
-                                        {
-                                            var filterLeaf = leafInst.GetComponentInChildren<MeshFilter>();
-                                            if (filterLeaf != null) filterLeaf.sharedMesh = GetColoredLeafMesh(boneGroup.color); 
-
-                                            var proxyLeaf = leafInst.AddOrGetComponent<SelectionProxy>();
-                                            proxyLeaf.includeSelf = false;
-                                            if (proxyLeaf.toSelect == null) proxyLeaf.toSelect = new List<GameObject>(); 
-                                            proxyLeaf.toSelect.Clear();
-                                            proxyLeaf.toSelect.Add(bone.gameObject);
-                                            if (isIkFk)
-                                            {
-                                                proxyLeaf.onlyActive = true;
-                                                proxyLeaf.toSelect.Add(ikBoneTransform.gameObject);
-                                            }
-
-
-                                            visibleLeafBones.Add(leafInst);
-                                            leafInst.SetLayerAllChildren(boneOverlayLayer);
-
-                                            var leafT = leafInst.transform;
-                                            leafT.SetParent(bone, false);
-                                            AlignLeafTransform(leafT, childBone);
-
-                                            children[j] = new ChildBone() { index = childIndex, transform = childBone, leafSelectable = leafT, rootSelectable = childPoseable == null ? null : childPoseable.rootSelectable };
-                                        }
-                                    }
-                                //}
-                                //else
-                                //{
-
-                                //    for (int j = 0; j < childCount; j++)
-                                //    {
-                                //        var childBone = bone.GetChild(j);
-
-                                //        if (childBone == null) continue;
-
-                                //        int childIndex = FindPoseableBoneIndex(childBone);
-                                //        if (childIndex >= 0) poseableBones[childIndex].parent = poseableBones.Count;
-                                //    }
-                                //}
-                                
-                                poseableBones.Add(new PoseableBone() { name = animator.RemapBoneName(bone.name), rootSelectable = rootT, transform = bone, parent = parentIndex, children = children });  
-                            }
+                            TryCreatePoseableBone(animator, bone, boneOverlayLayer, renderedBonesManager, out _); 
                         }
                     }
                 }
-
             }
 
             RefreshBoneKeyDropdowns();
@@ -8458,7 +8572,7 @@ namespace Swole.API.Unity.Animation
             var activeObj = ActiveAnimatable;
             if (activeObj == null) return;
 
-            foreach(var bone in poseableBones)
+            foreach(var bone in renderedBonesManager.poseableBones)
             {
                 if (bone.transform == null) continue;
 
@@ -9648,7 +9762,7 @@ namespace Swole.API.Unity.Animation
             tempTransforms.Clear();
             foreach (var transform in affectedTransforms)
             {
-                var bone = FindPoseableBone(transform);
+                var bone = renderedBonesManager.FindPoseableBone(transform);
                 if (bone == null) continue;
 
                 //tempTransforms.Add(transform);
@@ -9717,9 +9831,9 @@ namespace Swole.API.Unity.Animation
         }
 
         #region Realtime Mirroring
-        protected readonly List<Transform> tempMirrorTransforms = new List<Transform>();
-        protected readonly List<Transform> tempMirrorTransforms2 = new List<Transform>();
-        protected virtual void GetMirrorTransforms(Transform root, List<Transform> transforms, List<Transform> outputList, bool ignoreTransformsAlreadyPresent = false)
+        private static readonly List<Transform> tempMirrorTransforms = new List<Transform>();
+        private static readonly List<Transform> tempMirrorTransforms2 = new List<Transform>();
+        public static void GetMirrorTransforms(Transform root, List<Transform> transforms, List<Transform> outputList, bool ignoreTransformsAlreadyPresent = false)
         {
             if (outputList == null) outputList = new List<Transform>();
 
@@ -9733,14 +9847,14 @@ namespace Swole.API.Unity.Animation
                 }
             }
         }
-        protected virtual void AppendMirrorTransforms(Transform root, List<Transform> transforms)
+        public static void AppendMirrorTransforms(Transform root, List<Transform> transforms)
         {
             tempMirrorTransforms2.Clear();
             GetMirrorTransforms(root, transforms, tempMirrorTransforms2);
 
             foreach (var transform in tempMirrorTransforms2) if (!transforms.Contains(transform)) transforms.Add(transform);
         }
-        protected virtual List<Transform> MirrorTransformManipulation(Transform root, List<Transform> affectedTransforms, bool absolute, Vector3 relativeOffsetWorld, Quaternion relativeRotationWorld, Vector3 relativeScale, Vector3 gizmoWorldPosition, Quaternion gizmoWorldRotation)
+        public static List<Transform> MirrorTransformManipulation(Transform root, List<Transform> affectedTransforms, bool absolute, Vector3 relativeOffsetWorld, Quaternion relativeRotationWorld, Vector3 relativeScale, Vector3 gizmoWorldPosition, Quaternion gizmoWorldRotation)
         {
             tempMirrorTransforms.Clear();
             GetMirrorTransforms(root, affectedTransforms, tempMirrorTransforms, true);
@@ -10145,7 +10259,7 @@ namespace Swole.API.Unity.Animation
             {
                 if (transform == null) continue;
 
-                var bone = FindPoseableBone(transform);
+                var bone = renderedBonesManager.FindPoseableBone(transform);
                 if (bone == null) continue;
 
                 if (list != null) list.Add(bone.transform);
@@ -10166,7 +10280,7 @@ namespace Swole.API.Unity.Animation
             {
                 if (go == null) continue;
 
-                var bone = FindPoseableBone(go.transform);
+                var bone = renderedBonesManager.FindPoseableBone(go.transform);
                 if (bone == null) continue;
 
                 if (list != null) list.Add(bone.transform);
@@ -10184,7 +10298,7 @@ namespace Swole.API.Unity.Animation
             {
                 if (transform == null) continue;
 
-                var bone = FindPoseableBone(transform);
+                var bone = renderedBonesManager.FindPoseableBone(transform);
                 if (bone == null) continue;
 
                 string boneName = animatable.animator.RemapBoneName(transform.name).AsID();
@@ -10207,8 +10321,8 @@ namespace Swole.API.Unity.Animation
             }
         }
 
-        private readonly List<ProxyBone> tempProxyBones = new List<ProxyBone>();
-        protected void AppendProxyBoneTargets(List<Transform> list)
+        private static readonly List<ProxyBone> tempProxyBones = new List<ProxyBone>();
+        public static void AppendProxyBoneTargets(List<Transform> list)
         {
             if (list == null) return;
 

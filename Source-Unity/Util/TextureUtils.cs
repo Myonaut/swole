@@ -11,6 +11,8 @@ namespace Swole
     public static class TextureUtils
     {
 
+        public static Texture2D Duplicate(this Texture2D texture) => texture == null ? null : new Texture2D(texture.width, texture.height, texture.format, texture.mipmapCount, texture.IsLinear());   
+
         public static bool IsLinear(this Texture2D tex) => !tex.graphicsFormat.ToString().ToLower().Contains("srgb");
 
         public static Texture2D InstantiateTexture(this Texture2D original, bool asPNG)

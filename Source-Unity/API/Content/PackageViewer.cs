@@ -336,25 +336,23 @@ namespace Swole.API.Unity
                         var icon = listObjectTransform.FindFirstComponentUnderChild<Image>("icon");
                         void ActivateActionButton(string buttonName, UnityAction OnPress)
                         {
-                            var editButton = listObjectTransform.FindFirstComponentUnderChild<Button>(buttonName);
+                            var editButton = listObjectTransform.FindFirstComponentUnderChild<Button>(buttonName); 
                             if (editButton != null)
                             {
                                 editButton.gameObject.SetActive(true);
-                                if (OnPress != null)
-                                {
-                                    if (editButton.onClick == null) editButton.onClick = new Button.ButtonClickedEvent(); else editButton.onClick.RemoveAllListeners();
-                                    editButton.onClick.AddListener(OnPress);
-                                }
+
+                                if (editButton.onClick == null) editButton.onClick = new Button.ButtonClickedEvent(); else editButton.onClick.RemoveAllListeners();
+                                if (OnPress != null) editButton.onClick.AddListener(OnPress);
+
                             }
                             var editTabButton = listObjectTransform.FindFirstComponentUnderChild<UITabButton>(buttonName);
                             if (editTabButton != null)
                             {
                                 editTabButton.gameObject.SetActive(true);
-                                if (OnPress != null)
-                                {
-                                    if (editTabButton.OnClick == null) editTabButton.OnClick = new UnityEvent(); else editTabButton.OnClick.RemoveAllListeners();
-                                    editTabButton.OnClick.AddListener(OnPress);
-                                }
+
+                                if (editTabButton.OnClick == null) editTabButton.OnClick = new UnityEvent(); else editTabButton.OnClick.RemoveAllListeners();
+                                if (OnPress != null) editTabButton.OnClick.AddListener(OnPress);
+
                             }
                         }
 
@@ -441,7 +439,7 @@ namespace Swole.API.Unity
                                 ActivateActionButton("edit", null); // TODO: Start editing the image source
                                 ActivateActionButton("delete", () => DeleteContent(i)); 
                             }
-                        }
+                        } 
                         #endregion
                     }
                 }
@@ -1621,7 +1619,7 @@ namespace Swole.API.Unity
                 bool SetValueForPackage(ContentPackage contentPkg, ContentManager.LocalPackage localPkg, out SwolePackage swolePkg)
                 {
                     swolePkg = SwolePackage.Create(contentPkg);
-                    swolePkg.Replace(content, content.CreateCopyAndReplaceContentInfo(newInfo));
+                    swolePkg.Replace(content, content.CreateShallowCopyAndReplaceContentInfo(newInfo));
                     localPkg.Content = swolePkg;
                     return ContentManager.SavePackage(localPkg, swole.DefaultLogger);
                 }
@@ -1684,7 +1682,7 @@ namespace Swole.API.Unity
                 bool SetValueForPackage(ContentPackage contentPkg, ContentManager.LocalPackage localPkg, out SwolePackage swolePkg)
                 {
                     swolePkg = SwolePackage.Create(contentPkg);
-                    swolePkg.Replace(content, content.CreateCopyAndReplaceContentInfo(newInfo));
+                    swolePkg.Replace(content, content.CreateShallowCopyAndReplaceContentInfo(newInfo));
                     localPkg.Content = swolePkg;
                     return ContentManager.SavePackage(localPkg, swole.DefaultLogger);
                 }
@@ -1746,7 +1744,7 @@ namespace Swole.API.Unity
                 bool SetValueForPackage(ContentPackage contentPkg, ContentManager.LocalPackage localPkg, out SwolePackage swolePkg)
                 {
                     swolePkg = SwolePackage.Create(contentPkg);
-                    swolePkg.Replace(content, content.CreateCopyAndReplaceContentInfo(newInfo));
+                    swolePkg.Replace(content, content.CreateShallowCopyAndReplaceContentInfo(newInfo));
                     localPkg.Content = swolePkg;
                     return ContentManager.SavePackage(localPkg, swole.DefaultLogger);
                 }
@@ -2418,19 +2416,23 @@ namespace Swole.API.Unity
 
         public void ShowWarningWindow(string message, UnityAction OnAgree = null, UnityAction OnCancel = null)
         {
+            ShowWarning(warningWindow, message, OnAgree, OnCancel, (bool hide) => hideWarnings = hide);
+        }
+        public static void ShowWarning(GameObject warningWindow, string message, UnityAction OnAgree = null, UnityAction OnCancel = null, UnityAction<bool> SetHideWarnings = null, string messageObjName = "message", string agreeObjName = "finalize", string cancelObjName = "cancel")
+        {
             if (warningWindow != null)
             {
                 warningWindow.SetActive(true);
 
                 var windowTransform = warningWindow.transform;
-                var messageTransform = windowTransform.FindDeepChildLiberal("message");
-                if (messageTransform != null) SetComponentText(messageTransform, message);
+                var messageTransform = windowTransform.FindDeepChildLiberal(messageObjName);
+                if (messageTransform != null) SetComponentText(messageTransform, message); 
 
                 Toggle toggle = warningWindow.GetComponentInChildren<Toggle>();
 
                 void Agree()
                 {
-                    if (toggle != null) hideWarnings = toggle.isOn;
+                    if (toggle != null) SetHideWarnings?.Invoke(toggle.isOn);
                     OnAgree?.Invoke();
                     warningWindow.SetActive(false);
                 }
@@ -2440,9 +2442,9 @@ namespace Swole.API.Unity
                     OnCancel?.Invoke();
                     warningWindow.SetActive(false);
                 }
-
-                SetButtonOnClickActionByName(windowTransform, "finalize", Agree);
-                SetButtonOnClickActionByName(windowTransform, "cancel", Cancel);
+                
+                SetButtonOnClickActionByName(windowTransform, agreeObjName, Agree);
+                SetButtonOnClickActionByName(windowTransform, cancelObjName, Cancel);
             }
         }
 

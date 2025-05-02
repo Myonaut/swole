@@ -14,3 +14,20 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   type: 0
   prefab: {fileID: 6174151131643442810, guid: 2d74ab72eb8e5354a89045ac1d537e9d, type: 3}
+  iconId: 
+  icon: {fileID: 21300000, guid: 63153a8497ff1f246a2a71c2d5ae71d9, type: 3}
+  isInternalAsset: 1
+  collectionId: 
+  packageInfo:
+    url: 
+    name: 
+    version: 
+    curator: 
+    description: 
+    tags: []
+  contentInfo:
+    name: 
+    author: 
+    creationDate: 
+    lastEditDate: 
+    description: 

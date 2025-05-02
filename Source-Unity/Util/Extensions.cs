@@ -1,8 +1,10 @@
 #if (UNITY_STANDALONE || UNITY_EDITOR)
 
 using System;
+using System.Linq;
 using System.Collections;
 using System.Collections.Generic;
+using System.Reflection;
 
 using UnityEngine;
 using UnityEngine.UI;
@@ -11,11 +13,197 @@ using Unity.Mathematics;
 
 using Swole.UI;
 
+#if UNITY_EDITOR
+using UnityEditor;
+#endif
+
 namespace Swole
 {
 
     public static class Extensions
     {
+
+        #region Serialization
+
+        /// <summary>
+        /// 
+        /// </summary>
+        /// <param name="rootTransform">If there are references to game objects or components, this is used to find instantiated equivalents in a hierarchy.</param>
+        public static void CopySerializedDataTo(this UnityEngine.Object objA, UnityEngine.Object objB, Transform originalRootTransform = null, Transform rootTransform = null)
+        {
+            void CopyFields(IEnumerable<FieldInfo> fields, object objA, object objB)
+            {
+                foreach (var field in fields)
+                {
+                    if (rootTransform != null)
+                    {
+                        if (typeof(Component).IsAssignableFrom(field.FieldType)) 
+                        {
+                            var val = field.GetValue(objA); 
+                            if (val is Component c && c != null)
+                            {
+                                var obj = ReferenceEquals(c.transform, originalRootTransform) ? rootTransform : rootTransform.FindDeepChild(c.name); 
+                                if (obj != null)
+                                {
+                                    c = obj.gameObject.GetComponent(field.FieldType);
+                                    field.SetValue(objB, c);
+                                }
+                            }
+
+                            continue;
+                        }
+                        else if (typeof(GameObject).IsAssignableFrom(field.FieldType))
+                        {
+                            var val = field.GetValue(objA);
+                            if (val is GameObject go && go != null)
+                            {
+                                var obj = ReferenceEquals(go.transform, originalRootTransform) ? rootTransform : rootTransform.FindDeepChild(go.name);
+                                if (obj != null)
+                                {
+                                    go = obj.gameObject;
+                                    field.SetValue(objB, go);
+                                }
+                            }
+
+                            continue;
+                        }
+                        else if (field.FieldType.IsClass && !field.FieldType.IsPrimitive && field.FieldType != typeof(string))
+                        {
+                            var nestedObjA = field.GetValue(objA);
+                            var nestedObjB = field.GetValue(objB);
+                            if (nestedObjA != null)
+                            {
+                                if (nestedObjB == null)
+                                {
+                                    if (field.FieldType.IsArray)
+                                    {
+                                        var elementType = field.FieldType.GetElementType();
+                                        var arrayA = (Array)nestedObjA;
+                                        var arrayB = Array.CreateInstance(elementType, arrayA.Length);
+
+                                        if (!elementType.IsArray)
+                                        {
+                                            for (int i = 0; i < arrayA.Length; i++)
+                                            {
+                                                var elementA = arrayA.GetValue(i);
+                                                object elementB;
+                                                try
+                                                {
+                                                    elementB = elementA != null ? Activator.CreateInstance(elementA.GetType()) : null;
+                                                } 
+                                                catch
+                                                {
+                                                    elementB = null;
+                                                }
+
+                                                if (elementA != null)
+                                                {
+                                                    var elementFields = elementA.GetType().GetFields(BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic)
+                                                        .Where(f => f.GetCustomAttribute<NonSerializedAttribute>() == null);
+                                                    CopyFields(elementFields, elementA, elementB);
+                                                }
+                                                arrayB.SetValue(elementB, i);
+                                            }
+                                        }
+                                        nestedObjB = arrayB; 
+                                    }
+                                    else if (typeof(IList).IsAssignableFrom(field.FieldType))
+                                    {
+                                        var listA = (IList)nestedObjA;
+                                        var listB = (IList)Activator.CreateInstance(field.FieldType);
+                                        foreach (var elementA in listA)
+                                        {
+                                            if (elementA != null && !elementA.GetType().IsArray)
+                                            {
+                                                object elementB;
+                                                try
+                                                {
+                                                    elementB = elementA != null ? Activator.CreateInstance(elementA.GetType()) : null;
+                                                }
+                                                catch
+                                                {
+                                                    elementB = null;
+                                                }
+
+                                                if (elementA != null)
+                                                {
+                                                    var elementFields = elementA.GetType().GetFields(BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic)
+                                                        .Where(f => f.GetCustomAttribute<NonSerializedAttribute>() == null);
+                                                    CopyFields(elementFields, elementA, elementB);
+                                                }
+                                                listB.Add(elementB);
+                                            }
+                                        }
+                                        nestedObjB = listB;
+                                    }
+                                    else
+                                    {
+                                        try
+                                        {
+                                            nestedObjB = Activator.CreateInstance(field.FieldType);
+                                        } catch { }
+                                    }
+                                }
+
+                                var nestedFields = field.FieldType.GetFields(BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic)
+                                    .Where(f => f.GetCustomAttribute<NonSerializedAttribute>() == null);
+                                CopyFields(nestedFields, nestedObjA, nestedObjB);
+
+                                field.SetValue(objB, nestedObjB);
+
+                                continue;
+                            }
+                        }
+                        else if (field.FieldType.IsValueType && !field.FieldType.IsPrimitive && field.FieldType != typeof(string))
+                        {
+                            var nestedObjA = field.GetValue(objA);
+                            var nestedObjB = field.GetValue(objB);
+                            if (nestedObjA != null && nestedObjB != null)
+                            {
+                                var nestedFields = field.FieldType.GetFields(BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic)
+                                    .Where(f => f.GetCustomAttribute<NonSerializedAttribute>() == null);
+                                CopyFields(nestedFields, nestedObjA, nestedObjB);
+
+                                // Set the modified struct back to the field
+                                field.SetValue(objB, nestedObjB);
+
+                                continue;
+                            }
+                        }
+                    }
+
+                    field.SetValue(objB, field.GetValue(objA));
+                }
+            }
+
+            var publicFields = objA.GetType().GetFields(BindingFlags.Instance | BindingFlags.Public).Where(field => field.GetCustomAttribute<NonSerializedAttribute>() == null);
+            var nonPublicFields = objA.GetType().GetFields(BindingFlags.Instance | BindingFlags.NonPublic).Where(field => field.GetCustomAttribute<NonSerializedAttribute>() == null && field.GetCustomAttribute<SerializeField>() != null);
+
+            CopyFields(publicFields, objA, objB);
+            CopyFields(nonPublicFields, objA, objB);
+        }
+
+#if UNITY_EDITOR
+        public static T CreateOrReplaceAsset<T>(this T asset, string path) where T : UnityEngine.Object
+        {
+            T existingAsset = AssetDatabase.LoadAssetAtPath<T>(path); 
+
+            if (existingAsset == null)
+            {
+                AssetDatabase.CreateAsset(asset, path);
+            }
+            else
+            {
+                if (typeof(Mesh).IsAssignableFrom(typeof(T))) { (existingAsset as Mesh)?.Clear(); }
+                EditorUtility.CopySerialized(asset, existingAsset);
+                asset = existingAsset;
+            }
+
+            return asset;
+        }
+#endif
+
+        #endregion
 
         public static T AddOrGetComponent<T>(this GameObject gameObject) where T : Component
         {
@@ -341,18 +529,28 @@ namespace Swole
 
         }
 
-        public static string GetPathString(this Transform transform)
+        public static string GetPathString(this Transform transform, bool ignoreTopTransform = false, string separator = "/")
         {
 
-            string path = transform.gameObject.name;
+            string path = transform.name;
 
             while (transform.parent != null)
             {
-
                 transform = transform.parent;
+                path = transform.name + separator + path;
+            }
 
-                path = transform.gameObject.name + "/" + path;
-
+            if (ignoreTopTransform)
+            {
+                int firstSep = path.IndexOf(separator); 
+                if (firstSep < 0)
+                {
+                    path = "";
+                } 
+                else
+                {
+                    path = path.Substring(firstSep + 1); 
+                }
             }
 
             return path;
@@ -371,6 +569,8 @@ namespace Swole
 
             return root.Find(path);
         }
+
+        public static Transform GetTransformByPath(this Transform root, string path) => GetTransformByPath(path, root); 
 
         public static void ForceUpdateLayouts(this GameObject gameObject)
         {

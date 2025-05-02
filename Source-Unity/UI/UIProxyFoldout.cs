@@ -432,7 +432,7 @@ namespace Swole.UI
                 {
 
                     //foreach (Transform child in rectTransform) child.gameObject.SetActive(true);
-                    foreach (GameObject disabled in recentlyDisabled) disabled.SetActive(true);
+                    foreach (GameObject disabled in recentlyDisabled) if (disabled != null) disabled.SetActive(true);
 
                     recentlyDisabled.Clear();
 

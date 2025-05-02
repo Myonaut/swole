@@ -936,12 +936,12 @@ namespace Swole
         /// Average all Vertex Groups weights using the combined weight at each index between all groups.
         /// </summary>
         /// <param name="normalizeAsPoolAfter">Should the vertex groups be normalized using a global maximum after the per vertex pass?</param>
-        public static void AverageVertexGroupWeightsPerVertex(IEnumerable<VertexGroup> vertexGroups, bool normalizeAsPoolAfter = true)
+        public static void AverageVertexGroupWeightsPerVertex(IEnumerable<VertexGroup> vertexGroups, bool normalizeAsPoolAfter = true, float minWeightThreshold = 0.0001f)
         {
 
             if (vertexGroups == null) return;
 
-            Dictionary<int, float> weights = new Dictionary<int, float>();
+            Dictionary<int, float2> weights = new Dictionary<int, float2>();
 
             foreach (VertexGroup vg in vertexGroups)
             {
@@ -951,9 +951,12 @@ namespace Swole
 
                     int i = vg.GetEntryIndex(a);
 
-                    weights.TryGetValue(i, out float w);
+                    weights.TryGetValue(i, out float2 w);
 
-                    weights[i] = w + vg.GetEntryWeight(a);
+                    float contribution = vg.GetEntryWeight(a);
+                    if (contribution <= minWeightThreshold) continue;
+
+                    weights[i] = new float2(w.x + contribution, w.y + 1);  
 
                 }
 
@@ -969,12 +972,12 @@ namespace Swole
 
                     int i = vg.GetEntryIndex(a);
 
-                    float total = weights[i];
+                    float2 total = weights[i];
 
-                    if (total <= 0) continue;
+                    if (total.x <= minWeightThreshold) continue; 
 
                     indices.Add(i);
-                    weightValues.Add(vg.GetEntryWeight(a) / total); 
+                    weightValues.Add(vg.GetEntryWeight(a) / (total.y >= 1.99f ? total.x : 1f)); // only divide by total if there was more than one contributor to the weight at this index
 
                 }
 
@@ -1183,6 +1186,217 @@ namespace Swole
             }
 
             return outputIndices;
+        }
+
+        [Serializable]
+        public struct MeshIsland
+        {
+            public Color color;
+            public int[] vertices;
+
+            /// <summary>
+            /// Convenience field for storing origin vertex index
+            /// </summary>
+            public int originIndex; 
+            public int OriginVertex => vertices[originIndex];
+
+            public Vector3 GetCenter(Vector3[] vertexPositions)
+            {
+                if (vertices == null || vertices.Length <= 0) return Vector3.zero;
+
+                Vector3 center = Vector3.zero;
+                foreach (var vertexIndex in vertices) center = center + vertexPositions[vertexIndex];
+
+                return center / vertices.Length;
+            }
+        }
+
+        public static List<MeshIsland> CalculateMeshIslands(Mesh mesh, List<MeshIsland> meshIslands = null, bool weldVertices = true)
+        {
+            if (meshIslands == null) meshIslands = new List<MeshIsland>();
+
+            var triangles = mesh.triangles;
+
+            List<int> currentIsland = new List<int>();
+            void CompleteIsland()
+            {
+                if (currentIsland.Count <= 0) return; // don't create empty mesh islands
+
+                meshIslands.Add(new MeshIsland() { color = UnityEngine.Random.ColorHSV(), vertices = currentIsland.ToArray() });
+                currentIsland.Clear();
+            }
+            bool[] closedVertices = new bool[mesh.vertexCount]; // flags used to determine if a vertex has already been added to a mesh island
+            var weldedVertices = weldVertices ? MeshDataTools.MergeVertices(mesh.vertices) : null;
+
+            int GetWeldedIndex(int originalVertexIndex)
+            {
+                if (!weldVertices) return originalVertexIndex;
+                return weldedVertices[originalVertexIndex].firstIndex;
+            }
+
+            void AddVertexConnections(int vertex)
+            {
+                int weldedConnectingIndex = GetWeldedIndex(vertex);
+                for (int v = 0; v < triangles.Length; v += 3) // triangles are stored as linear groups of 3 vertex indices
+                {
+                    int t0 = v;
+                    int t1 = v + 1;
+                    int t2 = v + 2;
+
+                    int v0 = triangles[t0];
+                    int v1 = triangles[t1];
+                    int v2 = triangles[t2];
+
+                    var wv0 = GetWeldedIndex(v0);
+                    var wv1 = GetWeldedIndex(v1);
+                    var wv2 = GetWeldedIndex(v2);
+
+                    if (weldedConnectingIndex != wv0 && weldedConnectingIndex != wv1 && weldedConnectingIndex != wv2) continue; // if none of the triangle indices are the connecting vertex then it's not part of the island
+
+                    if (!closedVertices[wv0] && !currentIsland.Contains(wv0))
+                    {
+                        if (weldVertices)
+                        {
+                            var mv = weldedVertices[v0];
+                            for (int c = 0; c < mv.indices.Count; c++)
+                            {
+                                var mergedIndex = mv.indices[c];
+                                closedVertices[mergedIndex] = true;
+
+                                currentIsland.Add(mergedIndex);
+                                AddVertexConnections(mergedIndex); // add child connections recursively
+                            }
+                        }
+                        else
+                        {
+                            closedVertices[wv0] = true;
+
+                            currentIsland.Add(wv0);
+                            AddVertexConnections(wv0); // add child connections recursively
+                        }
+                    }
+
+                    if (!closedVertices[wv1] && !currentIsland.Contains(wv1))
+                    {
+                        if (weldVertices)
+                        {
+                            var mv = weldedVertices[v1];
+                            for (int c = 0; c < mv.indices.Count; c++)
+                            {
+                                var mergedIndex = mv.indices[c];
+                                closedVertices[mergedIndex] = true;
+
+                                currentIsland.Add(mergedIndex);
+                                AddVertexConnections(mergedIndex); // add child connections recursively
+                            }
+                        }
+                        else
+                        {
+                            closedVertices[wv1] = true;
+
+                            currentIsland.Add(wv1);
+                            AddVertexConnections(wv1); // add child connections recursively
+                        }
+                    }
+
+                    if (!closedVertices[wv2] && !currentIsland.Contains(wv2))
+                    {
+                        if (weldVertices)
+                        {
+                            var mv = weldedVertices[v2];
+                            for (int c = 0; c < mv.indices.Count; c++)
+                            {
+                                var mergedIndex = mv.indices[c];
+                                closedVertices[mergedIndex] = true;
+
+                                currentIsland.Add(mergedIndex);
+                                AddVertexConnections(mergedIndex); // add child connections recursively
+                            }
+                        }
+                        else
+                        {
+                            closedVertices[wv2] = true;
+
+                            currentIsland.Add(wv2);
+                            AddVertexConnections(wv2); // add child connections recursively
+                        }
+                    }
+                }
+            }
+
+            for (int v = 0; v < mesh.vertexCount; v++) // run through each vertex and find its connections
+            {
+
+                if (closedVertices[v]) continue; // vertex has already been added to an island through recursion
+
+                CompleteIsland();
+
+                currentIsland.Add(v);
+                closedVertices[v] = true;
+
+                AddVertexConnections(v);
+            }
+
+            CompleteIsland();
+
+            return meshIslands;
+        }
+
+        public static bool GetClosestContainingTriangle(Vector3[] containingVertices, int[] containingTris, Vector3 targetPosition, out int i1, out int i2, out int i3, out float w1, out float w2, out float w3, float maxDistance = -1, float errorMargin = 0)
+        {
+            return GetClosestContainingTriangle(containingVertices, containingTris, targetPosition, out i1, out i2, out i3, out w1, out w2, out w3, out _, maxDistance, errorMargin);
+        }
+        public static bool GetClosestContainingTriangle(Vector3[] containingVertices, int[] containingTris, Vector3 targetPosition, out int i1, out int i2, out int i3, out float w1, out float w2, out float w3, out float closestDistance, float maxDistance = -1, float errorMargin = 0)
+        {
+            closestDistance = float.MaxValue; 
+
+            i1 = -1;
+            i2 = -1;
+            i3 = -1;
+
+            w1 = 0;
+            w2 = 0;
+            w3 = 0;
+
+            if (containingVertices == null || containingTris == null) return false; 
+
+            for(int a = 0; a < containingTris.Length; a += 3)
+            {
+                int i1_ = containingTris[a];
+                int i2_ = containingTris[a + 1];
+                int i3_ = containingTris[a + 2];
+
+                Vector3 v1 = containingVertices[i1_];
+                Vector3 v2 = containingVertices[i2_];
+                Vector3 v3 = containingVertices[i3_];
+
+                /*float d1 = (v1 - targetPosition).sqrMagnitude;
+                float d2 = (v2 - targetPosition).sqrMagnitude;
+                float d3 = (v3 - targetPosition).sqrMagnitude;
+
+                float distance = Mathf.Min(d1, d2, d3);*/
+
+                float distance = (((v1 + v2 + v3) / 3f) - targetPosition).sqrMagnitude; 
+                if (distance < closestDistance && (maxDistance < 0 || distance < (maxDistance * maxDistance))) 
+                {
+                    var coords = Maths.BarycentricCoords(targetPosition, v1, v2, v3); 
+                    if (Maths.IsInTriangle(coords, errorMargin))
+                    {
+                        closestDistance = distance;
+
+                        i1 = i1_;
+                        i2 = i2_;
+                        i3 = i3_;
+
+                        w1 = coords.x;
+                        w2 = coords.y;
+                        w3 = coords.z;
+                    }
+                }
+
+            }
+
+            return i1 >= 0 && i2 >= 0 && i3 >= 0;
         }
 
         #endregion
@@ -1646,7 +1860,7 @@ namespace Swole
                 }
             }
 
-            public void CombineWith(EditedMesh secondMesh)
+            public void CombineWith(EditedMesh secondMesh, int subMeshIndexOffset = 0)
             {
                 if (secondMesh == null) return;
 
@@ -1665,23 +1879,25 @@ namespace Swole
                 }
 
                 for (int a = 0; a < secondMesh.VertexCount; a++) AddVertexData(secondMesh.GetVertexData(a));
-
+                
                 if (secondMesh.triangles != null)
                 {
                     if (triangles == null || triangles.Length < secondMesh.triangles.Length)
                     {
                         var temp = triangles;
-                        triangles = new List<int>[secondMesh.triangles.Length];
+                        triangles = new List<int>[Mathf.Max(temp.Length, secondMesh.triangles.Length + subMeshIndexOffset)];
                         for (int a = 0; a < temp.Length; a++) triangles[a] = temp[a];
                         for (int a = temp.Length; a < triangles.Length; a++) triangles[a] = new List<int>();
                     }
 
                     for(int a = 0; a < secondMesh.triangles.Length; a++)
                     {
-                        var list = secondMesh.triangles[a];
-                        var list2 = triangles[a]; 
+                        int b = a + subMeshIndexOffset;
 
-                        for (int b = 0; b < list.Count; b++) list2.Add(list[b] + startVertexIndex);
+                        var list = secondMesh.triangles[a];
+                        var list2 = triangles[b]; 
+
+                        for (int c = 0; c < list.Count; c++) list2.Add(list[c] + startVertexIndex); 
                     }
                 }
             }
@@ -2293,6 +2509,44 @@ namespace Swole
             foreach(var toCombine in meshes)
             {
                 combinedMesh.CombineWith(new EditedMesh(toCombine, false));
+            }
+
+            return combinedMesh.Finalize();
+        }
+
+        public struct MeshWithSubmeshIndexOffset
+        {
+            public Mesh mesh;
+            public int subMeshIndexOffset;
+        }
+        public static Mesh CombineMeshes(Mesh baseMesh, ICollection<MeshWithSubmeshIndexOffset> meshes)
+        {
+            if (meshes == null || meshes.Count <= 0) return baseMesh;
+
+            var combinedMesh = new EditedMesh(baseMesh, true);
+            foreach (var toCombine in meshes)
+            {
+                combinedMesh.CombineWith(new EditedMesh(toCombine.mesh, false), toCombine.subMeshIndexOffset); 
+            }
+
+            return combinedMesh.Finalize();
+        }
+
+        public static Mesh CombineMeshes(Mesh baseMesh, ICollection<Mesh> meshes, ICollection<int> subMeshIndexOffsets)
+        {
+            if (meshes == null || meshes.Count <= 0) return baseMesh;
+
+            var combinedMesh = new EditedMesh(baseMesh, true);
+
+            using(var enu1 = meshes.GetEnumerator())
+            {
+                using (var enu2 = subMeshIndexOffsets.GetEnumerator())
+                {
+                    while(enu1.MoveNext())
+                    {
+                        combinedMesh.CombineWith(new EditedMesh(enu1.Current, false), enu2.MoveNext() ? enu2.Current : 0);
+                    }
+                }
             }
 
             return combinedMesh.Finalize();

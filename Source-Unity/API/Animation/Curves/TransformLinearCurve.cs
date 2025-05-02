@@ -462,6 +462,15 @@ namespace Swole.API.Unity.Animation
             return inputList;
         }
 
+        public void ClearKeys()
+        {
+            ClearTransformKeys();
+        }
+        public void ClearTransformKeys()
+        {
+            if (frames != null) frames = new ITransformCurve.Frame[0];
+        }
+
     }
 
 }

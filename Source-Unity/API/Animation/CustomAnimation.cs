@@ -37,6 +37,13 @@ namespace Swole.API.Unity.Animation
             set => isNotInternalAsset = !value;
         }
 
+        public string CollectionID
+        {
+            get => string.Empty;
+            set { }
+        }
+        public bool HasCollectionID => false;
+
         public bool IsValid => !disposed;
         public void Dispose()
         {
@@ -46,7 +53,10 @@ namespace Swole.API.Unity.Animation
             }
             disposed = true;
         }
+        public void DisposeSelf() => Dispose();
         public void Delete() => Dispose();
+
+        public bool IsIdenticalAsset(ISwoleAsset asset) => ReferenceEquals(this, asset); 
 
         public const int DefaultFrameRate = 30;
         //public const int DefaultJobCurveSampleRate = 4;
@@ -656,6 +666,7 @@ namespace Swole.API.Unity.Animation
             copy.jobData = jobData;
             return copy;
         }
+        public IContent CreateShallowCopyAndReplaceContentInfo(ContentInfo info) => CreateCopyAndReplaceContentInfo(info);
 
         public PackageInfo PackageInfo => packageInfo;
         public ContentInfo ContentInfo => contentInfo;
@@ -841,6 +852,94 @@ namespace Swole.API.Unity.Animation
 
         public TransformLinearCurve[] transformLinearCurves;
         public TransformCurve[] transformCurves;
+
+        public bool TryGetTransformCurve(string transformName, out TransformCurve curve)
+        {
+            curve = null;
+            if (transformAnimationCurves == null) return false;
+
+            for (int a = 0; a < transformAnimationCurves.Length; a++)
+            {
+                var info = transformAnimationCurves[a];
+                if (info.infoMain.curveIndex >= 0 && !info.infoMain.isLinear)
+                {
+                    var curve_ = transformCurves[info.infoMain.curveIndex];
+                    if (curve_.TransformName == transformName)
+                    {
+                        curve = curve_;
+                        return true;
+                    }
+                }
+            }
+
+            return false;
+        }
+
+        public bool TryGetTransformLinearCurve(string transformName, out TransformLinearCurve curve)
+        {
+            curve = null;
+            if (transformAnimationCurves == null) return false;
+
+            for (int a = 0; a < transformAnimationCurves.Length; a++)
+            {
+                var info = transformAnimationCurves[a];
+                if (info.infoMain.curveIndex >= 0 && info.infoMain.isLinear)
+                {
+                    var curve_ = transformLinearCurves[info.infoMain.curveIndex];
+                    if (curve_.TransformName == transformName)
+                    {
+                        curve = curve_;
+                        return true;
+                    }
+                }
+            }
+
+            return false;
+        }
+
+        public bool TryGetBaseTransformCurve(string transformName, out TransformCurve curve)
+        {
+            curve = null;
+            if (transformAnimationCurves == null) return false;
+
+            for (int a = 0; a < transformAnimationCurves.Length; a++)
+            {
+                var info = transformAnimationCurves[a];
+                if (info.infoBase.curveIndex >= 0 && !info.infoBase.isLinear)
+                {
+                    var curve_ = transformCurves[info.infoBase.curveIndex];
+                    if (curve_.TransformName == transformName)
+                    {
+                        curve = curve_;
+                        return true;
+                    }
+                }
+            }
+
+            return false;
+        }
+
+        public bool TryGetBaseTransformLinearCurve(string transformName, out TransformLinearCurve curve)
+        {
+            curve = null;
+            if (transformAnimationCurves == null) return false;
+
+            for (int a = 0; a < transformAnimationCurves.Length; a++)
+            {
+                var info = transformAnimationCurves[a];
+                if (info.infoBase.curveIndex >= 0 && info.infoBase.isLinear)
+                {
+                    var curve_ = transformLinearCurves[info.infoBase.curveIndex];
+                    if (curve_.TransformName == transformName)
+                    {
+                        curve = curve_;
+                        return true;
+                    }
+                }
+            }
+
+            return false;
+        }
 
         /// <summary>
         /// The number of samples per frame in one second of a curve's timeline (will pick the time slice with the most frames). 

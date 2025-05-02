@@ -18,7 +18,7 @@ namespace Swole.API.Unity.Animation
     /// <summary>
     /// Stores the names of bones in an avatar that can be posed by a user once it's loaded into the Animation Editor.
     /// </summary>
-    [CreateAssetMenu(fileName = "PoseableRig", menuName = "Rigs/PoseableRig", order = 2)]
+    [CreateAssetMenu(fileName = "PoseableRig", menuName = "Swole/Rigs/PoseableRig", order = 2)]
     public class PoseableRig : ScriptableObject
     {
         public static PoseableRig Create(string path = null, string fileName = null, bool incrementIfExists = false)

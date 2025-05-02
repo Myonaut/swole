@@ -26,10 +26,21 @@ namespace Swole.API.Unity
             set => isNotInternalAsset = !value;          
         }
 
+        protected string collectionId;
+        public string CollectionID
+        {
+            get => collectionId;
+            set => collectionId = value;
+        }
+        public bool HasCollectionID => !string.IsNullOrWhiteSpace(CollectionID);
+
         protected bool invalid;
         public bool IsValid => !invalid;
         public void Dispose() { if (!IsInternalAsset) invalid = true; }
+        public void DisposeSelf() => Dispose();
         public void Delete() => Dispose();
+
+        public bool IsIdenticalAsset(ISwoleAsset asset) => ReferenceEquals(this, asset);
 
         #region ICloneable
 

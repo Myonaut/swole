@@ -12,7 +12,7 @@ using Swole.Morphing;
 namespace Swole
 {
 
-    [CreateAssetMenu(fileName = "CharacterAddition", menuName = "Character/CharacterAddition", order = 1)]
+    [CreateAssetMenu(fileName = "CharacterAddition", menuName = "Swole/Character/CharacterAddition", order = 1)]
     public class CharacterAddition : ScriptableObject
     {
 

@@ -190,6 +190,8 @@ namespace Swole.UI
 
         public UIPopupMessageFadable SetMessageAndShow(string message) => SetMessage(message).Show();
 
+        public UIPopupMessageFadable SetMessageAndShowFor(string message, float displayTime) => SetMessage(message).SetDisplayTime(displayTime).Show();
+
     }
 
 }

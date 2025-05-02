@@ -42,6 +42,7 @@ namespace Swole
             previewTexture = null;
             invalid = true;
         }
+        public void DisposeSelf() => Dispose();
         public void Delete() => Dispose(); 
 
         #region Serialization
@@ -247,6 +248,14 @@ namespace Swole
             return this;
         }
 
+        public string collectionId;
+        public string CollectionID
+        {
+            get => collectionId;
+            set => collectionId = value;
+        }
+        public bool HasCollectionID => !string.IsNullOrWhiteSpace(collectionId);
+
         public List<PackageIdentifier> ExtractPackageDependencies(List<PackageIdentifier> dependencies = null)
         {
             if (dependencies == null) dependencies = new List<PackageIdentifier>();
@@ -334,12 +343,14 @@ namespace Swole
                         if (pkg.TryFindLoader<IImageAsset>(out var asset_, previewTexturePath)) previewTexture = asset_;
                     }
                 }
+
                 if (previewTexture is IImageAsset asset && asset.Instance != null) return asset;
                 if (previewTexture is ContentLoader<IImageAsset> loader)
                 {
                     asset = loader.Content; // Fully loads
                     if (asset != null && asset.Instance != null) return asset;
                 }
+
                 return null;
             }
         }
@@ -349,6 +360,7 @@ namespace Swole
             {
                 var local = LocalPreviewTexture;
                 if (local != null) return local;
+
                 return Swole.API.Unity.ResourceLib.DefaultPreviewTextureAsset_Creation;
             }
         }
@@ -496,9 +508,30 @@ namespace Swole
 
         public IContent CreateCopyAndReplaceContentInfo(ContentInfo info) 
         { 
-            var copy = new Creation(info, script, curves, spawnGroups, previewTexturePath, packageInfo);  
+            var copy = new Creation(info, script, curves == null ? null : (ICurve[])curves.Clone(), spawnGroups == null ? null : (ObjectSpawnGroup[])spawnGroups.Clone(), previewTexturePath, packageInfo);
+
+            copy.previewTextureIsLocal = previewTextureIsLocal;
+            if (previewTextureIsLocal)
+            {
+                if (copy.previewTexture is IImageAsset asset) copy.previewTexture = asset.CreateCopyAndReplaceContentInfo(asset.ContentInfo);               
+            }
+            else 
+            {
+                copy.previewTexture = previewTexture; 
+            }
+
+            copy.projectSettings = projectSettings;
+
+            return copy;
+        }
+        public IContent CreateShallowCopyAndReplaceContentInfo(ContentInfo info)
+        {
+            var copy = new Creation(info, script, curves, spawnGroups, previewTexturePath, packageInfo);
+
+            copy.previewTextureIsLocal = previewTextureIsLocal;
             copy.previewTexture = previewTexture;
             copy.projectSettings = projectSettings;
+
             return copy;
         }
 
@@ -516,6 +549,8 @@ namespace Swole
             return true;
 
         }
+
+        public bool IsIdenticalAsset(ISwoleAsset asset) => ReferenceEquals(this, asset);
 
     }
 

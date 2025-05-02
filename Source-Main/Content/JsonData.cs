@@ -15,6 +15,7 @@ namespace Swole
 
         public bool IsValid => true;
         public void Dispose() { }
+        public void DisposeSelf() { }
         public void Delete() => Dispose();
 
         #region Serialization
@@ -69,6 +70,13 @@ namespace Swole
             return content;
         }
 
+        public string CollectionID
+        {
+            get => string.Empty;
+            set { }
+        }
+        public bool HasCollectionID => false;
+
         public List<PackageIdentifier> ExtractPackageDependencies(List<PackageIdentifier> dependencies = null)
         {
 
@@ -118,12 +126,17 @@ namespace Swole
         public JsonData(string json, PackageInfo packageInfo = default) : this(default, json, false, packageInfo) { }
 
         public IContent CreateCopyAndReplaceContentInfo(ContentInfo info) => new JsonData(info, json, true, packageInfo);
+        public IContent CreateShallowCopyAndReplaceContentInfo(ContentInfo info) => CreateCopyAndReplaceContentInfo(info);
 
         public T AsType<T>()
         {
             if (string.IsNullOrWhiteSpace(json)) return default;
             return swole.FromJson<T>(json);
         }
+
+        #region ISwoleAsset
+        public bool IsIdenticalAsset(ISwoleAsset asset) => false;
+        #endregion
 
     }
 

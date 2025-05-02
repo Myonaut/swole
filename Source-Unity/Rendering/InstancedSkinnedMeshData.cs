@@ -7,7 +7,7 @@ using UnityEngine;
 
 namespace Swole
 {
-    [CreateAssetMenu(fileName = "InstancedSkinnedMeshData", menuName = "InstancedMeshData/InstancedSkinnedMeshData", order = 1)]
+    [CreateAssetMenu(fileName = "InstancedSkinnedMeshData", menuName = "Swole/InstancedMeshData/InstancedSkinnedMeshData", order = 1)]
     public class InstancedSkinnedMeshData : InstanceableSkinnedMeshDataBase
     {
         public const string _rigInstanceIDPropertyName = "_RigInstanceID";

@@ -222,6 +222,46 @@ namespace Swole
     public abstract class InstanceableSkinnedMeshBase : InstanceableMeshBase
     {
 
+        protected struct BlendShapeSync
+        {
+            public int listenerIndex;
+            public int listenerShapeIndex;
+        }
+
+        protected struct BlendShapeSyncLR
+        {
+            public int listenerIndex;
+            public int listenerShapeIndexLeft;
+            public int listenerShapeIndexRight;
+        }
+
+        [SerializeField]
+        protected List<SkinnedMeshRenderer> syncedSkinnedMeshes = new List<SkinnedMeshRenderer>();
+
+        protected abstract void SetupSkinnedMeshSyncs();
+
+        public void SyncSkinnedMesh(SkinnedMeshRenderer skinnedMesh, bool reinitialize = true)
+        {
+            if (skinnedMesh == null) return;
+
+            syncedSkinnedMeshes.Add(skinnedMesh);
+            if (reinitialize) SetupSkinnedMeshSyncs();
+        }
+
+        public void DesyncSkinnedMesh(SkinnedMeshRenderer skinnedMesh)
+        {
+            if (skinnedMesh == null) return;
+
+            syncedSkinnedMeshes.RemoveAll(i => i == null || i == skinnedMesh);
+            SetupSkinnedMeshSyncs();
+        }
+
+        protected override void OnAwake()
+        {
+            base.OnAwake();
+            SetupSkinnedMeshSyncs();
+        }
+
         internal readonly static Dictionary<string, InstanceBuffer<float4x4>> _skinningMatricesBuffers = new Dictionary<string, InstanceBuffer<float4x4>>();
 
         protected InstanceBuffer<float4x4> skinningMatricesBuffer;  
@@ -1324,7 +1364,7 @@ namespace Swole
     public struct MeshLOD
     {
         public Mesh mesh;
-        public float minDistance;
+        public float screenRelativeTransitionHeight;
     }
     public abstract class InstanceableMeshDataBase : ScriptableObject, IDisposable
     {
@@ -1495,7 +1535,7 @@ namespace Swole
                 if (lods == null)
                 {
                     lods = new CullingLODs.LOD[LevelsOfDetail];
-                    for (int a = 0; a < lods.Length; a++) lods[a] = new CullingLODs.LOD() { detailLevel = a, minDistance = meshLODs[a].minDistance }; 
+                    for (int a = 0; a < lods.Length; a++) lods[a] = new CullingLODs.LOD() { detailLevel = a, minDistance = meshLODs[a].screenRelativeTransitionHeight }; 
                 }
 
                 return lods;

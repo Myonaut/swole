@@ -204,6 +204,32 @@ namespace Swole.UI
             return string.Empty;
         }
 
+        public int GetSelectionIndexFromText() => GetSelectionIndexFromText(GetSelectionText());
+        public int GetSelectionIndexFromText(string text)
+        {
+            for(int a = 0; a < MenuItemCount; a++)
+            {
+                var item = GetMenuItem(a);
+                if (item == null) continue;
+
+                var itemText = item.GetComponentInChildren<Text>(true);
+                if (itemText != null && (itemText.text == text || itemText.text.StartsWith(text))) return a;
+
+                var itemTextTMP = item.GetComponentInChildren<TMP_Text>(true);
+                if (itemTextTMP != null && (itemTextTMP.text == text || itemTextTMP.text.StartsWith(text))) return a; 
+            }
+
+            for (int a = 0; a < MenuItemCount; a++)
+            {
+                var item = GetMenuItem(a);
+                if (item == null) continue;
+
+                if (item.name == text) return a;
+            }
+
+            return -1;
+        }
+
     }
 
 }

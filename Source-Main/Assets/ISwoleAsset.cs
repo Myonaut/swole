@@ -17,5 +17,12 @@ namespace Swole
         public Type AssetType { get; }
         public object Asset { get; }
 
+        public string CollectionID { get; set; }
+        public bool HasCollectionID { get; }
+
+        public void DisposeSelf();
+
+        public bool IsIdenticalAsset(ISwoleAsset otherAsset);
+
     }
 }

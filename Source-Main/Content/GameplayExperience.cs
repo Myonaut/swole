@@ -14,6 +14,7 @@ namespace Swole
         protected bool invalid;
         public bool IsValid => !invalid;
         public void Dispose() { invalid = true; }
+        public void DisposeSelf() => Dispose();
         public void Delete() => Dispose();
 
         #region Serialization
@@ -48,6 +49,14 @@ namespace Swole
         #endregion
 
         #region IContent Implementations
+
+        public string collectionId;
+        public string CollectionID
+        {
+            get => collectionId;
+            set => collectionId = value;
+        }
+        public bool HasCollectionID => !string.IsNullOrWhiteSpace(collectionId);
 
         public string originPath;
         public string OriginPath => originPath;
@@ -94,6 +103,7 @@ namespace Swole
 
             return copy;
         }
+        public IContent CreateShallowCopyAndReplaceContentInfo(ContentInfo info) => CreateCopyAndReplaceContentInfo(info);
 
         public List<PackageIdentifier> ExtractPackageDependencies(List<PackageIdentifier> dependencies = null)
         {
@@ -104,6 +114,8 @@ namespace Swole
 
             return dependencies;
         }
+
+        public bool IsIdenticalAsset(ISwoleAsset asset) => ReferenceEquals(this, asset);
 
         #endregion
 

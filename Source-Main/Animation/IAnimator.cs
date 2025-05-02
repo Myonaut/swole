@@ -64,6 +64,7 @@ namespace Swole.Animation
         public bool RemoveLayer(int layerIndex, bool dispose = true);
         public bool RemoveLayer(string layerName, bool dispose = true);
         public int RemoveLayersStartingWith(string prefix, bool dispose = true);
+        public void ClearLayers();
 
         public Dictionary<int, int> RearrangeLayer(int layerIndex, int swapIndex, bool recalculateIndices = true);
         public void RearrangeLayerNoRemap(int layerIndex, int swapIndex, bool recalculateIndices = true);

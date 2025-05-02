@@ -1,3 +1,5 @@
+#if (UNITY_STANDALONE || UNITY_EDITOR)
+
 using System;
 using System.Collections.Generic;
 using System.IO;
@@ -10,7 +12,7 @@ namespace Swole.API.Unity
     {
 
         public System.Type AssetType => typeof(ImageAsset);
-        public object Asset => this; 
+        public object Asset => this;  
 
         /// <summary>
         /// 1 - 100. 1 is lowest quality.
@@ -37,36 +39,6 @@ namespace Swole.API.Unity
             }
 
             return ContentManager.fileExtension_GenericImage;
-        }
-
-        protected bool isInternalAsset;
-        public bool IsInternalAsset
-        {
-            get => isInternalAsset;
-            set => isInternalAsset = value;
-        }
-
-        public bool IsValid => Texture != null;
-        public void Dispose()
-        {
-            if (!IsInternalAsset) 
-            {
-                if (sprite != null) GameObject.Destroy(sprite);
-                if (texture != null) GameObject.Destroy(texture); 
-            }
-            sprite = null;
-            texture = null;
-        }
-        public void Delete() 
-        {
-            if (!string.IsNullOrWhiteSpace(imagePath))
-            {
-                if (ContentManager.TryFindLocalPackage(packageInfo.GetIdentity(), out var lpkg, false, false) && lpkg.workingDirectory.Exists)
-                {
-                    DeleteImagePathAsset(lpkg);
-                }
-            }
-            Dispose();
         }
 
         #region Serialization
@@ -219,8 +191,54 @@ namespace Swole.API.Unity
 
         #endregion
 
-        #region IImageAsset Implementations
+        #region IContent
 
+        [SerializeField]
+        protected bool isInternalAsset;
+        public bool IsInternalAsset
+        {
+            get => isInternalAsset;
+            set => isInternalAsset = value;
+        }
+
+        [SerializeField]
+        protected string collectionId;
+        public string CollectionID
+        {
+            get => collectionId;
+            set => collectionId = value;
+        }
+        public bool HasCollectionID => !string.IsNullOrWhiteSpace(collectionId);
+
+        public bool IsValid => Texture != null;
+        public void Dispose()
+        {
+            if (!IsInternalAsset)
+            {
+                if (sprite != null) GameObject.Destroy(sprite);
+                if (texture != null) GameObject.Destroy(texture);
+            }
+            sprite = null;
+            texture = null;
+        }
+        public void DisposeSelf()
+        {
+            sprite = null;
+            texture = null;
+        }
+        public void Delete()
+        {
+            if (!string.IsNullOrWhiteSpace(imagePath))
+            {
+                if (ContentManager.TryFindLocalPackage(packageInfo.GetIdentity(), out var lpkg, false, false) && lpkg.workingDirectory.Exists)
+                {
+                    DeleteImagePathAsset(lpkg);
+                }
+            }
+            Dispose();
+        }
+
+        [NonSerialized]
         public string originPath;
         public string OriginPath => originPath;
         public IContent SetOriginPath(string path)
@@ -229,6 +247,8 @@ namespace Swole.API.Unity
             content.originPath = path;
             return content;
         }
+
+        [NonSerialized]
         public string relativePath;
         public string RelativePath => relativePath;
         public IContent SetRelativePath(string path)
@@ -253,9 +273,16 @@ namespace Swole.API.Unity
 
         public IContent CreateCopyAndReplaceContentInfo(ContentInfo info)
         {
-            var content = new ImageAsset(info, texture, isCompressed, packageInfo, isLinear); 
+            var tex = texture == null ? null : new Texture2D(texture.width, texture.height, texture.format, texture.mipmapCount, isLinear);
+            var content = new ImageAsset(info, tex, isCompressed, packageInfo, isLinear); 
+            
+            return content;
+        }
+        public IContent CreateShallowCopyAndReplaceContentInfo(ContentInfo info)
+        {
+            var content = new ImageAsset(info, texture, isCompressed, packageInfo, isLinear);
             content.sprite = sprite;
-
+            
             return content;
         }
 
@@ -264,6 +291,8 @@ namespace Swole.API.Unity
             if (dependencies == null) dependencies = new List<PackageIdentifier>();
             return dependencies;
         }
+
+        public bool IsIdenticalAsset(ISwoleAsset otherAsset) => ReferenceEquals(this, otherAsset) || (otherAsset is IImageAsset asset && ReferenceEquals(Instance, asset.Instance));
 
         #endregion
 
@@ -435,3 +464,5 @@ namespace Swole.API.Unity
 
     }
 }
+
+#endif

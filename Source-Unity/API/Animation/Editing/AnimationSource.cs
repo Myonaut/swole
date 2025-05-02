@@ -369,13 +369,13 @@ namespace Swole.API.Unity.Animation
                 {
                     var info = rawAnimation.ContentInfo;
                     info.name = displayName;
-                    rawAnimation = (CustomAnimation)rawAnimation.CreateCopyAndReplaceContentInfo(info);
+                    rawAnimation = (CustomAnimation)rawAnimation.CreateShallowCopyAndReplaceContentInfo(info);
                 }
                 if (compiledAnimation != null)
                 {
                     var info = compiledAnimation.ContentInfo;
                     info.name = displayName;
-                    compiledAnimation = (CustomAnimation)compiledAnimation.CreateCopyAndReplaceContentInfo(info);
+                    compiledAnimation = (CustomAnimation)compiledAnimation.CreateShallowCopyAndReplaceContentInfo(info);
                 }
 
                 MarkAsDirty();
@@ -1013,7 +1013,7 @@ namespace Swole.API.Unity.Animation
                                     {
                                         if (baseInfo.infoMain.curveIndex < 0) continue;
 
-                                        // TODO: Add some kind of internal animation curve storage to animations, where external time curves and be stored and referenced by TransformCurves and the like; then base curves can use their original animation's time curve properly without requiring resampling of the base curve.
+                                        // TODO: Add some kind of internal animation curve storage to animations, where external time curves can be stored and referenced by TransformCurves and the like; then base curves can use their original animation's time curve properly without requiring resampling of the base curve.
                                         // For now, base curves do not reference their original time curves at all, so any dependent additive animations will not sync correctly with the parent animation if that parent uses a time curve.
                                         ITransformCurve newBaseCurve = baseInfo.infoMain.isLinear ? compiledBase.transformLinearCurves[baseInfo.infoMain.curveIndex] : compiledBase.transformCurves[baseInfo.infoMain.curveIndex];
                                         if (newBaseCurve == null || currentBaseCurve.TransformName.AsID() != newBaseCurve.TransformName.AsID()) continue;
@@ -2361,7 +2361,7 @@ namespace Swole.API.Unity.Animation
             return false;
         }
 
-        public void InsertKeyframes(bool createFromPreviousKeyIfApplicable, bool useReferencePose, ImportedAnimatable animatable, float time, IntFromDecimalDelegate getFrameIndex = null, bool onlyInsertChangedData = true, List<Transform> transformMask = null, WrapMode preWrapMode = WrapMode.Clamp, WrapMode postWrapMode = WrapMode.Clamp, bool verbose=false)
+        public void InsertKeyframes(bool createFromPreviousKeyIfApplicable, bool useReferencePose, ImportedAnimatable animatable, float time, IntFromDecimalDelegate getFrameIndex = null, bool onlyInsertChangedData = true, List<Transform> transformMask = null, WrapMode preWrapMode = WrapMode.Clamp, WrapMode postWrapMode = WrapMode.Clamp, bool verbose=false, bool allowTranslation = true, bool allowRotation = true, bool allowScaling = true)
         {
 
             if (animatable == null) return;
@@ -2402,9 +2402,9 @@ namespace Swole.API.Unity.Animation
                 }
             }
 
-            InsertKeyframes(animatable.animator == null ? null : animatable.animator.avatar, createFromPreviousKeyIfApplicable, time, getFrameIndex, newPose, animatable.RestPose, onlyInsertChangedData ? originalPoseAtTime : null, transformMask, preWrapMode, postWrapMode, verbose);
+            InsertKeyframes(animatable.animator == null ? null : animatable.animator.avatar, createFromPreviousKeyIfApplicable, time, getFrameIndex, newPose, animatable.RestPose, onlyInsertChangedData ? originalPoseAtTime : null, transformMask, preWrapMode, postWrapMode, verbose, allowTranslation, allowRotation, allowScaling);
         }
-        public void InsertKeyframes(CustomAvatar avatar, bool createFromPreviousKeyIfApplicable, float timelinePosition, IntFromDecimalDelegate getFrameIndex, AnimationUtils.Pose pose, AnimationUtils.Pose restPose, AnimationUtils.Pose originalPose = null, List<Transform> transformMask = null, WrapMode preWrapMode = WrapMode.Clamp, WrapMode postWrapMode = WrapMode.Clamp, bool verbose = false)
+        public void InsertKeyframes(CustomAvatar avatar, bool createFromPreviousKeyIfApplicable, float timelinePosition, IntFromDecimalDelegate getFrameIndex, AnimationUtils.Pose pose, AnimationUtils.Pose restPose, AnimationUtils.Pose originalPose = null, List<Transform> transformMask = null, WrapMode preWrapMode = WrapMode.Clamp, WrapMode postWrapMode = WrapMode.Clamp, bool verbose = false, bool allowTranslation = true, bool allowRotation = true, bool allowScaling = true)
         {
             var anim = GetOrCreateRawData(); 
             if (anim != null)
@@ -2421,7 +2421,7 @@ namespace Swole.API.Unity.Animation
                     }
                 }
                 
-                pose.Insert(avatar, anim, timelinePosition, restPose, originalPose, transformMask, getFrameIndex != null, getFrameIndex, verbose);
+                pose.Insert(avatar, anim, timelinePosition, restPose, originalPose, transformMask, getFrameIndex != null, getFrameIndex, verbose, allowTranslation, allowRotation, allowScaling);
             }
             MarkAsDirty();
         }

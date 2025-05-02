@@ -88,13 +88,22 @@ namespace Swole.API.Unity
         {
             if (package == null || listMemberPool == null) return null;
 
-            package = isLocal ? ContentManager.FindLocalPackage(package.Name) : ContentManager.FindExternalPackage(package.Name); // Find latest version of package
-
             if (!listMemberPool.TryGetNewInstance(out GameObject member)) return null;
             member.name = name;
             RectTransform transform = member.GetComponent<RectTransform>();
             transform.SetParent(listTransform, false);
+            DisplayPackageInUI(name, package, member, isLocal, new UnityAction(() => { packageViewer?.SetActivePackage(package, isLocal); }), tabGroup, ico_Project, ico_Package);
 
+            return transform;
+        }
+
+        public static void DisplayPackageInUI(string name, ContentPackage package, GameObject uiObject, bool isLocal, UnityAction onClick, UITabGroup tabGroup, Sprite ico_Project = null, Sprite ico_Package = null)
+        {
+            if (package == null) return;
+
+            package = isLocal ? ContentManager.FindLocalPackage(package.Name) : ContentManager.FindExternalPackage(package.Name); // Find latest version of package
+
+            RectTransform transform = uiObject.GetComponent<RectTransform>();
             Transform iconTransform = transform.FindDeepChildLiberal("Icon");
             if (iconTransform != null)
             {
@@ -140,17 +149,15 @@ namespace Swole.API.Unity
                 }
             }
 
-            UITabButton button = member.GetComponentInChildren<UITabButton>();
+            UITabButton button = uiObject.GetComponentInChildren<UITabButton>();
             if (button != null)
             {
                 if (button.OnClick == null) button.OnClick = new UnityEvent();
-                button.OnClick.AddListener(new UnityAction(() => { packageViewer?.SetActivePackage(package, isLocal); }));
-                tabGroup.Add(button);
+                if (onClick != null) button.OnClick.AddListener(onClick);
+                if (tabGroup != null) tabGroup.Add(button);
             }
 
-            member.SetActive(true);
-
-            return transform;
+            uiObject.SetActive(true);
         }
 
         protected class Flag

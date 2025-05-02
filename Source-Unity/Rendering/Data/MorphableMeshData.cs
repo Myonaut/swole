@@ -13,7 +13,7 @@ using Unity.Collections.LowLevel.Unsafe;
 
 namespace Swole
 {
-    [CreateAssetMenu(fileName = "MorphableMeshData", menuName = "InstancedMeshData/MorphableMeshData", order = 3)]
+    [CreateAssetMenu(fileName = "MorphableMeshData", menuName = "Swole/InstancedMeshData/MorphableMeshData", order = 3)]
     public class MorphableMeshData : InstanceableSkinnedMeshDataBase
     {
 

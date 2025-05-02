@@ -577,7 +577,8 @@ namespace Swole.UI
         private readonly HashSet<Member> visibleMembersFilter = new HashSet<Member>();
         private readonly HashSet<Category> visibleCategoriesFilter = new HashSet<Category>();
         private readonly HashSet<Category> fullyVisibleCategoriesFilter = new HashSet<Category>();
-        public void FilterMembersAndCategoriesByStartString(string str, bool caseSensitive = false)
+        public void FilterMembersAndCategoriesByStartString(string str) => FilterMembersAndCategoriesByStartString(str, false);
+        public void FilterMembersAndCategoriesByStartString(string str, bool caseSensitive)
         {
             if (string.IsNullOrWhiteSpace(str))
             {

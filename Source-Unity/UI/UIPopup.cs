@@ -169,6 +169,15 @@ namespace Swole.UI
         }
 
         protected RectTransform rectTransform;
+        public RectTransform RectTransform
+        {
+            get
+            {
+                if (rectTransform == null) rectTransform = gameObject.AddOrGetComponent<RectTransform>();
+
+                return rectTransform;
+            }
+        }
 
         private Canvas canvas;
         protected bool CheckCanvas()
@@ -190,7 +199,7 @@ namespace Swole.UI
             if (!Application.isPlaying) return;
 #endif
 
-            rectTransform = gameObject.GetComponent<RectTransform>();
+            rectTransform = gameObject.AddOrGetComponent<RectTransform>();
 
             if (root == null) root = rectTransform;
 
@@ -243,7 +252,7 @@ namespace Swole.UI
 
                 if (elevationMethod.HasFlag(ElevationMethod.ChangePositionInHierarchy)) // Move in front by changing its position in the hierarchy. Only moves in front of elements in the same hierarchy. If it's parented to the top canvas then it moves in front of all other elements in that canvas.
                 {
-                    rectTransform.SetAsLastSibling();
+                    RectTransform.SetAsLastSibling();
                 }
             }
 

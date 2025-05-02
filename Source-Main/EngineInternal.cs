@@ -1766,11 +1766,31 @@ namespace Swole
                     instance.IsInternalAsset = value;
                 }
             }
+
+            public string CollectionID
+            {
+                get => instance == null ? string.Empty : instance.CollectionID;
+                set
+                {
+                    if (instance == null) return;
+                    instance.CollectionID = value;
+                }
+            }
+            public bool HasCollectionID => instance == null ? false : instance.HasCollectionID;
+
             public void Dispose() 
             {
                 if (instance == null) return;
                 instance.Dispose();
             }
+
+            public void DisposeSelf()
+            {
+                if (instance == null) return;
+                instance.DisposeSelf();
+            }
+
+            public bool IsIdenticalAsset(ISwoleAsset asset) => instance != null && instance.IsIdenticalAsset(asset);
 
             #region ICloneable
 
@@ -1902,11 +1922,32 @@ namespace Swole
                     instance.IsInternalAsset = value;
                 }
             }
+
+            public string CollectionID
+            {
+                get => instance == null ? string.Empty : instance.CollectionID;
+                set
+                {
+                    if (instance == null) return;
+                    instance.CollectionID = value;
+                }
+            }
+
+            public bool HasCollectionID => instance == null ? false : instance.HasCollectionID;
+
             public void Dispose()
             {
                 if (instance == null) return;
                 instance.Dispose();
             }
+
+            public void DisposeSelf()
+            {
+                if (instance == null) return;
+                instance.DisposeSelf();
+            }
+
+            public bool IsIdenticalAsset(ISwoleAsset asset) => instance != null && instance.IsIdenticalAsset(asset);
 
             #region IEngineObject
 
@@ -2748,6 +2789,12 @@ namespace Swole
                 return instance.RemoveLayersStartingWith(prefix, dispose);
             }
 
+            public void ClearLayers()
+            {
+                if (IsDestroyed) return;
+                instance.ClearLayers();
+            }
+
             public Dictionary<int, int> RearrangeLayer(int layerIndex, int swapIndex, bool recalculateIndices = true)
             {
                 if (IsDestroyed) return null;
@@ -2933,10 +2980,28 @@ namespace Swole
                     instance.IsInternalAsset = value;
                 }
             }
+
+            public string CollectionID
+            {
+                get => instance == null ? string.Empty : instance.CollectionID;
+                set
+                {
+                    if (instance == null) return;
+                    instance.CollectionID = value;
+                }
+            }
+
+            public bool HasCollectionID => instance == null ? false : instance.HasCollectionID;
+
             public void Dispose()
             {
                 if (instance == null) return;
                 instance.Dispose();
+            }
+            public void DisposeSelf()
+            {
+                if (instance == null) return;
+                instance.DisposeSelf();
             }
             public void Delete()
             {
@@ -2973,6 +3038,13 @@ namespace Swole
                 copy.instance = (IAnimationAsset)instance.CreateCopyAndReplaceContentInfo(info); 
                 return copy;
             }
+            public IContent CreateShallowCopyAndReplaceContentInfo(ContentInfo info)
+            {
+                if (instance == null) return default;
+                var copy = this;
+                copy.instance = (IAnimationAsset)instance.CreateShallowCopyAndReplaceContentInfo(info);
+                return copy;
+            }
 
             public IContent SetOriginPath(string path)
             {
@@ -2995,6 +3067,8 @@ namespace Swole
                 if (instance == null) return dependencies == null ? new List<PackageIdentifier>() : dependencies;
                 return instance.ExtractPackageDependencies(dependencies);
             }
+
+            public bool IsIdenticalAsset(ISwoleAsset asset) => instance != null && instance.IsIdenticalAsset(asset);
 
             #endregion
 

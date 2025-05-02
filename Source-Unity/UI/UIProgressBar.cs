@@ -24,6 +24,8 @@ namespace Swole.UI
 
         public void OnValidate()
         {
+            if (padding == null || prevPadding == null) return;
+
             bool reinit = false;
             if (prevOrientation != orientation) reinit = true;
             if (prevMode != mode) reinit = true;

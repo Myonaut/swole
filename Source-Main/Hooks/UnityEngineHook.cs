@@ -1082,8 +1082,10 @@ namespace Swole
                 { 
                     swole.LogWarning($"Tried to destroy swole asset '{asset.Name}' without permission!");  
                 }
+
                 return;
             }
+
             if (engineObject is ITileInstance tileInst)
             {
                 try
@@ -1120,6 +1122,7 @@ namespace Swole
                     swole.LogWarning("Tried to destroy gameplay experience object!");
                     return;
                 }
+
                 if (!ReferenceEquals(eo, eo.Instance)) Object_DestroyInternal(eo.Instance, timeDelay, admin);
             }
         }

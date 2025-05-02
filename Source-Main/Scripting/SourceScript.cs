@@ -11,13 +11,14 @@ namespace Swole.Script
     public struct SourceScript : IContent, ISwoleSerialization<SourceScript, SourceScript.Serialized>
     {
 
-        public Type AssetType => GetType();
+        public Type AssetType => GetType(); 
         public object Asset => this;
 
         public bool IsInternalAsset { get => false; set { } }
 
         public bool IsValid => true;
         public void Dispose() { }
+        public void DisposeSelf() { }
         public void Delete() => Dispose();
 
         #region Serialization
@@ -69,6 +70,13 @@ namespace Swole.Script
             content.relativePath = path;
             return content;
         }
+
+        public string CollectionID
+        {
+            get => string.Empty;
+            set { }
+        }
+        public bool HasCollectionID => false;
 
         public List<PackageIdentifier> ExtractPackageDependencies(List<PackageIdentifier> dependencies = null)
         {
@@ -356,7 +364,10 @@ namespace Swole.Script
             if (string.IsNullOrEmpty(contentInfo.lastEditDate)) contentInfo.lastEditDate = contentInfo.creationDate;
         }
 
-        public IContent CreateCopyAndReplaceContentInfo(ContentInfo info) => new SourceScript(info, source, packageInfo);
+        public IContent CreateShallowCopyAndReplaceContentInfo(ContentInfo info) => new SourceScript(info, source, packageInfo);
+        public IContent CreateCopyAndReplaceContentInfo(ContentInfo info) => CreateShallowCopyAndReplaceContentInfo(info);
+
+        public bool IsIdenticalAsset(ISwoleAsset asset) => false;
 
     }
 

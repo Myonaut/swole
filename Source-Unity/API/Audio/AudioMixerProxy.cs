@@ -12,7 +12,7 @@ namespace Swole
     {
         public AudioMixer Mixer { get; set; }
     }
-    [Serializable, CreateAssetMenu(fileName = "audioMixerProxy", menuName = "Audio/AudioMixerProxy", order = 2)]
+    [Serializable, CreateAssetMenu(fileName = "audioMixerProxy", menuName = "Swole/Audio/AudioMixerProxy", order = 2)]
     public class AudioMixerProxy : ScriptableObject, IAudioMixerProxy
     {
         public AudioMixer mixer; 
@@ -22,7 +22,14 @@ namespace Swole
             set => mixer = value;
         }
 
-        public string collectionId; 
+        [SerializeField]
+        protected string collectionId;
+        public string CollectionID
+        {
+            get => collectionId;
+            set => collectionId = value;
+        }
+        public bool HasCollectionID => !string.IsNullOrWhiteSpace(CollectionID);
 
         #region IEngineObject
 
@@ -63,7 +70,10 @@ namespace Swole
             }
             disposed = true;
         }
+        public void DisposeSelf() => Dispose();
         public void Delete() => Dispose();
+
+        public bool IsIdenticalAsset(ISwoleAsset asset) => ReferenceEquals(this, asset);
 
         #endregion
 
@@ -80,6 +90,12 @@ namespace Swole
         }
 
         public string collectionId;
+        public string CollectionID
+        {
+            get => collectionId;
+            set => collectionId = value;
+        }
+        public bool HasCollectionID => !string.IsNullOrWhiteSpace(collectionId);
 
         public TempAudioMixerProxy(AudioMixer mixer, string collectionId = null)
         {
@@ -115,7 +131,10 @@ namespace Swole
 
         public bool IsValid => mixer != null;
         public void Dispose() { }
+        public void DisposeSelf() { }
         public void Delete() => Dispose();
+
+        public bool IsIdenticalAsset(ISwoleAsset asset) => (asset is IAudioMixer x && ReferenceEquals(x.Instance, Instance));
 
         #endregion
 

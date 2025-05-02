@@ -191,7 +191,7 @@ namespace Swole.API.Unity
             return new UpdateMuscularSurfaceJob()
             {
 
-                samplePoints = m_SamplePoints,
+                samplePoints = m_SamplePoints.AsArray(),
                 boneMatrices = rigSampler.Pose,
                 vertexCount = m_sharedMeshData.VertexCount,
                 blendShapeCount = m_sharedMeshData.BlendShapeCount,

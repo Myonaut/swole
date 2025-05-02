@@ -50,6 +50,7 @@ namespace Swole.Morphing
         [SerializeField]
         protected string rigBufferId;
         public void SetRigBufferID(string id) => rigBufferId = id;
+
         public override string RigBufferID => rigBufferId; 
 
         protected Transform[] bones;
@@ -77,6 +78,11 @@ namespace Swole.Morphing
         public override int BoneCount => avatar == null ? 1 : avatar.bones.Length;
 
         public override Matrix4x4[] BindPose => meshData.ManagedBindPose;
+
+        protected override void SetupSkinnedMeshSyncs()
+        {
+            throw new NotImplementedException();
+        }
     }
 
 }

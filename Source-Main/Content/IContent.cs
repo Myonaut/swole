@@ -14,6 +14,7 @@ namespace Swole
 
         public ContentInfo ContentInfo { get; }
 
+        public IContent CreateShallowCopyAndReplaceContentInfo(ContentInfo info);
         public IContent CreateCopyAndReplaceContentInfo(ContentInfo info);
 
         public string Author { get; }

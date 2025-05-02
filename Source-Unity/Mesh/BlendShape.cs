@@ -187,24 +187,37 @@ namespace Swole
 
         }
 
+        public BlendShape(string name, int vertexCount, bool expandable = false) : this(name, null, vertexCount, expandable) { }
         public BlendShape(string name, Frame[] referenceFrames, int vertexCount, bool expandable = false)
         {
 
             this.name = name;
 
-            for (int a = 0; a < referenceFrames.Length; a++)
+            if (referenceFrames == null || referenceFrames.Length <= 0)
             {
-
-                float weight = referenceFrames[a].weight;
+                float weight = 1;
 
                 Vector3[] dV = new Vector3[vertexCount];
                 Vector3[] dN = new Vector3[vertexCount];
                 Vector3[] dT = new Vector3[vertexCount];
 
                 AddFrame(weight, dV, dN, dT, expandable);
-
             }
+            else
+            {
+                for (int a = 0; a < referenceFrames.Length; a++)
+                {
 
+                    float weight = referenceFrames[a].weight;
+
+                    Vector3[] dV = new Vector3[vertexCount];
+                    Vector3[] dN = new Vector3[vertexCount];
+                    Vector3[] dT = new Vector3[vertexCount];
+
+                    AddFrame(weight, dV, dN, dT, expandable);
+
+                }
+            }
         }
 
         public int AddToMesh(Mesh mesh)

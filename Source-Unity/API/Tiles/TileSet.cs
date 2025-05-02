@@ -19,7 +19,7 @@ using UnityEditor;
 namespace Swole.API.Unity
 {
 
-    [CreateAssetMenu(fileName = "TileSet", menuName = "Environment/TileSet", order = 2)]
+    [CreateAssetMenu(fileName = "TileSet", menuName = "Swole/Environment/TileSet", order = 2)]
     public class TileSet : ScriptableObject, ITileSet
     {
 
@@ -37,12 +37,15 @@ namespace Swole.API.Unity
         protected bool disposed;
         public void Dispose()
         {
-            if (IsInternalAsset && !disposed)
+            if (!IsInternalAsset && !disposed)
             {
-                GameObject.Destroy(this);
+                GameObject.Destroy(this); 
                 disposed = true;
             }
         }
+        public void DisposeSelf() => Dispose();
+
+        public bool IsIdenticalAsset(ISwoleAsset asset) => ReferenceEquals(this, asset);
 
         public static TileSet NewExternalInstance()
         {
@@ -388,9 +391,14 @@ namespace Swole.API.Unity
             set => ignoreMeshMasking = value;
         }
 
-        [NonSerialized]
-        public string collectionId;
-        public bool HasCollectionId => !string.IsNullOrWhiteSpace(collectionId);
+        [SerializeField]
+        protected string collectionId;
+        public string CollectionID
+        {
+            get => collectionId;
+            set => collectionId = value;
+        }
+        public bool HasCollectionID => !string.IsNullOrWhiteSpace(collectionId);
 
         public Mesh mesh;
         public Material material;

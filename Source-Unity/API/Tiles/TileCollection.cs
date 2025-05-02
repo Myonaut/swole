@@ -8,7 +8,7 @@ using UnityEngine;
 namespace Swole.API.Unity
 {
 
-    [CreateAssetMenu(fileName = "NewTileCollection", menuName = "Environment/TileCollection", order = 3)]
+    [CreateAssetMenu(fileName = "NewTileCollection", menuName = "Swole/Environment/TileCollection", order = 3)]
     public class TileCollection : ScriptableObject
     {
 
@@ -39,7 +39,7 @@ namespace Swole.API.Unity
                 var tileSet = Resources.Load<TileSet>(locator.path);
                 if (tileSet == null) return null;
 
-                tileSet.collectionId = id; 
+                tileSet.CollectionID = id; 
                 tileSet.IsInternalAsset = true;
                 if (tileSet.tiles != null) foreach (var tile in tileSet.tiles) tile.IsInternalAsset = true;
 

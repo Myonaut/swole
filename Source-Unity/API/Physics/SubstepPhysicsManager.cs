@@ -83,7 +83,11 @@ namespace Swole.API.Unity
 
         public override void OnUpdate() 
         {
+#if UNITY_2022_3_OR_NEWER
+            if (Physics.simulationMode != SimulationMode.Script || !AutoSimulate) return;   
+#else
             if (Physics.autoSimulation || !AutoSimulate) return;
+#endif
             SimulateLocal();
         }
 
@@ -159,14 +163,18 @@ namespace Swole.API.Unity
 
             }
 
-            if (purge) behaviours.RemoveAll(i => i == null);
+            if (purge) behaviours.RemoveAll(i => i == null);  
 
         }
 
         public override void OnFixedUpdate()
         {
 
-            if (!Physics.autoSimulation) return;
+#if UNITY_2022_3_OR_NEWER
+            if (Physics.simulationMode != SimulationMode.Script || !AutoSimulate) return; 
+#else
+            if (Physics.autoSimulation || !AutoSimulate) return;
+#endif
 
             UpdateBehaviours();
 

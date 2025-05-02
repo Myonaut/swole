@@ -15,7 +15,10 @@
         "Unity.RenderPipelines.Universal.Runtime",
         "TriLib",
         "RootMotion",
-        "PathCreator"
+        "PathCreator",
+        "Unity.RenderPipelines.Core.Runtime",
+        "Unity.RenderPipelines.Universal.Shaders",
+        "Unity.RenderPipelines.Universal.Config.Runtime"
     ],
     "includePlatforms": [],
     "excludePlatforms": [],

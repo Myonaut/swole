@@ -602,9 +602,9 @@ namespace Swole.API.Unity.Animation
                 instance.SortOpenIndicesLocal();
                 isSequential = true;
                 int prevIndex = -1;
-                for (int a = 0; a < transforms.Length; a++)
+                for (int a = 0; a < Mathf.Min(transforms.Length, bindpose.Length); a++)
                 {
-                    int ind = instance.TrackLocal(transforms[a], bindpose[a]);
+                    int ind = instance.TrackLocal(transforms[a], bindpose[a]); 
                     trackingIndices.Add(ind);
                     if (prevIndex >= 0 && ind - prevIndex != 1) isSequential = false;
                     prevIndex = ind;

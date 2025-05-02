@@ -42,6 +42,10 @@ namespace Swole
             this.content = content;
         }
 
+        #region ISwoleAsset
+        public bool IsIdenticalAsset(ISwoleAsset asset) => ReferenceEquals(this, asset) || ReferenceEquals(content, asset);
+        #endregion
+
         #region IContent
         protected PackageInfo packageInfo;
         public PackageInfo PackageInfo => packageInfo;
@@ -65,6 +69,10 @@ namespace Swole
 
         public bool IsInternalAsset { get => false; set { } }
 
+        public IContent CreateShallowCopyAndReplaceContentInfo(ContentInfo info)
+        {
+            throw new System.NotImplementedException();
+        }
         public IContent CreateCopyAndReplaceContentInfo(ContentInfo info)
         {
             throw new System.NotImplementedException();
@@ -80,18 +88,31 @@ namespace Swole
             throw new System.NotImplementedException();
         }
 
+        public string CollectionID
+        {
+            get => content == null ? string.Empty : content.CollectionID;
+            set { }
+        }
+        public bool HasCollectionID => !string.IsNullOrWhiteSpace(CollectionID);
+
         protected bool invalid;
         public void Delete()
         {
             if (IsFullyLoaded && content != null) content.Delete();
-            Dispose();
+            DisposeSelf();
         }
-        public void Dispose()
+        public void DisposeSelf()
         {
             invalid = true;
             content = default;
             isFullyLoaded = false;
         }
+        public void Dispose()
+        {
+            if (IsFullyLoaded && content != null) content.Dispose(); 
+            DisposeSelf();
+        }
+
         public bool IsValid => invalid ? false : (IsFullyLoaded ? (content == null ? false : content.IsValid) : true);
 
         public List<PackageIdentifier> ExtractPackageDependencies(List<PackageIdentifier> dependencies = null)

@@ -423,7 +423,7 @@ namespace Swole.API.Unity.Animation
             float timeScale = CustomAnimation.ScaleNormalizedTime(normalizedTime, localScaleTimeCurve) * CachedLengthInSeconds;
 
             ITransformCurve.Data data = default;
-            
+
             data.localPosition = new float3(!Validate(localPositionCurveX) ? 0 : localPositionCurveX.Evaluate(timePos), !Validate(localPositionCurveY) ? 0 : localPositionCurveY.Evaluate(timePos), !Validate(localPositionCurveZ) ? 0 : localPositionCurveZ.Evaluate(timePos)); 
             data.localRotation = new quaternion(!Validate(localRotationCurveX) ? 0 : localRotationCurveX.Evaluate(timeRot), !Validate(localRotationCurveY) ? 0 : localRotationCurveY.Evaluate(timeRot), !Validate(localRotationCurveZ) ? 0 : localRotationCurveZ.Evaluate(timeRot), !Validate(localRotationCurveW) ? 0 : localRotationCurveW.Evaluate(timeRot));
             data.localScale = new float3(!Validate(localScaleCurveX) ? 1 : localScaleCurveX.Evaluate(timeScale), !Validate(localScaleCurveY) ? 1 : localScaleCurveY.Evaluate(timeScale), !Validate(localScaleCurveZ) ? 1 : localScaleCurveZ.Evaluate(timeScale));
@@ -503,9 +503,9 @@ namespace Swole.API.Unity.Animation
         public bool3 ValidityScale => new bool3(Validate(localScaleCurveX), Validate(localScaleCurveY), Validate(localScaleCurveZ));
 
         private static readonly List<float> _tempTimes = new List<float>();
-        public List<float> GetFrameTimes(int framesPerSecond, List<float> inputList = null)
+        public List<float> GetFrameTimes(int framesPerSecond, List<float> outputList = null)
         {
-            if (inputList == null) inputList = new List<float>();
+            if (outputList == null) outputList = new List<float>();
             _tempTimes.Clear();
 
             void AddCurve(EditableAnimationCurve curve)
@@ -535,14 +535,14 @@ namespace Swole.API.Unity.Animation
 
             _tempTimes.Sort((float x, float y) => (int)Mathf.Sign(x - y));
 
-            inputList.AddRange(_tempTimes);
+            outputList.AddRange(_tempTimes);
             _tempTimes.Clear();
-            return inputList;
+            return outputList;
         }
         private static readonly List<CustomAnimation.FrameHeader> _tempHeaders = new List<CustomAnimation.FrameHeader>();
-        public List<CustomAnimation.FrameHeader> GetFrameTimes(int framesPerSecond, List<CustomAnimation.FrameHeader> inputList)
+        public List<CustomAnimation.FrameHeader> GetFrameTimes(int framesPerSecond, List<CustomAnimation.FrameHeader> outputList)
         {
-            if (inputList == null) inputList = new List<CustomAnimation.FrameHeader>();
+            if (outputList == null) outputList = new List<CustomAnimation.FrameHeader>();
             _tempHeaders.Clear();
 
             void AddCurve(EditableAnimationCurve curve)
@@ -584,9 +584,48 @@ namespace Swole.API.Unity.Animation
             //for(int a =0; a < _tempHeaders.Count; a++) str = str + _tempHeaders[a].time + ", "; // Debug
             //Debug.Log(str); 
 
-            inputList.AddRange(_tempHeaders); 
+            outputList.AddRange(_tempHeaders); 
             _tempHeaders.Clear();
-            return inputList;
+            return outputList;
+        }
+
+        public void ClearKeys()
+        {
+            if (localPositionTimeCurve != null) localPositionTimeCurve.ClearKeys();
+            if (localRotationTimeCurve != null) localRotationTimeCurve.ClearKeys();
+            if (localScaleTimeCurve != null) localScaleTimeCurve.ClearKeys();
+
+            ClearTransformKeys();
+        }
+        public void ClearTransformKeys()
+        {
+            if (localPositionCurveX != null) localPositionCurveX.ClearKeys();
+            if (localPositionCurveY != null) localPositionCurveY.ClearKeys();
+            if (localPositionCurveZ != null) localPositionCurveZ.ClearKeys();
+
+            if (localRotationCurveX != null) localRotationCurveX.ClearKeys();
+            if (localRotationCurveY != null) localRotationCurveY.ClearKeys();
+            if (localRotationCurveZ != null) localRotationCurveZ.ClearKeys();
+            if (localRotationCurveW != null) localRotationCurveW.ClearKeys();
+
+            if (localScaleCurveX != null) localScaleCurveX.ClearKeys();
+            if (localScaleCurveY != null) localScaleCurveY.ClearKeys();
+            if (localScaleCurveZ != null) localScaleCurveZ.ClearKeys(); 
+        }
+        public void InsertData(float time, ITransformCurve.Data data, AnimationCurveEditor.KeyframeTangentSettings tangentSettings, float inTangent = 0, float outTangent = 0, float inWeight = 0.5f, float outWeight = 0.5f)
+        {
+            if (localPositionCurveX != null) localPositionCurveX.AddKey(new AnimationCurveEditor.KeyframeState() { data = new Keyframe() { value = data.localPosition.x, time = time, inTangent = inTangent, outTangent = outTangent, inWeight = inWeight, outWeight = outWeight } });
+            if (localPositionCurveY != null) localPositionCurveY.AddKey(new AnimationCurveEditor.KeyframeState() { data = new Keyframe() { value = data.localPosition.y, time = time, inTangent = inTangent, outTangent = outTangent, inWeight = inWeight, outWeight = outWeight } });
+            if (localPositionCurveZ != null) localPositionCurveZ.AddKey(new AnimationCurveEditor.KeyframeState() { data = new Keyframe() { value = data.localPosition.z, time = time, inTangent = inTangent, outTangent = outTangent, inWeight = inWeight, outWeight = outWeight } });
+
+            if (localRotationCurveX != null) localRotationCurveX.AddKey(new AnimationCurveEditor.KeyframeState() { data = new Keyframe() { value = data.localRotation.value.x, time = time, inTangent = inTangent, outTangent = outTangent, inWeight = inWeight, outWeight = outWeight } });
+            if (localRotationCurveY != null) localRotationCurveY.AddKey(new AnimationCurveEditor.KeyframeState() { data = new Keyframe() { value = data.localRotation.value.y, time = time, inTangent = inTangent, outTangent = outTangent, inWeight = inWeight, outWeight = outWeight } });
+            if (localRotationCurveZ != null) localRotationCurveZ.AddKey(new AnimationCurveEditor.KeyframeState() { data = new Keyframe() { value = data.localRotation.value.z, time = time, inTangent = inTangent, outTangent = outTangent, inWeight = inWeight, outWeight = outWeight } });
+            if (localRotationCurveW != null) localRotationCurveW.AddKey(new AnimationCurveEditor.KeyframeState() { data = new Keyframe() { value = data.localRotation.value.w, time = time, inTangent = inTangent, outTangent = outTangent, inWeight = inWeight, outWeight = outWeight } });
+             
+            if (localScaleCurveX != null) localScaleCurveX.AddKey(new AnimationCurveEditor.KeyframeState() { data = new Keyframe() { value = data.localScale.x, time = time, inTangent = inTangent, outTangent = outTangent, inWeight = inWeight, outWeight = outWeight } });
+            if (localScaleCurveY != null) localScaleCurveY.AddKey(new AnimationCurveEditor.KeyframeState() { data = new Keyframe() { value = data.localScale.y, time = time, inTangent = inTangent, outTangent = outTangent, inWeight = inWeight, outWeight = outWeight } });
+            if (localScaleCurveZ != null) localScaleCurveZ.AddKey(new AnimationCurveEditor.KeyframeState() { data = new Keyframe() { value = data.localScale.z, time = time, inTangent = inTangent, outTangent = outTangent, inWeight = inWeight, outWeight = outWeight } });
         }
 
     }

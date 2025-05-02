@@ -200,12 +200,13 @@ namespace Swole.API.Unity.Animation
 
                 restPose = new AnimationUtils.Pose(animator);
 
-                if (animator.avatar != null && animator.avatar.poseable != null) 
+                if (animator.avatar != null && animator.avatar.Poseable != null) 
                 {
+                    var poseable = animator.avatar.Poseable;
 
                     // Create bone groups and transfer any existing settings
-                    var boneGroups_ = new BoneGroup[animator.avatar.poseable.boneGroups.Length];
-                    for (int a = 0; a < boneGroups_.Length; a++) boneGroups_[a] = new BoneGroup() { id = animator.avatar.poseable.boneGroups[a].name, active = true };
+                    var boneGroups_ = new BoneGroup[poseable.boneGroups.Length];
+                    for (int a = 0; a < boneGroups_.Length; a++) boneGroups_[a] = new BoneGroup() { id = poseable.boneGroups[a].name, active = true };
                     if (boneGroups != null)
                     {
                         for (int a = 0; a < boneGroups_.Length; a++)
