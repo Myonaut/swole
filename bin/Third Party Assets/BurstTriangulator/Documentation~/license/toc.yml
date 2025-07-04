@@ -1,0 +1,6 @@
+items:
+- name: License (Software)
+  href: LICENSE.md
+
+- name: Documentation License
+  href: LICENSE-docs.md

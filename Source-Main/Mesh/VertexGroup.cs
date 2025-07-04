@@ -212,7 +212,7 @@ namespace Swole
                 if (indices[a] == vertexIndex) return weights[a];
             }
 
-            return 0;
+            return 0f;
         }
         public void SetWeight(int vertexIndex, float weight)
         {

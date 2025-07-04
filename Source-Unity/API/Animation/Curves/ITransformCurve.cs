@@ -168,6 +168,12 @@ namespace Swole.API.Unity.Animation
 
             public Data data;
 
+            /// <summary>
+            /// Used to store a float during animation editing.
+            /// </summary>
+            [NonSerialized]
+            public float tempFloat;
+
             public Frame Slerp(Frame other, float t)
             {
                 Frame inbetween = new Frame();

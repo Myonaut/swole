@@ -79,26 +79,53 @@ namespace Swole
             {
                 if (!loadedInitialSettings)
                 {
-                    loadedInitialSettings = true; 
+                    loadedInitialSettings = true;
 
+                    var defaultSettings = SwoleSettings.Default;
                     try
                     {
                         string fullPath = Path.Combine(AssetDirectoryLocal.FullName, $"settings.json");
                         if (File.Exists(fullPath))
                         {
-                            byte[] data = File.ReadAllBytes(fullPath); 
+                            byte[] data = File.ReadAllBytes(fullPath);
                             var json = DefaultJsonSerializer.StringEncoder.GetString(data);
-                            settings = FromJson<SwoleSettings>(json);
+                            settings = FromJson<SwoleSettings>(json); 
+
+                            try
+                            {
+                                var fields = typeof(SwoleSettings).GetFields(System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance);
+                                foreach (var field in fields)
+                                {
+                                    try
+                                    {
+                                        if (!json.Contains(field.Name))
+                                        {
+                                            swole.Log($"Field {field.Name} not found in settings JSON, defaulting to {field.GetValue(defaultSettings)}.");
+                                            object settings_ = settings; 
+                                            field.SetValue(settings_, field.GetValue(defaultSettings)); // if json data does not contain the field, set it to the default value
+                                            settings = (SwoleSettings)settings_;
+                                        }
+                                    }
+                                    catch (Exception ex)
+                                    {
+                                        LogError(ex);
+                                    }
+                                }
+                            }
+                            catch (Exception ex)
+                            {
+                                LogError(ex);
+                            }
                         }
                         else
                         {
-                            SettingsLocal = SwoleSettings.Default;
+                            SettingsLocal = defaultSettings;
                         }
                     }
                     catch (Exception ex)
                     {
                         LogError(ex);
-                        settings = SwoleSettings.Default;
+                        settings = defaultSettings;
                     }
                 }
 

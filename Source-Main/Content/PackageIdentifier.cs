@@ -55,6 +55,50 @@ namespace Swole
             return base.Equals(obj);
         }
 
+        public string ConvertToAssetPath(string assetName) => $"{ToString()}{System.IO.Path.DirectorySeparatorChar}{assetName}";
+        public AssetIdentifier ConvertToAssetIdentifier(string assetName) => new AssetIdentifier(ToString(), assetName);
+
+    }
+
+    [Serializable]
+    public struct AssetIdentifier : IEquatable<AssetIdentifier>
+    {
+
+        public AssetIdentifier(string package, string name)
+        {
+            this.package = package;
+            this.name = name;
+        }
+
+        public string package;
+
+        public string name;
+
+        public static implicit operator PackageIdentifier(AssetIdentifier asset) => new PackageIdentifier(asset.package);
+        public override string ToString() => $"{package}/{name}";
+
+        public bool Equals(AssetIdentifier other)
+        {
+            if (name != other.name) return false;
+            if (package != other.package) return false;
+
+            return true;
+        }
+
+        public static bool operator ==(AssetIdentifier A, AssetIdentifier B) => A.Equals(B);
+        public static bool operator !=(AssetIdentifier A, AssetIdentifier B) => !A.Equals(B);
+
+        public override int GetHashCode()
+        {
+            return base.GetHashCode();
+        }
+
+        public override bool Equals(object obj)
+        {
+            if (obj is AssetIdentifier other) return this == other;
+            return base.Equals(obj);
+        }
+
     }
 
 }

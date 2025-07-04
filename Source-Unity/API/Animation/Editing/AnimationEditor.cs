@@ -29,11 +29,12 @@ using Swole.Script;
 
 namespace Swole.API.Unity.Animation
 {
-    public class AnimationEditor : MonoBehaviour, IExecutableBehaviour
+    public class AnimationEditor : ExecutableBehaviourObject
     {
 
-        public virtual int Priority => CustomAnimatorUpdater.ExecutionPriority; // Same as animators
-        public int CompareTo(IExecutableBehaviour other) => other == null ? 1 : Priority.CompareTo(other.Priority); 
+        public override int Priority => CustomAnimatorUpdater.ExecutionPriority; // Same as animators
+
+        protected static int CompareKey(TimelineKeyframe a, TimelineKeyframe b) => Math.Sign(a.timelinePosition - b.timelinePosition);
 
         #region Input
 
@@ -2144,6 +2145,1789 @@ namespace Swole.API.Unity.Animation
 
         }
 
+        public RectTransform animationRetimingWindow;
+        public const string str_title = "title";
+        public const string str_header = "header";
+        public const string str_remove = "remove";
+
+        public delegate void ScrubAnimationTimelineDelegate(CustomAnimation anim, float time);
+        public void OpenAnimationRetimingWindow(VoidParameterlessDelegate onApply, VoidParameterlessDelegate onCancel, ScrubAnimationTimelineDelegate onScrub) => OpenAnimationRetimingWindow(animationRetimingWindow, onApply, onCancel, onScrub);
+        public void OpenAnimationRetimingWindow(AnimationSource source, VoidParameterlessDelegate onApply, VoidParameterlessDelegate onCancel, ScrubAnimationTimelineDelegate onScrub) => OpenAnimationRetimingWindow(animationRetimingWindow, browseAnimationsWindow, CurrentSession, source, onApply, onCancel, onScrub, GetPlaybackPosition, OpenContextMenuMain, contextMenuMain);
+        public void OpenAnimationRetimingWindow(RectTransform animationRetimingWindow, VoidParameterlessDelegate onApply, VoidParameterlessDelegate onCancel, ScrubAnimationTimelineDelegate onScrub) => OpenAnimationRetimingWindow(animationRetimingWindow, browseAnimationsWindow, CurrentSession, CurrentSource, onApply, onCancel, onScrub, GetPlaybackPosition, OpenContextMenuMain, contextMenuMain);
+        public static void OpenAnimationRetimingWindow(RectTransform animationRetimingWindow, RectTransform animationSelectionWindow, Session session, AnimationSource source, VoidParameterlessDelegate onApply, VoidParameterlessDelegate onCancel, ScrubAnimationTimelineDelegate onScrub, FloatParameterlessDelegate getPlaybackPosition, VoidParameterlessDelegate openContextMenu, RectTransform contextMenuObj)
+        {
+            if (animationRetimingWindow == null) return;
+            
+            animationRetimingWindow.gameObject.SetActive(source != null); 
+            if (source == null) return;
+            animationRetimingWindow.SetAsLastSibling();
+            
+            RefreshAnimationRetimingWindow(animationRetimingWindow, session, source, animationSelectionWindow, onApply,  onCancel, onScrub, getPlaybackPosition, openContextMenu, contextMenuObj);
+        }
+
+        public void OpenBrowseSessionAnimationsWindow(ImportAnimationDelegate callback, string title, bool ignoreCurrentSource) => OpenBrowseSessionAnimationsWindow(browseAnimationsWindow, CurrentSession, callback, title, ignoreCurrentSource);
+        public void OpenBrowseSessionAnimationsWindow(Session session, ImportAnimationDelegate callback, string title, bool ignoreCurrentSource) => OpenBrowseSessionAnimationsWindow(browseAnimationsWindow, session, callback, title, ignoreCurrentSource);
+        public static void OpenBrowseSessionAnimationsWindow(RectTransform browseAnimationsWindow, Session session, ImportAnimationDelegate callback, string title, bool ignoreCurrentSource)
+        {
+            OpenBrowseAnimationsWindow(browseAnimationsWindow, callback, title, (UICategorizedList animationsList, AddSelectableAnimationDelegate addListMember) =>
+            {
+                if (session.importedObjects == null) return;
+
+                for (int a = 0; a < session.importedObjects.Count; a++)
+                {
+                    var obj = session.importedObjects[a];
+                    if (obj == null || obj.animationBank == null || obj.animationBank.Count <= 0) continue;
+
+                    var cat = animationsList.AddOrGetCategory(obj.displayName);
+                    foreach (var source in obj.animationBank)
+                    {
+                        if (source == null || source.rawAnimation == null || (ignoreCurrentSource && ReferenceEquals(source, obj.CurrentSource))) continue;
+
+                        addListMember(source.DisplayName, source.rawAnimation, cat); 
+                    }
+                    if (cat.members == null || cat.members.Count <= 0) animationsList.DeleteCategory(cat); 
+                }
+            });
+        }
+
+        [Serializable]
+        public class AnimationRetimingModule
+        {
+            [NonSerialized]
+            public CustomAnimation targetAnimation;
+
+            public float targetAnimationLength;
+            public float referenceAnimationLength;
+
+            public float startTimeRemap = 0f;
+            /// <summary>
+            /// The scale of the reference animation length to map the target animation length to.
+            /// </summary>
+            public float lengthScale = 1f;
+
+            public bool rebuildRootPosition = true;
+            public bool rebuildRootRotation;
+            public string rootBoneName;
+
+            [Serializable]
+            public class Marker
+            {
+                public float targetPos;
+                public float referencePos;
+
+                public Color color;
+
+                [NonSerialized]
+                public RectTransform markerTarget;
+                [NonSerialized]
+                public RectTransform markerReference; 
+            }
+
+            public List<Marker> markers = new List<Marker>();
+
+            private static readonly List<AnimationCurveEditor.KeyframeStateRaw> tempKeys = new List<AnimationCurveEditor.KeyframeStateRaw>();
+            private static readonly List<ITransformCurve.Frame> tempTransformFrames= new List<ITransformCurve.Frame>();
+            private static readonly List<IPropertyCurve.Frame> tempPropertyFrames = new List<IPropertyCurve.Frame>();
+            private static readonly List<CustomAnimation.Event> tempEvents = new List<CustomAnimation.Event>();
+
+            public void Apply()
+            {
+                if (targetAnimation == null || targetAnimationLength <= 0) return;
+
+                float originalLength = targetAnimationLength;
+                float newLength = referenceAnimationLength * lengthScale;
+                float lengthRatio = newLength / originalLength;
+
+                if (float.IsNaN(lengthRatio) || float.IsInfinity(lengthRatio))
+                {
+                    swole.LogWarning("Length ratio is invalid. Skipping.");
+                    return;
+                } 
+
+                float newStartTime = startTimeRemap * originalLength * lengthRatio;  
+
+                #region Resize Time
+                float RemapLocalTime(float time, float newStartTime, float newLength, float lengthScale)
+                {
+                    time = (time * lengthScale) - newStartTime;
+                    while (time < 0 && newLength > 0) time += newLength; 
+                    while (time > newLength && newLength > 0) time -= newLength; 
+
+                    return time;
+                }
+                void ResizeAnimationCurve(EditableAnimationCurve curve, float newStartTime, float animLength, float lengthScale)
+                {
+                    if (curve == null || curve.length <= 0) return;
+
+                    tempKeys.Clear();
+                    tempKeys.AddRange(curve.Keys);
+
+                    for (int a = 0; a < tempKeys.Count; a++)
+                    {
+                        var key = tempKeys[a];
+                        key.time = key.tempFloat = RemapLocalTime(key.time, newStartTime, animLength, lengthScale);
+                        tempKeys[a] = key;
+                    }
+
+                    var state = curve.State;
+                    state.keyframes = tempKeys.ToArray();
+                    curve.SetState(state, false, false);
+
+                    tempKeys.Clear();
+                }
+                CustomAnimation.Event[] ResizeAnimationEvents(ICollection<CustomAnimation.Event> events, float newStartTime, float animLength, float lengthScale)
+                {
+                    if (events == null || events.Count <= 0) return null;
+
+                    tempEvents.Clear();
+                    tempEvents.AddRange(events);
+
+                    for (int a = 0; a < tempEvents.Count; a++)
+                    {
+                        var key = tempEvents[a];
+                        key.TimelinePosition = key.tempFloat = RemapLocalTime(key.TimelinePosition, newStartTime, animLength, lengthScale);
+                        tempEvents[a] = key;
+                    }
+
+                    var output = tempEvents.ToArray();
+
+                    tempEvents.Clear();
+                    return output;
+                }
+                void ResizeTransformLinearCurve(TransformLinearCurve curve, float newStartTime, float animLength, float lengthScale)
+                {
+                    if (curve == null || curve.frames == null || curve.FrameLength <= 0) return;
+
+                    tempTransformFrames.Clear();
+                    tempTransformFrames.AddRange(curve.frames);
+
+                    for (int a = 0; a < tempTransformFrames.Count; a++)
+                    {
+                        var key = tempTransformFrames[a];
+
+                        float keyTime = key.timelinePosition / (float)targetAnimation.framesPerSecond;
+                        key.tempFloat = RemapLocalTime(keyTime, newStartTime, animLength, lengthScale);
+                        key.timelinePosition = Mathf.RoundToInt(key.tempFloat * targetAnimation.framesPerSecond);
+
+                        tempTransformFrames[a] = key;
+                    }
+
+                    curve.frames = tempTransformFrames.ToArray();
+
+                    tempTransformFrames.Clear();
+                }
+                void ResizePropertyLinearCurve(PropertyLinearCurve curve, float newStartTime, float animLength, float lengthScale)
+                {
+                    if (curve == null || curve.frames == null || curve.FrameLength <= 0) return;
+
+                    tempPropertyFrames.Clear();
+                    tempPropertyFrames.AddRange(curve.frames);
+
+                    for (int a = 0; a < tempPropertyFrames.Count; a++)
+                    {
+                        var key = tempPropertyFrames[a];
+
+                        float keyTime = key.timelinePosition / (float)targetAnimation.framesPerSecond;
+                        key.tempFloat = RemapLocalTime(keyTime, newStartTime, animLength, lengthScale);
+                        key.timelinePosition = Mathf.RoundToInt(key.tempFloat * targetAnimation.framesPerSecond);
+
+                        tempPropertyFrames[a] = key;
+                    }
+
+                    curve.frames = tempPropertyFrames.ToArray();
+
+                    tempPropertyFrames.Clear();
+                }
+                #endregion
+
+                float timeOfOriginalStart = RemapLocalTime(0f, newStartTime, newLength, lengthRatio);
+
+                #region Remap Time
+                bool GetRemappedTime(float time, float startTarget, float endTarget, float startReference, float endReference, out float result) 
+                {
+                    result = time;
+                    if (time < startTarget || time > endTarget) return false;
+
+                    result = math.remap(startTarget, endTarget, startReference, endReference, time);
+                    return true;
+                }
+                void RetimeAnimationCurve(EditableAnimationCurve curve, float startTarget, float endTarget, float startReference, float endReference)
+                {
+                    if (curve == null || curve.length <= 0) return;
+
+                    tempKeys.Clear();
+                    tempKeys.AddRange(curve.Keys);
+
+                    for (int a = 0; a < tempKeys.Count; a++)
+                    {
+                        var key = tempKeys[a];
+                        if (GetRemappedTime(key.time, startTarget, endTarget, startReference, endReference, out float newTime))
+                        {
+                            key.tempFloat = newTime;
+                        }
+                        tempKeys[a] = key;
+                    }
+
+                    var state = curve.State;
+                    state.keyframes = tempKeys.ToArray();
+                    curve.SetState(state, false, false);
+
+                    tempKeys.Clear();
+                }
+                CustomAnimation.Event[] RetimeAnimationEvents(ICollection<CustomAnimation.Event> events, float startTarget, float endTarget, float startReference, float endReference)
+                {
+                    if (events == null || events.Count <= 0) return null;
+
+                    tempEvents.Clear();
+                    tempEvents.AddRange(events);
+
+                    for (int a = 0; a < tempEvents.Count; a++)
+                    {
+                        var key = tempEvents[a];
+                        if (GetRemappedTime(key.TimelinePosition, startTarget, endTarget, startReference, endReference, out float newTime))
+                        {
+                            key.tempFloat = newTime;
+                        }
+                        tempEvents[a] = key;
+                    }
+
+                    var output = tempEvents.ToArray();
+
+                    tempEvents.Clear();
+                    return output;
+                }
+                void RetimeTransformLinearCurve(TransformLinearCurve curve, float startTarget, float endTarget, float startReference, float endReference)
+                {
+                    if (curve == null || curve.frames == null || curve.FrameLength <= 0) return;
+
+                    tempTransformFrames.Clear();
+                    tempTransformFrames.AddRange(curve.frames);
+
+                    for (int a = 0; a < tempTransformFrames.Count; a++)
+                    {
+                        var key = tempTransformFrames[a];
+
+                        float keyTime = key.timelinePosition / (float)targetAnimation.framesPerSecond;         
+                        if (GetRemappedTime(keyTime, startTarget, endTarget, startReference, endReference, out float newTime))
+                        {
+                            key.tempFloat = newTime;
+                        }
+
+                        tempTransformFrames[a] = key;
+                    }
+
+                    curve.frames = tempTransformFrames.ToArray();
+
+                    tempTransformFrames.Clear();
+                }
+                void RetimePropertyLinearCurve(PropertyLinearCurve curve, float startTarget, float endTarget, float startReference, float endReference)
+                {
+                    if (curve == null || curve.frames == null || curve.FrameLength <= 0) return;
+
+                    tempPropertyFrames.Clear();
+                    tempPropertyFrames.AddRange(curve.frames);
+
+                    for (int a = 0; a < tempPropertyFrames.Count; a++)
+                    {
+                        var key = tempPropertyFrames[a];
+
+                        float keyTime = key.timelinePosition / (float)targetAnimation.framesPerSecond;
+                        if (GetRemappedTime(keyTime, startTarget, endTarget, startReference, endReference, out float newTime))
+                        {
+                            key.tempFloat = newTime;
+                        }
+
+                        tempPropertyFrames[a] = key;
+                    }
+
+                    curve.frames = tempPropertyFrames.ToArray(); 
+
+                    tempPropertyFrames.Clear();
+                }
+                
+                #endregion
+
+                #region Apply Changes
+
+                void ApplyChangesAnimationCurve(EditableAnimationCurve curve)
+                {
+                    if (curve == null || curve.length <= 0) return;
+
+                    tempKeys.Clear();
+                    tempKeys.AddRange(curve.Keys);
+
+                    for (int a = 0; a < tempKeys.Count; a++)
+                    {
+                        var key = tempKeys[a];
+                        key.time = key.tempFloat;
+                        tempKeys[a] = key;
+                    }
+
+                    tempKeys.Sort(AnimationUtils.CompareKey);
+                    curve.Keys = tempKeys.ToArray();
+                    
+                    tempKeys.Clear();
+                }
+                CustomAnimation.Event[] ApplyChangesAnimationEvents(ICollection<CustomAnimation.Event> events)
+                {
+                    if (events == null || events.Count <= 0) return null;
+
+                    tempEvents.Clear();
+                    tempEvents.AddRange(events);
+
+                    for (int a = 0; a < tempEvents.Count; a++)
+                    {
+                        var key = tempEvents[a];
+                        key.TimelinePosition = key.tempFloat;
+                        tempEvents[a] = key;
+                    }
+
+                    tempEvents.Sort(AnimationUtils.CompareEvent);
+                    var output = tempEvents.ToArray();
+
+                    tempEvents.Clear();
+                    return output;
+                }
+                void ApplyChangesTransformLinearCurve(TransformLinearCurve curve)
+                {
+                    if (curve == null || curve.frames == null || curve.FrameLength <= 0) return;
+
+                    tempTransformFrames.Clear();
+                    tempTransformFrames.AddRange(curve.frames);
+
+                    for (int a = 0; a < tempTransformFrames.Count; a++)
+                    {
+                        var key = tempTransformFrames[a];
+                        key.timelinePosition = Mathf.RoundToInt(key.tempFloat * targetAnimation.framesPerSecond);
+                        tempTransformFrames[a] = key;
+                    }
+
+                    tempTransformFrames.Sort(AnimationUtils.CompareKey);
+                    curve.frames = tempTransformFrames.ToArray();
+
+                    tempTransformFrames.Clear();
+                }
+                void ApplyChangesPropertyLinearCurve(PropertyLinearCurve curve)
+                {
+                    if (curve == null || curve.frames == null || curve.FrameLength <= 0) return;
+
+                    tempPropertyFrames.Clear();
+                    tempPropertyFrames.AddRange(curve.frames);
+
+                    for (int a = 0; a < tempPropertyFrames.Count; a++)
+                    {
+                        var key = tempPropertyFrames[a];
+                        key.timelinePosition = Mathf.RoundToInt(key.tempFloat * targetAnimation.framesPerSecond);
+                        tempPropertyFrames[a] = key;
+                    }
+
+                    tempTransformFrames.Sort(AnimationUtils.CompareKey);
+                    curve.frames = tempPropertyFrames.ToArray();
+
+                    tempPropertyFrames.Clear();
+                }
+                #endregion
+
+                if (targetAnimation.transformCurves != null)
+                {
+                    for (int b = 0; b < targetAnimation.transformCurves.Length; b++)
+                    {
+                        var curve = targetAnimation.transformCurves[b];
+                        if (curve == null) continue;
+
+                        ResizeAnimationCurve(curve.localPositionCurveX, newStartTime, newLength, lengthRatio);
+                        ResizeAnimationCurve(curve.localPositionCurveY, newStartTime, newLength, lengthRatio);
+                        ResizeAnimationCurve(curve.localPositionCurveZ, newStartTime, newLength, lengthRatio); 
+
+                        ResizeAnimationCurve(curve.localRotationCurveX, newStartTime, newLength, lengthRatio);
+                        ResizeAnimationCurve(curve.localRotationCurveY, newStartTime, newLength, lengthRatio);
+                        ResizeAnimationCurve(curve.localRotationCurveZ, newStartTime, newLength, lengthRatio);
+                        ResizeAnimationCurve(curve.localRotationCurveW, newStartTime, newLength, lengthRatio);
+
+                        ResizeAnimationCurve(curve.localScaleCurveX, newStartTime, newLength, lengthRatio);
+                        ResizeAnimationCurve(curve.localScaleCurveY, newStartTime, newLength, lengthRatio);
+                        ResizeAnimationCurve(curve.localScaleCurveZ, newStartTime, newLength, lengthRatio);
+                    }
+                }
+                if (targetAnimation.transformLinearCurves != null)
+                {
+                    for (int b = 0; b < targetAnimation.transformLinearCurves.Length; b++)
+                    {
+                        var curve = targetAnimation.transformLinearCurves[b];
+                        if (curve == null || curve.frames == null) continue;
+
+                        ResizeTransformLinearCurve(curve, newStartTime, newLength, lengthRatio);
+                    }
+                }
+                if (targetAnimation.propertyCurves != null)
+                {
+                    for (int b = 0; b < targetAnimation.propertyCurves.Length; b++)
+                    {
+                        var curve = targetAnimation.propertyCurves[b];
+                        if (curve == null) continue;
+
+                        ResizeAnimationCurve(curve.propertyValueCurve, newStartTime, newLength, lengthRatio);
+                    }
+                }
+                if (targetAnimation.propertyLinearCurves != null)
+                {
+                    for (int b = 0; b < targetAnimation.propertyLinearCurves.Length; b++)
+                    {
+                        var curve = targetAnimation.propertyLinearCurves[b];
+                        if (curve == null || curve.frames == null) continue;
+
+                        ResizePropertyLinearCurve(curve, newStartTime, newLength, lengthRatio);
+                    }
+                }
+                if (targetAnimation.events != null)
+                {
+                    targetAnimation.events = ResizeAnimationEvents(targetAnimation.events, newStartTime, newLength, lengthRatio);
+                }
+
+                List<Marker> tempMarkers = new List<Marker>(markers);
+                tempMarkers.RemoveAll(i => i.targetPos < 0.00001f || Mathf.Abs(targetAnimationLength - i.targetPos) < 0.00001f || i.targetPos > targetAnimationLength); 
+                tempMarkers.RemoveAll(i => i.referencePos < 0.00001f || Mathf.Abs(newLength - i.referencePos) < 0.00001f || i.referencePos > newLength); 
+                tempMarkers.Add(new Marker()
+                {
+                     targetPos = 0,
+                     referencePos = 0
+                });
+                tempMarkers.Add(new Marker()
+                {
+                    targetPos = targetAnimationLength,
+                    referencePos = newLength
+                });
+                tempMarkers.Sort((Marker a, Marker b) => Math.Sign(a.targetPos - b.targetPos)); 
+                for (int a = 0; a < tempMarkers.Count - 1; a++) 
+                {
+                    var markerA = tempMarkers[a]; 
+                    var markerB = tempMarkers[a + 1]; 
+
+                    var targetPosA = markerA.targetPos * lengthRatio;
+                    var targetPosB = markerB.targetPos * lengthRatio; 
+
+                    if (targetAnimation.transformCurves != null)
+                    {
+                        for (int b = 0; b < targetAnimation.transformCurves.Length; b++)
+                        {
+                            var curve = targetAnimation.transformCurves[b];
+                            if (curve == null) continue;
+
+                            RetimeAnimationCurve(curve.localPositionCurveX, targetPosA, targetPosB, markerA.referencePos, markerB.referencePos);
+                            RetimeAnimationCurve(curve.localPositionCurveY, targetPosA, targetPosB, markerA.referencePos, markerB.referencePos);
+                            RetimeAnimationCurve(curve.localPositionCurveZ, targetPosA, targetPosB, markerA.referencePos, markerB.referencePos);
+
+                            RetimeAnimationCurve(curve.localRotationCurveX, targetPosA, targetPosB, markerA.referencePos, markerB.referencePos);
+                            RetimeAnimationCurve(curve.localRotationCurveY, targetPosA, targetPosB, markerA.referencePos, markerB.referencePos);
+                            RetimeAnimationCurve(curve.localRotationCurveZ, targetPosA, targetPosB, markerA.referencePos, markerB.referencePos);
+                            RetimeAnimationCurve(curve.localRotationCurveW, targetPosA, targetPosB, markerA.referencePos, markerB.referencePos);
+
+                            RetimeAnimationCurve(curve.localScaleCurveX, targetPosA, targetPosB, markerA.referencePos, markerB.referencePos);
+                            RetimeAnimationCurve(curve.localScaleCurveY, targetPosA, targetPosB, markerA.referencePos, markerB.referencePos);
+                            RetimeAnimationCurve(curve.localScaleCurveZ, targetPosA, targetPosB, markerA.referencePos, markerB.referencePos);
+                        }
+                    }
+
+                    if (targetAnimation.transformLinearCurves != null)
+                    {
+                        for (int b = 0; b < targetAnimation.transformLinearCurves.Length; b++)
+                        {
+                            var curve = targetAnimation.transformLinearCurves[b];
+                            if (curve == null || curve.frames == null) continue;
+
+                            RetimeTransformLinearCurve(curve, targetPosA, targetPosB, markerA.referencePos, markerB.referencePos);
+                        }
+                    }
+                    if (targetAnimation.propertyCurves != null)
+                    {
+                        for (int b = 0; b < targetAnimation.propertyCurves.Length; b++)
+                        {
+                            var curve = targetAnimation.propertyCurves[b];
+                            if (curve == null) continue;
+
+                            RetimeAnimationCurve(curve.propertyValueCurve, targetPosA, targetPosB, markerA.referencePos, markerB.referencePos);
+                        }
+                    } 
+                    if (targetAnimation.propertyLinearCurves != null)
+                    {
+                        for (int b = 0; b < targetAnimation.propertyLinearCurves.Length; b++)
+                        {
+                            var curve = targetAnimation.propertyLinearCurves[b];
+                            if (curve == null || curve.frames == null) continue; 
+
+                            RetimePropertyLinearCurve(curve, targetPosA, targetPosB, markerA.referencePos, markerB.referencePos); 
+                        }
+                    }
+                    if (targetAnimation.events != null)
+                    {
+                        targetAnimation.events = RetimeAnimationEvents(targetAnimation.events, targetPosA, targetPosB, markerA.referencePos, markerB.referencePos); 
+                    }
+                }
+
+                if (targetAnimation.transformCurves != null)
+                {
+                    for (int b = 0; b < targetAnimation.transformCurves.Length; b++)
+                    {
+                        var curve = targetAnimation.transformCurves[b];
+                        if (curve == null) continue;
+
+                        ApplyChangesAnimationCurve(curve.localPositionCurveX);
+                        ApplyChangesAnimationCurve(curve.localPositionCurveY);
+                        ApplyChangesAnimationCurve(curve.localPositionCurveZ);
+
+                        ApplyChangesAnimationCurve(curve.localRotationCurveX);
+                        ApplyChangesAnimationCurve(curve.localRotationCurveY);
+                        ApplyChangesAnimationCurve(curve.localRotationCurveZ);
+                        ApplyChangesAnimationCurve(curve.localRotationCurveW);
+
+                        ApplyChangesAnimationCurve(curve.localScaleCurveX);
+                        ApplyChangesAnimationCurve(curve.localScaleCurveY);
+                        ApplyChangesAnimationCurve(curve.localScaleCurveZ);
+                    }
+                }
+                if (targetAnimation.transformLinearCurves != null)
+                {
+                    for (int b = 0; b < targetAnimation.transformLinearCurves.Length; b++)
+                    {
+                        var curve = targetAnimation.transformLinearCurves[b];
+                        if (curve == null || curve.frames == null) continue;
+
+                        ApplyChangesTransformLinearCurve(curve);
+                    }
+                }
+                if (targetAnimation.propertyCurves != null)
+                {
+                    for (int b = 0; b < targetAnimation.propertyCurves.Length; b++)
+                    {
+                        var curve = targetAnimation.propertyCurves[b];
+                        if (curve == null) continue;
+
+                        ApplyChangesAnimationCurve(curve.propertyValueCurve);
+                    }
+                }
+                if (targetAnimation.propertyLinearCurves != null)
+                {
+                    for (int b = 0; b < targetAnimation.propertyLinearCurves.Length; b++)
+                    {
+                        var curve = targetAnimation.propertyLinearCurves[b];
+                        if (curve == null || curve.frames == null) continue; 
+
+                        ApplyChangesPropertyLinearCurve(curve);
+                    }
+                }
+                if (targetAnimation.events != null)
+                {
+                    targetAnimation.events = ApplyChangesAnimationEvents(targetAnimation.events); 
+                }
+
+                if (startTimeRemap > 0 && !string.IsNullOrWhiteSpace(rootBoneName))
+                {
+                    if (rebuildRootPosition)
+                    {
+                        void RebuildRootPositionCurve(EditableAnimationCurve curve)
+                        {
+                            if (curve == null) return;
+
+                            var keys = curve.Keys;
+                            if (keys == null || keys.Length <= 1) return;
+
+                            var startKey = keys[0];
+                            if (startKey.time >= timeOfOriginalStart) return;
+
+                            var originalStartKey = startKey;
+                            for(int a = 1; a < keys.Length; a++)
+                            {
+                                var key = keys[a];
+                                if (key.time < timeOfOriginalStart) continue;
+
+                                originalStartKey = key;
+                                break;
+                            }
+
+                            float offset = originalStartKey.value - startKey.value;
+                            float delta = 0f;
+                            for(int a = 1; a < keys.Length; a++)
+                            {
+                                var key = keys[a];
+                                if (key.time >= timeOfOriginalStart) break;
+
+                                var prevKey = keys[a - 1];
+
+                                delta += key.value - prevKey.value;
+                            }
+
+                            for(int a = 0; a < keys.Length; a++)
+                            {
+                                var key = keys[a];
+
+                                if (key.time < timeOfOriginalStart)
+                                {
+                                    key.value = key.value + offset;
+                                } 
+                                else
+                                {
+                                    key.value = key.value + delta;
+                                }
+
+                                keys[a] = key;
+                            }
+
+                            curve.Keys = keys;
+                        }
+
+                        for (int b = 0; b < targetAnimation.transformCurves.Length; b++)
+                        {
+                            var curve = targetAnimation.transformCurves[b];
+                            if (curve == null || curve.TransformName != rootBoneName) continue;
+
+                            RebuildRootPositionCurve(curve.localPositionCurveX);
+                            RebuildRootPositionCurve(curve.localPositionCurveY);
+                            RebuildRootPositionCurve(curve.localPositionCurveZ);
+                        }
+                    }
+
+                    if (rebuildRootRotation)
+                    {
+                        Dictionary<float, Quaternion> keyValues = new Dictionary<float, Quaternion>();
+                        for (int b = 0; b < targetAnimation.transformCurves.Length; b++)
+                        {
+                            var curve = targetAnimation.transformCurves[b];
+                            if (curve == null || curve.TransformName != rootBoneName) continue;
+
+                            Quaternion SampleCurves(float time)
+                            {
+                                var rot = Quaternion.identity;
+
+                                if (curve.localRotationCurveX != null && curve.localRotationCurveX.length > 0) rot.x = curve.localRotationCurveX.Evaluate(time);
+                                if (curve.localRotationCurveY != null && curve.localRotationCurveY.length > 0) rot.y = curve.localRotationCurveY.Evaluate(time);
+                                if (curve.localRotationCurveZ != null && curve.localRotationCurveZ.length > 0) rot.z = curve.localRotationCurveZ.Evaluate(time);
+                                if (curve.localRotationCurveW != null && curve.localRotationCurveW.length > 0) rot.w = curve.localRotationCurveW.Evaluate(time);
+
+                                return rot;
+                            }
+                            void InsertIntoCurves(float time, Quaternion value)
+                            {
+                                if (curve.localRotationCurveX != null)
+                                {
+                                    curve.localRotationCurveX.AddOrReplaceKey(time, value.x, false, false, 0, AnimationUtils.InsertAutoSmoothBehaviour.LinearIfNew);
+                                }
+                                if (curve.localRotationCurveY != null)
+                                {
+                                    curve.localRotationCurveY.AddOrReplaceKey(time, value.y, false, false, 0, AnimationUtils.InsertAutoSmoothBehaviour.LinearIfNew); 
+                                }
+                                if (curve.localRotationCurveZ != null)
+                                {
+                                    curve.localRotationCurveZ.AddOrReplaceKey(time, value.z, false, false, 0, AnimationUtils.InsertAutoSmoothBehaviour.LinearIfNew);
+                                }
+                                if (curve.localRotationCurveW != null)
+                                {
+                                    curve.localRotationCurveW.AddOrReplaceKey(time, value.w, false, false, 0, AnimationUtils.InsertAutoSmoothBehaviour.LinearIfNew); 
+                                }
+                            }
+
+                            keyValues.Clear();
+                            if (curve.localRotationCurveX != null)
+                            {
+                                for (int c = 0; c < curve.localRotationCurveX.length; c++) 
+                                { 
+                                    var key = curve.localRotationCurveX[c];
+                                    keyValues[key.time] = SampleCurves(key.time); 
+                                }
+                            }
+                            if (curve.localRotationCurveY != null)
+                            {
+                                for (int c = 0; c < curve.localRotationCurveY.length; c++)
+                                {
+                                    var key = curve.localRotationCurveY[c];
+                                    keyValues[key.time] = SampleCurves(key.time);
+                                }
+                            }
+                            if (curve.localRotationCurveZ != null)
+                            {
+                                for (int c = 0; c < curve.localRotationCurveZ.length; c++)
+                                {
+                                    var key = curve.localRotationCurveZ[c];
+                                    keyValues[key.time] = SampleCurves(key.time);
+                                }
+                            }
+                            if (curve.localRotationCurveW != null)
+                            {
+                                for (int c = 0; c < curve.localRotationCurveW.length; c++)
+                                {
+                                    var key = curve.localRotationCurveW[c];
+                                    keyValues[key.time] = SampleCurves(key.time); 
+                                }
+                            }
+
+                            var startRot = Quaternion.identity;
+                            var startRotTime = timeOfOriginalStart;
+                            foreach(var entry in keyValues)
+                            {
+                                if (entry.Key < startRotTime)
+                                {
+                                    startRotTime = entry.Key;
+                                    startRot = entry.Value;
+                                }
+                            }
+                            if (startRotTime >= timeOfOriginalStart) continue;
+
+                            var originalStartRot = SampleCurves(timeOfOriginalStart);
+
+                            Quaternion offset = Quaternion.Inverse(startRot) * originalStartRot;
+
+                            List<float> timesSorted = new List<float>(keyValues.Keys);
+                            timesSorted.Sort(AnimationUtils.CompareTimelinePos);
+                            Quaternion delta = Quaternion.identity;
+                            for(int a = 1; a < timesSorted.Count; a++)
+                            {
+                                var keyTime = timesSorted[a];
+                                if (keyTime >= timeOfOriginalStart) break;
+
+                                var prevKeyTime = timesSorted[a - 1];
+
+                                delta = (Quaternion.Inverse(keyValues[prevKeyTime]) * keyValues[keyTime]) * delta;
+                            }
+
+                            for (int a = 0; a < timesSorted.Count; a++)
+                            {
+                                Quaternion prevRot = Quaternion.identity;
+                                if (a > 0) prevRot = keyValues[timesSorted[a - 1]]; 
+
+                                var keyTime = timesSorted[a];
+
+                                Quaternion rot;
+                                if (keyTime < timeOfOriginalStart)
+                                {
+                                    rot = offset * keyValues[keyTime];
+                                }
+                                else
+                                {
+                                    rot = delta * keyValues[keyTime];
+                                }
+
+                                rot = Maths.EnsureQuaternionContinuity(prevRot, rot);
+                                InsertIntoCurves(keyTime, rot);
+                            }
+
+                        }
+                    }
+                }
+            }
+        }
+
+        private static readonly Vector3[] fourCornersArray = new Vector3[4];
+        public void RefreshAnimationRetimingWindow(AnimationSource source, VoidParameterlessDelegate onApply, VoidParameterlessDelegate onCancel, ScrubAnimationTimelineDelegate onScrub) => RefreshAnimationRetimingWindow(animationRetimingWindow, CurrentSession, source, browseAnimationsWindow, onApply, onCancel, onScrub, GetPlaybackPosition, OpenContextMenuMain, contextMenuMain);
+        public void RefreshAnimationRetimingWindow(Session session, AnimationSource source, VoidParameterlessDelegate onApply, VoidParameterlessDelegate onCancel, ScrubAnimationTimelineDelegate onScrub) => RefreshAnimationRetimingWindow(animationRetimingWindow, session, source, browseAnimationsWindow, onApply, onCancel, onScrub, GetPlaybackPosition, OpenContextMenuMain, contextMenuMain);
+        public void RefreshAnimationRetimingWindow(RectTransform animationRetimingWindow, AnimationSource source, VoidParameterlessDelegate onApply, VoidParameterlessDelegate onCancel, ScrubAnimationTimelineDelegate onScrub) => RefreshAnimationRetimingWindow(animationRetimingWindow, CurrentSession, source, browseAnimationsWindow, onApply, onCancel, onScrub, GetPlaybackPosition, OpenContextMenuMain, contextMenuMain);
+        public static void RefreshAnimationRetimingWindow(RectTransform animationRetimingWindow, Session session, AnimationSource source, RectTransform animationSelectionWindow, VoidParameterlessDelegate onApply, VoidParameterlessDelegate onCancel, ScrubAnimationTimelineDelegate onScrub, FloatParameterlessDelegate getPlaybackPosition, VoidParameterlessDelegate openContextMenu, RectTransform contextMenuObj) 
+        {
+            if (animationRetimingWindow == null || source == null || source.rawAnimation == null || !animationRetimingWindow.gameObject.activeSelf) return;
+
+            var animatable = session.ActiveObject;
+            if (animatable == null) return;
+
+            CustomEditorUtils.SetComponentTextByName(animationRetimingWindow, str_title, $"RETIMING {source.DisplayName}");
+
+            AnimationSource targetSource = source;
+            CustomAnimation referenceAnim = null;
+
+            Transform timelinesObj = animationRetimingWindow.FindDeepChildLiberal("timelines");
+            Transform timelineLocalObj = null;
+            Transform timelineReferenceObj = null;
+
+            float localTimelinePos = 0f;
+
+            Transform timelineLocalInnerObj = null;
+            Transform timelineReferenceInnerObj = null;
+            RectTransform timelineLocalInnerRT = null;
+            RectTransform timelineReferenceInnerRT = null;
+
+            PrefabPool localMarkersPool = null;
+            PrefabPool referenceMarkersPool = null;
+            
+            Transform optionsObj = animationRetimingWindow.FindDeepChildLiberal("options");
+
+            AnimationRetimingModule retimeObj = new AnimationRetimingModule();
+            retimeObj.targetAnimation = source.rawAnimation;
+            retimeObj.referenceAnimationLength = retimeObj.targetAnimationLength = targetSource.timelineLength; 
+
+            if (timelinesObj != null)
+            {
+                timelineLocalObj = timelinesObj.FindDeepChildLiberal("timelineLocal");
+                timelineReferenceObj = timelinesObj.FindDeepChildLiberal("timelineReference");
+
+                if (timelineLocalObj != null)
+                {
+                    localMarkersPool = timelineLocalObj.GetComponent<PrefabPool>();
+                    if (localMarkersPool == null)
+                    {
+                        var markerPrototype = timelineLocalObj.FindDeepChildLiberal("markerPrototype");
+                        if (markerPrototype != null)
+                        {
+                            localMarkersPool = timelineLocalObj.gameObject.AddComponent<PrefabPool>(); 
+                            localMarkersPool.ContainerTransform = markerPrototype.parent;
+                            localMarkersPool.Reinitialize(markerPrototype.gameObject, PoolGrowthMethod.Incremental, 1, 1, 1000);
+                            markerPrototype.gameObject.SetActive(false);
+                        }
+                    }
+                }
+                if (timelineReferenceObj != null)
+                {
+                    referenceMarkersPool = timelineReferenceObj.GetComponent<PrefabPool>(); 
+                    if (referenceMarkersPool == null)
+                    {
+                        var markerPrototype = timelineReferenceObj.FindDeepChildLiberal("markerPrototype");
+                        if (markerPrototype != null)
+                        {
+                            referenceMarkersPool = timelineReferenceObj.gameObject.AddComponent<PrefabPool>();
+                            referenceMarkersPool.ContainerTransform = markerPrototype.parent;
+                            referenceMarkersPool.Reinitialize(markerPrototype.gameObject, PoolGrowthMethod.Incremental, 1, 1, 1000);  
+                            markerPrototype.gameObject.SetActive(false); 
+                        }
+                    }
+                }
+            }
+
+            void RefreshMarkers()
+            {
+                if (retimeObj == null || retimeObj.markers == null) return;
+
+                List<AnimationRetimingModule.Marker> toRemove = new List<AnimationRetimingModule.Marker>();
+                foreach(var marker in retimeObj.markers)
+                {
+                    if (marker.targetPos < 0.00001f || Mathf.Abs(retimeObj.targetAnimationLength - marker.targetPos) < 0.00001f || marker.targetPos > retimeObj.targetAnimationLength)
+                    {
+                        toRemove.Add(marker);
+
+                        if (localMarkersPool != null && marker.markerTarget != null)
+                        {
+                            localMarkersPool.Release(marker.markerTarget.gameObject);
+                            marker.markerTarget.gameObject.SetActive(false);
+                        }
+                        if (referenceMarkersPool != null && marker.markerReference != null)
+                        {
+                            referenceMarkersPool.Release(marker.markerReference.gameObject);
+                            marker.markerReference.gameObject.SetActive(false); 
+                        }
+                        continue;
+                    }
+
+                    if (marker.markerTarget != null)
+                    {
+                        var ancMin = marker.markerTarget.anchorMin;
+                        var ancMax = marker.markerTarget.anchorMax;
+                        ancMax.x = ancMin.x = marker.targetPos / retimeObj.targetAnimationLength;
+                        marker.markerTarget.anchorMin = ancMin;
+                        marker.markerTarget.anchorMax = ancMax;
+
+                        var ap = marker.markerTarget.anchoredPosition;
+                        ap.x = 0;
+                        marker.markerTarget.anchoredPosition = ap; 
+                    }
+
+                    if (marker.markerReference != null)
+                    {
+                        var ancMin = marker.markerReference.anchorMin;
+                        var ancMax = marker.markerReference.anchorMax;
+                        ancMax.x = ancMin.x = marker.referencePos / retimeObj.referenceAnimationLength; 
+                        marker.markerReference.anchorMin = ancMin;
+                        marker.markerReference.anchorMax = ancMax;
+
+                        var ap = marker.markerReference.anchoredPosition;
+                        ap.x = 0; 
+                        marker.markerReference.anchoredPosition = ap;
+                    }
+                }
+
+                retimeObj.markers.RemoveAll(i => toRemove.Contains(i));
+            }
+
+            void CreateMarker(float normalizedTime, bool isReference)
+            {
+                if (localMarkersPool == null || referenceMarkersPool == null || timelineLocalInnerRT == null || timelineReferenceInnerRT == null || normalizedTime < 0.02f || normalizedTime > 0.98f) return;
+                 
+                if (localMarkersPool.TryGetNewInstance(out GameObject markerObjTarget) && referenceMarkersPool.TryGetNewInstance(out GameObject markerObjReference)) 
+                { 
+                    markerObjTarget.transform.SetParent(timelineLocalInnerRT, true);
+                    markerObjReference.transform.SetParent(timelineReferenceInnerRT, true);
+
+                    AnimationRetimingModule.Marker marker = new AnimationRetimingModule.Marker();
+                    marker.markerTarget = markerObjTarget.GetComponent<RectTransform>();
+                    marker.markerReference = markerObjReference.GetComponent<RectTransform>(); 
+
+                    marker.targetPos = retimeObj.targetAnimationLength * normalizedTime;
+                    marker.referencePos = retimeObj.referenceAnimationLength * normalizedTime; 
+
+                    var ancMin = marker.markerTarget.anchorMin;
+                    var ancMax = marker.markerTarget.anchorMax;
+                    ancMin.x = normalizedTime;
+                    ancMax.x = normalizedTime;
+                    marker.markerTarget.anchorMin = ancMin;
+                    marker.markerTarget.anchorMax = ancMax;
+
+                    ancMin = marker.markerReference.anchorMin;
+                    ancMax = marker.markerReference.anchorMax;
+                    ancMin.x = normalizedTime;
+                    ancMax.x = normalizedTime;
+                    marker.markerReference.anchorMin = ancMin;
+                    marker.markerReference.anchorMax = ancMax; 
+
+                    var ap = marker.markerTarget.anchoredPosition;
+                    ap.x = 0;
+                    marker.markerTarget.anchoredPosition = ap;
+
+                    ap = marker.markerReference.anchoredPosition;
+                    ap.x = 0;
+                    marker.markerReference.anchoredPosition = ap;    
+
+                    if (retimeObj.markers == null) retimeObj.markers = new List<AnimationRetimingModule.Marker>();
+
+                    int i = 0;
+                    bool flag = true;
+                    Color col = Color.white;
+                    while (flag && i < 100)
+                    {
+                        flag = false;
+                        col = UnityEngine.Random.ColorHSV(0f, 1f, 0.3f, 1f, 0.8f, 1f);
+                        foreach (var marker_ in retimeObj.markers)
+                        {
+                            if (Vector3.Distance(new Vector3(col.r, col.g, col.b), new Vector3(marker_.color.r, marker_.color.g, marker_.color.b)) < 0.15f)
+                            {
+                                flag = true;
+                                break;
+                            }
+                        }
+
+                        i++;
+                    }
+
+                    marker.color = col;
+                    retimeObj.markers.Add(marker);
+
+                    Image imageTarget = markerObjTarget.GetComponentInChildren<Image>(true);
+                    Image imageReference = markerObjReference.GetComponentInChildren<Image>(true);
+
+                    if (imageTarget != null) imageTarget.color = col;
+                    if (imageReference != null) imageReference.color = col;
+
+                    var draggableTarget = markerObjTarget.AddOrGetComponent<UIDraggable>();
+                    var draggableReference = markerObjReference.AddOrGetComponent<UIDraggable>(); 
+
+                    draggableTarget.freeze = true;
+                    draggableReference.freeze = true; 
+
+                    draggableTarget.dragMouseButtonMask = MouseButtonMask.LeftMouseButton;
+                    draggableReference.dragMouseButtonMask = MouseButtonMask.LeftMouseButton;
+
+                    draggableTarget.clickMouseButtonMask = MouseButtonMask.RightMouseButton;
+                    draggableReference.clickMouseButtonMask = MouseButtonMask.RightMouseButton; 
+
+                    var draggableCanvasTarget = timelineLocalInnerRT.GetComponentInParent<Canvas>(true);
+                    var draggableCanvasReference = timelineReferenceInnerRT.GetComponentInParent<Canvas>(true); 
+
+                    void Delete()
+                    {
+                        if (marker == null) return;
+
+                        if (marker.markerTarget != null && localMarkersPool != null)
+                        {
+                            localMarkersPool.Release(marker.markerTarget.gameObject);
+                            marker.markerTarget.gameObject.SetActive(false);
+                        }
+                        if (marker.markerReference != null && referenceMarkersPool != null)
+                        {
+                            referenceMarkersPool.Release(marker.markerReference.gameObject);
+                            marker.markerReference.gameObject.SetActive(false);
+                        }
+
+                        retimeObj.markers.Remove(marker); 
+                    }
+                    void DragTarget()
+                    {
+                        timelineLocalInnerRT.GetLocalCorners(fourCornersArray);
+                        Vector2 min = new Vector2(Mathf.Min(fourCornersArray[0].x, fourCornersArray[1].x, fourCornersArray[2].x, fourCornersArray[3].x), Mathf.Min(fourCornersArray[0].y, fourCornersArray[1].y, fourCornersArray[2].y, fourCornersArray[3].y));
+                        Vector2 max = new Vector2(Mathf.Max(fourCornersArray[0].x, fourCornersArray[1].x, fourCornersArray[2].x, fourCornersArray[3].x), Mathf.Max(fourCornersArray[0].y, fourCornersArray[1].y, fourCornersArray[2].y, fourCornersArray[3].y));
+                        Vector2 range = max - min;
+                        if (range.x != 0)
+                        {
+                            Vector3 cursorPos = timelineLocalInnerRT.InverseTransformPoint(draggableCanvasTarget.transform.TransformPoint(AnimationCurveEditorUtils.ScreenToCanvasPosition(draggableCanvasTarget, CursorProxy.ScreenPosition)));
+                            float posInContainer = Mathf.Clamp01((cursorPos.x - min.x) / range.x); 
+
+                            var ancMin = marker.markerTarget.anchorMin;
+                            var ancMax = marker.markerTarget.anchorMax;
+                            ancMin.x = posInContainer;
+                            ancMax.x = posInContainer;
+                            marker.markerTarget.anchorMin = ancMin;
+                            marker.markerTarget.anchorMax = ancMax;
+
+                            var ap = marker.markerTarget.anchoredPosition;
+                            ap.x = 0;
+                            marker.markerTarget.anchoredPosition = ap; 
+
+                            marker.targetPos = retimeObj.targetAnimationLength * posInContainer;
+                        }
+                    }
+                    void DragReference()
+                    {
+                        timelineReferenceInnerRT.GetLocalCorners(fourCornersArray);
+                        Vector2 min = new Vector2(Mathf.Min(fourCornersArray[0].x, fourCornersArray[1].x, fourCornersArray[2].x, fourCornersArray[3].x), Mathf.Min(fourCornersArray[0].y, fourCornersArray[1].y, fourCornersArray[2].y, fourCornersArray[3].y));
+                        Vector2 max = new Vector2(Mathf.Max(fourCornersArray[0].x, fourCornersArray[1].x, fourCornersArray[2].x, fourCornersArray[3].x), Mathf.Max(fourCornersArray[0].y, fourCornersArray[1].y, fourCornersArray[2].y, fourCornersArray[3].y));
+                        Vector2 range = max - min;
+                        if (range.x != 0)
+                        {
+                            Vector3 cursorPos = timelineReferenceInnerRT.InverseTransformPoint(draggableCanvasReference.transform.TransformPoint(AnimationCurveEditorUtils.ScreenToCanvasPosition(draggableCanvasReference, CursorProxy.ScreenPosition)));
+                            float posInContainer = Mathf.Clamp01((cursorPos.x - min.x) / range.x);
+
+                            var ancMin = marker.markerReference.anchorMin;
+                            var ancMax = marker.markerReference.anchorMax;
+                            ancMin.x = posInContainer;
+                            ancMax.x = posInContainer;
+                            marker.markerReference.anchorMin = ancMin;
+                            marker.markerReference.anchorMax = ancMax;
+
+                            var ap = marker.markerReference.anchoredPosition;
+                            ap.x = 0;
+                            marker.markerReference.anchoredPosition = ap;
+
+                            marker.referencePos = retimeObj.referenceAnimationLength * posInContainer;
+                        }
+                    }
+                    void RightClickMarker()
+                    {
+                        openContextMenu?.Invoke(); 
+
+                        var deleteObj = contextMenuObj.FindDeepChildLiberal(_deleteMenuOptionName);
+                        if (deleteObj != null)
+                        {
+                            SetButtonOnClickAction(deleteObj, Delete);
+                            deleteObj.gameObject.SetActive(true);
+                        }
+                    }
+
+                    if (draggableTarget.OnDragStart == null) draggableTarget.OnDragStart = new UnityEvent();
+                    if (draggableReference.OnDragStart == null) draggableReference.OnDragStart = new UnityEvent();
+                    if (draggableTarget.OnDragStep == null) draggableTarget.OnDragStep = new UnityEvent();
+                    if (draggableReference.OnDragStep == null) draggableReference.OnDragStep = new UnityEvent();
+                    draggableTarget.OnDragStart.RemoveAllListeners();
+                    draggableReference.OnDragStart.RemoveAllListeners();
+                    draggableTarget.OnDragStep.RemoveAllListeners();
+                    draggableReference.OnDragStep.RemoveAllListeners();
+                    draggableTarget.OnDragStart.AddListener(DragTarget);
+                    draggableReference.OnDragStart.AddListener(DragReference);
+                    draggableTarget.OnDragStep.AddListener(DragTarget);
+                    draggableReference.OnDragStep.AddListener(DragReference);  
+
+                    if (draggableTarget.OnClick == null) draggableTarget.OnClick = new UnityEvent();
+                    if (draggableReference.OnClick == null) draggableReference.OnClick = new UnityEvent(); 
+                    draggableTarget.OnClick.RemoveAllListeners();
+                    draggableReference.OnClick.RemoveAllListeners();
+                    draggableTarget.OnClick.AddListener(RightClickMarker);
+                    draggableReference.OnClick.AddListener(RightClickMarker); 
+                }
+            }
+            void SetupMarkerCreation(RectTransform timelineContainer, Canvas containerCanvas, UIDraggable timelineDraggable, RectTransform playbackPosRT, VoidParameterlessDelegate scrubTime, bool isReference)
+            {
+                timelineDraggable.dragMouseButtonMask = MouseButtonMask.LeftMouseButton;
+                timelineDraggable.clickMouseButtonMask = MouseButtonMask.LeftMouseButton | MouseButtonMask.RightMouseButton;
+
+                void ClickTimeline(PointerEventData eventData)
+                {
+                    if (eventData.button == PointerEventData.InputButton.Left)
+                    {
+                        scrubTime?.Invoke();
+                        return;
+                    }
+
+                    if (contextMenuObj == null) return; 
+
+                    openContextMenu?.Invoke();
+
+                    var addMarker = contextMenuObj.FindDeepChildLiberal(_addMarkerMenuOptionName);
+                    if (addMarker != null)
+                    {
+                        SetButtonOnClickAction(addMarker, () =>
+                        {
+                            float nTime = playbackPosRT == null ? 0.5f : playbackPosRT.anchorMin.x; 
+                            CreateMarker(nTime, isReference); 
+                        });
+                        addMarker.gameObject.SetActive(true);
+                    }
+
+                    var addMarkerHere = contextMenuObj.FindDeepChildLiberal(_addMarkerHereOptionName); 
+                    if (addMarkerHere != null)
+                    {
+                        var cursorScreenPos = CursorProxy.ScreenPosition;
+                        SetButtonOnClickAction(addMarkerHere, () =>
+                        {
+                            float nTime = 0.5f; 
+                            timelineContainer.GetLocalCorners(fourCornersArray);
+                            Vector2 min = new Vector2(Mathf.Min(fourCornersArray[0].x, fourCornersArray[1].x, fourCornersArray[2].x, fourCornersArray[3].x), Mathf.Min(fourCornersArray[0].y, fourCornersArray[1].y, fourCornersArray[2].y, fourCornersArray[3].y));
+                            Vector2 max = new Vector2(Mathf.Max(fourCornersArray[0].x, fourCornersArray[1].x, fourCornersArray[2].x, fourCornersArray[3].x), Mathf.Max(fourCornersArray[0].y, fourCornersArray[1].y, fourCornersArray[2].y, fourCornersArray[3].y));
+                            Vector2 range = max - min;
+                            if (range.x != 0)
+                            {
+                                Vector3 cursorPos = timelineContainer.InverseTransformPoint(containerCanvas.transform.TransformPoint(AnimationCurveEditorUtils.ScreenToCanvasPosition(containerCanvas, cursorScreenPos)));
+                                nTime = Mathf.Clamp01((cursorPos.x - min.x) / range.x);
+                            }
+
+                            CreateMarker(nTime, isReference);
+                        });
+                        addMarkerHere.gameObject.SetActive(true);
+                    }
+                }
+
+                if (timelineDraggable.OnClickData == null) timelineDraggable.OnClickData = new UnityEvent<PointerEventData>();
+                timelineDraggable.OnClickData.RemoveAllListeners();
+                timelineDraggable.OnClickData.AddListener(ClickTimeline);
+            }
+
+            void RefreshLocalTimeline()
+            {
+                if (timelineLocalObj != null)
+                {
+                    CustomEditorUtils.SetComponentTextByName(timelineLocalObj, str_header, $"{source.DisplayName} (Target)");
+
+                    timelineLocalInnerObj = timelineLocalObj.FindDeepChildLiberal("inner");
+                    if (timelineLocalInnerObj != null)
+                    {
+                        timelineLocalInnerRT = (RectTransform)timelineLocalInnerObj; 
+
+                        var ancMax = timelineLocalInnerRT.anchorMax;
+                        ancMax.x = Mathf.Min(1f, retimeObj.lengthScale); 
+                        timelineLocalInnerRT.anchorMax = ancMax;
+                        var sd = timelineLocalInnerRT.sizeDelta;
+                        sd.x = 0;
+                        timelineLocalInnerRT.sizeDelta = sd;
+
+                        var playbackPosObj = timelineLocalInnerObj.FindDeepChildLiberal("playbackPosition");
+                        RectTransform playbackPosRT = null;
+                        if (playbackPosObj != null)
+                        {
+                            if (getPlaybackPosition != null)
+                            {
+                                if (!playbackPosObj.gameObject.activeSelf) playbackPosObj.gameObject.SetActive(true);
+
+                                playbackPosRT = playbackPosObj.GetComponent<RectTransform>();
+                                if (playbackPosRT.parent != timelineLocalInnerRT)
+                                {
+                                    playbackPosRT.SetParent(timelineLocalInnerRT, true);
+                                }
+
+                                float x = Mathf.Clamp01(getPlaybackPosition() / retimeObj.targetAnimationLength);
+                                playbackPosRT.anchorMin = new Vector2(x, 0f);
+                                playbackPosRT.anchorMax = new Vector2(x, 1f);
+
+                                var ap = playbackPosRT.anchoredPosition;
+                                ap.x = 0; 
+                                playbackPosRT.anchoredPosition = ap;
+                            }
+                            else
+                            {
+                                playbackPosObj.gameObject.SetActive(false);
+                            }
+                        }
+
+                        var clickableImg = timelineLocalInnerObj.GetComponentInChildren<Image>(true);
+                        if (clickableImg != null)
+                        {
+                            var draggable = clickableImg.gameObject.AddOrGetComponent<UIDraggable>();
+                            draggable.freeze = true;
+                            draggable.dragMouseButtonMask = MouseButtonMask.LeftMouseButton;
+
+                            var draggableRT = draggable.GetComponent<RectTransform>();
+                            var draggableCanvas = draggable.GetComponentInParent<Canvas>(true);
+
+                            if (draggable.OnDragStart == null) draggable.OnDragStart = new UnityEvent();
+                            draggable.OnDragStart.RemoveAllListeners();
+                            if (draggable.OnDragStep == null) draggable.OnDragStep = new UnityEvent();
+                            draggable.OnDragStep.RemoveAllListeners();
+
+                            void Drag()
+                            {
+                                draggableRT.GetLocalCorners(fourCornersArray);
+                                Vector2 min = new Vector2(Mathf.Min(fourCornersArray[0].x, fourCornersArray[1].x, fourCornersArray[2].x, fourCornersArray[3].x), Mathf.Min(fourCornersArray[0].y, fourCornersArray[1].y, fourCornersArray[2].y, fourCornersArray[3].y));
+                                Vector2 max = new Vector2(Mathf.Max(fourCornersArray[0].x, fourCornersArray[1].x, fourCornersArray[2].x, fourCornersArray[3].x), Mathf.Max(fourCornersArray[0].y, fourCornersArray[1].y, fourCornersArray[2].y, fourCornersArray[3].y));
+                                Vector2 range = max - min;
+                                if (range.x != 0)
+                                {
+                                    Vector3 cursorPos = draggableRT.InverseTransformPoint(draggableCanvas.transform.TransformPoint(AnimationCurveEditorUtils.ScreenToCanvasPosition(draggableCanvas, CursorProxy.ScreenPosition)));
+                                    float posInContainer = Mathf.Clamp01((cursorPos.x - min.x) / range.x);
+
+                                    if (playbackPosRT != null)
+                                    {
+                                        playbackPosRT.anchorMin = new Vector2(posInContainer, 0f);
+                                        playbackPosRT.anchorMax = new Vector2(posInContainer, 1f);
+
+                                        var ap = playbackPosRT.anchoredPosition;
+                                        ap.x = 0;
+                                        playbackPosRT.anchoredPosition = ap;
+                                    }
+
+                                    localTimelinePos = retimeObj.targetAnimationLength * Maths.wrap(posInContainer + retimeObj.startTimeRemap, 1f); 
+                                    onScrub(source.rawAnimation, localTimelinePos); 
+                                }
+                            }
+
+                            draggable.OnDragStart.AddListener(Drag);
+                            draggable.OnDragStep.AddListener(Drag);
+
+                            SetupMarkerCreation(timelineLocalInnerRT, draggableCanvas, draggable, playbackPosRT, Drag, false);
+                        }
+                    }
+                }
+            }
+
+            void RefreshReferenceTimeline()
+            {
+                if (timelineReferenceObj != null)
+                { 
+                    CustomEditorUtils.SetComponentTextByName(timelineReferenceObj, str_header, referenceAnim == null ? "Reference" : $"{referenceAnim.Name} (Reference)"); 
+
+                    timelineReferenceInnerObj = timelineReferenceObj.FindDeepChildLiberal("inner");
+                    if (timelineReferenceInnerObj != null)
+                    {
+                        timelineReferenceInnerRT = (RectTransform)timelineReferenceInnerObj; 
+
+                        var ancMax = timelineReferenceInnerRT.anchorMax;
+                        ancMax.x = 1f / Mathf.Max(1f, retimeObj.lengthScale); 
+                        timelineReferenceInnerRT.anchorMax = ancMax;
+                        var sd = timelineReferenceInnerRT.sizeDelta;
+                        sd.x = 0;
+                        timelineReferenceInnerRT.sizeDelta = sd;
+
+                        var playbackPosObj = timelineReferenceInnerObj.FindDeepChildLiberal("playbackPosition");
+                        RectTransform playbackPosRT = null;
+                        if (playbackPosObj != null)
+                        {
+                            if (getPlaybackPosition != null)
+                            {
+                                if (!playbackPosObj.gameObject.activeSelf) playbackPosObj.gameObject.SetActive(true);
+
+                                playbackPosRT = playbackPosObj.GetComponent<RectTransform>();
+                                if (playbackPosRT.parent != timelineReferenceInnerRT)
+                                {
+                                    playbackPosRT.SetParent(timelineReferenceInnerRT, true);
+                                }
+
+                                float x = Mathf.Clamp01(getPlaybackPosition() / retimeObj.referenceAnimationLength);
+                                playbackPosRT.anchorMin = new Vector2(x, 0f);
+                                playbackPosRT.anchorMax = new Vector2(x, 1f);
+
+                                var ap = playbackPosRT.anchoredPosition;
+                                ap.x = 0;
+                                playbackPosRT.anchoredPosition = ap;
+                            } 
+                            else
+                            {
+                                playbackPosObj.gameObject.SetActive(false);
+                            }
+                        }
+
+                        var clickableImg = timelineReferenceInnerObj.GetComponentInChildren<Image>(true);
+                        if (clickableImg != null)
+                        {
+                            var draggable = clickableImg.gameObject.AddOrGetComponent<UIDraggable>();
+                            draggable.freeze = true;
+                            draggable.dragMouseButtonMask = MouseButtonMask.LeftMouseButton;
+
+                            var draggableRT = draggable.GetComponent<RectTransform>();
+                            var draggableCanvas = draggable.GetComponentInParent<Canvas>(true);
+
+                            if (draggable.OnDragStart == null) draggable.OnDragStart = new UnityEvent();
+                            draggable.OnDragStart.RemoveAllListeners();
+                            if (draggable.OnDragStep == null) draggable.OnDragStep = new UnityEvent();
+                            draggable.OnDragStep.RemoveAllListeners();
+
+                            void Drag()
+                            {
+                                draggableRT.GetLocalCorners(fourCornersArray);
+                                Vector2 min = new Vector2(Mathf.Min(fourCornersArray[0].x, fourCornersArray[1].x, fourCornersArray[2].x, fourCornersArray[3].x), Mathf.Min(fourCornersArray[0].y, fourCornersArray[1].y, fourCornersArray[2].y, fourCornersArray[3].y));
+                                Vector2 max = new Vector2(Mathf.Max(fourCornersArray[0].x, fourCornersArray[1].x, fourCornersArray[2].x, fourCornersArray[3].x), Mathf.Max(fourCornersArray[0].y, fourCornersArray[1].y, fourCornersArray[2].y, fourCornersArray[3].y));
+                                Vector2 range = max - min;
+                                if (range.x != 0)
+                                {
+                                    Vector3 cursorPos = draggableRT.InverseTransformPoint(draggableCanvas.transform.TransformPoint(AnimationCurveEditorUtils.ScreenToCanvasPosition(draggableCanvas, CursorProxy.ScreenPosition)));
+                                    float posInContainer = Mathf.Clamp01((cursorPos.x - min.x) / range.x);
+
+                                    if (playbackPosRT != null)
+                                    {
+                                        playbackPosRT.anchorMin = new Vector2(posInContainer, 0f);
+                                        playbackPosRT.anchorMax = new Vector2(posInContainer, 1f); 
+
+                                        var ap = playbackPosRT.anchoredPosition;
+                                        ap.x = 0;
+                                        playbackPosRT.anchoredPosition = ap; 
+                                    }
+
+                                    if (referenceAnim != null) onScrub(referenceAnim, retimeObj.referenceAnimationLength * posInContainer);
+                                }
+                            }
+
+                            draggable.OnDragStart.AddListener(Drag);
+                            draggable.OnDragStep.AddListener(Drag);
+
+                            SetupMarkerCreation(timelineReferenceInnerRT, draggableCanvas, draggable, playbackPosRT, Drag, true); 
+                        }
+                    }
+
+                    var blockerObj = timelineReferenceObj.FindDeepChildLiberal("blocker");  
+                    if (blockerObj != null)
+                    {
+                        if (referenceAnim == null)
+                        {
+                            blockerObj.gameObject.SetActive(true);
+                            CustomEditorUtils.SetButtonOnClickActionByName(blockerObj, "addReference", () =>
+                            {
+                                OpenBrowseSessionAnimationsWindow(animationSelectionWindow, session, (CustomAnimation selection) =>
+                                {
+                                    animationSelectionWindow.gameObject.SetActive(false); 
+
+                                    referenceAnim = ReferenceEquals(targetSource.rawAnimation, selection) ? null : selection;
+                                    retimeObj.referenceAnimationLength = referenceAnim == null ? retimeObj.targetAnimationLength : referenceAnim.LengthInSeconds; 
+                                    RefreshReferenceTimeline();
+                                    RefreshLengthScaleInput();
+                                }, $"SELECT REFERENCE ANIMATION", true);   
+                            });
+                        }
+                        else
+                        {
+                            blockerObj.gameObject.SetActive(false);
+                        }
+                    }
+
+                    CustomEditorUtils.SetButtonOnClickActionByName(timelineReferenceObj, str_remove, () =>
+                    {
+                        referenceAnim = null;
+                        RefreshReferenceTimeline();  
+                    });
+                }
+            }
+
+            void SetStartTimeRemap(float value)
+            {
+                float prevStartTime = retimeObj.startTimeRemap;
+                retimeObj.startTimeRemap = value;
+
+                if (retimeObj.markers != null)
+                {
+                    foreach (var marker in retimeObj.markers)
+                    {
+                        marker.targetPos = Maths.wrap(marker.targetPos + (prevStartTime - retimeObj.startTimeRemap) * retimeObj.targetAnimationLength, retimeObj.targetAnimationLength);
+                    }
+                }
+
+                RefreshMarkers();
+                RefreshStartTimeInput();
+            }
+
+            void RefreshStartTimeInput()
+            {
+                if (optionsObj != null)
+                {
+                    var sliderObj = optionsObj.FindDeepChildLiberal("startTimeSlider");
+                    Slider slider = null;
+                    if (sliderObj != null)
+                    {
+                        slider = sliderObj.GetComponent<Slider>();
+                        if (slider != null)
+                        {
+                            slider.minValue = 0f;
+                            slider.maxValue = 1f;
+
+                            if (slider.onValueChanged == null) slider.onValueChanged = new Slider.SliderEvent();
+                            slider.onValueChanged.RemoveAllListeners();
+                            slider.onValueChanged.AddListener(SetStartTimeRemap);
+
+                            slider.SetValueWithoutNotify(retimeObj.startTimeRemap);  
+                        }
+                    }
+
+                    CustomEditorUtils.SetInputFieldOnEndEditActionByName(optionsObj, "startTime", (string val) =>
+                    {
+                        if (float.TryParse(val, out var res))
+                        {
+                            SetStartTimeRemap(Mathf.Clamp01(res / retimeObj.targetAnimationLength)); 
+                        } 
+                        else
+                        {
+                            RefreshStartTimeInput();
+                        }
+                    });
+                    CustomEditorUtils.SetInputFieldTextByName(optionsObj, "startTime", (retimeObj.startTimeRemap * retimeObj.targetAnimationLength).ToString("0.0000"));
+
+                    CustomEditorUtils.SetButtonOnClickActionByName(optionsObj, "startTimeCopy", () =>
+                    {
+                        SetStartTimeRemap(localTimelinePos / retimeObj.targetAnimationLength);  
+                    });
+                }
+            }
+
+            void RefreshLengthScaleInput()
+            {
+                if (optionsObj != null)
+                {
+                    CustomEditorUtils.SetInputFieldOnEndEditActionByName(optionsObj, "lengthScale", (string val) =>
+                    {
+                        if (float.TryParse(val, out var res))
+                        {
+                            var prev = retimeObj.lengthScale;
+                            retimeObj.lengthScale = res;
+                            if (retimeObj.lengthScale <= 0) retimeObj.lengthScale = 1f; 
+
+                            if (retimeObj.lengthScale != prev)
+                            {
+                                RefreshLocalTimeline(); 
+                                RefreshReferenceTimeline();
+                            }
+                        }
+
+                        RefreshLengthScaleInput();
+                    });
+                    CustomEditorUtils.SetInputFieldTextByName(optionsObj, "lengthScale", retimeObj.lengthScale.ToString());
+
+                    CustomEditorUtils.SetComponentTextByName(optionsObj, "LengthDisplay", $"[{(retimeObj.referenceAnimationLength * retimeObj.lengthScale).ToString("0.00")} seconds]"); 
+                }
+            }
+            
+            retimeObj.rootBoneName = animatable.animator == null ? null : (animatable.animator.RootBone == null ? (animatable.animator.avatar == null ? null : animatable.animator.avatar.RootBone) : animatable.animator.RootBone.name);
+            void RefreshRootDataRebuilding()
+            {
+                if (optionsObj != null)
+                {
+                    var rebuildRootPosObj = optionsObj.FindDeepChildLiberal("rebuildRootPosition");
+                    if (rebuildRootPosObj != null)
+                    {
+                        var toggle = rebuildRootPosObj.gameObject.GetComponentInChildren<Toggle>(true);
+                        if (toggle != null)
+                        {
+                            toggle.isOn = retimeObj.rebuildRootPosition;
+                            if (toggle.onValueChanged == null) toggle.onValueChanged = new Toggle.ToggleEvent();
+                            toggle.onValueChanged.RemoveAllListeners();
+                            toggle.onValueChanged.AddListener((bool value) =>
+                            {
+                                retimeObj.rebuildRootPosition = value;
+                            });
+                        }
+                    }
+
+                    var rebuildRootRotObj = optionsObj.FindDeepChildLiberal("rebuildRootRotation");
+                    if (rebuildRootRotObj != null)
+                    {
+                        var toggle = rebuildRootRotObj.gameObject.GetComponentInChildren<Toggle>(true);
+                        if (toggle != null)
+                        {
+                            toggle.isOn = retimeObj.rebuildRootRotation;
+                            if (toggle.onValueChanged == null) toggle.onValueChanged = new Toggle.ToggleEvent();
+                            toggle.onValueChanged.RemoveAllListeners();
+                            toggle.onValueChanged.AddListener((bool value) =>
+                            {
+                                retimeObj.rebuildRootRotation = value;
+                            });
+                        }
+                    }
+
+                    var rootBoneDropdownObj = optionsObj.FindActiveDeepChildLiberal("rootBone");
+                    if (rootBoneDropdownObj != null)
+                    {
+                        var dropdown = rootBoneDropdownObj.GetComponentInChildren<UIDynamicDropdown>(true); 
+                        if (dropdown != null)
+                        {
+                            dropdown.ClearMenuItems();
+                            if (animatable != null && animatable.animator != null && animatable.animator.Bones != null)
+                            {
+                                var bones = animatable.animator.Bones.bones;
+
+                                if (bones != null)
+                                {
+                                    if (string.IsNullOrWhiteSpace(retimeObj.rootBoneName)) retimeObj.rootBoneName = bones[0] == null ? string.Empty : bones[0].name; 
+
+                                    for (int i = 0; i < bones.Length; i++)
+                                    {
+                                        var bone = bones[i];
+                                        if (bone == null) continue;
+
+                                        dropdown.CreateNewMenuItem(bone.name, true, true, null);
+                                    }
+                                }
+                            }
+                            
+                            if (retimeObj.rootBoneName != null) dropdown.SetSelectionText(retimeObj.rootBoneName, false);
+                            if (dropdown.OnSelectionChanged == null) dropdown.OnSelectionChanged = new UnityEvent<string>();
+                            dropdown.OnSelectionChanged.RemoveAllListeners();
+                            dropdown.OnSelectionChanged.AddListener((string value) =>
+                            {
+                                retimeObj.rootBoneName = value;
+                            });
+                        }
+                    }
+                }
+            }
+
+            RefreshLocalTimeline();
+            RefreshReferenceTimeline();
+            RefreshStartTimeInput();
+            RefreshLengthScaleInput();
+            RefreshRootDataRebuilding();
+
+            void OnClose()
+            {
+                if (localMarkersPool != null) localMarkersPool.ReleaseAllClaims();
+                if (referenceMarkersPool != null) referenceMarkersPool.ReleaseAllClaims();
+
+                if (animationRetimingWindow != null) animationRetimingWindow.gameObject.SetActive(false); 
+            }
+
+            void OnApply()
+            {
+                OnClose();
+
+                float origAnimLength = source.rawAnimation.LengthInSeconds;
+                if (retimeObj != null) retimeObj.Apply(); 
+
+                bool preserveTimeCurve = true;
+                if (optionsObj != null)
+                {
+                    var ptcObj = optionsObj.FindActiveDeepChildLiberal("preserveTimeCurve");
+                    if (ptcObj != null)
+                    {
+                        var toggle = ptcObj.gameObject.GetComponentInChildren<Toggle>(true);
+                        if (toggle != null) preserveTimeCurve = toggle.isOn;
+                    }
+                }
+
+                if (!preserveTimeCurve)
+                {
+                    source.rawAnimation.timeCurve = referenceAnim == null ? null : (referenceAnim.timeCurve == null ? null : referenceAnim.timeCurve.Duplicate()); 
+                }
+
+                float newAnimLength = source.rawAnimation.LengthInSeconds;
+                float expectedLength = origAnimLength > 0 ? (source.timelineLength * (newAnimLength / origAnimLength)) : newAnimLength;
+
+                if (float.IsNaN(expectedLength) || float.IsInfinity(expectedLength) || expectedLength <= 0)
+                {
+                    Debug.LogWarning($"Invalid timeline length {expectedLength} ... resetting to 1.0");  
+                    expectedLength = 1f; 
+                }
+                
+                source.timelineLength = expectedLength; 
+                source.MarkAsDirty();
+
+                onApply?.Invoke(); 
+            }
+
+            var popup = animationRetimingWindow.GetComponentInChildren<UIPopup>(true);
+            if (popup != null)
+            {
+                if (popup.OnClose == null) popup.OnClose = new UnityEvent();
+                popup.OnClose.RemoveAllListeners();
+                popup.OnClose.AddListener(OnClose); 
+            }
+
+            if (optionsObj != null)
+            {
+                CustomEditorUtils.SetButtonOnClickActionByName(optionsObj, "cancel", () =>
+                {
+                    OnClose();
+                    onCancel?.Invoke();
+                });
+                CustomEditorUtils.SetButtonOnClickActionByName(optionsObj, "apply", OnApply); 
+            }
+        }
+
+        public void StartRetimingActiveSource() => StartRetimingAnimation(CurrentSource, true); 
+        protected void StartRetimingAnimation(AnimationSource source, bool undoable)
+        {
+            var sesh = CurrentSession;
+            if (source == null || sesh == null) return;
+
+            var revertible = new UndoableStartRetimingAnimation(this, source, source.State, PlaybackMode, IsUsingTimeCurve, CurrentSession.activeObjectIndex, ActiveAnimatable.editIndex);
+            if (undoable) RecordRevertibleAction(revertible);
+
+            OpenAnimationRetimingWindow(source, 
+            () =>
+            {
+                if (sesh.importedObjects != null)
+                {
+                    for(int a = 0; a < sesh.importedObjects.Count; a++)
+                    {
+                        var obj = sesh.importedObjects[a];
+                        if (obj == null || obj.animationBank == null) continue;
+
+                        bool flag = false;
+                        for(int b = 0; b < obj.animationBank.Count; b++)
+                        {
+                            var anim = obj.animationBank[b];
+                            if (anim == null || !ReferenceEquals(anim, source)) continue;
+
+                            sesh.SetActiveObject(this, a);
+                            obj.SetCurrentlyEditedSource(this, b, false);   
+
+                            flag = true;
+                        }
+
+                        if (flag) break;
+                    }
+                }
+
+                RecordRevertibleAction(new UndoableApplyRetimingToAnimation(this, source, revertible.state, source.State, sesh.activeObjectIndex, ActiveAnimatable.editIndex));
+            }, 
+
+            null,  
+            
+            (CustomAnimation anim, float time) =>
+            {
+                if (anim == null) return;
+
+                var sesh = CurrentSession;
+                if (sesh == null || sesh.importedObjects == null) return; 
+
+                if (PlaybackMode != PlayMode.Active_Only) SetPlaybackMode(PlayMode.Active_Only, false);
+
+                for(int a = 0; a < sesh.importedObjects.Count; a++)
+                {
+                    var obj = sesh.importedObjects[a];
+                    if (obj == null || obj.animationBank == null) continue;
+
+                    bool flag = false;
+                    for(int b = 0; b < obj.animationBank.Count; b++)
+                    {
+                        var source_ = obj.animationBank[b];
+                        if (source == null) continue;;
+
+                        if (ReferenceEquals(anim, source_.rawAnimation))
+                        {
+                            flag = true;
+
+                            if (sesh.activeObjectIndex != a) SetActiveObject(a, true, true, true);
+                            if (obj.editIndex != b) obj.SetCurrentlyEditedSource(this, b, false);  
+
+                            break;
+                        }
+                    }
+
+                    if (flag) break;
+                }
+                
+                SetUseTimeCurve(false, false);
+                PlaySnapshot(time, true, 0.3f, false);  
+            });
+        }
+        public struct UndoableStartRetimingAnimation : IRevertableAction
+        {
+            public bool ReapplyWhenRevertedTo => true;
+
+            public AnimationEditor editor;
+            public AnimationSource source;
+            public AnimationSource.StateData state;
+
+            public PlayMode playbackMode;
+            public bool timeCurveState;
+            public int activeObject;
+            public int activeSource;
+
+            public UndoableStartRetimingAnimation(AnimationEditor editor, AnimationSource source, AnimationSource.StateData state, PlayMode playbackMode, bool timeCurveState, int activeObject, int activeSource)
+            {
+                this.editor = editor;
+                this.source = source;
+                this.state = source.State;
+                this.playbackMode = playbackMode;
+                this.timeCurveState = timeCurveState;
+                this.activeObject = activeObject;
+                this.activeSource = activeSource;
+
+                undoState = false;
+            }
+
+            public void Reapply()
+            {
+                if (editor == null) return;
+
+                editor.SetPlaybackMode(playbackMode, false);
+                editor.SetUseTimeCurve(timeCurveState, false);
+                editor.SetActiveObject(activeObject);
+                editor.ActiveAnimatable.SetCurrentlyEditedSource(editor, activeSource, false); 
+
+                if (source != null)
+                {
+                    source.State = state;
+                    editor.StartRetimingAnimation(source, false);
+                }
+            }
+
+            public void Revert()
+            {
+                if (editor == null) return;
+                if (editor.animationRetimingWindow != null) editor.animationRetimingWindow.gameObject.SetActive(false);
+            }
+
+            public void Perpetuate() { }
+            public void PerpetuateUndo() { }
+
+            public bool undoState;
+            public bool GetUndoState() => undoState;
+            public IRevertableAction SetUndoState(bool undone)
+            {
+                var newState = this;
+                newState.undoState = undone;
+                return newState;
+            }
+        }
+        public struct UndoableApplyRetimingToAnimation : IRevertableAction
+        {
+            public bool ReapplyWhenRevertedTo => false;
+
+            public AnimationEditor editor;
+            public AnimationSource source;
+            public AnimationSource.StateData oldState;
+            public AnimationSource.StateData newState;
+
+            public int activeObject;
+            public int activeSource;
+
+            public UndoableApplyRetimingToAnimation(AnimationEditor editor, AnimationSource source, AnimationSource.StateData oldState, AnimationSource.StateData newState, int activeObject, int activeSource)
+            {
+                this.editor = editor;
+                this.source = source;
+
+                this.oldState = oldState;
+                this.newState = newState;
+
+                this.activeObject = activeObject;
+                this.activeSource = activeSource;
+
+                undoState = false;
+            }
+
+            public void Reapply()
+            {
+                if (editor == null) return;
+
+                if (source != null) source.State = newState; 
+
+                editor.SetActiveObject(activeObject);
+                editor.ActiveAnimatable.SetCurrentlyEditedSource(editor, activeSource, false);
+            }
+
+            public void Revert()
+            {
+                if (editor == null) return;
+
+                if (source != null) source.State = oldState;
+            }
+
+            public void Perpetuate() { }
+            public void PerpetuateUndo() { }
+
+            public bool undoState;
+            public bool GetUndoState() => undoState;
+            public IRevertableAction SetUndoState(bool undone)
+            {
+                var newState = this;
+                newState.undoState = undone;
+                return newState;
+            }
+        }
+
         public GameObject promptMessageYesNo;
         public GameObject promptMessageYesNoCancel;
         public RectTransform confirmationMessageWindow; 
@@ -3985,6 +5769,10 @@ namespace Swole.API.Unity.Animation
         public const string _editSettingsContextMenuOptionName = "EditSettings";
         public const string _alignToViewContextMenuOptionName = "AlignToView";
         public const string _alignViewContextMenuOptionName = "AlignView";
+        public const string _deleteMenuOptionName = "Delete";
+        public const string _addMarkerMenuOptionName = "AddMarker";
+        public const string _addMarkerHereOptionName = "AddMarkerHere";
+        
         public void OpenContextMenuMain() => OpenContextMenuMain(CursorProxy.ScreenPosition);
         public void OpenContextMenuMain(Vector3 cursorScreenPosition)
         {
@@ -4548,7 +6336,11 @@ namespace Swole.API.Unity.Animation
             RefreshKeyframes();
 
             var source = CurrentSource;
-            if (source != null) source.timelineLength = length;
+            if (source != null) 
+            { 
+                source.timelineLength = length;
+                source.MarkAsDirty();
+            }
         }
 
         protected void StartEditingCurve(EditableAnimationCurve curve, bool notifyListeners = true, bool undoable=false)
@@ -4593,11 +6385,11 @@ namespace Swole.API.Unity.Animation
                 {
                     if (curveEditor is SwoleCurveEditor sce && sce.EditableCurve != null)
                     {
-                        RecordRevertibleAction(new UndoableStopEditingCurve() { editor = this, curve = sce.EditableCurve }); 
+                        RecordRevertibleAction(new UndoableStopEditingCurve(this, sce.EditableCurve)); 
                     }
                     else
                     {
-                        RecordRevertibleAction(new UndoableStopEditingCurve() { editor = this, curve = new EditableAnimationCurve(curveEditor.CurrentState, curveEditor.Curve) });
+                        RecordRevertibleAction(new UndoableStopEditingCurve(this, new EditableAnimationCurve(curveEditor.CurrentState, curveEditor.Curve)));
                     }
                 }
                 curveEditorWindow.gameObject.SetActive(false); 
@@ -5005,6 +6797,8 @@ namespace Swole.API.Unity.Animation
 
             ClearUndoHistory();
             undoSystem.maxHistorySize = 50;
+
+            CursorProxy.UpdateRaycasterList();
         }
 
         protected void OnDestroy()
@@ -5059,7 +6853,7 @@ namespace Swole.API.Unity.Animation
 
                     evaluateKey.Invoke(curve, _tempTransformFrames);
 
-                    _tempTransformFrames.Sort((ITransformCurve.Frame x, ITransformCurve.Frame y) => (int)Mathf.Sign(x.timelinePosition - y.timelinePosition));
+                    _tempTransformFrames.Sort(AnimationUtils.CompareKey);
                     curve.frames = _tempTransformFrames.ToArray();
                     editRecord?.RecordRawTransformLinearCurveEdit(curve);
                 }
@@ -5080,7 +6874,7 @@ namespace Swole.API.Unity.Animation
 
                     evaluateKey.Invoke(curve, _tempPropertyFrames);
 
-                    _tempPropertyFrames.Sort((IPropertyCurve.Frame x, IPropertyCurve.Frame y) => (int)Mathf.Sign(x.timelinePosition - y.timelinePosition));
+                    _tempPropertyFrames.Sort(AnimationUtils.CompareKey);
                     curve.frames = _tempPropertyFrames.ToArray();
                     editRecord?.RecordRawPropertyLinearCurveEdit(curve);
                 }
@@ -5152,7 +6946,7 @@ namespace Swole.API.Unity.Animation
 
                     evaluateKey.Invoke(curve, getFrameIndex, _tempKeyframes);
 
-                    _tempKeyframes.Sort((AnimationCurveEditor.KeyframeStateRaw x, AnimationCurveEditor.KeyframeStateRaw y) => (int)Mathf.Sign(x.time - y.time));
+                    _tempKeyframes.Sort(AnimationUtils.CompareKey);
                     curve.Keys = _tempKeyframes.ToArray();
                     editRecord?.RecordRawCurveEdit(curve);
                 }
@@ -5237,6 +7031,9 @@ namespace Swole.API.Unity.Animation
             public void IterateCurves(EvaluateAnimationCurveKey evaluateKey, TimelinePositionToFrameIndex getFrameIndex, UndoableEditAnimationSourceData editRecord) => AnimationEditor.IterateCurves(curves, evaluateKey, getFrameIndex, editRecord);
             public void IterateEvents(EvaluateAnimationEvent evaluateEvent, TimelinePositionToFrameIndex getFrameIndex, UndoableEditAnimationSourceData editRecord) => AnimationEditor.IterateEvents(animationEventSource, evaluateEvent, getFrameIndex, editRecord);
 
+            /// <summary>
+            /// If moving multiple keys, the order of operation matters so that we avoid overlaps. Relocations should be ordered from lowest to highest timeline position or highest to lowest depending on the direction of the move.
+            /// </summary>
             public void Relocate(UndoableEditAnimationSourceData editRecord, int newTimelinePosition, TimelinePositionToFrameIndex getFrameIndex, FrameIndexToTimelinePosition getTimelinePos)
             {
                 if (transformLinearCurves != null)
@@ -5257,6 +7054,7 @@ namespace Swole.API.Unity.Animation
                 }
 
                 float offset = (float)(getTimelinePos(newTimelinePosition) - getTimelinePos(timelinePosition));
+
                 if (curves != null)
                 {
                     void Evaluate(EditableAnimationCurve curve, TimelinePositionToFrameIndex getFrameIndex, List<AnimationCurveEditor.KeyframeStateRaw> keyframesEdited)
@@ -5271,7 +7069,7 @@ namespace Swole.API.Unity.Animation
                             }
                         }
                     }
-                    IterateCurves(Evaluate, getFrameIndex, editRecord);
+                    IterateCurves(Evaluate, getFrameIndex, editRecord); 
                 }
                 if (animationEventSource != null)
                 {
@@ -5450,6 +7248,8 @@ namespace Swole.API.Unity.Animation
             var timelineTransform = KeyContainerTransform;
             foreach (var element in keyframeInstances) RefreshKeyframePosition(element.Value, timelineTransform);
         }
+
+        private int keyRelocationOffset;
         private static readonly List<TimelineKeyframe> tempKeys = new List<TimelineKeyframe>();
         public bool RelocateSelectedkeyframes(int offset)
         {
@@ -5473,21 +7273,23 @@ namespace Swole.API.Unity.Animation
                 if (activeSource == null) return false;
 
                 activeSource.MarkAsDirty();
-            }
+            } 
+            else return true;
 
             var editRecord = BeginNewAnimationEditRecord();
 
             var timelineTransform = KeyContainerTransform;
             foreach (var key in tempKeys) keyframeInstances.Remove(key.timelinePosition);
 
-            if (offset < 0)
+            tempKeys.Sort(CompareKey); // Sort by timeline position
+            if (offset < 0) // order of operation matters to avoid creating overlaps that would move keys multiple times
             {
-                for (int i = 0; i < tempKeys.Count; i++)
+                for (int i = 0; i < tempKeys.Count; i++) 
                 {
                     var key = tempKeys[i]; 
-                    int newTimelinePosition = key.timelinePosition + offset;
-                    keyframeInstances[newTimelinePosition] = key;
+                    int newTimelinePosition = key.timelinePosition + offset; 
                     key.Relocate(editRecord, newTimelinePosition, timelineWindow.CalculateFrameAtTimelinePosition, timelineWindow.FrameToTimelinePosition);
+                    keyframeInstances[newTimelinePosition] = key;
                     RefreshKeyframePosition(key, timelineTransform);
                 }
             } 
@@ -5497,8 +7299,8 @@ namespace Swole.API.Unity.Animation
                 {
                     var key = tempKeys[i];
                     int newTimelinePosition = key.timelinePosition + offset;
-                    keyframeInstances[newTimelinePosition] = key;
                     key.Relocate(editRecord, newTimelinePosition, timelineWindow.CalculateFrameAtTimelinePosition, timelineWindow.FrameToTimelinePosition);
+                    keyframeInstances[newTimelinePosition] = key;
                     RefreshKeyframePosition(key, timelineTransform);
                 }
             }
@@ -5506,7 +7308,7 @@ namespace Swole.API.Unity.Animation
             tempKeys.Clear();
 
             CommitAnimationEditRecord();
-
+            
             RedrawAllCurves();
             if (editMode == EditMode.ANIMATION_EVENTS) RefreshAnimationEventsWindow();
 
@@ -5667,7 +7469,11 @@ namespace Swole.API.Unity.Animation
                     float posInContainer = timelineWindow.GetNormalizedPositionFromLocalPosition(cursorPos);
 
                     int newFrame = timelineWindow.CalculateFrameAtTimelinePosition((decimal)timelineWindow.GetTimeFromNormalizedPosition(posInContainer, true));
-                    if (newFrame != key.timelinePosition) RelocateSelectedkeyframes(newFrame - key.timelinePosition);
+                    if (newFrame != key.timelinePosition) 
+                    {
+                        //RelocateSelectedkeyframes(newFrame - key.timelinePosition);
+                        keyRelocationOffset = newFrame - key.timelinePosition;
+                    }
                 });
             }
 
@@ -6003,9 +7809,23 @@ namespace Swole.API.Unity.Animation
                         component.enabled = active;
                         break;
                     }
+                    if (type.Name.IndexOf("DynamicBone") >= 0)
+                    {
+                        component.enabled = active;  
+                        break;
+                    }
+
                     type = type.BaseType;
                 }
             }
+        }
+
+        public static void DisableEditorBreakingComponents(GameObject gameObject)
+        {
+            if (gameObject == null) return;
+
+            var lockManager = gameObject.GetComponentInChildren<TransformLockManager>(true); 
+            if (lockManager != null) lockManager.enabled = false;
         }
 
         public static void AddAnimatableToScene(AnimatableAsset animatable, out GameObject instance, out CustomAnimator animator, bool overrideUpdateCalls = true)
@@ -6017,6 +7837,7 @@ namespace Swole.API.Unity.Animation
 
             instance = GameObject.Instantiate(animatable.Prefab);
             DisableAllProceduralAnimationComponents(instance);
+            DisableEditorBreakingComponents(instance);
 
             Transform transform = instance.transform;
             transform.localPosition = Vector3.zero;
@@ -6032,6 +7853,8 @@ namespace Swole.API.Unity.Animation
 
                 animator.Initialize();  
             }
+
+             
         }
 
         public static ImportedAnimatable AddAnimatableToScene(AnimatableAsset animatable, int copy=0, bool overrideUpdateCalls = true)
@@ -6955,7 +8778,7 @@ namespace Swole.API.Unity.Animation
                     }
 
                     browseAnimationsWindow.gameObject.SetActive(false);
-                });
+                }, "PACKAGED ANIMATIONS");
             });
 
             newAnimationWindow.gameObject.SetActive(true); 
@@ -6963,24 +8786,14 @@ namespace Swole.API.Unity.Animation
             popup?.Elevate();
         }
 
-        public delegate void ImportAnimationDelegate(CustomAnimation anim);
-        public void OpenBrowseAnimationsWindow(ImportAnimationDelegate callback) => OpenBrowseAnimationsWindow(browseAnimationsWindow, callback);
-        public void OpenBrowseAnimationsWindow(RectTransform browseAnimationsWindow, ImportAnimationDelegate callback)
+        public delegate void ImportAnimationDelegate(CustomAnimation anim);      
+        public delegate UICategorizedList.Member AddSelectableAnimationDelegate(string name, CustomAnimation anim, UICategorizedList.Category category);
+        public delegate void AddSelectableAnimationsToListDelegate(UICategorizedList list, AddSelectableAnimationDelegate onAddCallback);
+        public void OpenBrowseAnimationsWindow(ImportAnimationDelegate callback, string title) => OpenBrowseAnimationsWindow(browseAnimationsWindow, callback, title);
+        public static void OpenBrowseAnimationsWindow(RectTransform browseAnimationsWindow, ImportAnimationDelegate callback, string title)
         {
-            if (browseAnimationsWindow == null) return;
-
-            browseAnimationsWindow.gameObject.SetActive(true); 
-            browseAnimationsWindow.SetAsLastSibling();
-
-            var animationsList = browseAnimationsWindow.GetComponentInChildren<UICategorizedList>(true);
-            if (animationsList != null)
+            OpenBrowseAnimationsWindow(browseAnimationsWindow, callback, title, (UICategorizedList animationsList, AddSelectableAnimationDelegate addListMember) =>
             {
-                CustomEditorUtils.SetInputFieldOnValueChangeActionByName(browseAnimationsWindow, "search", (string str) =>
-                {
-                    animationsList.FilterMembersAndCategoriesByStartString(str, false);
-                });
-
-                animationsList.Clear(true);
                 for (int a = 0; a < ContentManager.LocalPackageCount; a++)
                 {
                     var pkg = ContentManager.GetLocalPackage(a);
@@ -6991,13 +8804,7 @@ namespace Swole.API.Unity.Animation
                     {
                         if (content == null || !typeof(CustomAnimation).IsAssignableFrom(content.AssetType)) continue;
 
-                        var contentRef = content;
-                        void OnClick()
-                        {
-                            callback?.Invoke(content.Asset as CustomAnimation); 
-                        }
-
-                        animationsList.AddNewListMember(contentRef.Name, cat, OnClick);
+                        addListMember(content.Name, content.Asset as CustomAnimation, cat);
                     }
                     if (cat.members == null || cat.members.Count <= 0) animationsList.DeleteCategory(cat);
                 }
@@ -7011,16 +8818,40 @@ namespace Swole.API.Unity.Animation
                     {
                         if (content == null || !typeof(CustomAnimation).IsAssignableFrom(content.AssetType)) continue;
 
-                        var contentRef = content;
-                        void OnClick()
-                        {
-                            callback?.Invoke(content.Asset as CustomAnimation);
-                        }
-
-                        animationsList.AddNewListMember(contentRef.Name, cat, OnClick);
+                        addListMember(content.Name, content.Asset as CustomAnimation, cat);
                     }
-                    if (cat.members == null || cat.members.Count <= 0) animationsList.DeleteCategory(cat); 
+                    if (cat.members == null || cat.members.Count <= 0) animationsList.DeleteCategory(cat);
                 }
+            });
+        }
+        public void OpenBrowseAnimationsWindow(ImportAnimationDelegate callback, string title, AddSelectableAnimationsToListDelegate addToList) => OpenBrowseAnimationsWindow(browseAnimationsWindow, callback, title, addToList);
+        public static void OpenBrowseAnimationsWindow(RectTransform browseAnimationsWindow, ImportAnimationDelegate callback, string title, AddSelectableAnimationsToListDelegate addToList)
+        {
+            if (browseAnimationsWindow == null) return;
+
+            browseAnimationsWindow.gameObject.SetActive(true); 
+            browseAnimationsWindow.SetAsLastSibling();
+
+            CustomEditorUtils.SetComponentTextByName(browseAnimationsWindow, str_title, title);
+
+            var animationsList = browseAnimationsWindow.GetComponentInChildren<UICategorizedList>(true);
+            if (animationsList != null)
+            {
+                CustomEditorUtils.SetInputFieldOnValueChangeActionByName(browseAnimationsWindow, "search", (string str) =>
+                {
+                    animationsList.FilterMembersAndCategoriesByStartString(str, false);
+                });
+
+                animationsList.Clear(true);
+                addToList(animationsList, (string name, CustomAnimation anim, UICategorizedList.Category category) =>
+                {
+                    void OnClick()
+                    {
+                        callback?.Invoke(anim);
+                    }
+
+                    return animationsList.AddNewListMember(name, category, OnClick);
+                });
             }
         }
 
@@ -7943,7 +9774,7 @@ namespace Swole.API.Unity.Animation
 
         private CustomAnimationController testController;
         private bool playFlag;
-        public void OnUpdate()
+        public override void OnUpdate()
         {
             if (!IsInitialized) return;
 
@@ -7955,7 +9786,7 @@ namespace Swole.API.Unity.Animation
                 testSave = false;
                 if (!string.IsNullOrEmpty(testPath))
                 {
-                    SaveSession(testPath, currentSession, swole.DefaultLogger);
+                    SaveSession(testPath, currentSession, swole.DefaultLogger); 
                 }
             }
             if (testLoad)
@@ -8026,7 +9857,7 @@ namespace Swole.API.Unity.Animation
 
                     testController = ScriptableObject.CreateInstance<CustomAnimationController>();
                     testController.name = "test";
-                    testController.animationReferences = new CustomMotionController.AnimationReference[] { new CustomMotionController.AnimationReference("testAnim", testAnimation, AnimationLoopMode.Loop) };
+                    testController.animationReferences = new AnimationReference[] { new AnimationReference("testAnim", testAnimation, AnimationLoopMode.Loop) };
 
                     CustomAnimationLayer testLayer = new CustomAnimationLayer();
                     testLayer.name = "layer1";
@@ -8036,9 +9867,9 @@ namespace Swole.API.Unity.Animation
                     testLayer.motionControllerIdentifiers = new MotionControllerIdentifier[] { new MotionControllerIdentifier() { index=0,type= MotionControllerType.AnimationReference } };
                     testLayer.IsAdditive = false;
 
-                    CustomStateMachine testStateMachine = new CustomStateMachine() { name="testMachine", motionControllerIndex = 0 };
+                    CustomAnimationLayerState testState = new CustomAnimationLayerState() { name="testState", motionControllerIndex = 0 };
 
-                    testLayer.stateMachines = new CustomStateMachine[] { testStateMachine };
+                    testLayer.states = new CustomAnimationLayerState[] { testState };
 
                     testController.layers = new CustomAnimationLayer[] { testLayer };
 
@@ -8065,7 +9896,7 @@ namespace Swole.API.Unity.Animation
             }
         }
 
-        public virtual void OnLateUpdate()
+        public override void OnLateUpdate()
         {
             if (!IsInitialized) return;
 
@@ -8106,9 +9937,15 @@ namespace Swole.API.Unity.Animation
             }
 
             if (!overrideRecordCall) RecordChanges(); 
+
+            if (keyRelocationOffset != 0)
+            {
+                RelocateSelectedkeyframes(keyRelocationOffset); 
+                keyRelocationOffset = 0;
+            }
         } 
 
-        public virtual void OnFixedUpdate(){}
+        public override void OnFixedUpdate(){}
 
         #endregion
 
@@ -8141,7 +9978,7 @@ namespace Swole.API.Unity.Animation
             }
         }
 
-        public CustomStateMachine ActivePreviewState
+        public CustomAnimationLayerState ActivePreviewState
         {
             get
             {
@@ -8254,6 +10091,7 @@ namespace Swole.API.Unity.Animation
                 timelineWindow.SetNonlinearScrubPosition(timelineWindow.GetNonlinearTimeFromTime(playbackPosition), false);
             } 
         }
+        public float GetPlaybackPosition() => playbackPosition;
         public float PlaybackPosition
         {
             get => playbackPosition;
@@ -8979,12 +10817,12 @@ namespace Swole.API.Unity.Animation
 
                             yield return null;
 
-                            RecordRevertibleAction(new UndoableSetPlaybackPosition(this, currentSession.activeObjectIndex, ActiveAnimatable.editIndex, prePlayPlaybackPosition, PlaybackPosition));
+                            if (undoable) RecordRevertibleAction(new UndoableSetPlaybackPosition(this, currentSession.activeObjectIndex, ActiveAnimatable.editIndex, prePlayPlaybackPosition, PlaybackPosition));
                         }
                         StartCoroutine(RefreshReferencePoses());
                     }
 
-                    if (playSnapshotEndTime > 0) StartCoroutine(WaitToEnd()); else WaitToEnd();
+                    if (playSnapshotEndTime > 0) StartCoroutine(WaitToEnd()); else WaitToEnd(); 
                 } 
                 catch(Exception ex)
                 {

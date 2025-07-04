@@ -576,6 +576,12 @@ namespace Swole.API.Unity.Animation
             public Keyframe data;
             public KeyframeTangentSettings tangentSettings;
 
+            /// <summary>
+            /// Used to store a float during animation editing.
+            /// </summary>
+            [NonSerialized]
+            public float tempFloat;
+
             public static implicit operator KeyframeStateRaw(KeyframeState state) => new KeyframeStateRaw() 
             { 
                 time = state.data.time, 
@@ -614,6 +620,12 @@ namespace Swole.API.Unity.Animation
 
             public int inTangentMode;
             public int outTangentMode;
+
+            /// <summary>
+            /// Used to store a float during animation editing.
+            /// </summary>
+            [NonSerialized]
+            public float tempFloat;
 
             public static implicit operator KeyframeState(KeyframeStateRaw state) => new KeyframeState()
             {

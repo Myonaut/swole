@@ -22,7 +22,7 @@ namespace Swole.API.Unity
     public class ProxyBoneJobs : SingletonBehaviour<ProxyBoneJobs>, IDisposable
     {
 
-        public static int ExecutionPriority => CustomIKManagerUpdater.ExecutionPriority + 5; // Update after animators and ik
+        public static int ExecutionPriority => SwolePuppetMasterUpdater.LateExecutionPriority + 5; // Update after animators, ik, and puppets
         public override int Priority => ExecutionPriority;
         //public override bool DestroyOnLoad => false; 
 
@@ -759,6 +759,7 @@ namespace Swole.API.Unity
             PreUpdate?.Invoke();
 
             //RunJobs(); // Moved to late update so that synchronous IK code happens first. TODO: revisit this if there's ever a jobified IK solution
+            // should also remain in late update to wait for animation jobs (which do not force completion until late update)
 
             PostUpdate?.Invoke();
         }
@@ -787,7 +788,8 @@ namespace Swole.API.Unity
         {
             PreLateUpdate?.Invoke();
 
-            EndFrameJobWaiter.WaitFor(RunJobs());//.Complete();
+            //EndFrameJobWaiter.WaitFor(RunJobs());
+            RunJobs().Complete();
 
             PostLateUpdate?.Invoke();
         }

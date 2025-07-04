@@ -13,6 +13,17 @@ namespace Swole.API.Unity
     public class ExternalBezierCurve : SwoleObject<ICurve, SerializedCurve>, IBezierCurve
     {
 
+        public ExternalBezierCurve Duplicate()
+        {
+            var clone = new ExternalBezierCurve();
+
+            clone.Name = Name;
+            clone.SetPoints(GetPoints());
+
+            return clone;
+        }
+        public object Clone() => Duplicate();
+
         #region Serialization
 
         public override string AsJSON(bool prettyPrint = false) => AsSerializableStruct().AsJSON(prettyPrint);   
@@ -122,8 +133,18 @@ namespace Swole.API.Unity
             if (path == null) return Vector3.zero;
             return path.GetPoint(index);
         }
-
         public Vector2 GetPoint2D(int index) => GetPoint(index);
+
+        public Vector3 GetNormal(int index)
+        {
+            if (path == null) return Vector3.zero;
+            return VertexPath.GetNormal(index);
+        }
+        public Vector3 GetTangent(int index)
+        {
+            if (path == null) return Vector3.zero;
+            return VertexPath.GetTangent(index);
+        }
 
         protected Vector3[] points;
         protected Vector2[] points2D;
@@ -228,8 +249,8 @@ namespace Swole.API.Unity
         {
             if (points == null) return false;
 
-            int segCount = Mathf.FloorToInt(points.Length / 3f);
-            if (segCount <= 0) return false;
+            int segCount = Mathf.CeilToInt(points.Length / 3f);
+            if (segCount <= 0) return false; 
 
             dirtyVertices = true;
 
@@ -256,7 +277,7 @@ namespace Swole.API.Unity
                 if (prev >= path.NumSegments) return false;
             }
             
-            for(int a = 0; a < points.Length; a++)
+            for(int a = 0; a < Mathf.Min(points.Length, segCount * 3); a++)
             {
                 path.SetPoint(a, points[a], true); 
             }
@@ -278,36 +299,6 @@ namespace Swole.API.Unity
                 keyframes[a] = path.Space == PathSpace.xz ? new Keyframe() { time = point.x, value = point.z } : new Keyframe() { time = point.x, value = point.y }; 
             }
             return keyframes;
-        }
-
-        public float Evaluate(float t) => Evaluate3(t).x;
-        public EngineInternal.Vector2 Evaluate2(float t) => Evaluate3(t);
-        public EngineInternal.Vector3 Evaluate3(float t) => UnityEngineHook.AsSwoleVector(GetPositionOnCurve(t));  
-
-        public Vector3 GetPositionOnCurve(float normalizedPos)
-        {
-            if (path == null) return Vector3.zero;
-            return VertexPath.GetPointAtTime(normalizedPos, EndOfPathInstruction.Stop);
-        }
-
-        public Vector2 GetPositionOnCurve2D(float normalizedPos)
-        {
-            if (path == null) return Vector2.zero;
-            var pos = GetPositionOnCurve(normalizedPos);
-            return path.Space == PathSpace.xz ? new Vector2(pos.x, pos.z) : pos;
-        }
-
-        public Vector3 GetPositionOnCurveFromDistance(float distance)
-        {
-            if (path == null) return Vector3.zero;
-            return VertexPath.GetPointAtDistance(distance, EndOfPathInstruction.Stop); 
-        }
-
-        public Vector2 GetPositionOnCurveFromDistance2D(float distance)
-        {
-            if (path == null) return Vector2.zero;
-            var pos = GetPositionOnCurveFromDistance(distance);
-            return path.Space == PathSpace.xz ? new Vector2(pos.x, pos.z) : pos;
         }
 
         public Vector3 GetVertex(int index)
@@ -418,16 +409,77 @@ namespace Swole.API.Unity
             return verts;
         }
 
-        public ExternalBezierCurve Duplicate()
+        public float Evaluate(float t) => Evaluate3(t).x;
+        public EngineInternal.Vector2 Evaluate2(float t) => Evaluate3(t);
+        public EngineInternal.Vector3 Evaluate3(float t) => UnityEngineHook.AsSwoleVector(GetPositionOnCurve(t, SwoleEndOfPathInstruction.Loop));
+
+        public Vector3 GetPositionOnCurve(float normalizedPos, SwoleEndOfPathInstruction endOfPathInstruction = SwoleEndOfPathInstruction.Stop)
         {
-            var clone = new ExternalBezierCurve();
-
-            clone.Name = Name;
-            clone.SetPoints(GetPoints());  
-
-            return clone;
+            if (path == null) return Vector3.zero;
+            return VertexPath.GetPointAtTime(normalizedPos, (EndOfPathInstruction)endOfPathInstruction);
         }
-        public object Clone() => Duplicate();
+
+        public Vector2 GetPositionOnCurve2D(float normalizedPos, SwoleEndOfPathInstruction endOfPathInstruction = SwoleEndOfPathInstruction.Stop)
+        {
+            if (path == null) return Vector2.zero;
+            var pos = GetPositionOnCurve(normalizedPos, endOfPathInstruction);
+            return path.Space == PathSpace.xz ? new Vector2(pos.x, pos.z) : pos;
+        }
+
+        public Vector3 GetPositionFromDistanceAlongCurve(float distance, SwoleEndOfPathInstruction endOfPathInstruction = SwoleEndOfPathInstruction.Stop)
+        {
+            if (path == null) return Vector3.zero;
+            return VertexPath.GetPointAtDistance(distance, (EndOfPathInstruction)endOfPathInstruction);
+        }
+
+        public Vector2 GetPositionFromDistanceAlongCurve2D(float distance, SwoleEndOfPathInstruction endOfPathInstruction = SwoleEndOfPathInstruction.Stop)
+        {
+            if (path == null) return Vector2.zero;
+            var pos = GetPositionFromDistanceAlongCurve(distance, endOfPathInstruction);
+            return path.Space == PathSpace.xz ? new Vector2(pos.x, pos.z) : pos;
+        }
+
+        public Vector3 GetPointAtTime(float t, SwoleEndOfPathInstruction endOfPathInstruction = SwoleEndOfPathInstruction.Stop)
+        {
+            if (path == null) return Vector3.zero;
+            return VertexPath.GetPointAtTime(t, (EndOfPathInstruction)endOfPathInstruction);
+        }
+
+        public Vector3 GetDirection(float t, SwoleEndOfPathInstruction endOfPathInstruction = SwoleEndOfPathInstruction.Stop)
+        {
+            if (path == null) return Vector3.zero;
+            return VertexPath.GetDirection(t, (EndOfPathInstruction)endOfPathInstruction);
+        }
+
+        public Vector3 GetNormal(float t, SwoleEndOfPathInstruction endOfPathInstruction = SwoleEndOfPathInstruction.Stop)
+        {
+            if (path == null) return Vector3.zero;
+            return VertexPath.GetNormal(t, (EndOfPathInstruction)endOfPathInstruction);
+        }
+
+        public Quaternion GetRotation(float t, SwoleEndOfPathInstruction endOfPathInstruction = SwoleEndOfPathInstruction.Stop)
+        {
+            if (path == null) return Quaternion.identity;
+            return VertexPath.GetRotation(t, (EndOfPathInstruction)endOfPathInstruction);
+        }
+
+        public Vector3 GetClosestPointOnPath(Vector3 worldPoint)
+        {
+            if (path == null) return Vector3.zero;
+            return VertexPath.GetClosestPointOnPath(worldPoint);
+        }
+
+        public float GetClosestTimeOnPath(Vector3 worldPoint)
+        {
+            if (path == null) return 0f;
+            return VertexPath.GetClosestTimeOnPath(worldPoint);
+        }
+
+        public float GetClosestDistanceAlongPath(Vector3 worldPoint)
+        {
+            if (path == null) return 0f;
+            return VertexPath.GetClosestDistanceAlongPath(worldPoint);
+        }
     }
 
 }

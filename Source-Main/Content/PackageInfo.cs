@@ -74,6 +74,9 @@ namespace Swole
             return base.Equals(obj);
         }
 
+        public string ConvertToAssetPath(string assetName) => ((PackageIdentifier)this).ConvertToAssetPath(assetName);
+        public AssetIdentifier ConvertToAssetIdentifier(string assetName) => ((PackageIdentifier)this).ConvertToAssetIdentifier(assetName);
+
     }
 
 }

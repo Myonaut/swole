@@ -19,6 +19,9 @@ namespace Swole.API.Unity.Animation
             public UnityEngine.Object objectReference;
             public string propertyName;
 
+            public bool overrideDefaultValue;
+            public float defaultValue;
+
             public UnityEvent<float> OnValueChange;
         }
 
@@ -31,6 +34,11 @@ namespace Swole.API.Unity.Animation
             public string DisplayName => string.IsNullOrWhiteSpace(displayName) ? name : displayName;
 
             public float defaultValue;
+            private float localValue;
+            public void Init()
+            {
+                localValue = defaultValue;
+            }
 
             [NonSerialized]
             private int index;
@@ -42,13 +50,20 @@ namespace Swole.API.Unity.Animation
 
             protected GetPropertyValueDelegate getValue;
             public void SetGetter(GetPropertyValueDelegate getValue) => this.getValue = getValue;
-            public float GetValue() => getValue == null ? 0 : getValue();
+            public float GetValue() => getValue == null ? localValue : getValue();
 
             protected SetPropertyValueDelegate setValue;
             public void SetSetter(SetPropertyValueDelegate setValue) => this.setValue = setValue;
             public void SetValue(float value)
             {
-                setValue?.Invoke(value);
+                if (setValue == null)
+                {
+                    localValue = value;
+                }
+                else
+                {
+                    setValue.Invoke(value);
+                }
                 OnValueChange?.Invoke(value);
 
                 if (listeners != null)
@@ -169,210 +184,225 @@ namespace Swole.API.Unity.Animation
             {
                 foreach (var creator in creators)
                 {
-                    if (creator.objectReference == null) continue;
-
-                    var refType = creator.objectReference.GetType();
-                    FieldInfo fieldInfo = refType.GetField(creator.propertyName);
-                    PropertyInfo propInfo = null;
-                    if (fieldInfo == null) propInfo = refType.GetProperty(creator.propertyName);
-                    if (propInfo == null) continue;
-
-                    Type valueType = fieldInfo == null ? fieldInfo.FieldType : propInfo.PropertyType;
-
                     var prop = new Property();
                     prop.name = creator.name;
 
-                    if (typeof(float).IsAssignableFrom(valueType))
+                    if (creator.objectReference != null)
                     {
-                        if (fieldInfo == null)
+
+                        var refType = creator.objectReference.GetType();
+                        FieldInfo fieldInfo = refType.GetField(creator.propertyName);
+                        PropertyInfo propInfo = null;
+                        if (fieldInfo == null) propInfo = refType.GetProperty(creator.propertyName);
+                        if (propInfo == null)
                         {
-                            prop.SetGetter(() =>
-                            {
-                                if (creator.objectReference == null)
-                                {
-                                    prop.SetGetter(null);
-                                    return 0f;
-                                }
-                                else
-                                {
-                                    return (float)propInfo.GetValue(creator.objectReference);
-                                }
-                            });
-
-                            prop.SetSetter((float val) =>
-                            {
-                                if (creator.objectReference == null)
-                                {
-                                    prop.SetSetter(null);
-                                }
-                                else
-                                {
-                                    propInfo.SetValue(creator.objectReference, val);
-
-                                }
-                            });
-
-                            prop.defaultValue = prop.GetValue();
+                            swole.LogError($"Could not locate field or property '{creator.propertyName}' in type '{(refType == null ? "null" : refType.Name)}' for dynamic animation property '{creator.name}'");
+                            continue;
                         }
-                        else
+
+                        Type valueType = fieldInfo == null ? fieldInfo.FieldType : propInfo.PropertyType;
+
+                        if (typeof(float).IsAssignableFrom(valueType))
                         {
-                            prop.SetGetter(() =>
+                            if (fieldInfo == null)
                             {
-                                if (creator.objectReference == null)
+                                prop.SetGetter(() =>
                                 {
-                                    prop.SetGetter(null);
-                                    return 0f;
-                                }
-                                else
-                                {
-                                    return (float)fieldInfo.GetValue(creator.objectReference);
-                                }
-                            });
+                                    if (creator.objectReference == null)
+                                    {
+                                        prop.SetGetter(null);
+                                        return 0f;
+                                    }
+                                    else
+                                    {
+                                        return (float)propInfo.GetValue(creator.objectReference);
+                                    }
+                                });
 
-                            prop.SetSetter((float val) =>
+                                prop.SetSetter((float val) =>
+                                {
+                                    if (creator.objectReference == null)
+                                    {
+                                        prop.SetSetter(null);
+                                    }
+                                    else
+                                    {
+                                        propInfo.SetValue(creator.objectReference, val);
+
+                                    }
+                                });
+
+                                prop.defaultValue = prop.GetValue();
+                            }
+                            else
                             {
-                                if (creator.objectReference == null)
+                                prop.SetGetter(() =>
                                 {
-                                    prop.SetSetter(null);
-                                }
-                                else
+                                    if (creator.objectReference == null)
+                                    {
+                                        prop.SetGetter(null);
+                                        return 0f;
+                                    }
+                                    else
+                                    {
+                                        return (float)fieldInfo.GetValue(creator.objectReference);
+                                    }
+                                });
+
+                                prop.SetSetter((float val) =>
                                 {
-                                    fieldInfo.SetValue(creator.objectReference, val);
+                                    if (creator.objectReference == null)
+                                    {
+                                        prop.SetSetter(null);
+                                    }
+                                    else
+                                    {
+                                        fieldInfo.SetValue(creator.objectReference, val);
 
-                                }
-                            });
+                                    }
+                                });
 
-                            prop.defaultValue = prop.GetValue();
+                                prop.defaultValue = prop.GetValue();
+                            }
                         }
-                    }
-                    else if (typeof(int).IsAssignableFrom(valueType))
+                        else if (typeof(int).IsAssignableFrom(valueType))
+                        {
+                            if (fieldInfo == null)
+                            {
+                                prop.SetGetter(() =>
+                                {
+                                    if (creator.objectReference == null)
+                                    {
+                                        prop.SetGetter(null);
+                                        return 0f;
+                                    }
+                                    else
+                                    {
+                                        return (float)propInfo.GetValue(creator.objectReference);
+                                    }
+                                });
+
+                                prop.SetSetter((float val) =>
+                                {
+                                    if (creator.objectReference == null)
+                                    {
+                                        prop.SetSetter(null);
+                                    }
+                                    else
+                                    {
+                                        propInfo.SetValue(creator.objectReference, (int)val);
+
+                                    }
+                                });
+
+                                prop.defaultValue = prop.GetValue();
+                            }
+                            else
+                            {
+                                prop.SetGetter(() =>
+                                {
+                                    if (creator.objectReference == null)
+                                    {
+                                        prop.SetGetter(null);
+                                        return 0f;
+                                    }
+                                    else
+                                    {
+                                        return (float)fieldInfo.GetValue(creator.objectReference);
+                                    }
+                                });
+
+                                prop.SetSetter((float val) =>
+                                {
+                                    if (creator.objectReference == null)
+                                    {
+                                        prop.SetSetter(null);
+                                    }
+                                    else
+                                    {
+                                        fieldInfo.SetValue(creator.objectReference, (int)val);
+
+                                    }
+                                });
+
+                                prop.defaultValue = prop.GetValue();
+                            }
+                        }
+                        else if (typeof(bool).IsAssignableFrom(valueType))
+                        {
+                            if (fieldInfo == null)
+                            {
+                                prop.SetGetter(() =>
+                                {
+                                    if (creator.objectReference == null)
+                                    {
+                                        prop.SetGetter(null);
+                                        return 0f;
+                                    }
+                                    else
+                                    {
+                                        return ((bool)propInfo.GetValue(creator.objectReference)) ? 1f : 0f;
+                                    }
+                                });
+
+                                prop.SetSetter((float val) =>
+                                {
+                                    if (creator.objectReference == null)
+                                    {
+                                        prop.SetSetter(null);
+                                    }
+                                    else
+                                    {
+                                        propInfo.SetValue(creator.objectReference, val > 0);
+
+                                    }
+                                });
+
+                                prop.defaultValue = prop.GetValue();
+                            }
+                            else
+                            {
+                                prop.SetGetter(() =>
+                                {
+                                    if (creator.objectReference == null)
+                                    {
+                                        prop.SetGetter(null);
+                                        return 0f;
+                                    }
+                                    else
+                                    {
+                                        return ((bool)fieldInfo.GetValue(creator.objectReference)) ? 1f : 0f;
+                                    }
+                                });
+
+                                prop.SetSetter((float val) =>
+                                {
+                                    if (creator.objectReference == null)
+                                    {
+                                        prop.SetSetter(null);
+                                    }
+                                    else
+                                    {
+                                        fieldInfo.SetValue(creator.objectReference, val > 0);
+
+                                    }
+                                });
+
+                                prop.defaultValue = prop.GetValue();
+                            }
+                        }
+                    } 
+                    else
                     {
-                        if (fieldInfo == null)
-                        {
-                            prop.SetGetter(() =>
-                            {
-                                if (creator.objectReference == null)
-                                {
-                                    prop.SetGetter(null);
-                                    return 0f;
-                                }
-                                else
-                                {
-                                    return (float)propInfo.GetValue(creator.objectReference);
-                                }
-                            });
-
-                            prop.SetSetter((float val) =>
-                            {
-                                if (creator.objectReference == null)
-                                {
-                                    prop.SetSetter(null);
-                                }
-                                else
-                                {
-                                    propInfo.SetValue(creator.objectReference, (int)val);
-
-                                }
-                            });
-
-                            prop.defaultValue = prop.GetValue();
-                        }
-                        else
-                        {
-                            prop.SetGetter(() =>
-                            {
-                                if (creator.objectReference == null)
-                                {
-                                    prop.SetGetter(null);
-                                    return 0f;
-                                }
-                                else
-                                {
-                                    return (float)fieldInfo.GetValue(creator.objectReference);
-                                }
-                            });
-
-                            prop.SetSetter((float val) =>
-                            {
-                                if (creator.objectReference == null)
-                                {
-                                    prop.SetSetter(null);
-                                }
-                                else
-                                {
-                                    fieldInfo.SetValue(creator.objectReference, (int)val);
-
-                                }
-                            });
-
-                            prop.defaultValue = prop.GetValue();
-                        }
+                        prop.defaultValue = creator.defaultValue;
                     }
-                    else if (typeof(bool).IsAssignableFrom(valueType))
-                    {
-                        if (fieldInfo == null)
-                        {
-                            prop.SetGetter(() =>
-                            {
-                                if (creator.objectReference == null)
-                                {
-                                    prop.SetGetter(null);
-                                    return 0f;
-                                }
-                                else
-                                {
-                                    return ((bool)propInfo.GetValue(creator.objectReference)) ? 1f : 0f;
-                                }
-                            });
 
-                            prop.SetSetter((float val) =>
-                            {
-                                if (creator.objectReference == null)
-                                {
-                                    prop.SetSetter(null);
-                                }
-                                else
-                                {
-                                    propInfo.SetValue(creator.objectReference, val > 0);
-
-                                }
-                            });
-
-                            prop.defaultValue = prop.GetValue();
-                        }
-                        else
-                        {
-                            prop.SetGetter(() =>
-                            {
-                                if (creator.objectReference == null)
-                                {
-                                    prop.SetGetter(null);
-                                    return 0f;
-                                }
-                                else
-                                {
-                                    return ((bool)fieldInfo.GetValue(creator.objectReference)) ? 1f : 0f;
-                                }
-                            });
-
-                            prop.SetSetter((float val) =>
-                            {
-                                if (creator.objectReference == null)
-                                {
-                                    prop.SetSetter(null);
-                                }
-                                else
-                                {
-                                    fieldInfo.SetValue(creator.objectReference, val > 0);
-
-                                }
-                            });
-
-                            prop.defaultValue = prop.GetValue(); 
-                        }
-                    }
+                    if (creator.overrideDefaultValue) prop.defaultValue = creator.defaultValue;  
+                    prop.Init();
 
                     prop.OnValueChange = creator.OnValueChange;
+
+                    properties.Add(prop);
                 }
             }
 

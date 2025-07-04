@@ -91,6 +91,10 @@ namespace Swole
                 return !(lhs == rhs);
             }
 
+#if (UNITY_EDITOR || UNITY_STANDALONE)
+            public static implicit operator UnityEngine.Vector2(Vector2 v) => new UnityEngine.Vector2(v.x, v.y);
+            public static implicit operator Vector2(UnityEngine.Vector2 v) => new Vector2(v.x, v.y);
+#endif
         }
 
         [Serializable]
@@ -168,6 +172,11 @@ namespace Swole
                 return !(lhs == rhs);
             }
 
+#if (UNITY_EDITOR || UNITY_STANDALONE)
+            public static implicit operator UnityEngine.Vector3(Vector3 v) => new UnityEngine.Vector3(v.x, v.y, v.z);
+            public static implicit operator Vector3(UnityEngine.Vector3 v) => new Vector3(v.x, v.y, v.z);
+#endif
+
         }
 
         [Serializable]
@@ -236,6 +245,11 @@ namespace Swole
             {
                 return !(lhs == rhs);
             }
+
+#if (UNITY_EDITOR || UNITY_STANDALONE)
+            public static implicit operator UnityEngine.Vector4(Vector4 v) => new UnityEngine.Vector4(v.x, v.y, v.z, v.w);
+            public static implicit operator Vector4(UnityEngine.Vector4 v) => new Vector4(v.x, v.y, v.z, v.w);
+#endif
 
         }
 
@@ -320,6 +334,10 @@ namespace Swole
                 return !(lhs == rhs);
             }
 
+#if (UNITY_EDITOR || UNITY_STANDALONE)
+            public static implicit operator UnityEngine.Quaternion(Quaternion q) => new UnityEngine.Quaternion(q.x, q.y, q.z, q.w);
+            public static implicit operator Quaternion(UnityEngine.Quaternion q) => new Quaternion(q.x, q.y, q.z, q.w);
+#endif
         }
 
         [Serializable]
@@ -578,6 +596,11 @@ namespace Swole
                 this[index, 2] = row.z;
                 this[index, 3] = row.w;
             }
+
+#if (UNITY_EDITOR || UNITY_STANDALONE)
+            public static implicit operator UnityEngine.Matrix4x4(Matrix4x4 m) => new UnityEngine.Matrix4x4(m.GetColumn(0), m.GetColumn(1), m.GetColumn(2), m.GetColumn(3));
+            public static implicit operator Matrix4x4(UnityEngine.Matrix4x4 m) => new Matrix4x4(m.GetColumn(0), m.GetColumn(1), m.GetColumn(2), m.GetColumn(3));
+#endif
 
         }
 
@@ -2613,10 +2636,10 @@ namespace Swole
                 instance.ReinitializeControllers(); 
             }
 
-            public void ApplyController(IAnimationController controller, bool usePrefix = true, bool incrementDuplicateParameters = false)
+            public void ApplyController(IAnimationController controller, bool usePrefixForLayers = true, bool incrementDuplicateParameters = false, bool usePrefixForParameters = false)
             {
                 if (IsDestroyed) return;
-                instance.ApplyController(controller, usePrefix, incrementDuplicateParameters);
+                instance.ApplyController(controller, usePrefixForLayers, incrementDuplicateParameters, usePrefixForParameters);
             }
 
             public bool HasControllerData(IAnimationController controller)
@@ -2789,10 +2812,16 @@ namespace Swole
                 return instance.RemoveLayersStartingWith(prefix, dispose);
             }
 
-            public void ClearLayers()
+            public int RemoveLayersFromSource(IAnimationController source, bool dispose = true)
+            {
+                if (IsDestroyed) return 0;
+                return instance.RemoveLayersFromSource(source, dispose); 
+            }
+
+            public void ClearLayers(bool disposeLayers)
             {
                 if (IsDestroyed) return;
-                instance.ClearLayers();
+                instance.ClearLayers(disposeLayers);
             }
 
             public Dictionary<int, int> RearrangeLayer(int layerIndex, int swapIndex, bool recalculateIndices = true)
@@ -3277,27 +3306,51 @@ namespace Swole
                     instance.EntryStateIndex = value;
                 }
             }
-            public IAnimationStateMachine[] StateMachines
+            public IAnimationLayerState[] States
             {
                 get
                 {
                     if (instance == null) return null;
-                    return instance.StateMachines;
+                    return instance.States;
                 }
                 set
                 {
                     if (instance == null) return;
-                    instance.StateMachines = value;
+                    instance.States = value;
                 }
             }
 
             public int StateCount => instance == null ? 0 : instance.StateCount;
 
-            public int ActiveStateIndex => instance == null ? -1 : instance.ActiveStateIndex;
+            public int ActiveStateIndex
+            {
+                get => instance == null ? -1 : instance.ActiveStateIndex;
+                set
+                {
+                    if (instance == null) return;
+                    instance.ActiveStateIndex = value;
+                }
+            }
 
-            public IAnimationStateMachine ActiveState => instance == null ? null : instance.ActiveState;
+            public IAnimationLayerState ActiveState => instance == null ? null : instance.ActiveState;
 
             public bool HasActiveState => instance == null ? false : instance.HasActiveState;
+
+            public void SetActiveState(int index)
+            {
+                if (instance == null) return;
+                instance.SetActiveState(index);
+            }
+            public void SetActiveStateUnsafe(int index)
+            {
+                if (instance == null) return;
+                instance.SetActiveStateUnsafe(index);
+            }
+
+            public IAnimationController Source => instance == null ? null : instance.Source;
+
+            public bool IsFromSource(IAnimationController source) => instance == null ? false : instance.IsFromSource(source);
+            public bool DisposeIfIsFromSource(IAnimationController source) => instance == null ? false : instance.DisposeIfIsFromSource(source); 
 
             public bool HasPrefix(string prefix)
             {
@@ -3365,6 +3418,29 @@ namespace Swole
                 instance.RemapParameterIndices(remapper, invalidateNonRemappedIndices);
             }
 
+            public IAnimationParameter GetParameter(int index)
+            {
+                if (instance == null) return null;
+                return instance.GetParameter(index);
+            }
+
+            public int FindParameterIndex(string name)
+            {
+                if (instance == null) return -1;
+                return instance.FindParameterIndex(name);
+            }
+            public IAnimationParameter FindParameter(string name, out int parameterIndex)
+            {
+                parameterIndex = -1;
+                if (instance == null) return null;
+                return instance.FindParameter(name, out parameterIndex);
+            }
+            public IAnimationParameter FindParameter(string name)
+            {
+                if (instance == null) return null;
+                return instance.FindParameter(name);
+            }
+
             public IAnimationMotionController GetMotionController(int index)
             {
                 if (instance == null) return null;
@@ -3377,28 +3453,61 @@ namespace Swole
                 return instance.GetMotionControllerUnsafe(index);
             }
 
-            public IAnimationStateMachine GetStateMachine(int index)
+            public IAnimationLayerState GetState(int index)
             {
                 if (instance == null) return null;
-                return instance.GetStateMachine(index);
+                return instance.GetState(index);
             }
 
-            public IAnimationStateMachine GetStateMachineUnsafe(int index)
+            public IAnimationLayerState GetStateUnsafe(int index)
             {
                 if (instance == null) return null;
-                return instance.GetStateMachineUnsafe(index);
+                return instance.GetStateUnsafe(index);
             }
 
-            public void SetStateMachine(int index, IAnimationStateMachine stateMachine)
+            public void SetState(int index, IAnimationLayerState state)
             {
                 if (instance == null) return;
-                instance.SetStateMachine(index, stateMachine);
+                instance.SetState(index, state);
             }
 
-            public void SetStateMachines(IAnimationStateMachine[] stateMachines)
+            public void SetStates(IAnimationLayerState[] states)
             {
                 if (instance == null) return;
-                instance.SetStateMachines(stateMachines);
+                instance.SetStates(states);
+            }
+
+            public int FindMotionControllerIndex(string id)
+            {
+                if (instance == null) return -1;
+                return instance.FindMotionControllerIndex(id);
+            }
+            public IAnimationMotionController FindMotionController(string id, out int controllerIndex)
+            {
+                controllerIndex = -1;
+                if (instance == null) return default;
+                return instance.FindMotionController(id, out controllerIndex);
+            }
+            public IAnimationMotionController FindMotionController(string id)
+            {
+                if (instance == null) return default;
+                return instance.FindMotionController(id);
+            }
+            public int FindStateIndex(string id)
+            {
+                if (instance == null) return -1;
+                return instance.FindStateIndex(id);
+            }
+            public IAnimationLayerState FindState(string id, out int stateIndex)
+            {
+                stateIndex = -1;
+                if (instance == null) return default;
+                return instance.FindState(id, out stateIndex);
+            }
+            public IAnimationLayerState FindState(string id)
+            {
+                if (instance == null) return default; 
+                return instance.FindState(id);
             }
 
             public void IteratePlayers(IterateAnimationPlayerDelegate del)
@@ -3441,6 +3550,52 @@ namespace Swole
             {
                 if (instance == null) return null;
                 return instance.GetActiveTransformHierarchy();
+            }
+
+            public WeightedAvatarMask AvatarMask
+            {
+                get 
+                { 
+                    if (instance == null) return null;
+                    return instance.AvatarMask;
+                }
+                set
+                {
+                    if (instance == null) return;
+                    instance.AvatarMask = value;
+                }
+            }
+
+            public bool InvertAvatarMask
+            {
+                get
+                {
+                    if (instance == null) return false;
+                    return instance.InvertAvatarMask;
+                }
+                set
+                {
+                    if (instance == null) return;
+                    instance.InvertAvatarMask = value;
+                }
+            }
+
+            public void SetAvatarMask(WeightedAvatarMask mask, bool invertMask)
+            {
+                if (instance == null) return; 
+                instance.SetAvatarMask(mask, invertMask); 
+            }
+
+            public void ReinitializeController(int controllerIndex)
+            {
+                if (instance == null) return;
+                instance.ReinitializeController(controllerIndex); 
+            }
+
+            public void ReinitializeController(IAnimationMotionController controller)
+            {
+                if (instance == null) return;
+                instance.ReinitializeController(controller);
             }
 
             #endregion
@@ -3545,6 +3700,34 @@ namespace Swole
                 }
             }
 
+            public IBlendTree2D[] BlendTrees2D
+            {
+                get
+                {
+                    if (IsDestroyed) return null;
+                    return instance.BlendTrees2D;
+                }
+                set
+                {
+                    if (IsDestroyed) return;
+                    instance.BlendTrees2D = value;
+                }
+            }
+
+            public IMotionComposite[] MotionComposites
+            {
+                get
+                {
+                    if (IsDestroyed) return null;
+                    return instance.MotionComposites;
+                }
+                set
+                {
+                    if (IsDestroyed) return;
+                    instance.MotionComposites = value;
+                }
+            }
+
             public IAnimationLayer[] Layers
             {
                 get
@@ -3628,23 +3811,23 @@ namespace Swole
              
         }
         
-        public struct AnimationStateMachine : IAnimationStateMachine
+        public struct AnimationLayerState : IAnimationLayerState
         {
 
-            public IAnimationStateMachine instance;
+            public IAnimationLayerState instance;
             public object Instance => instance;
 
-            public AnimationStateMachine(IAnimationStateMachine instance)
+            public AnimationLayerState(IAnimationLayerState instance)
             {
                 this.instance = instance;
             }
 
-            public static bool operator ==(AnimationStateMachine lhs, object rhs)
+            public static bool operator ==(AnimationLayerState lhs, object rhs)
             {
-                if (rhs is AnimationStateMachine ts) return lhs.instance == ts.instance;
+                if (rhs is AnimationLayerState ts) return lhs.instance == ts.instance;
                 return lhs.instance == rhs;
             }
-            public static bool operator !=(AnimationStateMachine lhs, object rhs) => !(lhs == rhs);
+            public static bool operator !=(AnimationLayerState lhs, object rhs) => !(lhs == rhs);
 
             public override bool Equals(object obj)
             {
@@ -3655,7 +3838,7 @@ namespace Swole
                 return instance == null ? base.GetHashCode() : instance.GetHashCode();
             }
 
-            #region IAnimationStateMachine
+            #region IAnimationLayerState
 
             public string Name
             {
@@ -3713,11 +3896,17 @@ namespace Swole
                 }
             }
 
+            public Transition ActiveTransition => instance == null ? null : instance.ActiveTransition; 
+
             public int TransitionTarget => instance == null ? -1 : instance.TransitionTarget;
 
             public float TransitionTime => instance == null ? 0 : instance.TransitionTime;
 
             public float TransitionTimeLeft => instance == null ? 0 : instance.TransitionTimeLeft;
+
+            public float TransitionProgress => instance == null ? 0 : instance.TransitionProgress;
+
+            public bool IsTransitioning => instance == null ? false : instance.IsTransitioning;
 
             public bool IsActive()
             {
@@ -3743,7 +3932,7 @@ namespace Swole
                 return instance.GetTime(addTime);
             }
 
-            public float GetNormalizedTime(float addTime = 0)
+            public float GetNormalizedTime(float addTime = 0) 
             {
                 if (instance == null) return 0;
                 return instance.GetNormalizedTime(addTime);
@@ -3767,6 +3956,12 @@ namespace Swole
                 return instance.GetEstimatedDuration();
             }
 
+            public void Reset()
+            {
+                if (instance == null) return;
+                instance.Reset();
+            }
+
             public void RestartAnims()
             {
                 if (instance == null) return;
@@ -3783,6 +3978,12 @@ namespace Swole
             {
                 if (instance == null) return;
                 instance.ResetTransition();
+            }
+
+            public void CompletedTransition()
+            {
+                if (instance == null) return;
+                instance.CompletedTransition(); 
             }
 
             #endregion
@@ -3845,6 +4046,9 @@ namespace Swole
 
             public IAnimationMotionController Parent => instance == null ? null : instance.Parent;
 
+            public IAnimationLayer Layer => instance == null ? null : instance.Layer;
+            public bool IsInitialized => instance == null ? false : instance.IsInitialized;
+
             public float BaseSpeed
             {
                 get
@@ -3874,16 +4078,22 @@ namespace Swole
 
             public bool HasChildControllers => instance == null ? false : instance.HasChildControllers;
 
-            public void Initialize(IAnimationLayer layer, IAnimationMotionController parent = null)
+            public void Initialize(IAnimationLayer layer, List<AvatarMaskUsage> masks, IAnimationMotionController parent = null)
             {
                 if (instance == null) return;
-                instance.Initialize(layer, parent);
+                instance.Initialize(layer, masks, parent);
             }
 
-            public float GetSpeed(IAnimator animator)
+            public void Reset(IAnimationLayer layer)
+            {
+                if (instance == null) return;
+                instance.Reset(layer); 
+            }
+             
+            public float GetSpeed(IAnimationLayer layer)
             {
                 if (instance == null) return 0;
-                return instance.GetSpeed(animator);
+                return instance.GetSpeed(layer);
             }
 
             public AnimationLoopMode GetLoopMode(IAnimationLayer layer)
@@ -3910,6 +4120,18 @@ namespace Swole
                 return instance.GetWeight();
             }
 
+            public void SyncWeight(IAnimationLayer layer)
+            {
+                if (instance == null) return;
+                instance.SyncWeight(layer); 
+            }
+
+            public float GetBaseWeight()
+            {
+                if (instance == null) return default;
+                return instance.GetBaseWeight();
+            }
+
             public float GetDuration(IAnimationLayer layer)
             {
                 if (instance == null) return default;
@@ -3920,6 +4142,18 @@ namespace Swole
             {
                 if (instance == null) return default;
                 return instance.GetScaledDuration(layer);
+            }
+
+            public float GetMaxDuration(IAnimationLayer layer)
+            {
+                if (instance == null) return default;
+                return instance.GetMaxDuration(layer);
+            }
+
+            public float GetMaxScaledDuration(IAnimationLayer layer)
+            {
+                if (instance == null) return default;
+                return instance.GetMaxScaledDuration(layer); 
             }
 
             public float GetTime(IAnimationLayer layer, float addTime = 0)
@@ -3934,16 +4168,16 @@ namespace Swole
                 return instance.GetNormalizedTime(layer, addTime);
             }
 
-            public void SetTime(IAnimationLayer layer, float time)
+            public void SetTime(IAnimationLayer layer, float time, bool resetFlags = true)
             {
                 if (instance == null) return;
-                instance.SetTime(layer, time);
+                instance.SetTime(layer, time, resetFlags);
             }
 
-            public void SetNormalizedTime(IAnimationLayer layer, float normalizedTime)
+            public void SetNormalizedTime(IAnimationLayer layer, float normalizedTime, bool resetFlags = true)
             {
                 if (instance == null) return;
-                instance.SetNormalizedTime(layer, normalizedTime);
+                instance.SetNormalizedTime(layer, normalizedTime, resetFlags);
             }
 
             public bool HasAnimationPlayer(IAnimationLayer layer)
@@ -3952,22 +4186,21 @@ namespace Swole
                 return instance.HasAnimationPlayer(layer);
             }
 
-            public void GetChildIndexIdentifiers(List<MotionControllerIdentifier> identifiers, bool onlyAddIfNotPresent = true)
+            public void GetChildIndices(List<int> identifiers, bool onlyAddIfNotPresent = true)
             {
                 if (instance == null) return;
-                instance.GetChildIndexIdentifiers(identifiers, onlyAddIfNotPresent);
-            }
-
-            public void RemapChildIndices(Dictionary<MotionControllerIdentifier, int> remapper, bool invalidateNonRemappedIndices = false)
-            {
-                if (instance == null) return;
-                instance.RemapChildIndices(remapper, invalidateNonRemappedIndices);
+                instance.GetChildIndices(identifiers, onlyAddIfNotPresent);
             }
 
             public void RemapChildIndices(Dictionary<int, int> remapper, bool invalidateNonRemappedIndices = false)
             {
                 if (instance == null) return;
                 instance.RemapChildIndices(remapper, invalidateNonRemappedIndices);
+            }
+            public void RemapChildIndices(Dictionary<int, int> remapper, int minIndex, bool invalidateNonRemappedIndices = false)
+            {
+                if (instance == null) return;
+                instance.RemapChildIndices(remapper, minIndex, invalidateNonRemappedIndices); 
             }
 
             public void GetParameterIndices(IAnimationLayer layer, List<int> indices)
@@ -3982,6 +4215,19 @@ namespace Swole
                 instance.RemapParameterIndices(layer, remapper, invalidateNonRemappedIndices);
             }
 
+            public float GetBiasedParameterValue(IAnimationLayer layer, int parameterIndex, float defaultValue, bool updateParameter)
+            {
+                if (instance == null) return defaultValue;
+                return instance.GetBiasedParameterValue(layer, parameterIndex, defaultValue, updateParameter);
+            }
+            public float GetBiasedParameterValue(IAnimationLayer layer, int parameterIndex, float defaultValue, bool updateParameter, out bool appliedBias)
+            {
+                appliedBias = false;
+                if (instance == null) return defaultValue;
+
+                return instance.GetBiasedParameterValue(layer, parameterIndex, defaultValue, updateParameter, out appliedBias);  
+            }
+            
             public bool HasDerivativeHierarchyOf(IAnimationLayer layer, IAnimationMotionController other)
             {
                 if (instance == null) return default;
@@ -3992,6 +4238,24 @@ namespace Swole
             {
                 if (instance == null) return default;
                 return instance.GetLongestHierarchyIndex(layer);
+            }
+
+            public int GetChildCount()
+            {
+                if (instance == null) return 0;
+                return instance.GetChildCount();
+            }
+
+            public int GetChildIndex(int childIndex)
+            {
+                if (instance == null) return -1;
+                return instance.GetChildIndex(childIndex);
+            }
+
+            public void SetChildIndex(int childIndex, int controllerIndex)
+            {
+                if (instance == null) return;
+                instance.SetChildIndex(childIndex, controllerIndex); 
             }
 
             #endregion
@@ -4031,6 +4295,27 @@ namespace Swole
                 {
                     if (instance == null) return default;
                     return instance.AnimationPlayer;
+                }
+            }
+
+            public bool HasParent => instance == null ? false : instance.HasParent;
+
+            public WeightedAvatarMask AvatarMask 
+            { 
+                get => instance == null ? null : instance.AvatarMask;
+                set
+                {
+                    if (instance == null) return;
+                    instance.AvatarMask = value;
+                }
+            }
+            public bool InvertAvatarMask 
+            { 
+                get => instance == null ? false : instance.InvertAvatarMask;
+                set
+                {
+                    if (instance == null) return;
+                    instance.InvertAvatarMask = value;
                 }
             }
 
@@ -4104,6 +4389,8 @@ namespace Swole
             }
 
             #region IAnimationPlayer
+
+            public IAnimationLayer Layer => instance == null ? null : instance.Layer;
 
             public IRuntimeEnvironment EventRuntimeEnvironment
             {
@@ -4203,6 +4490,39 @@ namespace Swole
                     instance.Time = value;
                 }
             }
+            public void SetTime(float time, bool resetFlags = true)
+            {
+                if (instance == null) return;
+                instance.SetTime(time, resetFlags);
+            }
+            
+            public bool OverrideTime
+            {
+                get
+                {
+                    if (instance == null) return default;
+                    return instance.OverrideTime; 
+                }
+                set
+                {
+                    if (instance == null) return;
+                    instance.OverrideTime = value;
+                }
+            }
+
+            public float TimeOverride
+            {
+                get
+                {
+                    if (instance == null) return default;
+                    return instance.TimeOverride;
+                }
+                set
+                {
+                    if (instance == null) return;
+                    instance.TimeOverride = value;
+                }
+            }
 
             public float GetLoopedTime(float time, bool canLoop = true)
             {
@@ -4293,6 +4613,36 @@ namespace Swole
             {
                 if (instance == null) return;
                 instance.ResetLoop(); 
+            }
+
+            public WeightedAvatarMaskComposite GetInvertedMask(WeightedAvatarMaskComposite mask)
+            {
+                if (instance == null) return mask;
+                return instance.GetInvertedMask(mask);
+            }
+
+            public void SetTopAvatarMask(WeightedAvatarMask mask, bool invertMask)
+            {
+                if (instance == null) return;
+                instance.SetTopAvatarMask(mask, invertMask);
+            }
+
+            public void SetTopAvatarMask(WeightedAvatarMaskComposite mask, bool invertMask)
+            {
+                if (instance == null) return;
+                instance.SetTopAvatarMask(mask, invertMask);
+            }
+
+            public void SetAvatarMask(WeightedAvatarMask mask, bool invertMask)
+            {
+                if (instance == null) return;
+                instance.SetAvatarMask(mask, invertMask);
+            }
+
+            public void SetAvatarMask(WeightedAvatarMaskComposite mask, bool invertMask)
+            {
+                if (instance == null) return;
+                instance.SetAvatarMask(mask, invertMask);
             }
 
             #endregion

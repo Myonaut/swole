@@ -169,6 +169,8 @@ namespace Swole.API.Unity
 
         public override void OnFixedUpdate() {}
 
+        public override void OnUpdate() { }
+
         public override void OnLateUpdate()
         {
             bool removeNull = false;
@@ -184,8 +186,6 @@ namespace Swole.API.Unity
             }
             if (removeNull) transforms.RemoveAll(i => i == null || i.transformToCopy == null);
         }
-
-        public override void OnUpdate() {} 
 
         protected List<ProxyTransform> transforms = new List<ProxyTransform>();
 

@@ -96,7 +96,7 @@ namespace Swole.Unity.InputSystem
                     ""name"": ""Jump"",
                     ""type"": ""Button"",
                     ""id"": ""8fc75f53-e01c-43d5-8ca4-dc0ade1f34f2"",
-                    ""expectedControlType"": ""Button"",
+                    ""expectedControlType"": """",
                     ""processors"": """",
                     ""interactions"": """",
                     ""initialStateCheck"": false
@@ -106,6 +106,24 @@ namespace Swole.Unity.InputSystem
                     ""type"": ""Button"",
                     ""id"": ""7c40ff31-16d1-47b8-8084-27d23f8c8d24"",
                     ""expectedControlType"": ""Button"",
+                    ""processors"": """",
+                    ""interactions"": """",
+                    ""initialStateCheck"": false
+                },
+                {
+                    ""name"": ""Roll"",
+                    ""type"": ""Button"",
+                    ""id"": ""0bf7aaec-6a66-42e1-b441-581878fe4c7a"",
+                    ""expectedControlType"": """",
+                    ""processors"": """",
+                    ""interactions"": """",
+                    ""initialStateCheck"": false
+                },
+                {
+                    ""name"": ""Sprint"",
+                    ""type"": ""Button"",
+                    ""id"": ""7f8df1f6-ee0a-4ec3-9540-57f3a9cf8e0d"",
+                    ""expectedControlType"": """",
                     ""processors"": """",
                     ""interactions"": """",
                     ""initialStateCheck"": false
@@ -232,6 +250,50 @@ namespace Swole.Unity.InputSystem
                     ""action"": ""Pause"",
                     ""isComposite"": false,
                     ""isPartOfComposite"": false
+                },
+                {
+                    ""name"": """",
+                    ""id"": ""9dcedcfc-765a-4875-bfb9-47cbd6aa2227"",
+                    ""path"": ""<Keyboard>/leftAlt"",
+                    ""interactions"": """",
+                    ""processors"": """",
+                    ""groups"": "";Keyboard"",
+                    ""action"": ""Roll"",
+                    ""isComposite"": false,
+                    ""isPartOfComposite"": false
+                },
+                {
+                    ""name"": """",
+                    ""id"": ""88021601-38bf-4a0d-9c8f-48af3d0a2da8"",
+                    ""path"": ""<Gamepad>/rightShoulder"",
+                    ""interactions"": """",
+                    ""processors"": """",
+                    ""groups"": "";Gamepad"",
+                    ""action"": ""Roll"",
+                    ""isComposite"": false,
+                    ""isPartOfComposite"": false
+                },
+                {
+                    ""name"": """",
+                    ""id"": ""87e19187-54c8-464d-b8f4-c5a615e7500c"",
+                    ""path"": ""<Keyboard>/leftShift"",
+                    ""interactions"": """",
+                    ""processors"": """",
+                    ""groups"": "";Keyboard"",
+                    ""action"": ""Sprint"",
+                    ""isComposite"": false,
+                    ""isPartOfComposite"": false
+                },
+                {
+                    ""name"": """",
+                    ""id"": ""416ab9be-5b30-49a6-81f8-ace815eabeb4"",
+                    ""path"": ""<Gamepad>/leftShoulder"",
+                    ""interactions"": """",
+                    ""processors"": """",
+                    ""groups"": "";Gamepad"",
+                    ""action"": ""Sprint"",
+                    ""isComposite"": false,
+                    ""isPartOfComposite"": false
                 }
             ]
         },
@@ -243,7 +305,7 @@ namespace Swole.Unity.InputSystem
                     ""name"": ""AbilityQ"",
                     ""type"": ""Button"",
                     ""id"": ""6b4a9c8a-c2ce-43b1-8cb9-ce913250eb74"",
-                    ""expectedControlType"": ""Button"",
+                    ""expectedControlType"": """",
                     ""processors"": """",
                     ""interactions"": """",
                     ""initialStateCheck"": false
@@ -366,6 +428,129 @@ namespace Swole.Unity.InputSystem
                     ""isPartOfComposite"": false
                 }
             ]
+        },
+        {
+            ""name"": ""Driving"",
+            ""id"": ""8bce64ad-3b02-4fb9-8d42-062180bf9c3a"",
+            ""actions"": [
+                {
+                    ""name"": ""ThrottleForward"",
+                    ""type"": ""Value"",
+                    ""id"": ""caf3162e-6c0c-40c7-8ff8-0c0114345f9d"",
+                    ""expectedControlType"": ""Axis"",
+                    ""processors"": """",
+                    ""interactions"": """",
+                    ""initialStateCheck"": true
+                },
+                {
+                    ""name"": ""BrakeThrottleReverse"",
+                    ""type"": ""Value"",
+                    ""id"": ""544fe724-1dc4-4bc1-a685-ad936ae1c63b"",
+                    ""expectedControlType"": ""Axis"",
+                    ""processors"": """",
+                    ""interactions"": """",
+                    ""initialStateCheck"": true
+                },
+                {
+                    ""name"": ""SteeringAxis"",
+                    ""type"": ""Value"",
+                    ""id"": ""0d523890-f31e-4393-80fd-4be1f5cc31d6"",
+                    ""expectedControlType"": ""Axis"",
+                    ""processors"": """",
+                    ""interactions"": """",
+                    ""initialStateCheck"": true
+                }
+            ],
+            ""bindings"": [
+                {
+                    ""name"": """",
+                    ""id"": ""7a2dc7be-4180-4c62-a847-14cdfb753cf0"",
+                    ""path"": ""<Gamepad>/rightTrigger"",
+                    ""interactions"": """",
+                    ""processors"": """",
+                    ""groups"": "";Gamepad"",
+                    ""action"": ""ThrottleForward"",
+                    ""isComposite"": false,
+                    ""isPartOfComposite"": false
+                },
+                {
+                    ""name"": """",
+                    ""id"": ""e8f48f25-128b-41f2-a657-a4be4bb135e8"",
+                    ""path"": ""<Keyboard>/w"",
+                    ""interactions"": """",
+                    ""processors"": """",
+                    ""groups"": "";Keyboard"",
+                    ""action"": ""ThrottleForward"",
+                    ""isComposite"": false,
+                    ""isPartOfComposite"": false
+                },
+                {
+                    ""name"": """",
+                    ""id"": ""970cb6a1-0613-432c-8ecd-d223c6b17a03"",
+                    ""path"": ""<Gamepad>/leftTrigger"",
+                    ""interactions"": """",
+                    ""processors"": """",
+                    ""groups"": "";Gamepad"",
+                    ""action"": ""BrakeThrottleReverse"",
+                    ""isComposite"": false,
+                    ""isPartOfComposite"": false
+                },
+                {
+                    ""name"": """",
+                    ""id"": ""bd0df2b1-97a9-41f3-b687-b29b4b55074e"",
+                    ""path"": ""<Keyboard>/s"",
+                    ""interactions"": """",
+                    ""processors"": """",
+                    ""groups"": "";Keyboard"",
+                    ""action"": ""BrakeThrottleReverse"",
+                    ""isComposite"": false,
+                    ""isPartOfComposite"": false
+                },
+                {
+                    ""name"": """",
+                    ""id"": ""e334bb20-02db-40d2-bf23-471b2a5363ff"",
+                    ""path"": ""<Gamepad>/leftStick/x"",
+                    ""interactions"": """",
+                    ""processors"": """",
+                    ""groups"": "";Gamepad"",
+                    ""action"": ""SteeringAxis"",
+                    ""isComposite"": false,
+                    ""isPartOfComposite"": false
+                },
+                {
+                    ""name"": ""1D Axis"",
+                    ""id"": ""11856286-9f8f-49d3-b548-0527ecd51df3"",
+                    ""path"": ""1DAxis"",
+                    ""interactions"": """",
+                    ""processors"": """",
+                    ""groups"": """",
+                    ""action"": ""SteeringAxis"",
+                    ""isComposite"": true,
+                    ""isPartOfComposite"": false
+                },
+                {
+                    ""name"": ""Negative"",
+                    ""id"": ""8853d8af-9a2c-4bde-89d9-621d400e5d27"",
+                    ""path"": ""<Keyboard>/a"",
+                    ""interactions"": """",
+                    ""processors"": """",
+                    ""groups"": "";Keyboard"",
+                    ""action"": ""SteeringAxis"",
+                    ""isComposite"": false,
+                    ""isPartOfComposite"": true
+                },
+                {
+                    ""name"": ""Positive"",
+                    ""id"": ""be7c0318-1499-405f-b969-649da86151f8"",
+                    ""path"": ""<Keyboard>/d"",
+                    ""interactions"": """",
+                    ""processors"": """",
+                    ""groups"": "";Keyboard"",
+                    ""action"": ""SteeringAxis"",
+                    ""isComposite"": false,
+                    ""isPartOfComposite"": true
+                }
+            ]
         }
     ],
     ""controlSchemes"": [
@@ -404,18 +589,26 @@ namespace Swole.Unity.InputSystem
             m_Standard_CursorInput = m_Standard.FindAction("CursorInput", throwIfNotFound: true);
             m_Standard_Jump = m_Standard.FindAction("Jump", throwIfNotFound: true);
             m_Standard_Pause = m_Standard.FindAction("Pause", throwIfNotFound: true);
+            m_Standard_Roll = m_Standard.FindAction("Roll", throwIfNotFound: true);
+            m_Standard_Sprint = m_Standard.FindAction("Sprint", throwIfNotFound: true);
             // MOBA
             m_MOBA = asset.FindActionMap("MOBA", throwIfNotFound: true);
             m_MOBA_AbilityQ = m_MOBA.FindAction("AbilityQ", throwIfNotFound: true);
             m_MOBA_AbilityW = m_MOBA.FindAction("AbilityW", throwIfNotFound: true);
             m_MOBA_AbilityE = m_MOBA.FindAction("AbilityE", throwIfNotFound: true);
             m_MOBA_AbilityR = m_MOBA.FindAction("AbilityR", throwIfNotFound: true);
+            // Driving
+            m_Driving = asset.FindActionMap("Driving", throwIfNotFound: true);
+            m_Driving_ThrottleForward = m_Driving.FindAction("ThrottleForward", throwIfNotFound: true);
+            m_Driving_BrakeThrottleReverse = m_Driving.FindAction("BrakeThrottleReverse", throwIfNotFound: true);
+            m_Driving_SteeringAxis = m_Driving.FindAction("SteeringAxis", throwIfNotFound: true);
         }
 
         ~@DefaultSwoleControls()
         {
             UnityEngine.Debug.Assert(!m_Standard.enabled, "This will cause a leak and performance issues, DefaultSwoleControls.Standard.Disable() has not been called.");
             UnityEngine.Debug.Assert(!m_MOBA.enabled, "This will cause a leak and performance issues, DefaultSwoleControls.MOBA.Disable() has not been called.");
+            UnityEngine.Debug.Assert(!m_Driving.enabled, "This will cause a leak and performance issues, DefaultSwoleControls.Driving.Disable() has not been called.");
         }
 
         public void Dispose()
@@ -486,6 +679,8 @@ namespace Swole.Unity.InputSystem
         private readonly InputAction m_Standard_CursorInput;
         private readonly InputAction m_Standard_Jump;
         private readonly InputAction m_Standard_Pause;
+        private readonly InputAction m_Standard_Roll;
+        private readonly InputAction m_Standard_Sprint;
         public struct StandardActions
         {
             private @DefaultSwoleControls m_Wrapper;
@@ -499,6 +694,8 @@ namespace Swole.Unity.InputSystem
             public InputAction @CursorInput => m_Wrapper.m_Standard_CursorInput;
             public InputAction @Jump => m_Wrapper.m_Standard_Jump;
             public InputAction @Pause => m_Wrapper.m_Standard_Pause;
+            public InputAction @Roll => m_Wrapper.m_Standard_Roll;
+            public InputAction @Sprint => m_Wrapper.m_Standard_Sprint;
             public InputActionMap Get() { return m_Wrapper.m_Standard; }
             public void Enable() { Get().Enable(); }
             public void Disable() { Get().Disable(); }
@@ -535,6 +732,12 @@ namespace Swole.Unity.InputSystem
                 @Pause.started += instance.OnPause;
                 @Pause.performed += instance.OnPause;
                 @Pause.canceled += instance.OnPause;
+                @Roll.started += instance.OnRoll;
+                @Roll.performed += instance.OnRoll;
+                @Roll.canceled += instance.OnRoll;
+                @Sprint.started += instance.OnSprint;
+                @Sprint.performed += instance.OnSprint;
+                @Sprint.canceled += instance.OnSprint;
             }
 
             private void UnregisterCallbacks(IStandardActions instance)
@@ -566,6 +769,12 @@ namespace Swole.Unity.InputSystem
                 @Pause.started -= instance.OnPause;
                 @Pause.performed -= instance.OnPause;
                 @Pause.canceled -= instance.OnPause;
+                @Roll.started -= instance.OnRoll;
+                @Roll.performed -= instance.OnRoll;
+                @Roll.canceled -= instance.OnRoll;
+                @Sprint.started -= instance.OnSprint;
+                @Sprint.performed -= instance.OnSprint;
+                @Sprint.canceled -= instance.OnSprint;
             }
 
             public void RemoveCallbacks(IStandardActions instance)
@@ -653,6 +862,68 @@ namespace Swole.Unity.InputSystem
             }
         }
         public MOBAActions @MOBA => new MOBAActions(this);
+
+        // Driving
+        private readonly InputActionMap m_Driving;
+        private List<IDrivingActions> m_DrivingActionsCallbackInterfaces = new List<IDrivingActions>();
+        private readonly InputAction m_Driving_ThrottleForward;
+        private readonly InputAction m_Driving_BrakeThrottleReverse;
+        private readonly InputAction m_Driving_SteeringAxis;
+        public struct DrivingActions
+        {
+            private @DefaultSwoleControls m_Wrapper;
+            public DrivingActions(@DefaultSwoleControls wrapper) { m_Wrapper = wrapper; }
+            public InputAction @ThrottleForward => m_Wrapper.m_Driving_ThrottleForward;
+            public InputAction @BrakeThrottleReverse => m_Wrapper.m_Driving_BrakeThrottleReverse;
+            public InputAction @SteeringAxis => m_Wrapper.m_Driving_SteeringAxis;
+            public InputActionMap Get() { return m_Wrapper.m_Driving; }
+            public void Enable() { Get().Enable(); }
+            public void Disable() { Get().Disable(); }
+            public bool enabled => Get().enabled;
+            public static implicit operator InputActionMap(DrivingActions set) { return set.Get(); }
+            public void AddCallbacks(IDrivingActions instance)
+            {
+                if (instance == null || m_Wrapper.m_DrivingActionsCallbackInterfaces.Contains(instance)) return;
+                m_Wrapper.m_DrivingActionsCallbackInterfaces.Add(instance);
+                @ThrottleForward.started += instance.OnThrottleForward;
+                @ThrottleForward.performed += instance.OnThrottleForward;
+                @ThrottleForward.canceled += instance.OnThrottleForward;
+                @BrakeThrottleReverse.started += instance.OnBrakeThrottleReverse;
+                @BrakeThrottleReverse.performed += instance.OnBrakeThrottleReverse;
+                @BrakeThrottleReverse.canceled += instance.OnBrakeThrottleReverse;
+                @SteeringAxis.started += instance.OnSteeringAxis;
+                @SteeringAxis.performed += instance.OnSteeringAxis;
+                @SteeringAxis.canceled += instance.OnSteeringAxis;
+            }
+
+            private void UnregisterCallbacks(IDrivingActions instance)
+            {
+                @ThrottleForward.started -= instance.OnThrottleForward;
+                @ThrottleForward.performed -= instance.OnThrottleForward;
+                @ThrottleForward.canceled -= instance.OnThrottleForward;
+                @BrakeThrottleReverse.started -= instance.OnBrakeThrottleReverse;
+                @BrakeThrottleReverse.performed -= instance.OnBrakeThrottleReverse;
+                @BrakeThrottleReverse.canceled -= instance.OnBrakeThrottleReverse;
+                @SteeringAxis.started -= instance.OnSteeringAxis;
+                @SteeringAxis.performed -= instance.OnSteeringAxis;
+                @SteeringAxis.canceled -= instance.OnSteeringAxis;
+            }
+
+            public void RemoveCallbacks(IDrivingActions instance)
+            {
+                if (m_Wrapper.m_DrivingActionsCallbackInterfaces.Remove(instance))
+                    UnregisterCallbacks(instance);
+            }
+
+            public void SetCallbacks(IDrivingActions instance)
+            {
+                foreach (var item in m_Wrapper.m_DrivingActionsCallbackInterfaces)
+                    UnregisterCallbacks(item);
+                m_Wrapper.m_DrivingActionsCallbackInterfaces.Clear();
+                AddCallbacks(instance);
+            }
+        }
+        public DrivingActions @Driving => new DrivingActions(this);
         private int m_KeyboardSchemeIndex = -1;
         public InputControlScheme KeyboardScheme
         {
@@ -682,6 +953,8 @@ namespace Swole.Unity.InputSystem
             void OnCursorInput(InputAction.CallbackContext context);
             void OnJump(InputAction.CallbackContext context);
             void OnPause(InputAction.CallbackContext context);
+            void OnRoll(InputAction.CallbackContext context);
+            void OnSprint(InputAction.CallbackContext context);
         }
         public interface IMOBAActions
         {
@@ -689,6 +962,12 @@ namespace Swole.Unity.InputSystem
             void OnAbilityW(InputAction.CallbackContext context);
             void OnAbilityE(InputAction.CallbackContext context);
             void OnAbilityR(InputAction.CallbackContext context);
+        }
+        public interface IDrivingActions
+        {
+            void OnThrottleForward(InputAction.CallbackContext context);
+            void OnBrakeThrottleReverse(InputAction.CallbackContext context);
+            void OnSteeringAxis(InputAction.CallbackContext context);
         }
     }
 }

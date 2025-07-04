@@ -121,6 +121,9 @@ namespace Swole.API.Unity
         public virtual void SetReflectionCamera(Camera camera)
         {
             reflectionCamera = camera;
+            reflectionCamera.enabled = true;
+            reflectionCamera.gameObject.SetActive(true);
+
             reflectionCamera.tag = _ReflectionTag;
             reflectionCameraTransform = camera == null ? null : camera.transform; 
 
@@ -147,6 +150,14 @@ namespace Swole.API.Unity
 
             camera.depth = -10;
 
+            if (reflectionTexture == null) reflectionTexture = RenderTexture.GetTemporary(new RenderTextureDescriptor()
+            {
+                 autoGenerateMips = false,
+                  colorFormat = RenderTextureFormat.ARGB32,
+                   width = TargetResolutionWidth,
+                   height = TargetResolutionHeight
+                    
+            });
             reflectionCamera.targetTexture = reflectionTexture;
         }
 
@@ -183,7 +194,7 @@ namespace Swole.API.Unity
             if (reflectionTexture.IsCreated()) reflectionTexture.Release(); 
             lastResolutionWidth = reflectionTexture.width = TargetResolutionWidth;
             lastResolutionHeight = reflectionTexture.height = TargetResolutionHeight; 
-            reflectionTexture.Create();
+            reflectionTexture.Create(); 
         }
 
         protected virtual void Start()

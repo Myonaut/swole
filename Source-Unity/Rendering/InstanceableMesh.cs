@@ -91,6 +91,8 @@ namespace Swole
         protected InstancedMesh instance;
         public InstancedMesh Instance => instance;
         public int InstanceSlot => instance == null ? -1 : instance.Slot;
+        public bool HasInstance => instance != null && instance.Slot >= 0;
+        public virtual bool IsInitialized => HasInstance;
 
         protected bool visible;
         public bool Visible
@@ -222,6 +224,14 @@ namespace Swole
     public abstract class InstanceableSkinnedMeshBase : InstanceableMeshBase
     {
 
+        [SerializeField]
+        protected CustomAnimator animator;
+        public virtual CustomAnimator Animator
+        {
+            get => animator;
+            set => animator = value;
+        }
+
         protected struct BlendShapeSync
         {
             public int listenerIndex;
@@ -260,6 +270,8 @@ namespace Swole
         {
             base.OnAwake();
             SetupSkinnedMeshSyncs();
+
+            if (animator == null) animator = gameObject.GetComponentInParent<CustomAnimator>(true); 
         }
 
         internal readonly static Dictionary<string, InstanceBuffer<float4x4>> _skinningMatricesBuffers = new Dictionary<string, InstanceBuffer<float4x4>>();
@@ -290,13 +302,14 @@ namespace Swole
                     } 
                     else if (!meshGroup.HasRuntimeData(bufferID))
                     {
+                        meshGroup.BindInstanceMaterialBuffer(matricesProperty, skinningMatricesBuffer);
 
                         string boneCountPropertyName = MeshData.BoneCountPropertyName;
                         for (int a = 0; a < meshGroup.MaterialCount; a++)
                         {
                             var material = meshGroup.GetMaterial(a);
-                            skinningMatricesBuffer.BindMaterialProperty(material, matricesProperty); 
-
+                            //skinningMatricesBuffer.BindMaterialProperty(material, matricesProperty); 
+                            
                             material.SetInteger(boneCountPropertyName, BoneCount);
                         }
 
@@ -473,13 +486,9 @@ namespace Swole
         {
             foreach (var buffer in instanceBuffersMO) while (buffer.InstanceCount < instancesMO.Count) buffer.Grow(2, 0);
         }
-        public int InstanceBufferCountMO => instanceBuffersMO.Count;
-        public IInstanceBuffer GetInstanceBufferMO(int index) => instanceBuffersMO[index];
-        public int CreateInstanceMaterialBufferMO<T>(string propertyName, int elementsPerInstance, int bufferPoolSize, out InstanceBuffer<T> buffer) where T : unmanaged => CreateInstanceMaterialBufferMO(propertyName, null, elementsPerInstance, bufferPoolSize, out buffer);
-        public int CreateInstanceMaterialBufferMO<T>(string propertyName, ICollection<int> materialSlots, int elementsPerInstance, int bufferPoolSize, out InstanceBuffer<T> buffer) where T : unmanaged
+        public int BindInstanceMaterialBufferMO(string propertyName, IInstanceBuffer buffer) => BindInstanceMaterialBufferMO(propertyName, null, buffer);
+        public int BindInstanceMaterialBufferMO(string propertyName, ICollection<int> materialSlots, IInstanceBuffer buffer)
         {
-            buffer = new InstanceBuffer<T>(propertyName, instancesMO.Count, elementsPerInstance, bufferPoolSize, ComputeBufferType.Structured, ComputeBufferMode.Dynamic);
-
             if (materialSlots == null)
             {
                 foreach (var material in materials)
@@ -495,9 +504,21 @@ namespace Swole
                 }
             }
 
-            int bufferIndex = instanceBuffersMO.Count;
-            instanceBuffersMO.Add(buffer);
+            int bufferIndex = instanceBuffersMO.IndexOf(buffer);
+            if (bufferIndex < 0)
+            {
+                bufferIndex = instanceBuffersMO.Count;
+                instanceBuffersMO.Add(buffer);
+            }
             return bufferIndex;
+        }
+        public int InstanceBufferCountMO => instanceBuffersMO.Count;  
+        public IInstanceBuffer GetInstanceBufferMO(int index) => instanceBuffersMO[index];
+        public int CreateInstanceMaterialBufferMO<T>(string propertyName, int elementsPerInstance, int bufferPoolSize, out InstanceBuffer<T> buffer) where T : unmanaged => CreateInstanceMaterialBufferMO(propertyName, null, elementsPerInstance, bufferPoolSize, out buffer);
+        public int CreateInstanceMaterialBufferMO<T>(string propertyName, ICollection<int> materialSlots, int elementsPerInstance, int bufferPoolSize, out InstanceBuffer<T> buffer) where T : unmanaged
+        {
+            buffer = new InstanceBuffer<T>(propertyName, instancesMO.Count, elementsPerInstance, bufferPoolSize, ComputeBufferType.Structured, ComputeBufferMode.Dynamic);
+            return BindInstanceMaterialBufferMO(propertyName, materialSlots, buffer);
         }
 
         public InstancedMeshMO NewInstanceMO(int subMesh,
@@ -540,13 +561,9 @@ namespace Swole
         {
             foreach (var buffer in instanceBuffersRL) while (buffer.InstanceCount < instancesRL.Count) buffer.Grow(2, 0);
         }
-        public int InstanceBufferCountRL => instanceBuffersRL.Count;
-        public IInstanceBuffer GetInstanceBufferRL(int index) => instanceBuffersRL[index];
-        public int CreateInstanceMaterialBufferRL<T>(string propertyName, int elementsPerInstance, int bufferPoolSize, out InstanceBuffer<T> buffer) where T : unmanaged => CreateInstanceMaterialBufferRL(propertyName, null, elementsPerInstance, bufferPoolSize, out buffer);
-        public int CreateInstanceMaterialBufferRL<T>(string propertyName, ICollection<int> materialSlots, int elementsPerInstance, int bufferPoolSize, out InstanceBuffer<T> buffer) where T : unmanaged
+        public int BindInstanceMaterialBufferRL(string propertyName, IInstanceBuffer buffer) => BindInstanceMaterialBufferRL(propertyName, null, buffer);
+        public int BindInstanceMaterialBufferRL(string propertyName, ICollection<int> materialSlots, IInstanceBuffer buffer)
         {
-            buffer = new InstanceBuffer<T>(propertyName, instancesRL.Count, elementsPerInstance, bufferPoolSize, ComputeBufferType.Structured, ComputeBufferMode.Dynamic);
-
             if (materialSlots == null)
             {
                 foreach (var material in materials)
@@ -562,9 +579,21 @@ namespace Swole
                 }
             }
 
-            int bufferIndex = instanceBuffersRL.Count;
-            instanceBuffersRL.Add(buffer);
+            int bufferIndex = instanceBuffersRL.IndexOf(buffer);
+            if (bufferIndex < 0)
+            {
+                bufferIndex = instanceBuffersRL.Count;
+                instanceBuffersRL.Add(buffer);
+            }
             return bufferIndex;
+        }
+        public int InstanceBufferCountRL => instanceBuffersRL.Count;
+        public IInstanceBuffer GetInstanceBufferRL(int index) => instanceBuffersRL[index];
+        public int CreateInstanceMaterialBufferRL<T>(string propertyName, int elementsPerInstance, int bufferPoolSize, out InstanceBuffer<T> buffer) where T : unmanaged => CreateInstanceMaterialBufferRL(propertyName, null, elementsPerInstance, bufferPoolSize, out buffer);
+        public int CreateInstanceMaterialBufferRL<T>(string propertyName, ICollection<int> materialSlots, int elementsPerInstance, int bufferPoolSize, out InstanceBuffer<T> buffer) where T : unmanaged
+        {
+            buffer = new InstanceBuffer<T>(propertyName, instancesRL.Count, elementsPerInstance, bufferPoolSize, ComputeBufferType.Structured, ComputeBufferMode.Dynamic);
+            return BindInstanceMaterialBufferRL(propertyName, materialSlots, buffer);
         }
 
         public InstancedMeshRL NewInstanceRL(uint renderingLayerMask, int subMesh,
@@ -606,7 +635,32 @@ namespace Swole
         protected void EnsureInstanceBufferSizes()
         {
             foreach (var buffer in instanceBuffers) while (buffer.InstanceCount < instances.Count) buffer.Grow(2, 0); 
-            
+        }
+        public int BindInstanceMaterialBuffer(string propertyName, IInstanceBuffer buffer) => BindInstanceMaterialBuffer(propertyName, null, buffer);
+        public int BindInstanceMaterialBuffer(string propertyName, ICollection<int> materialSlots, IInstanceBuffer buffer)
+        {
+            if (materialSlots == null)
+            {
+                foreach (var material in materials)
+                {
+                    buffer.BindMaterialProperty(material, propertyName);
+                }
+            }
+            else
+            {
+                foreach (var slot in materialSlots)
+                {
+                    buffer.BindMaterialProperty(materials[slot], propertyName);
+                }
+            }
+
+            int bufferIndex = instanceBuffers.IndexOf(buffer);
+            if (bufferIndex < 0)
+            {
+                bufferIndex = instanceBuffers.Count;
+                instanceBuffers.Add(buffer);
+            }
+            return bufferIndex;
         }
         public int InstanceBufferCount => instanceBuffers.Count;
         public IInstanceBuffer GetInstanceBuffer(int index) => instanceBuffers[index];
@@ -614,25 +668,7 @@ namespace Swole
         public int CreateInstanceMaterialBuffer<T>(string propertyName, ICollection<int> materialSlots, int elementsPerInstance, int bufferPoolSize, out InstanceBuffer<T> buffer) where T : unmanaged
         {
             buffer = new InstanceBuffer<T>(propertyName, instances.Count, elementsPerInstance, bufferPoolSize, ComputeBufferType.Structured, ComputeBufferMode.SubUpdates);
-
-            if (materialSlots == null)
-            {
-                foreach(var material in materials)
-                {
-                    buffer.BindMaterialProperty(material, propertyName);
-                }
-            } 
-            else
-            {
-                foreach(var slot in materialSlots)
-                {
-                    buffer.BindMaterialProperty(materials[slot], propertyName);
-                }
-            }
-            
-            int bufferIndex = instanceBuffers.Count;
-            instanceBuffers.Add(buffer);
-            return bufferIndex;
+            return BindInstanceMaterialBuffer(propertyName, materialSlots, buffer);
         }
 
         public InstancedMesh NewInstance(int subMesh,
@@ -950,12 +986,15 @@ namespace Swole
 
         public InstanceBuffer(string name, int initialSize, int elementPerInstance, int bufferPoolSize, ComputeBufferType bufferType, ComputeBufferMode bufferMode)
         {
-            this.elementsPerInstance = elementPerInstance;
+            this.name = name;
+            this.elementsPerInstance = elementPerInstance; 
             this.bufferType = bufferType;
             this.bufferMode = bufferMode;
             bufferPool = new DynamicComputeBufferPool<T>(name, Mathf.Max(1, initialSize) * elementPerInstance, Mathf.Max(1, bufferPoolSize), bufferType, bufferMode);
             bufferPool.ListenForBufferSwap(OnBufferSwap);
         }
+         
+        public override string ToString() => $"InstanceBuffer<{typeof(T).Name}>::{name}";
 
         public void Dispose()
         {

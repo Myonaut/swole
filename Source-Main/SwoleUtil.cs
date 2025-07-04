@@ -5,6 +5,7 @@ using System.Reflection;
 using System.IO;
 using System.Threading;
 using System.Threading.Tasks;
+using System.Collections;
 
 namespace Swole
 {
@@ -469,11 +470,30 @@ namespace Swole
         public static readonly Regex rgEmailAddress = new Regex(@"^(?!\.)(""([^""\r\\]|\\[""\r\\])*""|" + @"([-a-z0-9!#$%&'*+/=?^_`{|}~]|(?<!\.)\.)*)(?<!\.)" + @"@[a-z0-9][\w\.-]*[a-z0-9]\.[a-z][a-z\.]*[a-z]$", RegexOptions.IgnoreCase);
         public static bool IsEmailAddress(this string str) => rgEmailAddress.IsMatch(str);
 
+        public static bool TrySplitPackageContentPath(this string path, out string packageStr, out string contentName)
+        {
+            packageStr = string.Empty;
+            contentName = path;
+
+            if (string.IsNullOrWhiteSpace(path)) return false;
+
+            int separator = path.LastIndexOf(Path.DirectorySeparatorChar);
+            if (separator < 0) separator = path.LastIndexOf(Path.DirectorySeparatorChar);
+
+            if (separator >= 0)
+            {
+                packageStr = packageStr.Substring(0, separator);
+                if (separator + 1 < contentName.Length) contentName = packageStr.Substring(separator + 1); 
+            }
+
+            return false;
+        }
+
         #endregion
 
         #region Generic Extensions
 
-        public static Array DeepClone(this Array array)
+        public static Array DeepClone(this Array array, HashSet<object> refList = null)
         {
 
             Array newArray = Array.CreateInstance(array.GetType().GetElementType(), array.Length);
@@ -483,11 +503,30 @@ namespace Swole
 
                 object val = array.GetValue(a);
 
-                if (val == null) continue;
+                if (val is Array array_)
+                {
+                    if (refList == null) refList = new HashSet<object>();
+                    if (!refList.Contains(array_)) // check for circular references
+                    {
+                        refList.Add(array_);
+                        val = array_.DeepClone(refList); 
+                    }
+                } 
+                else if (val is IList list_)
+                {
+                    if (refList == null) refList = new HashSet<object>();
+                    if (!refList.Contains(list_)) // check for circular references
+                    {
+                        refList.Add(list_);
+                        val = list_.DeepClone(refList);
+                    }
+                }
+                else if (val is ICloneable cloneable)  
+                { 
+                    val = cloneable.Clone(); 
+                }
 
-                if (val.GetType().IsAssignableFrom(typeof(ICloneable))) val = (val as ICloneable).Clone();
-
-                newArray.SetValue(val, a);
+                newArray.SetValue(val, a); 
 
             }
 
@@ -495,19 +534,43 @@ namespace Swole
 
         }
 
-        public static List<T> DeepClone<T>(this List<T> list)
+        public static IList DeepClone(this IList list, HashSet<object> refList = null)
         {
+            if (list == null) return null;
 
-            List<T> newList = new List<T>(list);
+            var type = list.GetType();
+            var genArgs = type.GetGenericArguments();
+            if (genArgs == null || genArgs.Length < 1) return list;
+
+            IList newList = genArgs[0].ListFromType();
 
             for (int a = 0; a < list.Count; a++)
             {
 
-                T val = list[a];
+                object val = newList[a];
 
-                if (val == null) continue;
-
-                if (typeof(ICloneable).IsAssignableFrom(val.GetType())) val = (T)(val as ICloneable).Clone();
+                if (val is Array array_)
+                {
+                    if (refList == null) refList = new HashSet<object>();
+                    if (!refList.Contains(array_)) // check for circular references
+                    {
+                        refList.Add(array_);
+                        val = array_.DeepClone(refList);
+                    }
+                }
+                else if (val is IList list_)
+                {
+                    if (refList == null) refList = new HashSet<object>();
+                    if (!refList.Contains(list_)) // check for circular references
+                    {
+                        refList.Add(list_);
+                        val = list_.DeepClone(refList);
+                    }
+                }
+                else if (val is ICloneable cloneable)
+                {
+                    val = cloneable.Clone();
+                }
 
                 newList[a] = val;
 
@@ -515,6 +578,14 @@ namespace Swole
 
             return newList;
 
+        }
+
+        public static IList ListFromType(this Type type)
+        {
+            var listType = typeof(List<>);
+            var constructedType = listType.MakeGenericType(type);
+
+            return (IList)Activator.CreateInstance(constructedType);
         }
 
         private static readonly HashSet<Type> NumericTypes = new HashSet<Type>
@@ -678,6 +749,8 @@ namespace Swole
         public static bool IsIdenticalPathIgnoreCase(this string path, string otherPath) => path.NormalizePathCaseInsensitive() == otherPath.NormalizePathCaseInsensitive();
 
         public static string NormalizeDirectorySeparators(this string path, bool useAltSeparatorChar = true) => path.Replace(useAltSeparatorChar ? Path.DirectorySeparatorChar : Path.AltDirectorySeparatorChar, useAltSeparatorChar ? Path.AltDirectorySeparatorChar : Path.DirectorySeparatorChar);
+        public static string ForceSetDirectorySeparators(this string path, string separator) => path.Replace(Path.DirectorySeparatorChar.ToString(), separator).Replace(Path.AltDirectorySeparatorChar.ToString(), separator);
+        public static string ConvertToDirectorySeparators(this string path, string originalSeparator, bool useAltSeparatorChar = true) => path.Replace(originalSeparator, (useAltSeparatorChar ? Path.AltDirectorySeparatorChar : Path.DirectorySeparatorChar).ToString());
 
         public static bool IsEmpty(this DirectoryInfo directory) => IsDirectoryEmpty(directory);
         public static bool IsDirectoryEmpty(string path) => IsDirectoryEmpty(new DirectoryInfo(path));

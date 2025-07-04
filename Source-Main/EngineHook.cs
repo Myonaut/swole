@@ -158,12 +158,27 @@ namespace Swole
         { 
             SingletonCallStack.ExecuteLate(); 
         }
+
+        /// <summary>
+        /// Executes the singleton pre-physics callstack.
+        /// </summary>
+        public virtual void PrePhysicsUpdate()
+        {
+            SingletonCallStack.ExecutePreFixed();
+        }
         /// <summary>
         /// Executes the singleton physics callstack.
         /// </summary>
         public virtual void PhysicsUpdate() 
         { 
             SingletonCallStack.ExecuteFixed(); 
+        }
+        /// <summary>
+        /// Executes the singleton post-physics callstack.
+        /// </summary>
+        public virtual void PostPhysicsUpdate()
+        {
+            SingletonCallStack.ExecutePostFixed();
         }
 
         #region RNG
@@ -569,7 +584,7 @@ namespace Swole
         {
             return null;
         }
-        public virtual IAnimationStateMachine CreateNewStateMachine(string name, int motionControllerIndex, Transition[] transitions = null)
+        public virtual IAnimationLayerState CreateNewLayerState(string name, int motionControllerIndex, Transition[] transitions = null)
         {
             return null;
         }

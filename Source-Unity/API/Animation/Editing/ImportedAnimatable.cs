@@ -3,6 +3,7 @@
 using System;
 using System.Collections;
 using System.Collections.Generic;
+using System.Reflection;
 
 using UnityEngine;
 
@@ -177,6 +178,8 @@ namespace Swole.API.Unity.Animation
             animatableProperties.Add(info);
         }
 
+        private static readonly List<object> _tempReferenceChain = new List<object>();
+        private static readonly List<CustomAnimator.PropertyMemberInfo> _tempInfoChain = new List<CustomAnimator.PropertyMemberInfo>();
         public void Initialize(AnimatableAsset asset)
         {
             AnimationEditor.AddAnimatableToScene(asset, out instance, out animator);
@@ -186,9 +189,12 @@ namespace Swole.API.Unity.Animation
                 //var smrs = instance.GetComponentsInChildren<SkinnedMeshRenderer>();
                 //foreach (var smr in smrs) smr.bounds = new Bounds(instance.transform.position, new Vector3(10000, 10000, 10000)); 
 
-                muscleController = instance.GetComponentInChildren<MuscularRenderedCharacter>();
-                muscleProxy = instance.GetComponentInChildren<MuscleFlexProxy>();
-                cameraProxy = instance.GetComponentInChildren<CameraProxy>();
+                muscleController = instance.GetComponentInChildren<MuscularRenderedCharacter>(true);
+                muscleProxy = instance.GetComponentInChildren<MuscleFlexProxy>(true);
+                cameraProxy = instance.GetComponentInChildren<CameraProxy>(true);
+
+                heightController = instance.GetComponentInChildren<BipedalCharacterHeight>(true);
+                expressionController = instance.GetComponentInChildren<CharacterExpressions>(true);
             }
 
             DisablePlaybackOnlyDevices();
@@ -260,7 +266,347 @@ namespace Swole.API.Unity.Animation
             {
                 animatableProperties.Clear();
 
-                var components = rootTransform.GetComponentsInChildren<Component>();
+                object GetInstanceFromChain(object topInstance, List<CustomAnimator.PropertyMemberInfo> infoChain)
+                {
+                    var instance = topInstance;
+
+                    for(int a = 0; a < infoChain.Count; a++)
+                    {
+                        var info = infoChain[a];
+
+                        if (info.info is PropertyInfo prop)
+                        {
+                            instance = prop.GetValue(instance);
+                        }
+                        else if (info.info is FieldInfo field)
+                        {
+                            instance = field.GetValue(instance); 
+                        }
+
+                        if (info.IsElement)
+                        {
+                            instance = info.GetElementValue(instance);
+                        }
+                    }
+                    
+                    return instance;
+                }
+                void AddAnimatableProperties(object topInstance, object instance, Type typeInfo, string displayPrefix, string idPrefix, int depth, List<object> referenceChain, List<CustomAnimator.PropertyMemberInfo> infoChain)
+                {
+                    if (depth > 2 || typeInfo == null || typeof(Type).IsAssignableFrom(typeInfo) || typeof(MemberInfo).IsAssignableFrom(typeInfo)) return;
+
+                    int depthM1 = depth - 1;
+                    int chainIndex = infoChain.Count; 
+                    int chainIndexP1 = chainIndex + 1;
+
+                    if ((typeInfo.IsClass || typeInfo.IsArray) && !typeof(string).IsAssignableFrom(typeInfo))
+                    {
+                        if (ReferenceEquals(instance, null))
+                        {
+                            try
+                            {
+                                instance = GetInstanceFromChain(topInstance, infoChain);
+                            } 
+                            catch(Exception e)
+                            {
+                                instance = null; 
+#if UNITY_EDITOR
+                                Debug.LogException(e);
+#endif
+                            }
+                            if (ReferenceEquals(instance, null)) 
+                            {
+#if UNITY_EDITOR
+                                //Debug.LogWarning($"Failed to get instance for {idPrefix}");
+#endif
+                                return;
+                            }
+                        }
+
+                        if (Utils.IsInternalUnityObject(instance)) return; // Skip internal Unity objects
+
+                        if (referenceChain.Contains(instance))
+                        {
+#if UNITY_EDITOR
+                            Debug.LogWarning($"Skipping circular reference for {idPrefix}");
+#endif
+                            return; // Prevent circular references
+                        }
+
+                        referenceChain.Add(instance); 
+                    }
+
+                    var props = typeInfo.GetProperties(System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.Public);
+                    foreach (var prop in props)
+                    {
+                        if (prop == null || Attribute.IsDefined(prop, typeof(ObsoleteAttribute))) continue; 
+
+                        string displayName = string.IsNullOrWhiteSpace(displayPrefix) ? prop.Name : $"{displayPrefix}.{prop.Name}";
+                        string id = string.IsNullOrWhiteSpace(idPrefix) ? prop.Name : $"{idPrefix}.{prop.Name}";
+
+                        if (Attribute.IsDefined(prop, typeof(AnimatablePropertyAttribute)))
+                        {
+                            var attr = (AnimatablePropertyAttribute)Attribute.GetCustomAttribute(prop, typeof(AnimatablePropertyAttribute));
+
+                            float defaultValue = 0;
+                            if (attr.hasDefaultValue)
+                            {
+                                defaultValue = attr.defaultValue;
+                            }
+                            else
+                            {
+                                try
+                                {
+                                    instance = GetInstanceFromChain(topInstance, infoChain); 
+                                    defaultValue = CustomAnimator.PropertyState.GetValue(prop, instance, 0); 
+                                }
+                                catch (Exception e)
+                                {
+                                    swole.LogError(e);
+                                    defaultValue = 0;
+                                }
+                            }
+
+                            animatableProperties.Add(new AnimatablePropertyInfo() { id = id, displayName = displayName, defaultValue = defaultValue });
+                        } 
+                        else
+                        {
+                            if (prop.PropertyType.IsArray)
+                            {
+                                try
+                                {
+                                    instance = GetInstanceFromChain(topInstance, infoChain);
+                                }
+                                catch (Exception e)
+                                {
+                                    instance = null;
+#if UNITY_EDITOR
+                                    Debug.LogException(e);
+#endif
+                                }
+                                if (ReferenceEquals(instance, null)) continue;
+
+                                var array = prop.GetValue(instance) as Array;
+                                if (array != null)
+                                {
+                                    for (int a = 0; a < array.Length; a++)
+                                    {
+                                        var item = array.GetValue(a);
+                                        if (item != null) 
+                                        {
+                                            var itemType = item.GetType();
+
+                                            string itemName = $"{displayName}[{a}]";
+                                            var nameField = itemType.GetField("name", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic);
+                                            if (nameField != null)
+                                            {
+                                                var name_ = nameField.GetValue(item) as string;
+                                                if (!string.IsNullOrWhiteSpace(name_)) itemName = name_;  
+                                            }
+                                            
+                                            infoChain.Add(new CustomAnimator.PropertyMemberInfo(prop, a, itemType));
+
+                                            AddAnimatableProperties(topInstance, item, itemType, itemName, $"{id}[{a}]", depth + 1, referenceChain, infoChain);
+
+                                            //if (infoChain.Count > chainIndexP1) infoChain.RemoveRange(chainIndexP1, infoChain.Count - chainIndexP1);
+                                            infoChain.RemoveAt(infoChain.Count - 1);
+                                        }
+                                    }
+                                }
+                            }
+                            else if (prop.PropertyType.IsGenericType && prop.PropertyType.GetGenericTypeDefinition() == typeof(List<>))
+                            {
+                                try
+                                {
+                                    instance = GetInstanceFromChain(topInstance, infoChain);
+                                }
+                                catch (Exception e)
+                                {
+                                    instance = null;
+#if UNITY_EDITOR
+                                    Debug.LogException(e);
+#endif
+                                }
+                                if (ReferenceEquals(instance, null)) continue;
+
+                                var list = prop.GetValue(instance) as System.Collections.IList;
+                                if (list != null)
+                                {
+                                    for (int a = 0; a < list.Count; a++)
+                                    {
+                                        var item = list[a];
+                                        if (item != null) 
+                                        {
+                                            var itemType = item.GetType();
+
+                                            string itemName = $"{displayName}[{a}]";
+                                            var nameField = itemType.GetField("name", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic);
+                                            if (nameField != null)
+                                            {
+                                                var name_ = nameField.GetValue(item) as string;
+                                                if (!string.IsNullOrWhiteSpace(name_)) itemName = name_;
+                                            }
+
+                                            infoChain.Add(new CustomAnimator.PropertyMemberInfo(prop, a, item.GetType()));
+
+                                            AddAnimatableProperties(topInstance, item, item.GetType(), itemName, $"{id}[{a}]", depth + 1, referenceChain, infoChain);
+
+                                            //if (infoChain.Count > chainIndexP1) infoChain.RemoveRange(chainIndexP1, infoChain.Count - chainIndexP1);
+                                            infoChain.RemoveAt(infoChain.Count - 1);
+                                        }
+                                    }
+                                }
+                            }
+                            else
+                            {
+                                var parameters = prop.GetIndexParameters();
+                                if (parameters == null || parameters.Length <= 0) 
+                                {
+                                    infoChain.Add(new CustomAnimator.PropertyMemberInfo(prop, 0, null));
+                                    AddAnimatableProperties(topInstance, null, prop.PropertyType, displayName, id, depth + 1, referenceChain, infoChain);
+                                    //if (infoChain.Count > chainIndexP1) infoChain.RemoveRange(chainIndexP1, infoChain.Count - chainIndexP1);
+                                    infoChain.RemoveAt(infoChain.Count - 1);
+                                    
+                                }
+                            }
+                        }
+                    }
+                     
+                    var fields = typeInfo.GetFields(System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.Public);
+                    foreach (var field in fields)
+                    {
+                        if (field == null || Attribute.IsDefined(field, typeof(ObsoleteAttribute))) continue; 
+
+                        string displayName = string.IsNullOrWhiteSpace(displayPrefix) ? field.Name : $"{displayPrefix}.{field.Name}";
+                        string id = string.IsNullOrWhiteSpace(idPrefix) ? field.Name : $"{idPrefix}.{field.Name}";
+
+                        if (Attribute.IsDefined(field, typeof(AnimatablePropertyAttribute)))
+                        {
+                            var attr = (AnimatablePropertyAttribute)Attribute.GetCustomAttribute(field, typeof(AnimatablePropertyAttribute));
+
+                            float defaultValue = 0;
+                            if (attr.hasDefaultValue)
+                            {
+                                defaultValue = attr.defaultValue;
+                            }
+                            else
+                            {
+                                try
+                                {      
+                                    instance = GetInstanceFromChain(topInstance, infoChain); 
+                                    defaultValue = CustomAnimator.PropertyState.GetValue(field, instance, 0); 
+                                }
+                                catch (Exception e)
+                                {
+                                    swole.LogError(e);
+                                    defaultValue = 0;
+                                }
+                            }
+
+                            animatableProperties.Add(new AnimatablePropertyInfo() { id = id, displayName = displayName, defaultValue = defaultValue });
+                        }
+                        else
+                        {
+                            if (field.FieldType.IsArray)
+                            {
+                                try
+                                {
+                                    instance = GetInstanceFromChain(topInstance, infoChain);
+                                }
+                                catch (Exception e)
+                                {
+                                    instance = null;
+#if UNITY_EDITOR
+                                    Debug.LogException(e);
+#endif
+                                }
+                                if (ReferenceEquals(instance, null)) continue;
+
+                                var array = field.GetValue(instance) as Array;
+                                if (array != null)
+                                {
+                                    for (int a = 0; a < array.Length; a++)
+                                    {
+                                        var item = array.GetValue(a);
+                                        if (item != null)
+                                        {
+                                            var itemType = item.GetType();
+
+                                            string itemName = $"{displayName}[{a}]";
+                                            var nameField = itemType.GetField("name", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic);
+                                            if (nameField != null)
+                                            {
+                                                var name_ = nameField.GetValue(item) as string;
+                                                if (!string.IsNullOrWhiteSpace(name_)) itemName = name_;
+                                            }
+
+                                            infoChain.Add(new CustomAnimator.PropertyMemberInfo(field, a, item.GetType()));
+
+                                            AddAnimatableProperties(topInstance, item, item.GetType(), itemName, $"{id}[{a}]", depth + 1, referenceChain, infoChain);
+
+                                            //if (infoChain.Count > chainIndexP1) infoChain.RemoveRange(chainIndexP1, infoChain.Count - chainIndexP1);
+                                            infoChain.RemoveAt(infoChain.Count - 1);
+                                        }
+                                    }
+                                }
+                            }
+                            else if (field.FieldType.IsGenericType && field.FieldType.GetGenericTypeDefinition() == typeof(List<>))
+                            {
+                                try
+                                {
+                                    instance = GetInstanceFromChain(topInstance, infoChain);
+                                }
+                                catch (Exception e)
+                                {
+                                    instance = null;
+#if UNITY_EDITOR
+                                    Debug.LogException(e);
+#endif
+                                }
+                                if (ReferenceEquals(instance, null)) continue; 
+
+                                var list = field.GetValue(instance) as System.Collections.IList;
+                                if (list != null)
+                                {
+                                    for (int a = 0; a < list.Count; a++)
+                                    {
+                                        var item = list[a];
+                                        if (item != null)
+                                        {
+                                            var itemType = item.GetType();
+
+                                            string itemName = $"{displayName}[{a}]";
+                                            var nameField = itemType.GetField("name", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic);
+                                            if (nameField != null)
+                                            {
+                                                var name_ = nameField.GetValue(item) as string;
+                                                if (!string.IsNullOrWhiteSpace(name_)) itemName = name_;
+                                            }
+
+                                            infoChain.Add(new CustomAnimator.PropertyMemberInfo(field, a, item.GetType()));
+
+                                            AddAnimatableProperties(topInstance, item, item.GetType(), itemName, $"{id}[{a}]", depth + 1, referenceChain, infoChain);
+
+                                            //if (infoChain.Count > chainIndexP1) infoChain.RemoveRange(chainIndexP1, infoChain.Count - chainIndexP1); 
+                                            infoChain.RemoveAt(infoChain.Count - 1);
+                                        }
+                                    }
+                                }
+                            }
+                            else
+                            {
+                                infoChain.Add(new CustomAnimator.PropertyMemberInfo(field, 0, null));
+                                AddAnimatableProperties(topInstance, null, field.FieldType, displayName, id, depth + 1, referenceChain, infoChain);
+                                //if (infoChain.Count > chainIndexP1) infoChain.RemoveRange(chainIndexP1, infoChain.Count - chainIndexP1);
+                                infoChain.RemoveAt(infoChain.Count - 1);
+                            }
+                        }
+                    } 
+                } 
+
+                _tempReferenceChain.Clear();
+                _tempInfoChain.Clear();
+                var components = rootTransform.GetComponentsInChildren<Component>(); 
                 foreach (var component in components)
                 {
                     if (component != null)
@@ -276,69 +622,18 @@ namespace Swole.API.Unity.Animation
                             if (attr != null) prefix = attr.prefix;
                         }
 
-                        var props = compType.GetProperties(System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.Public);
-                        foreach (var prop in props)
-                        {
-                            if (prop == null || !Attribute.IsDefined(prop, typeof(AnimatablePropertyAttribute))) continue;
-
-                            var attr = (AnimatablePropertyAttribute)Attribute.GetCustomAttribute(prop, typeof(AnimatablePropertyAttribute));
-
-                            string displayName = $"{prefix}{(isRoot ? string.Empty : (component.name + "."))}{prop.Name}";
-                            string id = $"{(isRoot ? IAnimator._animatorTransformPropertyStringPrefix : component.name)}.{compType.Name}.{prop.Name}";
-                            float defaultValue = 0;
-                            if (attr.hasDefaultValue)
-                            {
-                                defaultValue = attr.defaultValue;
-                            }
-                            else
-                            {
-                                try
-                                {
-                                    defaultValue = CustomAnimator.PropertyState.GetValue(prop, component, 0);
-                                } 
-                                catch(Exception e)
-                                {
-                                    swole.LogError(e);
-                                    defaultValue = 0;
-                                }
-                            }
-
-                            animatableProperties.Add(new AnimatablePropertyInfo() { id = id, displayName = displayName, defaultValue = defaultValue });
-                        }
-
-                        var fields = compType.GetFields(System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.Public);
-                        foreach (var field in fields)
-                        {
-                            if (field == null || !Attribute.IsDefined(field, typeof(AnimatablePropertyAttribute))) continue;
-
-                            var attr = (AnimatablePropertyAttribute)Attribute.GetCustomAttribute(field, typeof(AnimatablePropertyAttribute));
-
-                            string displayName = $"{prefix}{(isRoot ? string.Empty : (component.name + "."))}{field.Name}";
-                            string id = $"{(isRoot ? IAnimator._animatorTransformPropertyStringPrefix : component.name)}.{compType.Name}.{field.Name}";
-                            float defaultValue = 0;
-                            if (attr.hasDefaultValue)
-                            {
-                                defaultValue = attr.defaultValue;
-                            }
-                            else
-                            {
-                                try
-                                {
-                                    defaultValue = CustomAnimator.PropertyState.GetValue(field, component, 0); 
-                                }
-                                catch (Exception e)
-                                {
-                                    swole.LogError(e);
-                                    defaultValue = 0;
-                                }
-                            }
-
-                            animatableProperties.Add(new AnimatablePropertyInfo() { id = id, displayName = displayName, defaultValue = defaultValue });
-                        }
+                        string displayName = $"{prefix}{(isRoot ? string.Empty : (component.name + "."))}";
+                        string id = $"{(isRoot ? IAnimator._animatorTransformPropertyStringPrefix : component.name)}.{compType.Name}"; 
+                          
+                        AddAnimatableProperties(component, component, component.GetType(), displayName, id, 0, _tempReferenceChain, _tempInfoChain);
+                        _tempInfoChain.Clear();
+                        _tempReferenceChain.Clear(); 
                     }
                 }
+                _tempInfoChain.Clear();
+                _tempReferenceChain.Clear(); 
 
-                var dynamicAnimationPropertyComponents = rootTransform.GetComponentsInChildren<DynamicAnimationProperties>();
+                var dynamicAnimationPropertyComponents = rootTransform.GetComponentsInChildren<DynamicAnimationProperties>(); 
                 foreach(var dap in dynamicAnimationPropertyComponents)
                 {
                     var compType = dap.GetType();
@@ -574,7 +869,7 @@ namespace Swole.API.Unity.Animation
             editIndex = sourceIndex;
             editor.RefreshTimeline();
             
-            editor.RefreshAnimationSettingsWindow(CurrentSource);
+            editor.RefreshAnimationSettingsWindow(CurrentSource); 
             
             if (undoable) editor.RecordRevertibleAction(new UndoableSetCurrentlyEditedSource(editor, index, prevEditIndex, editIndex)); 
         }
@@ -646,6 +941,10 @@ namespace Swole.API.Unity.Animation
         public MuscleFlexProxy muscleProxy;
         [NonSerialized]
         public CameraProxy cameraProxy;
+        [NonSerialized]
+        public BipedalCharacterHeight heightController;
+        [NonSerialized]
+        public CharacterExpressions expressionController;
 
         protected void TogglePlaybackOnlyDevices(bool enabled)
         {
@@ -653,6 +952,15 @@ namespace Swole.API.Unity.Animation
             {
                 muscleProxy.disableMassOffsetsAsEditor = !enabled;
                 muscleProxy.disableTrembling = !enabled;
+            }
+
+            if (heightController != null)
+            {
+                heightController.enabled = enabled;
+            }
+            if (expressionController != null)
+            {
+                expressionController.enabled = enabled; 
             }
         }
         public void EnablePlaybackOnlyDevices() => TogglePlaybackOnlyDevices(true);      
@@ -897,7 +1205,7 @@ namespace Swole.API.Unity.Animation
 
                     var animation = new CustomAnimation("restPoseBase", null, DateTime.MinValue, DateTime.MinValue, null, CustomAnimation.DefaultFrameRate, CustomAnimation.DefaultJobCurveSampleRate, null, null, null, null, null, null, null, null);
                     restPose.Insert(animator == null ? null : animator.avatar, animation, 0, restPose);
-                    var animations = new CustomMotionController.AnimationReference[] { (new CustomMotionController.AnimationReference($"restPoseBase", animation, AnimationLoopMode.Loop)) };
+                    var animations = new AnimationReference[] { (new AnimationReference($"restPoseBase", animation, AnimationLoopMode.Loop)) };
 
                     CustomAnimationLayer previewLayer = new CustomAnimationLayer();
                     var layers = new CustomAnimationLayer[] { previewLayer };
@@ -910,8 +1218,8 @@ namespace Swole.API.Unity.Animation
                     previewLayer.IsAdditive = false;
                     previewLayer.motionControllerIdentifiers = new MotionControllerIdentifier[] { new MotionControllerIdentifier() { index = 0, type = MotionControllerType.AnimationReference } };
 
-                    CustomStateMachine previewStateMachine = new CustomStateMachine() { name = "restPoseBaseState", motionControllerIndex = 0 };
-                    previewLayer.stateMachines = new CustomStateMachine[] { previewStateMachine };
+                    CustomAnimationLayerState previewState = new CustomAnimationLayerState() { name = "restPoseBaseState", motionControllerIndex = 0 };
+                    previewLayer.states = new CustomAnimationLayerState[] { previewState };
 
                     restPoseController.animationReferences = animations;
                     restPoseController.layers = layers;
@@ -1033,14 +1341,14 @@ namespace Swole.API.Unity.Animation
                 previewController.name = AnimationEditor.previewPrefix; 
             }
 
-            List<CustomMotionController.AnimationReference> animations = new List<CustomMotionController.AnimationReference>();
+            List<AnimationReference> animations = new List<AnimationReference>();
             List<CustomAnimationLayer> layers = new List<CustomAnimationLayer>();
             if (animationBank != null)
             {
                 for (int a = 0; a < animationBank.Count; a++)
                 {
                     var source = animationBank[a];
-                    animations.Add(new CustomMotionController.AnimationReference($"{a}", source.PreviewAsset, AnimationLoopMode.Loop));
+                    animations.Add(new AnimationReference($"{a}", source.PreviewAsset, AnimationLoopMode.Loop));
 
                     CustomAnimationLayer previewLayer = new CustomAnimationLayer();
                     source.previewLayer = previewLayer;
@@ -1054,8 +1362,8 @@ namespace Swole.API.Unity.Animation
                     previewLayer.IsAdditive = true;
                     previewLayer.motionControllerIdentifiers = new MotionControllerIdentifier[] { new MotionControllerIdentifier() { index = a, type = MotionControllerType.AnimationReference } };
 
-                    CustomStateMachine previewStateMachine = new CustomStateMachine() { name = "animationPreviewState", motionControllerIndex = 0 };
-                    previewLayer.stateMachines = new CustomStateMachine[] { previewStateMachine };
+                    CustomAnimationLayerState previewState = new CustomAnimationLayerState() { name = "animationPreviewState", motionControllerIndex = 0 };
+                    previewLayer.states = new CustomAnimationLayerState[] { previewState };
                 }
             }
 

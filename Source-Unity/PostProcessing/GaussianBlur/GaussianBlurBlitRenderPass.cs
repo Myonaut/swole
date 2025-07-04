@@ -55,7 +55,7 @@ namespace Swole
         public override void Execute(ScriptableRenderContext context, ref RenderingData renderingData)
         {
 
-            if (material == null) return;
+            if (material == null || !Application.isPlaying || blurTextureHandle == null) return;
 
             CommandBuffer cmd = CommandBufferPool.Get("Gaussian Blur"); 
 
@@ -71,19 +71,22 @@ namespace Swole
 
             RTHandle cameraTargetHandle = renderingData.cameraData.renderer.cameraColorTargetHandle;
 
-            Blit(cmd, cameraTargetHandle, blurTextureHandle, material, 0);
-
-            if (outputTarget == null)
+            if (cameraTargetHandle != null)
             {
-                Blit(cmd, blurTextureHandle, cameraTargetHandle, material, 1);
-            } 
-            else
-            {
-                //CoreUtils.SetRenderTarget(cmd, outputTarget);
-                Blitter.BlitTexture(cmd, blurTextureHandle.nameID, outputTarget, material, 1); 
-            } 
+                Blit(cmd, cameraTargetHandle, blurTextureHandle, material, 0);
 
-            context.ExecuteCommandBuffer(cmd);  
+                if (outputTarget == null)
+                {
+                    Blit(cmd, blurTextureHandle, cameraTargetHandle, material, 1);
+                }
+                else
+                {
+                    //CoreUtils.SetRenderTarget(cmd, outputTarget);
+                    Blitter.BlitTexture(cmd, blurTextureHandle.nameID, outputTarget, material, 1);
+                }
+
+                context.ExecuteCommandBuffer(cmd);
+            }
 
             cmd.Clear();
             CommandBufferPool.Release(cmd);

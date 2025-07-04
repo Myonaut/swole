@@ -417,13 +417,14 @@ namespace Swole.API.Unity.Animation
         {
 
             normalizedTime = CustomAnimation.WrapNormalizedTime(normalizedTime, preWrapMode, postWrapMode);
+            
 
             float timePos = CustomAnimation.ScaleNormalizedTime(normalizedTime, localPositionTimeCurve) * CachedLengthInSeconds;
             float timeRot = CustomAnimation.ScaleNormalizedTime(normalizedTime, localRotationTimeCurve) * CachedLengthInSeconds;
-            float timeScale = CustomAnimation.ScaleNormalizedTime(normalizedTime, localScaleTimeCurve) * CachedLengthInSeconds;
+            float timeScale = CustomAnimation.ScaleNormalizedTime(normalizedTime, localScaleTimeCurve) * CachedLengthInSeconds; 
 
             ITransformCurve.Data data = default;
-
+            
             data.localPosition = new float3(!Validate(localPositionCurveX) ? 0 : localPositionCurveX.Evaluate(timePos), !Validate(localPositionCurveY) ? 0 : localPositionCurveY.Evaluate(timePos), !Validate(localPositionCurveZ) ? 0 : localPositionCurveZ.Evaluate(timePos)); 
             data.localRotation = new quaternion(!Validate(localRotationCurveX) ? 0 : localRotationCurveX.Evaluate(timeRot), !Validate(localRotationCurveY) ? 0 : localRotationCurveY.Evaluate(timeRot), !Validate(localRotationCurveZ) ? 0 : localRotationCurveZ.Evaluate(timeRot), !Validate(localRotationCurveW) ? 0 : localRotationCurveW.Evaluate(timeRot));
             data.localScale = new float3(!Validate(localScaleCurveX) ? 1 : localScaleCurveX.Evaluate(timeScale), !Validate(localScaleCurveY) ? 1 : localScaleCurveY.Evaluate(timeScale), !Validate(localScaleCurveZ) ? 1 : localScaleCurveZ.Evaluate(timeScale));

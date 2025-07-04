@@ -1073,16 +1073,16 @@ namespace Swole.API.Unity.Animation
         }
 
         public override bool ExecuteInStack => true;
-        public static int ExecutionPriority => TransformTracking.ExecutionPriority + 1; // update after animation
+        public static int ExecutionPriority => CustomAnimatorUpdater.FinalAnimationBehaviourPriority + 100; // update after animation
         public override int Priority => ExecutionPriority;
-
+        
         public override void OnUpdate() { }
 
         public override void OnLateUpdate()
         {
             //UntrackNullTransforms();
             UpdateGlobalPoseData().Complete();
-            PostUpdateGlobalPoseData?.Invoke();
+            PostUpdateGlobalPoseData?.Invoke(); 
         }
 
         public override void OnFixedUpdate() { }

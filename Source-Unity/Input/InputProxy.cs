@@ -5,6 +5,7 @@ using System.Collections.Generic;
 using System.Reflection;
 
 using UnityEngine;
+using Unity.Mathematics;
 
 #if ENABLE_INPUT_SYSTEM
 using UnityEngine.InputSystem;
@@ -96,16 +97,65 @@ namespace Swole
         public static bool ConfirmKeyDown { get { return Input.GetKeyDown(ConfirmKeyCode); } }
         public static bool ConfirmKeyUp { get { return Input.GetKeyUp(ConfirmKeyCode); } }
 
-        public static float MainLeftJoystickHorizontal
+        public static float MainLeftJoystickHorizontalRaw
         {
             get
             {
                 var settings = swole.Settings;
 #if ENABLE_INPUT_SYSTEM
-                return InputSystemProxy.DefaultControls.Standard.LeftJoystickHorizontal.ReadValue<float>() * settings.gamepadLeftStickSensitivityX * settings.gamepadLeftStickSensitivityBase;
+                float val = InputSystemProxy.DefaultControls.Standard.LeftJoystickHorizontal.ReadValue<float>();
 #else
-                return Input.GetAxis("Left Joystick Hor") * settings.gamepadLeftStickSensitivityX * settings.gamepadLeftStickSensitivityBase;
+                float val = Input.GetAxis("Left Joystick Hor");
 #endif
+                return math.saturate(math.remap(settings.gamepadLeftStickDeadzoneX, 1f, 0f, 1f, math.abs(val))) * math.sign(val);
+            }
+        }
+        public static float MainLeftJoystickVerticalRaw
+        {
+            get
+            {
+                var settings = swole.Settings;
+#if ENABLE_INPUT_SYSTEM
+                float val = InputSystemProxy.DefaultControls.Standard.LeftJoystickVertical.ReadValue<float>();
+#else
+                float val = Input.GetAxis("Left Joystick Ver");
+#endif
+                return math.saturate(math.remap(settings.gamepadLeftStickDeadzoneY, 1f, 0f, 1f, math.abs(val))) * math.sign(val);
+            }
+        }
+        public static float MainRightJoystickHorizontalRaw
+        {
+            get
+            {
+                var settings = swole.Settings;
+#if ENABLE_INPUT_SYSTEM
+                float val = InputSystemProxy.DefaultControls.Standard.RightJoystickHorizontal.ReadValue<float>();
+#else
+                float val = Input.GetAxis("Right Joystick Hor");
+#endif
+                return math.saturate(math.remap(settings.gamepadRightStickDeadzoneX, 1f, 0f, 1f, math.abs(val))) * math.sign(val); 
+            }
+        }
+        public static float MainRightJoystickVerticalRaw
+        {
+            get
+            {
+                var settings = swole.Settings;
+#if ENABLE_INPUT_SYSTEM
+                float val = InputSystemProxy.DefaultControls.Standard.RightJoystickVertical.ReadValue<float>();
+#else
+                float val = Input.GetAxis("Right Joystick Ver");
+#endif
+                return math.saturate(math.remap(settings.gamepadRightStickDeadzoneY, 1f, 0f, 1f, math.abs(val))) * math.sign(val);  
+            }
+        }
+
+        public static float MainLeftJoystickHorizontal
+        { 
+            get
+            {
+                var settings = swole.Settings;
+                return MainLeftJoystickHorizontalRaw * settings.gamepadLeftStickSensitivityX * settings.gamepadLeftStickSensitivityBase;
             }
         }
         public static float MainLeftJoystickVertical
@@ -113,11 +163,7 @@ namespace Swole
             get
             {
                 var settings = swole.Settings;
-#if ENABLE_INPUT_SYSTEM
-                return InputSystemProxy.DefaultControls.Standard.LeftJoystickVertical.ReadValue<float>() * settings.gamepadLeftStickSensitivityY * settings.gamepadLeftStickSensitivityBase;
-#else
-                return Input.GetAxis("Left Joystick Ver") * settings.gamepadLeftStickSensitivityY * settings.gamepadLeftStickSensitivityBase;
-#endif
+                return MainLeftJoystickVerticalRaw * settings.gamepadLeftStickSensitivityY * settings.gamepadLeftStickSensitivityBase;
             }
         }
         public static float MainRightJoystickHorizontal
@@ -125,11 +171,7 @@ namespace Swole
             get
             {
                 var settings = swole.Settings;
-#if ENABLE_INPUT_SYSTEM
-                return InputSystemProxy.DefaultControls.Standard.RightJoystickHorizontal.ReadValue<float>() * settings.gamepadRightStickSensitivityX * settings.gamepadRightStickSensitivityBase;
-#else
-                return Input.GetAxis("Right Joystick Hor")* settings.gamepadRightStickSensitivityX * settings.gamepadRightStickSensitivityBase;
-#endif
+                return MainRightJoystickHorizontalRaw * settings.gamepadRightStickSensitivityX * settings.gamepadRightStickSensitivityBase;
             }
         }
         public static float MainRightJoystickVertical
@@ -137,11 +179,7 @@ namespace Swole
             get
             {
                 var settings = swole.Settings;
-#if ENABLE_INPUT_SYSTEM
-                return InputSystemProxy.DefaultControls.Standard.RightJoystickVertical.ReadValue<float>() * settings.gamepadRightStickSensitivityY * settings.gamepadRightStickSensitivityBase;
-#else
-                return Input.GetAxis("Right Joystick Ver")* settings.gamepadRightStickSensitivityY * settings.gamepadRightStickSensitivityBase;
-#endif
+                return MainRightJoystickVerticalRaw * settings.gamepadRightStickSensitivityY * settings.gamepadRightStickSensitivityBase;
             }
         }
 
@@ -394,6 +432,84 @@ namespace Swole
             }
         }
 
+        private static KeyCode RollKeyCode = KeyCode.LeftAlt;
+        public static bool RollKey { get { return Input.GetKey(RollKeyCode); } }
+        public static bool RollKeyDown { get { return Input.GetKeyDown(RollKeyCode); } }
+        public static bool RollKeyUp { get { return Input.GetKeyUp(RollKeyCode); } }
+
+        public static bool RollButton
+        {
+            get
+            {
+#if ENABLE_INPUT_SYSTEM
+                return InputSystemProxy.DefaultControls.Standard.Roll.IsPressed();
+#else
+                return RollKey || Input.GetButton("Roll");      
+#endif
+            }
+        }
+        public static bool RollButtonDown
+        {
+            get
+            {
+#if ENABLE_INPUT_SYSTEM
+                return InputSystemProxy.DefaultControls.Standard.Roll.WasPressedThisFrame();
+#else
+                return RollKeyDown || Input.GetButtonDown("Roll");      
+#endif
+            }
+        }
+        public static bool RollButtonUp
+        {
+            get
+            {
+#if ENABLE_INPUT_SYSTEM
+                return InputSystemProxy.DefaultControls.Standard.Roll.WasReleasedThisFrame();
+#else
+                return RollKeyUp || Input.GetButtonUp("Roll");      
+#endif
+            }
+        }
+
+        private static KeyCode SprintKeyCode = KeyCode.LeftShift;
+        public static bool SprintKey { get { return Input.GetKey(SprintKeyCode); } }
+        public static bool SprintKeyDown { get { return Input.GetKeyDown(SprintKeyCode); } }
+        public static bool SprintKeyUp { get { return Input.GetKeyUp(SprintKeyCode); } }
+
+        public static bool SprintButton
+        {
+            get
+            {
+#if ENABLE_INPUT_SYSTEM
+                return InputSystemProxy.DefaultControls.Standard.Sprint.IsPressed();
+#else
+                return SprintKey || Input.GetButton("Sprint");      
+#endif
+            }
+        }
+        public static bool SprintButtonDown
+        {
+            get
+            {
+#if ENABLE_INPUT_SYSTEM
+                return InputSystemProxy.DefaultControls.Standard.Sprint.WasPressedThisFrame();
+#else
+                return SprintKeyDown || Input.GetButtonDown("Sprint");      
+#endif
+            }
+        }
+        public static bool SprintButtonUp
+        {
+            get
+            {
+#if ENABLE_INPUT_SYSTEM
+                return InputSystemProxy.DefaultControls.Standard.Sprint.WasReleasedThisFrame(); 
+#else
+                return SprintKeyUp || Input.GetButtonUp("Sprint");      
+#endif
+            }
+        }
+
         public static bool FreeLookMainAction { get { return Input.GetMouseButton(0); } }
         public static bool FreeLookMainActionDown { get { return Input.GetMouseButtonDown(0); } }
         public static bool FreeLookMainActionUp { get { return Input.GetMouseButtonUp(0); } }
@@ -561,6 +677,46 @@ namespace Swole
             get
             {
                 return Mathf.Clamp(((RotateClockwiseKey ? 1 : 0) - (RotateCounterClockwiseKey ? 1 : 0)) - MainRightJoystickHorizontal, -1, 1);
+            }
+        }
+
+        #endregion
+
+        #region Driving
+
+        public static float Driving_ThrottleForward
+        {
+            get
+            {
+#if ENABLE_INPUT_SYSTEM
+                return InputSystemProxy.DefaultControls.Driving.ThrottleForward.ReadValue<float>();
+#else
+                return 0f;
+#endif
+            }
+        }
+
+        public static float Driving_BrakeThrottleReverse
+        {
+            get
+            {
+#if ENABLE_INPUT_SYSTEM
+                return InputSystemProxy.DefaultControls.Driving.BrakeThrottleReverse.ReadValue<float>();
+#else
+                return 0f;
+#endif
+            }
+        }
+
+        public static float Driving_SteeringAxis
+        {
+            get
+            {
+#if ENABLE_INPUT_SYSTEM
+                return InputSystemProxy.DefaultControls.Driving.SteeringAxis.ReadValue<float>(); 
+#else
+                return 0f;
+#endif
             }
         }
 

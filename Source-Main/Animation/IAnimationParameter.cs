@@ -12,6 +12,8 @@ namespace Swole.Animation
 
         public float GetDefaultValue();
 
+        public void Reset();
+
         public float UpdateAndGetValue();
 
         public void SetValue(float value);

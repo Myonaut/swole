@@ -161,7 +161,7 @@ namespace Swole.Script
         public const string var_isAdditive = "isAdditive";
         public const string var_isBlend = "isBlend";
         public const string var_motionControllerIdentifiers = "motionControllerIdentifiers";
-        public const string var_stateMachines = "stateMachines";
+        public const string var_states = "states";
 
         public const string var_activeStateIndex = "activeStateIndex";
         public const string var_activeState = "activeState";
@@ -259,7 +259,7 @@ namespace Swole.Script
         public const string type_AnimationPlayer = "AnimationPlayer";
         public const string type_AnimationLayer = "AnimationLayer";
         public const string type_AnimationController = "AnimationController";
-        public const string type_AnimationStateMachine = "AnimationStateMachine";
+        public const string type_AnimationLayerState = "AnimationLayerState";
         public const string type_AnimationMotionController = "AnimationMotionController";
 
         public const string type_AnimationReference = "AnimationReference";
@@ -410,7 +410,7 @@ namespace Swole.Script
         #region Animations
 
         public const string func_CreateAnimationLayer = "CreateAnimationLayer";
-        public const string func_CreateStateMachine = "CreateStateMachine";
+        public const string func_CreateLayerState = "CreateLayerState";
         public const string func_CreateAnimationReference = "CreateAnimationReference";
 
         public const string func_FindLayer = "FindLayer";
@@ -3295,22 +3295,22 @@ namespace Swole.Script
             public override string ToString(TAC.Machine vm) => $"animation_layer[{Hash()}]";
         }
 
-        public class ValAnimationStateMachine : ValReference
+        public class ValAnimationLayerState : ValReference
         {
-            public IAnimationStateMachine reference;
+            public IAnimationLayerState reference;
             public override object Reference => reference;
 
-            public ValAnimationStateMachine(IAnimationStateMachine reference)
+            public ValAnimationLayerState(IAnimationLayerState reference)
             {
                 this.reference = reference;
             }
             public override double Equality(Value rhs)
             {
-                if (rhs is ValAnimationStateMachine obj) return reference == obj.reference ? 1 : 0;
+                if (rhs is ValAnimationLayerState obj) return reference == obj.reference ? 1 : 0;
                 return 0;
             }
             public override int Hash() => ReferenceEquals(reference, null) ? base.GetHashCode() : reference.GetHashCode();
-            public override string ToString(TAC.Machine vm) => $"animation_state_machine[{Hash()}]";
+            public override string ToString(TAC.Machine vm) => $"animation_layer_state[{Hash()}]";
         }
 
         public class ValAnimationMotionController : ValReference
@@ -3438,9 +3438,9 @@ namespace Swole.Script
                 var type = AnimationLayerType().GetType(context);
                 return new Intrinsic.Result(type);
             };
-            f = Intrinsic.Create(type_AnimationStateMachine);
+            f = Intrinsic.Create(type_AnimationLayerState);
             f.code = (context, partialResult) => {
-                var type = AnimationStateMachineType().GetType(context);
+                var type = AnimationLayerStateType().GetType(context);
                 return new Intrinsic.Result(type);
             };
             f = Intrinsic.Create(type_AnimationMotionController);
@@ -3495,8 +3495,8 @@ namespace Swole.Script
                 return new Intrinsic.Result(ConvertAnimationLayer(context, inst));
             };
 
-            // CreateStateMachine
-            f = Intrinsic.Create(func_CreateStateMachine);
+            // CreateLayerState
+            f = Intrinsic.Create(func_CreateLayerState);
             f.AddParam(var_genericName);
             f.AddParam(var_motionControllerIndex);
             f.AddParam(var_transitions);
@@ -3506,8 +3506,8 @@ namespace Swole.Script
                 var index = context.GetLocal(var_motionControllerIndex);
                 var transitions = context.GetLocal(var_transitions); // TODO: Support animation transitions
 
-                var inst = swole.Engine.CreateNewStateMachine(name, index == null ? -1 : index.IntValue(), null);
-                return new Intrinsic.Result(ConvertAnimationStateMachine(context, inst));
+                var inst = swole.Engine.CreateNewLayerState(name, index == null ? -1 : index.IntValue(), null);
+                return new Intrinsic.Result(ConvertAnimationLayerState(context, inst));
             };
 
             // CreateAnimationReference
@@ -4097,28 +4097,28 @@ namespace Swole.Script
                     return new Intrinsic.Result(ms);
                 };
 
-                // layer.stateMachines
-                f = CreateNewLocalIntrinsicWithAssignOverride(_animationLayerType, var_stateMachines, assignOverrideDelegates, (ValMap instance, Value value) =>
+                // layer.states
+                f = CreateNewLocalIntrinsicWithAssignOverride(_animationLayerType, var_states, assignOverrideDelegates, (ValMap instance, Value value) =>
                 {
                     if (TryGetCachedReference<ValAnimationLayer>(instance, out var layer) && layer.reference != null)
                     {
                         if (value.TryCastAsMSType<ValList>(out ValList list))
                         {
-                            IAnimationStateMachine[] array = new IAnimationStateMachine[list.values.Count];
+                            IAnimationLayerState[] array = new IAnimationLayerState[list.values.Count];
                             for (int a = 0; a < list.values.Count; a++)
                             {
                                 var val = list.values[a];
 
-                                if (TryGetCachedReference<ValAnimationStateMachine>(val, out var sm))
+                                if (TryGetCachedReference<ValAnimationLayerState>(val, out var sm))
                                 {
                                     array[a] = sm.reference;
                                 }
                             }
-                            layer.reference.StateMachines = array;
+                            layer.reference.States = array;
                             return true;
                         }
 
-                        layer.reference.StateMachines = null;
+                        layer.reference.States = null;
                     }
                     return true;
                 });
@@ -4130,10 +4130,10 @@ namespace Swole.Script
                     var active = context.GetLocal(var_value);
                     if (active == null) return Intrinsic.Result.Null;
 
-                    var array = layer.reference.StateMachines;
+                    var array = layer.reference.States;
                     if (array == null) return Intrinsic.Result.Null;
                     var ms = new ValList();
-                    for (int a = 0; a < array.Length; a++) ms.values.Add(new ValAnimationStateMachine(array[a]));
+                    for (int a = 0; a < array.Length; a++) ms.values.Add(new ValAnimationLayerState(array[a]));
 
                     return new Intrinsic.Result(ms);
                 };
@@ -4155,7 +4155,7 @@ namespace Swole.Script
                 f.code = (context, partialResult) =>
                 {
                     if (!TryGetCachedReference<ValAnimationLayer>(context.self, out var layer) || layer.reference == null) return Intrinsic.Result.Null;
-                    return new Intrinsic.Result(ConvertAnimationStateMachine(context, layer.reference.ActiveState));
+                    return new Intrinsic.Result(ConvertAnimationLayerState(context, layer.reference.ActiveState));
                 };
 
                 // layer.hasActiveState
@@ -4221,191 +4221,191 @@ namespace Swole.Script
 
          */
          
-        public static SwoleScriptType AnimationStateMachineType()
+        public static SwoleScriptType AnimationLayerStateType()
         {
-            if (_animationStateMachineType == null)
+            if (_animationLayerStateType == null)
             {
-                _animationStateMachineType = new SwoleScriptType(type_AnimationStateMachine, typeof(IAnimationStateMachine));
-                var typeName = new ValString(type_AnimationStateMachine);
+                _animationLayerStateType = new SwoleScriptType(type_AnimationLayerState, typeof(IAnimationLayerState));
+                var typeName = new ValString(type_AnimationLayerState);
 
                 Intrinsic f;
                 Dictionary<string, AssignmentOverrideDelegate> assignOverrideDelegates = new Dictionary<string, AssignmentOverrideDelegate>();
 
-                // machine.name
-                f = CreateNewLocalIntrinsicWithAssignOverride(_animationStateMachineType, var_genericName, assignOverrideDelegates, (ValMap instance, Value value) =>
+                // state.name
+                f = CreateNewLocalIntrinsicWithAssignOverride(_animationLayerStateType, var_genericName, assignOverrideDelegates, (ValMap instance, Value value) =>
                 {
-                    if (TryGetCachedReference<ValAnimationStateMachine>(instance, out var stateMachine) && stateMachine.reference != null) stateMachine.reference.Name = value == null ? string.Empty : value.ToString();
+                    if (TryGetCachedReference<ValAnimationLayerState>(instance, out var state) && state.reference != null) state.reference.Name = value == null ? string.Empty : value.ToString();
                     return true;
                 });
                 f.AddParam(var_self);
                 f.code = (context, partialResult) =>
                 {
-                    if (!TryGetCachedReference<ValAnimationStateMachine>(context.self, out var layer) || layer.reference == null) return new Intrinsic.Result(typeName);
+                    if (!TryGetCachedReference<ValAnimationLayerState>(context.self, out var layer) || layer.reference == null) return new Intrinsic.Result(typeName);
                     return new Intrinsic.Result(new ValString(layer.reference.Name));
                 };
 
-                // machine.index
-                f = CreateNewLocalIntrinsicWithAssignOverride(_animationStateMachineType, var_index, assignOverrideDelegates, (ValMap instance, Value value) =>
+                // state.index
+                f = CreateNewLocalIntrinsicWithAssignOverride(_animationLayerStateType, var_index, assignOverrideDelegates, (ValMap instance, Value value) =>
                 {
-                    if (TryGetCachedReference<ValAnimationStateMachine>(instance, out var stateMachine) && stateMachine.reference != null) stateMachine.reference.Index = value == null ? -1 : value.IntValue();
+                    if (TryGetCachedReference<ValAnimationLayerState>(instance, out var state) && state.reference != null) state.reference.Index = value == null ? -1 : value.IntValue();
                     return true;
                 });
                 f.AddParam(var_self);
                 f.code = (context, partialResult) =>
                 {
-                    if (!TryGetCachedReference<ValAnimationStateMachine>(context.self, out var layer) || layer.reference == null) return Intrinsic.Result.Null;
+                    if (!TryGetCachedReference<ValAnimationLayerState>(context.self, out var layer) || layer.reference == null) return Intrinsic.Result.Null;
                     return new Intrinsic.Result(new ValNumber(layer.reference.Index));
                 };
 
-                // machine.layer
-                f = CreateNewLocalIntrinsicWithAssignOverride(_animationStateMachineType, var_layer, assignOverrideDelegates, DefaultOverrideDelegate);
+                // state.layer
+                f = CreateNewLocalIntrinsicWithAssignOverride(_animationLayerStateType, var_layer, assignOverrideDelegates, DefaultOverrideDelegate);
                 f.AddParam(var_self);
                 f.code = (context, partialResult) =>
                 {
-                    if (!TryGetCachedReference<ValAnimationStateMachine>(context.self, out var stateMachine) || stateMachine.reference == null) return Intrinsic.Result.Null;
-                    return new Intrinsic.Result(ConvertAnimationLayer(context, stateMachine.reference.Layer));
+                    if (!TryGetCachedReference<ValAnimationLayerState>(context.self, out var state) || state.reference == null) return Intrinsic.Result.Null;
+                    return new Intrinsic.Result(ConvertAnimationLayer(context, state.reference.Layer));
                 };
 
-                // machine.motionControllerIndex
-                f = CreateNewLocalIntrinsicWithAssignOverride(_animationStateMachineType, var_motionControllerIndex, assignOverrideDelegates, (ValMap instance, Value value) =>
+                // state.motionControllerIndex
+                f = CreateNewLocalIntrinsicWithAssignOverride(_animationLayerStateType, var_motionControllerIndex, assignOverrideDelegates, (ValMap instance, Value value) =>
                 {
-                    if (TryGetCachedReference<ValAnimationStateMachine>(instance, out var stateMachine) && stateMachine.reference != null) stateMachine.reference.MotionControllerIndex = value == null ? -1 : value.IntValue();
+                    if (TryGetCachedReference<ValAnimationLayerState>(instance, out var state) && state.reference != null) state.reference.MotionControllerIndex = value == null ? -1 : value.IntValue();
                     return true;
                 });
                 f.AddParam(var_self);
                 f.code = (context, partialResult) =>
                 {
-                    if (!TryGetCachedReference<ValAnimationStateMachine>(context.self, out var layer) || layer.reference == null) return Intrinsic.Result.Null;
+                    if (!TryGetCachedReference<ValAnimationLayerState>(context.self, out var layer) || layer.reference == null) return Intrinsic.Result.Null;
                     return new Intrinsic.Result(new ValNumber(layer.reference.MotionControllerIndex));
                 };
 
-                // machine.isActive
-                f = CreateNewLocalIntrinsicWithAssignOverride(_animationStateMachineType, var_isActive, assignOverrideDelegates, DefaultOverrideDelegate);
+                // state.isActive
+                f = CreateNewLocalIntrinsicWithAssignOverride(_animationLayerStateType, var_isActive, assignOverrideDelegates, DefaultOverrideDelegate);
                 f.AddParam(var_self);
                 f.code = (context, partialResult) =>
                 {
-                    if (!TryGetCachedReference<ValAnimationStateMachine>(context.self, out var stateMachine) || stateMachine.reference == null) return Intrinsic.Result.Null;
-                    return new Intrinsic.Result(ValNumber.Truth(stateMachine.reference.IsActive()));
+                    if (!TryGetCachedReference<ValAnimationLayerState>(context.self, out var state) || state.reference == null) return Intrinsic.Result.Null;
+                    return new Intrinsic.Result(ValNumber.Truth(state.reference.IsActive()));
                 };
 
-                // machine.weight
-                f = CreateNewLocalIntrinsicWithAssignOverride(_animationStateMachineType, var_weight, assignOverrideDelegates, (ValMap instance, Value value) =>
+                // state.weight
+                f = CreateNewLocalIntrinsicWithAssignOverride(_animationLayerStateType, var_weight, assignOverrideDelegates, (ValMap instance, Value value) =>
                 {
-                    if (TryGetCachedReference<ValAnimationStateMachine>(instance, out var stateMachine) && stateMachine.reference != null) stateMachine.reference.SetWeight(value == null ? 0 : value.FloatValue());
+                    if (TryGetCachedReference<ValAnimationLayerState>(instance, out var state) && state.reference != null) state.reference.SetWeight(value == null ? 0 : value.FloatValue());
                     return true;
                 });
                 f.AddParam(var_self);
                 f.code = (context, partialResult) =>
                 {
-                    if (!TryGetCachedReference<ValAnimationStateMachine>(context.self, out var layer) || layer.reference == null) return Intrinsic.Result.Null;
+                    if (!TryGetCachedReference<ValAnimationLayerState>(context.self, out var layer) || layer.reference == null) return Intrinsic.Result.Null;
                     return new Intrinsic.Result(new ValNumber(layer.reference.GetWeight()));
                 };
 
-                // machine.time
-                f = CreateNewLocalIntrinsicWithAssignOverride(_animationStateMachineType, var_time, assignOverrideDelegates, (ValMap instance, Value value) =>
+                // state.time
+                f = CreateNewLocalIntrinsicWithAssignOverride(_animationLayerStateType, var_time, assignOverrideDelegates, (ValMap instance, Value value) =>
                 {
-                    if (TryGetCachedReference<ValAnimationStateMachine>(instance, out var stateMachine) && stateMachine.reference != null) stateMachine.reference.SetTime(value == null ? 0 : value.FloatValue());
+                    if (TryGetCachedReference<ValAnimationLayerState>(instance, out var state) && state.reference != null) state.reference.SetTime(value == null ? 0 : value.FloatValue());
                     return true;
                 });
                 f.AddParam(var_self);
                 f.code = (context, partialResult) =>
                 {
-                    if (!TryGetCachedReference<ValAnimationStateMachine>(context.self, out var stateMachine) || stateMachine.reference == null) return Intrinsic.Result.Null;
-                    return new Intrinsic.Result(new ValNumber(stateMachine.reference.GetTime()));
+                    if (!TryGetCachedReference<ValAnimationLayerState>(context.self, out var state) || state.reference == null) return Intrinsic.Result.Null;
+                    return new Intrinsic.Result(new ValNumber(state.reference.GetTime()));
                 };
 
-                // machine.normalizedTime
-                f = CreateNewLocalIntrinsicWithAssignOverride(_animationStateMachineType, var_normalizedTime, assignOverrideDelegates, (ValMap instance, Value value) =>
+                // state.normalizedTime
+                f = CreateNewLocalIntrinsicWithAssignOverride(_animationLayerStateType, var_normalizedTime, assignOverrideDelegates, (ValMap instance, Value value) =>
                 {
-                    if (TryGetCachedReference<ValAnimationStateMachine>(instance, out var stateMachine) && stateMachine.reference != null) stateMachine.reference.SetNormalizedTime(value == null ? 0 : value.FloatValue());
+                    if (TryGetCachedReference<ValAnimationLayerState>(instance, out var state) && state.reference != null) state.reference.SetNormalizedTime(value == null ? 0 : value.FloatValue());
                     return true;
                 });
                 f.AddParam(var_self);
                 f.code = (context, partialResult) =>
                 {
-                    if (!TryGetCachedReference<ValAnimationStateMachine>(context.self, out var stateMachine) || stateMachine.reference == null) return Intrinsic.Result.Null;
-                    return new Intrinsic.Result(new ValNumber(stateMachine.reference.GetNormalizedTime()));
+                    if (!TryGetCachedReference<ValAnimationLayerState>(context.self, out var state) || state.reference == null) return Intrinsic.Result.Null;
+                    return new Intrinsic.Result(new ValNumber(state.reference.GetNormalizedTime()));
                 };
-                
-                // machine.estimatedDuration
-                f = CreateNewLocalIntrinsicWithAssignOverride(_animationStateMachineType, var_estimatedDuration, assignOverrideDelegates, DefaultOverrideDelegate);
+
+                // state.estimatedDuration
+                f = CreateNewLocalIntrinsicWithAssignOverride(_animationLayerStateType, var_estimatedDuration, assignOverrideDelegates, DefaultOverrideDelegate);
                 f.AddParam(var_self);
                 f.code = (context, partialResult) =>
                 {
-                    if (!TryGetCachedReference<ValAnimationStateMachine>(context.self, out var stateMachine) || stateMachine.reference == null) return Intrinsic.Result.Null;
-                    return new Intrinsic.Result(new ValNumber(stateMachine.reference.GetEstimatedDuration()));
+                    if (!TryGetCachedReference<ValAnimationLayerState>(context.self, out var state) || state.reference == null) return Intrinsic.Result.Null;
+                    return new Intrinsic.Result(new ValNumber(state.reference.GetEstimatedDuration()));
                 };
-                
-                // machine.RestartAnims
-                f = CreateNewLocalIntrinsicWithAssignOverride(_animationStateMachineType, func_RestartAnims, assignOverrideDelegates, DefaultOverrideDelegate);
+
+                // state.RestartAnims
+                f = CreateNewLocalIntrinsicWithAssignOverride(_animationLayerStateType, func_RestartAnims, assignOverrideDelegates, DefaultOverrideDelegate);
                 f.AddParam(var_self);
                 f.code = (context, partialResult) =>
                 {
-                    if (!TryGetCachedReference<ValAnimationStateMachine>(context.self, out var stateMachine) || stateMachine.reference == null) return Intrinsic.Result.Null;
-                    stateMachine.reference.RestartAnims();
+                    if (!TryGetCachedReference<ValAnimationLayerState>(context.self, out var state) || state.reference == null) return Intrinsic.Result.Null;
+                    state.reference.RestartAnims();
                     return Intrinsic.Result.Null;
                 };
 
-                // machine.ResyncAnims
+                // state.ResyncAnims
                 // set all anims to the same playback position
-                f = CreateNewLocalIntrinsicWithAssignOverride(_animationStateMachineType, func_ResyncAnims, assignOverrideDelegates, DefaultOverrideDelegate);
+                f = CreateNewLocalIntrinsicWithAssignOverride(_animationLayerStateType, func_ResyncAnims, assignOverrideDelegates, DefaultOverrideDelegate);
                 f.AddParam(var_self);
                 f.code = (context, partialResult) =>
                 {
-                    if (!TryGetCachedReference<ValAnimationStateMachine>(context.self, out var stateMachine) || stateMachine.reference == null) return Intrinsic.Result.Null;
-                    stateMachine.reference.ResyncAnims();
+                    if (!TryGetCachedReference<ValAnimationLayerState>(context.self, out var state) || state.reference == null) return Intrinsic.Result.Null;
+                    state.reference.ResyncAnims();
                     return Intrinsic.Result.Null;
                 };
 
-                // machine.ResetTransition
-                f = CreateNewLocalIntrinsicWithAssignOverride(_animationStateMachineType, func_ResetTransition, assignOverrideDelegates, DefaultOverrideDelegate);
+                // state.ResetTransition
+                f = CreateNewLocalIntrinsicWithAssignOverride(_animationLayerStateType, func_ResetTransition, assignOverrideDelegates, DefaultOverrideDelegate);
                 f.AddParam(var_self);
                 f.code = (context, partialResult) =>
                 {
-                    if (!TryGetCachedReference<ValAnimationStateMachine>(context.self, out var stateMachine) || stateMachine.reference == null) return Intrinsic.Result.Null;
-                    stateMachine.reference.ResetTransition();
+                    if (!TryGetCachedReference<ValAnimationLayerState>(context.self, out var state) || state.reference == null) return Intrinsic.Result.Null;
+                    state.reference.ResetTransition();
                     return Intrinsic.Result.Null;
                 };
 
-                // machine.transitionTarget
-                f = CreateNewLocalIntrinsicWithAssignOverride(_animationStateMachineType, var_transitionTarget, assignOverrideDelegates, DefaultOverrideDelegate);
+                // state.transitionTarget
+                f = CreateNewLocalIntrinsicWithAssignOverride(_animationLayerStateType, var_transitionTarget, assignOverrideDelegates, DefaultOverrideDelegate);
                 f.AddParam(var_self);
                 f.code = (context, partialResult) =>
                 {
-                    if (!TryGetCachedReference<ValAnimationStateMachine>(context.self, out var layer) || layer.reference == null) return Intrinsic.Result.Null;
+                    if (!TryGetCachedReference<ValAnimationLayerState>(context.self, out var layer) || layer.reference == null) return Intrinsic.Result.Null;
                     return new Intrinsic.Result(new ValNumber(layer.reference.TransitionTarget));
                 };
 
-                // machine.transitionTime
-                f = CreateNewLocalIntrinsicWithAssignOverride(_animationStateMachineType, var_transitionTime, assignOverrideDelegates, DefaultOverrideDelegate);
+                // state.transitionTime
+                f = CreateNewLocalIntrinsicWithAssignOverride(_animationLayerStateType, var_transitionTime, assignOverrideDelegates, DefaultOverrideDelegate);
                 f.AddParam(var_self);
                 f.code = (context, partialResult) =>
                 {
-                    if (!TryGetCachedReference<ValAnimationStateMachine>(context.self, out var stateMachine) || stateMachine.reference == null) return Intrinsic.Result.Null;
-                    return new Intrinsic.Result(new ValNumber(stateMachine.reference.TransitionTime));
+                    if (!TryGetCachedReference<ValAnimationLayerState>(context.self, out var state) || state.reference == null) return Intrinsic.Result.Null;
+                    return new Intrinsic.Result(new ValNumber(state.reference.TransitionTime));
                 };
 
-                // machine.transitionTimeLeft
-                f = CreateNewLocalIntrinsicWithAssignOverride(_animationStateMachineType, var_transitionTimeLeft, assignOverrideDelegates, DefaultOverrideDelegate);
+                // state.transitionTimeLeft
+                f = CreateNewLocalIntrinsicWithAssignOverride(_animationLayerStateType, var_transitionTimeLeft, assignOverrideDelegates, DefaultOverrideDelegate);
                 f.AddParam(var_self);
                 f.code = (context, partialResult) =>
                 {
-                    if (!TryGetCachedReference<ValAnimationStateMachine>(context.self, out var stateMachine) || stateMachine.reference == null) return Intrinsic.Result.Null;
-                    return new Intrinsic.Result(new ValNumber(stateMachine.reference.TransitionTimeLeft));
+                    if (!TryGetCachedReference<ValAnimationLayerState>(context.self, out var state) || state.reference == null) return Intrinsic.Result.Null;
+                    return new Intrinsic.Result(new ValNumber(state.reference.TransitionTimeLeft));
                 };
 
             }
-            return _animationStateMachineType;
+            return _animationLayerStateType;
         }
-        static SwoleScriptType _animationStateMachineType = null;
-        public static ValMap ConvertAnimationStateMachine(TAC.Context context, IAnimationStateMachine obj)
+        static SwoleScriptType _animationLayerStateType = null;
+        public static ValMap ConvertAnimationLayerState(TAC.Context context, IAnimationLayerState obj)
         {
             if (obj == null) return null;
 
-            var ms_obj = AnimationStateMachineType().NewObject(context);
+            var ms_obj = AnimationLayerStateType().NewObject(context);
 
             // Set data
-            ms_obj.map[varStr_cachedReference] = new ValAnimationStateMachine(obj);
+            ms_obj.map[varStr_cachedReference] = new ValAnimationLayerState(obj);
 
             return ms_obj;
         }
@@ -4458,7 +4458,7 @@ namespace Swole.Script
                 // motionController.weight
                 f = CreateNewLocalIntrinsicWithAssignOverride(_animationMotionControllerType, var_weight, assignOverrideDelegates, (ValMap instance, Value value) =>
                 {
-                    if (TryGetCachedReference<ValAnimationMotionController>(instance, out var stateMachine) && stateMachine.reference != null) stateMachine.reference.SetWeight(value == null ? 0 : value.FloatValue());
+                    if (TryGetCachedReference<ValAnimationMotionController>(instance, out var state) && state.reference != null) state.reference.SetWeight(value == null ? 0 : value.FloatValue());
                     return true;
                 });
                 f.AddParam(var_self);

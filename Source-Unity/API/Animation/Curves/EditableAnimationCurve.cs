@@ -34,6 +34,11 @@ namespace Swole.API.Unity
         public void FixNaN();
 
         public void ClearKeys();
+
+        public void Scale(float scale);
+        public void SetTimeLength(float length);
+        public float GetTimeLength();
+
     }
 
     public class EditableAnimationCurve : SwoleObject<EditableAnimationCurve, SerializedAnimationCurve>, ICloneable, IAnimationCurveProxy
@@ -479,6 +484,31 @@ namespace Swole.API.Unity
             if (notifyListeners) NotifyStateChange();
         }
 
+        public void Scale(float scale)
+        {
+            for(int a = 0; a < this.length; a++)
+            {
+                var key = this[a];
+                key.time = key.time * scale;
+                this[a] = key;
+            }
+        }
+        public void SetTimeLength(float length)
+        {
+            if (length <= 0) return;
+
+            float currentLength = GetTimeLength();
+            if (currentLength <= 0) return;
+
+            Scale(length / currentLength);
+        }
+        public float GetTimeLength()
+        {
+            if (this.length <= 0) return 0;
+
+            return this[this.length - 1].time;
+        }
+
     }
 
     public struct AnimationCurveProxy : IAnimationCurveProxy
@@ -644,6 +674,31 @@ namespace Swole.API.Unity
             if (unityCurve == null) return;
 
             unityCurve.ClearKeys();
+        }
+
+        public void Scale(float scale)
+        {
+            for (int a = 0; a < this.length; a++)
+            {
+                var key = this[a];
+                key.time = key.time * scale;
+                this[a] = key;
+            }
+        }
+        public void SetTimeLength(float length)
+        {
+            if (length <= 0) return;
+
+            float currentLength = GetTimeLength();
+            if (currentLength <= 0) return;
+
+            Scale(length / currentLength);
+        }
+        public float GetTimeLength()
+        {
+            if (this.length <= 0) return 0;
+
+            return this[this.length - 1].time;
         }
 
     }

@@ -1,0 +1,26 @@
+{
+    "name": "com.andywiecko.burst.triangulator",
+    "version": "3.8.0",
+    "displayName": "Burst Triangulator",
+    "description": "A single-file package which provides Delaunay triangulation of the given set of points with constraints and mesh refinement.",
+    "unity": "2022.2",
+    "unityRelease": "1f1",
+    "keywords": [
+        "Burst",
+        "Triangulation",
+        "Mesh-refinement"
+    ],
+    "author": {
+        "name": "Andrzej Więckowski",
+        "email": "andywiecko@gmail.com",
+        "url": "https://andywiecko.github.io/"
+    },
+    "repository": {
+        "type": "git",
+        "url": "git+https://github.com/andywiecko/BurstTriangulator"
+    },
+    "dependencies": {
+        "com.unity.burst": "1.8.7",
+        "com.unity.collections": "2.2.0"
+    }
+}

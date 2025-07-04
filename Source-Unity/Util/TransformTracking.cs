@@ -31,7 +31,7 @@ namespace Swole
         private JobHandle inputDependency; 
         public void AddInputDependencyLocal(JobHandle inputDependency)
         {
-            this.inputDependency = JobHandle.CombineDependencies(inputDependency, this.inputDependency);
+            this.inputDependency = JobHandle.CombineDependencies(inputDependency, this.inputDependency); 
         }
         public static void AddInputDependency(JobHandle inputDependency)
         {
@@ -40,7 +40,16 @@ namespace Swole
 
             instance.AddInputDependencyLocal(inputDependency); 
         }
-        public static JobHandle JobDependency => Instance.inputDependency;
+        public static JobHandle JobDependency
+        {
+            get
+            {
+                var instance = InstanceOrNull;
+                if (instance == null) return default;
+
+                return instance.inputDependency;
+            }
+        }
 
         public override void OnLateUpdate()
         {
@@ -53,12 +62,26 @@ namespace Swole
             inputDependency = default;  
         }
 
+        public void EnsureJobCompletion()
+        {
+            var instance = InstanceOrNull;
+            if (instance == null) return;
+
+            instance.EnsureJobCompletionLocal();
+        }
+        public void EnsureJobCompletionLocal()
+        {
+            inputDependency.Complete();
+        }
+
         public override void OnUpdate()
         {
         }
 
         public void Dispose()
         {
+            EnsureJobCompletionLocal();
+
             if (trackedTransformsJobs.isCreated) 
             {
                 trackedTransformsJobs.Dispose();
@@ -110,7 +133,9 @@ namespace Swole
             if (transform == null) return null;
 
             foreach (var t in trackedTransforms) if (t.transform == transform) return t;
-             
+
+            EnsureJobCompletionLocal();
+
             var tt = new TrackedTransform() { transform = transform, Index = trackedTransforms.Count };
             trackedTransforms.Add(tt);
             trackedTransformsJobs.Add(transform);
@@ -128,6 +153,8 @@ namespace Swole
 
         public void RemoveLocal(int index)
         {
+            EnsureJobCompletionLocal();
+
             var tt = trackedTransforms[index];
             var swapTT = trackedTransforms[trackedTransforms.Count - 1];
             trackedTransforms[index] = swapTT;

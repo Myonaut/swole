@@ -17,6 +17,7 @@ namespace Swole.Animation
 
         public int Index { get; set; }
 
+        public IAnimationLayer Layer { get; }
         public IAnimator Animator { get; }
         public IAnimationAsset Animation { get; }
 
@@ -28,6 +29,9 @@ namespace Swole.Animation
         public bool IsBlend { get; set; }
 
         public float Time { get; set; }
+        public void SetTime(float time, bool resetFlags = true);
+        public bool OverrideTime { get; set; }
+        public float TimeOverride { get; set; }
 
         public float GetLoopedTime(float time, bool canLoop = true);
 
@@ -39,6 +43,17 @@ namespace Swole.Animation
         /// Last mix used during the animation step
         /// </summary>
         public float DynamicMix { get; }
+
+
+        public WeightedAvatarMaskComposite GetInvertedMask(WeightedAvatarMaskComposite mask);
+
+        public void SetTopAvatarMask(WeightedAvatarMask mask, bool invertMask);
+        public void SetTopAvatarMask(WeightedAvatarMaskComposite mask, bool invertMask);
+
+        public void SetAvatarMask(WeightedAvatarMask mask, bool invertMask);
+        public void SetAvatarMask(WeightedAvatarMaskComposite mask, bool invertMask);
+
+
         public bool Paused { get; set; }
 
         public bool HasAnimationEvents { get; }

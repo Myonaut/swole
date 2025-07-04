@@ -5,6 +5,8 @@ using System.Collections;
 using System.Collections.Generic;
 
 using UnityEngine;
+using UnityEngine.Events;
+
 
 #if BULKOUT_ENV
 using RootMotion.FinalIK; // Paid Asset Integration https://assetstore.unity.com/packages/tools/animation/final-ik-14290
@@ -22,7 +24,7 @@ namespace Swole.API.Unity.Animation
         public static bool Register(CustomIKManager member)
         {
             var instance = Instance;
-            if (member == null || instance == null) return false;
+            if (member == null || instance == null) return false; 
 
             if (!instance.members.Contains(member)) instance.members.Add(member);
             return true;
@@ -503,13 +505,18 @@ namespace Swole.API.Unity.Animation
         public event VoidParameterlessDelegate PreLateUpdate;
         public event VoidParameterlessDelegate PostLateUpdate;
 
+        public UnityEvent OnPreLateUpdate;
+        public UnityEvent OnPostLateUpdate;
+
         public virtual void LateUpdateStep()
         {
             PreLateUpdate?.Invoke();
+            OnPreLateUpdate?.Invoke();
 
             FixTransformsAndUpdateSolvers();
 
             PostLateUpdate?.Invoke();
+            OnPostLateUpdate?.Invoke();
         }
 
     }

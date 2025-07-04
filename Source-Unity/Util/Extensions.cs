@@ -186,6 +186,8 @@ namespace Swole
 #if UNITY_EDITOR
         public static T CreateOrReplaceAsset<T>(this T asset, string path) where T : UnityEngine.Object
         {
+            Utils.CreateDirectoryFromAssetPath(path);
+
             T existingAsset = AssetDatabase.LoadAssetAtPath<T>(path); 
 
             if (existingAsset == null)
@@ -202,6 +204,39 @@ namespace Swole
             return asset;
         }
 #endif
+
+        public static string CreateUnityAssetPathString(string savePath, string assetName, string assetExtension)
+        {
+            if (assetExtension.StartsWith(".")) assetExtension = assetExtension.Substring(1);
+            return (savePath.StartsWith("Assets") ? "" : $"Assets{System.IO.Path.DirectorySeparatorChar}") + savePath + (savePath.EndsWith($"{System.IO.Path.DirectorySeparatorChar}") ? "" : $"{System.IO.Path.DirectorySeparatorChar}") + $"{assetName}.{assetExtension}";
+        }
+        public static string CreateUnityAssetPathString(this UnityEngine.Object obj, string saveDir, string assetExtension = null)
+        {
+            if (obj == null) return null;
+            if (string.IsNullOrWhiteSpace(assetExtension))
+            {
+                assetExtension = "asset";
+
+                if (typeof(Material).IsAssignableFrom(obj.GetType()))
+                {
+                    assetExtension = "mat";
+                }
+                else if (typeof(Cubemap).IsAssignableFrom(obj.GetType()))
+                {
+                    assetExtension = "cubemap";
+                }
+                else if (typeof(GUISkin).IsAssignableFrom(obj.GetType()))
+                {
+                    assetExtension = "GUISkin";
+                }
+                else if (typeof(AnimationClip).IsAssignableFrom(obj.GetType()))
+                {
+                    assetExtension = "anim";
+                }
+            }
+
+            return CreateUnityAssetPathString(saveDir, obj.name, assetExtension);
+        }
 
         #endregion
 
@@ -449,6 +484,15 @@ namespace Swole
             }
             return null;
         }
+        public static Transform FindTopLevelChild(this Transform parent, string name)
+        {
+            for (int a = 0; a < parent.childCount; a++)
+            {
+                var child = parent.GetChild(a);
+                if (child.name == name) return child;
+            }
+            return null;
+        }
         public static Transform FindActive(this Transform parent, string name)
         {
             if (!parent.gameObject.activeSelf) return null;
@@ -529,7 +573,7 @@ namespace Swole
 
         }
 
-        public static string GetPathString(this Transform transform, bool ignoreTopTransform = false, string separator = "/")
+        public static string GetPathString(this Transform transform, bool ignoreTopTransform = false, string separator = "/", Transform root = null)
         {
 
             string path = transform.name;
@@ -538,6 +582,8 @@ namespace Swole
             {
                 transform = transform.parent;
                 path = transform.name + separator + path;
+
+                if (root != null && ReferenceEquals(transform, root)) break;
             }
 
             if (ignoreTopTransform)
@@ -545,7 +591,7 @@ namespace Swole
                 int firstSep = path.IndexOf(separator); 
                 if (firstSep < 0)
                 {
-                    path = "";
+                    path = string.Empty;
                 } 
                 else
                 {
@@ -571,6 +617,15 @@ namespace Swole
         }
 
         public static Transform GetTransformByPath(this Transform root, string path) => GetTransformByPath(path, root); 
+
+        public static void ApplyRotationAroundPivot(this Transform transform, Quaternion rotation, Vector3 pivot)
+        {
+            Vector3 fromPivotToPos = transform.position - pivot;
+
+            transform.rotation = rotation * transform.rotation;
+            fromPivotToPos = rotation * fromPivotToPos;
+            transform.position = pivot + fromPivotToPos;
+        }
 
         public static void ForceUpdateLayouts(this GameObject gameObject)
         {
@@ -664,6 +719,33 @@ namespace Swole
             }
 
             return list;
+        }
+
+        public static int GetCount<T>(this IEnumerable<T> obj)
+        {
+            if (obj is ICollection<T> collection) return collection.Count;
+
+            int count = 0;
+            foreach (var _ in obj) count++;
+
+            return count;
+        }
+        public static T[] AsManagedArray<T>(this IEnumerable<T> obj)
+        {
+            if (obj is T[] array) return array; 
+            if (obj is ICollection<T> collection) return collection.ToArray(); 
+
+            int count = 0;
+            foreach (var _ in obj) count++;
+            array = new T[count];
+            count = 0;
+            foreach (var item in obj) 
+            { 
+                array[count] = item;
+                count++;
+            }
+
+            return array;
         }
 
         #region UI

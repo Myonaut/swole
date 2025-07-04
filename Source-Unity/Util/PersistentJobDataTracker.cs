@@ -55,15 +55,47 @@ namespace Swole
             instance.disposables.Add(disposer);
             return true;
         }
+        public class WrappedDisposable : IDisposable, IEquatable<IDisposable>
+        {
+            public IDisposable disposable;
+            private bool isDisposed;
+            public bool IsDisposed => isDisposed;
+            public void Dispose()
+            {
+                if (disposable != null) disposable.Dispose();
+                disposable = default;
+                isDisposed = true;
+            }
+
+            public bool Equals(IDisposable other)
+            {
+                if (other is WrappedDisposable wrapper) return ReferenceEquals(wrapper.disposable, disposable) || (disposable != null && disposable.Equals(wrapper.disposable)); 
+                return ReferenceEquals(disposable, other) || (disposable != null && disposable.Equals(other));  
+            }
+
+            public WrappedDisposable(IDisposable disposable)
+            {
+                this.disposable = disposable;
+            }
+        }
+        public static WrappedDisposable WrapAndTrack(IDisposable disposer)
+        {
+            var instance = Instance;
+            if (instance == null || instance.disposables == null) return null;
+
+            var wrapper = new WrappedDisposable(disposer);
+            instance.disposables.Add(wrapper);
+            return wrapper;
+        }
         /// <summary>
-        /// NOTE: A disposable struct should be wrapped in a disposable class if you plan on allowing it to be untracked.
+        /// NOTE: For guaranteed consistency, a disposable struct should be wrapped in a disposable class if you plan on allowing it to be untracked. You can easily create a wrapped disposable using this class's WrapAndTrack method.
         /// </summary>
         public static bool Untrack(IDisposable disposer) 
         {
-            var instance = Instance;
+            var instance = InstanceOrNull;
             if (instance == null || instance.disposables == null) return false;
 
-            return instance.disposing ? true : instance.disposables.RemoveAll(i => ReferenceEquals(i, disposer)) > 0; 
+            return instance.disposing ? true : instance.disposables.RemoveAll(i => ReferenceEquals(i, disposer) || (i != null && i.Equals(disposer)) || (i is WrappedDisposable wrapper && (ReferenceEquals(wrapper.disposable, disposer) || (wrapper.disposable != null && wrapper.disposable.Equals(disposer))))) > 0;    
         }
 
         public override void OnDestroyed()

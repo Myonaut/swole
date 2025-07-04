@@ -57,7 +57,12 @@ namespace Swole
             }
             protected void FixedUpdate()
             {
-                hook?.PhysicsUpdate();
+                if (hook != null) 
+                {
+                    hook.PrePhysicsUpdate();
+                    hook.PhysicsUpdate(); 
+                    hook.PostPhysicsUpdate();
+                }
             }
 
         }
@@ -831,14 +836,14 @@ namespace Swole
         {
             return new CustomAnimationLayer() { name = name };
         }
-        public override IAnimationStateMachine CreateNewStateMachine(string name, int motionControllerIndex, Transition[] transitions = null)
+        public override IAnimationLayerState CreateNewLayerState(string name, int motionControllerIndex, Transition[] transitions = null)
         {
-            return new CustomStateMachine() { name = name, motionControllerIndex = motionControllerIndex, transitions = transitions };
+            return new CustomAnimationLayerState() { name = name, motionControllerIndex = motionControllerIndex, transitions = transitions };
         }
 
         public override IAnimationReference CreateNewAnimationReference(string name, IAnimationAsset asset, AnimationLoopMode loopMode)
         {
-            return new CustomMotionController.AnimationReference(name, asset, loopMode);
+            return new AnimationReference(name, asset, loopMode);
         }
 
         #endregion

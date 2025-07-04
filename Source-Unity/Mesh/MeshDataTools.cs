@@ -1,14 +1,20 @@
-#if (UNITY_STANDALONE || UNITYEDITOR)
+#if (UNITY_STANDALONE || UNITY_EDITOR)
 
 using System;
 using System.Collections;
 using System.Collections.Generic;
+using System.Runtime.CompilerServices;
 
 using Unity.Mathematics;
 using Unity.Collections;
+using Unity.Jobs;
+using Unity.Burst;
 
 using UnityEngine;
 using UnityEngine.Rendering;
+
+using Swole.DataStructures;
+using Swole.API.Unity;
 
 namespace Swole
 {
@@ -468,16 +474,25 @@ namespace Swole
             }
         }
 
-        public static MergedVertex[] MergeVertices(ICollection<Vector3> vertices, float mergeThreshold = 0.00001f)
+        public static MergedVertex[] MergeVertices(IEnumerable<Vector3> vertices, float mergeThreshold = 0.00001f)
         {
 
             Dictionary<float, Dictionary<float, Dictionary<float, MergedVertex>>> sibling_stack = new Dictionary<float, Dictionary<float, Dictionary<float, MergedVertex>>>();
 
-            MergedVertex[] clones = new MergedVertex[vertices.Count];
+            int count = 0;
+            if (vertices is ICollection<Vector3> collection)
+            {
+                count = collection.Count;
+            }
+            else
+            {
+                foreach (var _ in vertices) count++;
+            }
 
-            double merge = 1D / mergeThreshold;
+            MergedVertex[] clones = new MergedVertex[count];
 
             int index = 0;
+            double merge = 1D / mergeThreshold;
             foreach (Vector3 vert in vertices)
             {
 
@@ -517,6 +532,66 @@ namespace Swole
 
             return clones;
 
+        }
+
+        /// <summary>
+        /// Sorts a collection of positions into groups based on mergeDistance and outputs a list of averaged positions per merge group.
+        /// </summary>
+        public static List<Vector3> MergePositions3D(IEnumerable<Vector3> positions, float mergeDistance, List<Vector3> mergedPositionsOutput = null)
+        {
+
+            if (mergedPositionsOutput == null) mergedPositionsOutput = new List<Vector3>();
+            Dictionary<float, Dictionary<float, Dictionary<float, int2>>> sibling_stack = new Dictionary<float, Dictionary<float, Dictionary<float, int2>>>();
+
+            double merge = 1D / mergeDistance;
+            foreach (Vector3 pos in positions)
+            {
+
+                float px = (float)(System.Math.Truncate((double)pos.x * merge) / merge);
+                float py = (float)(System.Math.Truncate((double)pos.y * merge) / merge);
+                float pz = (float)(System.Math.Truncate((double)pos.z * merge) / merge);
+
+                Dictionary<float, Dictionary<float, int2>> layer1;
+
+                if (!sibling_stack.TryGetValue(px, out layer1))
+                {
+                    layer1 = new Dictionary<float, Dictionary<float, int2>>();
+                    sibling_stack[px] = layer1;
+                }
+
+                Dictionary<float, int2> layer2;
+
+                if (!layer1.TryGetValue(py, out layer2))
+                {
+                    layer2 = new Dictionary<float, int2>();
+                    layer1[py] = layer2;
+                }
+
+                if (!layer2.TryGetValue(pz, out int2 mergedIndex))
+                {
+                    mergedIndex = new int2(mergedPositionsOutput.Count, 0);
+                    mergedPositionsOutput.Add(Vector3.zero);
+                    layer2[pz] = mergedIndex;
+                }
+
+                mergedPositionsOutput[mergedIndex.x] += pos;
+                mergedIndex.y += 1;
+
+                layer2[pz] = mergedIndex;
+            }
+
+            foreach(var x in sibling_stack)
+            {
+                foreach (var y in x.Value)
+                {
+                    foreach (var z in y.Value)
+                    {
+                        mergedPositionsOutput[z.Value.x] /= z.Value.y;  
+                    }
+                }
+            }
+
+            return mergedPositionsOutput;
         }
 
         #endregion
@@ -737,11 +812,28 @@ namespace Swole
             A, B, C
         }
         [Serializable]
-        public struct Triangle
+        public struct Triangle : IEquatable<Triangle>
         {
+            public int triIndex;
             public int i0, i1, i2;
 
             public TriangleOwnerIndex ownerIndex;
+
+            public Triangle(int triIndex, int i0, int i1, int i2)
+            {
+                this.triIndex = triIndex;
+
+                this.i0 = i0;
+                this.i1 = i1;
+                this.i2 = i2;
+
+                ownerIndex = TriangleOwnerIndex.A;
+            }
+
+            public bool Equals(Triangle other)
+            {
+                return i0 == other.i0 && i1 == other.i1 && i2 == other.i2;
+            }
         }
 
         public static Triangle[][] GetTriangleReferencesPerVertex(int vertexCount, int[] triangles, MergedVertex[] mergedVertices = null)
@@ -1192,7 +1284,10 @@ namespace Swole
         public struct MeshIsland
         {
             public Color color;
+            [HideInInspector]
             public int[] vertices;
+            [HideInInspector]
+            public Triangle[] triangles;
 
             /// <summary>
             /// Convenience field for storing origin vertex index
@@ -1211,41 +1306,56 @@ namespace Swole
             }
         }
 
-        public static List<MeshIsland> CalculateMeshIslands(Mesh mesh, List<MeshIsland> meshIslands = null, bool weldVertices = true)
+
+        [Obsolete("Extremely slow")]
+        public static List<MeshIsland> CalculateMeshIslands_old(Mesh mesh, List<MeshIsland> meshIslands = null, bool weldVertices = true, bool includeTriangles = false) => CalculateMeshIslands(mesh, meshIslands, weldVertices, out _, includeTriangles);
+        [Obsolete("Extremely slow")]
+        public static List<MeshIsland> CalculateMeshIslands_old(Mesh mesh, List<MeshIsland> meshIslands, bool weldVertices, out MergedVertex[] weldedVertices, bool includeTriangles = false) => CalculateMeshIslands(mesh, mesh.triangles, meshIslands, weldVertices, out weldedVertices, includeTriangles);
+
+        [Obsolete("Extremely slow")]
+        public static List<MeshIsland> CalculateMeshIslands_old(Mesh mesh, int[] triangles, List<MeshIsland> meshIslands = null, bool weldVertices = true, bool includeTriangles = false) => CalculateMeshIslands(mesh, triangles, meshIslands, weldVertices, out _, includeTriangles);
+        [Obsolete("Extremely slow")]
+        public static List<MeshIsland> CalculateMeshIslands_old(Mesh mesh, int[] triangles, List<MeshIsland> meshIslands, bool weldVertices, out MergedVertex[] weldedVertices, bool includeTriangles = false)
         {
             if (meshIslands == null) meshIslands = new List<MeshIsland>();
 
-            var triangles = mesh.triangles;
+            if (triangles == null) triangles = mesh.triangles;
 
             List<int> currentIsland = new List<int>();
+            List<Triangle> currentIslandTris = new List<Triangle>();
             void CompleteIsland()
             {
                 if (currentIsland.Count <= 0) return; // don't create empty mesh islands
 
-                meshIslands.Add(new MeshIsland() { color = UnityEngine.Random.ColorHSV(), vertices = currentIsland.ToArray() });
+                meshIslands.Add(new MeshIsland() { color = UnityEngine.Random.ColorHSV(), vertices = currentIsland.ToArray(), triangles = includeTriangles ? currentIslandTris.ToArray() : null });
                 currentIsland.Clear();
+                currentIslandTris.Clear();
             }
             bool[] closedVertices = new bool[mesh.vertexCount]; // flags used to determine if a vertex has already been added to a mesh island
-            var weldedVertices = weldVertices ? MeshDataTools.MergeVertices(mesh.vertices) : null;
+            weldedVertices = weldVertices ? MeshDataTools.MergeVertices(mesh.vertices) : null;
+            var weldedVertices_ = weldedVertices;
 
             int GetWeldedIndex(int originalVertexIndex)
             {
                 if (!weldVertices) return originalVertexIndex;
-                return weldedVertices[originalVertexIndex].firstIndex;
+                return weldedVertices_[originalVertexIndex].firstIndex;
             }
 
             void AddVertexConnections(int vertex)
             {
                 int weldedConnectingIndex = GetWeldedIndex(vertex);
-                for (int v = 0; v < triangles.Length; v += 3) // triangles are stored as linear groups of 3 vertex indices
+                for (int tri = 0; tri < triangles.Length; tri += 3) // triangles are stored as linear groups of 3 vertex indices
                 {
-                    int t0 = v;
-                    int t1 = v + 1;
-                    int t2 = v + 2;
+                    int t0 = tri;
+                    int t1 = tri + 1;
+                    int t2 = tri + 2;
 
                     int v0 = triangles[t0];
                     int v1 = triangles[t1];
                     int v2 = triangles[t2];
+
+                    bool triAdded = false;
+                    var triangle = new Triangle(tri / 3, v0, v1, v2); 
 
                     var wv0 = GetWeldedIndex(v0);
                     var wv1 = GetWeldedIndex(v1);
@@ -1255,15 +1365,25 @@ namespace Swole
 
                     if (!closedVertices[wv0] && !currentIsland.Contains(wv0))
                     {
+                        if (includeTriangles && !currentIslandTris.Contains(triangle)) 
+                        {
+                            triAdded = true;
+                            currentIslandTris.Add(triangle);
+                        }
+                        
                         if (weldVertices)
                         {
-                            var mv = weldedVertices[v0];
+                            var mv = weldedVertices_[v0];
                             for (int c = 0; c < mv.indices.Count; c++)
                             {
                                 var mergedIndex = mv.indices[c];
                                 closedVertices[mergedIndex] = true;
 
                                 currentIsland.Add(mergedIndex);
+                            }
+                            for (int c = 0; c < mv.indices.Count; c++)
+                            {
+                                var mergedIndex = mv.indices[c];
                                 AddVertexConnections(mergedIndex); // add child connections recursively
                             }
                         }
@@ -1278,15 +1398,25 @@ namespace Swole
 
                     if (!closedVertices[wv1] && !currentIsland.Contains(wv1))
                     {
+                        if (includeTriangles && !triAdded && !currentIslandTris.Contains(triangle))
+                        {
+                            triAdded = true;
+                            currentIslandTris.Add(triangle);
+                        }
+
                         if (weldVertices)
                         {
-                            var mv = weldedVertices[v1];
+                            var mv = weldedVertices_[v1];
                             for (int c = 0; c < mv.indices.Count; c++)
                             {
                                 var mergedIndex = mv.indices[c];
                                 closedVertices[mergedIndex] = true;
 
                                 currentIsland.Add(mergedIndex);
+                            }
+                            for (int c = 0; c < mv.indices.Count; c++)
+                            {
+                                var mergedIndex = mv.indices[c];
                                 AddVertexConnections(mergedIndex); // add child connections recursively
                             }
                         }
@@ -1301,15 +1431,25 @@ namespace Swole
 
                     if (!closedVertices[wv2] && !currentIsland.Contains(wv2))
                     {
+                        if (includeTriangles && !triAdded && !currentIslandTris.Contains(triangle))
+                        {
+                            triAdded = true;
+                            currentIslandTris.Add(triangle);
+                        }
+
                         if (weldVertices)
                         {
-                            var mv = weldedVertices[v2];
+                            var mv = weldedVertices_[v2];
                             for (int c = 0; c < mv.indices.Count; c++)
                             {
                                 var mergedIndex = mv.indices[c];
                                 closedVertices[mergedIndex] = true;
 
                                 currentIsland.Add(mergedIndex);
+                            }
+                            for (int c = 0; c < mv.indices.Count; c++)
+                            {
+                                var mergedIndex = mv.indices[c];
                                 AddVertexConnections(mergedIndex); // add child connections recursively
                             }
                         }
@@ -1331,8 +1471,29 @@ namespace Swole
 
                 CompleteIsland();
 
-                currentIsland.Add(v);
-                closedVertices[v] = true;
+                if (weldVertices)
+                {
+                    var mv = weldedVertices_[v];
+                    for (int c = 0; c < mv.indices.Count; c++)
+                    {
+                        var mergedIndex = mv.indices[c];
+                        closedVertices[mergedIndex] = true;
+
+                        currentIsland.Add(mergedIndex);
+                    }
+                    for (int c = 0; c < mv.indices.Count; c++)
+                    {
+                        var mergedIndex = mv.indices[c];
+                        AddVertexConnections(mergedIndex); // add child connections recursively
+                    }
+                }
+                else
+                {
+                    closedVertices[v] = true;
+
+                    currentIsland.Add(v);
+                    AddVertexConnections(v); // add child connections recursively
+                }
 
                 AddVertexConnections(v);
             }
@@ -1341,6 +1502,149 @@ namespace Swole
 
             return meshIslands;
         }
+
+
+        public static List<MeshIsland> CalculateMeshIslands(Mesh mesh, List<MeshIsland> meshIslands = null, bool weldVertices = true, bool includeTriangles = false) => CalculateMeshIslands(mesh, meshIslands, weldVertices, out _, includeTriangles);
+        public static List<MeshIsland> CalculateMeshIslands(Mesh mesh, List<MeshIsland> meshIslands, bool weldVertices, out MergedVertex[] weldedVertices, bool includeTriangles = false) => CalculateMeshIslands(mesh, mesh.triangles, meshIslands, weldVertices, out weldedVertices, includeTriangles);
+
+        public static List<MeshIsland> CalculateMeshIslands(Mesh mesh, int[] triangles, List<MeshIsland> meshIslands = null, bool weldVertices = true, bool includeTriangles = false) => CalculateMeshIslands(mesh, triangles, meshIslands, weldVertices, out _, includeTriangles);
+        public static List<MeshIsland> CalculateMeshIslands(Mesh mesh, int[] triangles, List<MeshIsland> meshIslands, bool weldVertices, out MergedVertex[] weldedVertices, bool includeTriangles = false)
+        {
+            if (triangles == null) triangles = mesh.triangles;
+            weldedVertices = weldVertices ? MeshDataTools.MergeVertices(mesh.vertices) : null;
+
+            return CalculateMeshIslands(mesh.vertexCount, triangles, meshIslands, weldedVertices, includeTriangles); 
+        }
+        public static List<MeshIsland> CalculateMeshIslands(int vertexCount, int[] triangles, List<MeshIsland> meshIslands = null, MergedVertex[] weldedVertices = null, bool includeTriangles = false)
+        {
+            if (meshIslands == null) meshIslands = new List<MeshIsland>();
+
+            bool weldVertices = weldedVertices != null;
+
+            HashSet<int> currentIsland = new HashSet<int>();
+            HashSet<Triangle> currentIslandTris = new HashSet<Triangle>();
+            void CompleteIsland()
+            {
+                if (currentIsland.Count <= 0) return; // don't create empty mesh islands
+
+                var vertexIndices = new int[currentIsland.Count];
+                currentIsland.CopyTo(vertexIndices);
+                var islandTris = includeTriangles ? new Triangle[currentIslandTris.Count] : null;
+                if (includeTriangles) currentIslandTris.CopyTo(islandTris);
+
+                meshIslands.Add(new MeshIsland() { color = UnityEngine.Random.ColorHSV(), vertices = vertexIndices, triangles = islandTris }); 
+                currentIsland.Clear();
+                currentIslandTris.Clear();
+            }
+
+            int GetWeldedIndex(int originalVertexIndex)
+            {
+                if (!weldVertices) return originalVertexIndex;
+                return weldedVertices[originalVertexIndex].firstIndex;
+            }
+
+            int[] vertexIslandIndices = new int[vertexCount];
+            for (int a = 0; a < vertexIslandIndices.Length; a++) vertexIslandIndices[a] = -1;
+            int[] triangleIslandIndices = new int[triangles.Length / 3];
+            for (int a = 0; a < triangleIslandIndices.Length; a++) triangleIslandIndices[a] = -1; 
+
+            int islandIndex = 0;
+            void AddVertexToIsland(int vertexIndex)
+            {
+                if (weldVertices)
+                {
+                    var mv = weldedVertices[vertexIndex];
+                    for (int c = 0; c < mv.indices.Count; c++)
+                    {
+                        var mergedIndex = mv.indices[c];
+                        vertexIslandIndices[mergedIndex] = islandIndex;
+
+                        currentIsland.Add(mergedIndex);
+                    }
+                }
+                else
+                {
+                    vertexIslandIndices[vertexIndex] = islandIndex;
+                    currentIsland.Add(vertexIndex);
+                }
+            }
+
+            int minTriIndex = 0;
+            int nextTriIndex = 0;
+            bool flag = true;
+            while(flag)
+            {
+                int triIndex = nextTriIndex / 3;
+                triangleIslandIndices[triIndex] = islandIndex; 
+
+                int v0 = triangles[nextTriIndex];
+                int v1 = triangles[nextTriIndex + 1];
+                int v2 = triangles[nextTriIndex + 2];  
+
+                AddVertexToIsland(v0);
+                AddVertexToIsland(v1);
+                AddVertexToIsland(v2);
+
+                currentIslandTris.Add(new Triangle(triIndex, v0, v1, v2));
+
+                flag = false;
+                for (int a = minTriIndex; a < triangles.Length; a += 3)
+                {
+                    int i0 = GetWeldedIndex(triangles[a]);
+                    int i1 = GetWeldedIndex(triangles[a + 1]);
+                    int i2 = GetWeldedIndex(triangles[a + 2]);
+
+                    var island0 = vertexIslandIndices[i0];
+                    var island1 = vertexIslandIndices[i1];
+                    var island2 = vertexIslandIndices[i2];
+
+                    var triIsland = triangleIslandIndices[a / 3];
+
+                    if ((triIsland < 0 || island0 < 0 || island1 < 0 || island2 < 0) && (island0 == islandIndex || island1 == islandIndex || island2 == islandIndex))
+                    {
+                        nextTriIndex = a;
+                        flag = true;
+                        break;
+                    }
+                }
+
+                if (!flag)
+                {
+                    CompleteIsland();
+                    nextTriIndex = -1;
+                    islandIndex = meshIslands.Count;
+
+                    for (int a = minTriIndex; a < triangles.Length; a += 3)
+                    {
+                        int i0 = triangles[a];
+                        int i1 = triangles[a + 1];
+                        int i2 = triangles[a + 2];
+
+                        var island0 = vertexIslandIndices[i0];
+                        var island1 = vertexIslandIndices[i1];
+                        var island2 = vertexIslandIndices[i2];
+
+                        var triIsland = triangleIslandIndices[a / 3];
+
+                        if (triIsland < 0 || island0 < 0 || island1 < 0 || island2 < 0)   
+                        {
+                            nextTriIndex = a;
+                            flag = true;
+                            break;
+                        } 
+                        else
+                        {
+                            minTriIndex = a;
+                        }
+                    }
+                }
+            }
+
+            CompleteIsland();
+
+            return meshIslands;
+        }
+
 
         public static bool GetClosestContainingTriangle(Vector3[] containingVertices, int[] containingTris, Vector3 targetPosition, out int i1, out int i2, out int i3, out float w1, out float w2, out float w3, float maxDistance = -1, float errorMargin = 0)
         {
@@ -1397,6 +1701,447 @@ namespace Swole
             }
 
             return i1 >= 0 && i2 >= 0 && i3 >= 0;
+        }
+
+        [Serializable]
+        public struct MeshQuad
+        {
+            public int triA;
+            public int triB;
+
+            public int i0;
+            public int i1;
+            public int i2;
+            public int i3;
+
+            public int sharedEdge0;
+            public int sharedEdge1;
+
+            public int TriangleIndexA => triA / 3;
+            public int TriangleIndexB => triB / 3;
+        }
+
+        public static List<MeshQuad> CalculateMeshQuads(int[] meshTriangles, List<MeshQuad> outputList = null)
+        {
+            if (outputList == null) outputList = new List<MeshQuad>(); 
+
+            for(int a = 0; a < meshTriangles.Length; a += 3)
+            {
+                if (a + 5 >= meshTriangles.Length) break;
+
+                int iA0 = meshTriangles[a];
+                int iA1 = meshTriangles[a + 1];
+                int iA2 = meshTriangles[a + 2];
+
+                int iB0 = meshTriangles[a + 3];
+                int iB1 = meshTriangles[a + 4];
+                int iB2 = meshTriangles[a + 5];
+
+                bool shares0 = iB0 == iA0 || iB0 == iA1 || iB0 == iA2;
+                bool shares1 = iB1 == iA0 || iB1 == iA1 || iB1 == iA2;
+                bool shares2 = iB2 == iA0 || iB2 == iA1 || iB2 == iA2;
+
+                if (!((shares0 && shares1) || (shares1 && shares2) || (shares0 && shares2))) continue;
+
+                int sharedEdge0 = iA1;
+                int sharedEdge1 = iA2;
+                if (shares0)
+                {
+                    sharedEdge0 = iB0;
+
+                    if (shares1)
+                    {
+                        sharedEdge1 = iB1;
+                    } 
+                    else
+                    {
+                        sharedEdge1 = iB2;
+                    }
+                }
+                else if (shares1)
+                {
+                    sharedEdge0 = iB1;
+
+                    if (shares0)
+                    {
+                        sharedEdge1 = iB0;
+                    }
+                    else
+                    {
+                        sharedEdge1 = iB2;
+                    }
+                }
+                else
+                {
+                    sharedEdge0 = iB2;
+
+                    if (shares0)
+                    {
+                        sharedEdge1 = iB0;
+                    }
+                    else
+                    {
+                        sharedEdge1 = iB1; 
+                    }
+                }
+
+                outputList.Add(new MeshQuad()
+                {
+                    triA = iA0,
+                    triB = iB0,
+                    i0 = iA0,
+                    i1 = iA1,
+                    i2 = iA2,
+                    i3 = (!shares0 ? iB0 : (!shares1 ? iB1 : (!shares2 ? iB2 : iB0))),
+                    sharedEdge0 = sharedEdge0,
+                    sharedEdge1 = sharedEdge1
+                });
+
+                a += 3; // skip next tri since it is part of this quad
+            }
+
+            return outputList;
+        }
+
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private static bool HasBoundingCenterBetweenTris(float3 E1_flat, float3 E2_flat, float3 normalA_raw, float3 normalA, float3 vA0_flat, float3 vA1_flat, float3 vA2_flat, float3 vB0, float3 vB1, float3 vB2, out float3 boundingCenter)
+        {
+            boundingCenter = float3.zero;
+
+            float3 normalB = Maths.calcNormal(vB0, vB1, vB2);
+            if (math.dot(normalA, normalB) >= 0) return false;
+
+            float3 vB0_flat = Vector3.ProjectOnPlane(vB0, normalA);
+            float3 vB1_flat = Vector3.ProjectOnPlane(vB1, normalA);
+            float3 vB2_flat = Vector3.ProjectOnPlane(vB2, normalA);
+
+            float3 centerB_flat = (vB0_flat + vB1_flat + vB2_flat) / 3f;
+            vB0_flat = ((vB0_flat - centerB_flat) * 0.999f) + centerB_flat;
+            vB1_flat = ((vB1_flat - centerB_flat) * 0.999f) + centerB_flat;
+            vB2_flat = ((vB2_flat - centerB_flat) * 0.999f) + centerB_flat;
+
+            float t;
+
+            bool intersectI = false;
+            bool intersectJ = false;
+            bool intersectK = false;
+
+            float3 pointI0 = float3.zero;
+            float3 pointI1 = float3.zero;
+
+            float3 pointJ0 = float3.zero;
+            float3 pointJ1 = float3.zero;
+
+            float3 pointK0 = float3.zero;
+            float3 pointK1 = float3.zero;
+
+            bool flag = false;
+            if (Maths.IsInTriangle(vB0_flat, vA0_flat, vA1_flat, vA2_flat, 0.01f))
+            {
+                intersectI = true;
+                pointI0 = pointI1 = vB0;
+                flag = true;
+            }
+            if (Maths.IsInTriangle(vB1_flat, vA0_flat, vA1_flat, vA2_flat, 0.01f))
+            {
+                intersectJ = true;
+                pointJ0 = pointJ1 = vB1;
+                flag = true;
+            }
+            if (Maths.IsInTriangle(vB2_flat, vA0_flat, vA1_flat, vA2_flat, 0.01f))
+            {
+                intersectK = true;
+                pointK0 = pointK1 = vB2;
+                flag = true;
+            }
+            
+            if (!flag)
+            {
+                float3 edge0 = vB1 - vB0;
+                float3 edge0_flat = vB1_flat - vB0_flat;
+                intersectI = Maths.seg_intersect_triangle(E1_flat, E2_flat, normalA_raw, vB0_flat, edge0_flat, vA0_flat, vA1_flat, vA2_flat, out t, out _, out _);
+                pointI0 = vB0 + edge0 * t;
+                intersectI = Maths.seg_intersect_triangle(E1_flat, E2_flat, normalA_raw, vB1_flat, -edge0_flat, vA0_flat, vA1_flat, vA2_flat, out t, out _, out _) && intersectI;
+                pointI1 = vB1 - edge0 * t;
+
+
+                float3 edge1 = vB2 - vB0;
+                float3 edge1_flat = vB2_flat - vB0_flat;
+                intersectJ = Maths.seg_intersect_triangle(E1_flat, E2_flat, normalA_raw, vB0_flat, edge1_flat, vA0_flat, vA1_flat, vA2_flat, out t, out _, out _);
+                pointJ0 = vB0 + edge1 * t;
+                intersectJ = Maths.seg_intersect_triangle(E1_flat, E2_flat, normalA_raw, vB2_flat, -edge1_flat, vA0_flat, vA1_flat, vA2_flat, out t, out _, out _) && intersectJ;
+                pointJ1 = vB2 - edge1 * t;
+
+
+                float3 edge2 = vB2 - vB1;
+                float3 edge2_flat = vB2_flat - vB1_flat;
+                intersectK = Maths.seg_intersect_triangle(E1_flat, E2_flat, normalA_raw, vB1_flat, edge2_flat, vA0_flat, vA1_flat, vA2_flat, out t, out _, out _);
+                pointK0 = vB1 + edge2 * t;
+                intersectK = Maths.seg_intersect_triangle(E1_flat, E2_flat, normalA_raw, vB2_flat, -edge2_flat, vA0_flat, vA1_flat, vA2_flat, out t, out _, out _) && intersectK;
+                pointK1 = vB2 - edge2 * t; 
+            }
+
+            bool3 intersects = new bool3(intersectI, intersectJ, intersectK);
+            float3 contr = math.select(float3.zero, new float3(1f, 1f, 1f), intersects);
+
+            boundingCenter = ((pointI0 + pointI1) * 0.5f * contr.x) + ((pointJ0 + pointJ1) * 0.5f * contr.y) + ((pointK0 + pointK1) * 0.5f * contr.z);
+
+            float totalContr = contr.x + contr.y + contr.z;
+            boundingCenter = math.select(boundingCenter, boundingCenter / totalContr, totalContr > 0f);
+
+            return math.any(intersects);
+        }
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static float3 CalculateTriBoundingCenter(float4x4 debug, int triIndex, NativeArray<int> triangles, NativeArray<float3> vertices)
+        {
+            int i0 = triangles[triIndex];
+            int i1 = triangles[triIndex + 1];
+            int i2 = triangles[triIndex + 2];
+
+            float3 v0 = vertices[i0];
+            float3 v1 = vertices[i1];
+            float3 v2 = vertices[i2];
+
+            float3 triCenter = (v0 + v1 + v2) / 3f;
+
+            float3 normalRaw = Maths.calcNormal(v0, v1, v2); 
+            float3 normal = math.normalizesafe(normalRaw);
+
+            float3 v0_flat = Vector3.ProjectOnPlane(v0, normal);
+            float3 v1_flat = Vector3.ProjectOnPlane(v1, normal);
+            float3 v2_flat = Vector3.ProjectOnPlane(v2, normal);
+
+            float3 E1_flat = v1_flat - v0_flat;
+            float3 E2_flat = v2_flat - v0_flat;
+
+            float4 closestCenter = new float4(triCenter, float.MaxValue);
+            for (int tri = 0; tri < triIndex; tri += 3)
+            {
+                int i3 = triangles[tri];
+                int i4 = triangles[tri + 1];
+                int i5 = triangles[tri + 2];
+
+                bool containsOrIntersects = HasBoundingCenterBetweenTris(E1_flat, E2_flat, normalRaw, normal, v0_flat, v1_flat, v2_flat, vertices[i3], vertices[i4], vertices[i5], out float3 boundingCenter);
+                float dist = math.distance(triCenter, boundingCenter);
+
+                bool isCloser = containsOrIntersects && dist < closestCenter.w;
+                closestCenter = math.select(closestCenter, new float4(boundingCenter, dist), isCloser);
+
+                //if (containsOrIntersects)
+                //{
+                //    Debug.DrawLine(math.transform(debug, triCenter), math.transform(debug, boundingCenter), Color.red, 60);
+                //    Debug.DrawLine(math.transform(debug, boundingCenter), math.transform(debug, (vertices[tri] + vertices[tri + 1] + vertices[tri + 2]) / 3f), Color.yellow, 60);
+                //}
+            } 
+            // split to avoid local tri index
+            for (int tri = triIndex+3; tri < triangles.Length; tri += 3)
+            {
+                int i3 = triangles[tri];
+                int i4 = triangles[tri + 1];
+                int i5 = triangles[tri + 2];
+
+                bool containsOrIntersects = HasBoundingCenterBetweenTris(E1_flat, E2_flat, normalRaw, normal, v0_flat, v1_flat, v2_flat, vertices[i3], vertices[i4], vertices[i5], out float3 boundingCenter);
+                float dist = math.distance(triCenter, boundingCenter);
+
+                bool isCloser = containsOrIntersects && dist < closestCenter.w;
+                closestCenter = math.select(closestCenter, new float4(boundingCenter, dist), isCloser);
+
+                //if (containsOrIntersects)
+                //{
+                //    Debug.DrawLine(math.transform(debug, triCenter), math.transform(debug, boundingCenter), Color.red, 60);
+                //    Debug.DrawLine(math.transform(debug, boundingCenter), math.transform(debug, (vertices[tri] + vertices[tri + 1] + vertices[tri + 2]) / 3f), Color.yellow, 60);
+                //}
+            }
+
+            return (closestCenter.xyz + triCenter) * 0.5f;
+        }
+
+
+
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining), Obsolete("Not giving correct results")]
+        private static bool HasBoundingCenterBetweenTris2(float3 normalA, float3 tangent, float3 bitangent, float3 vA0, float3 vA1, float3 vA2, float2 vA0_flat, float2 vA1_flat, float2 vA2_flat, float3 vB0, float3 vB1, float3 vB2, out float3 boundingCenter)
+        {
+            boundingCenter = float3.zero;
+
+            float3 normalB = Maths.calcNormal(vB0, vB1, vB2);
+            if (math.dot(normalA, normalB) >= 0) return false;
+
+            float3 centerB = (vB0 + vB1+ vB2) / 3f;
+            vB0 = ((vB0 - centerB) * 0.999f) + centerB;
+            vB1 = ((vB1 - centerB) * 0.999f) + centerB;
+            vB2 = ((vB2 - centerB) * 0.999f) + centerB;
+
+
+            float2 vB0_flat = new float2(math.dot(vB0, tangent), math.dot(vB0, bitangent));
+            float2 vB1_flat = new float2(math.dot(vB1, tangent), math.dot(vB1, bitangent));
+            float2 vB2_flat = new float2(math.dot(vB2, tangent), math.dot(vB2, bitangent));
+
+
+            bool intersectI = false;
+            bool intersectJ = false;
+            bool intersectK = false;
+
+            float3 pointI = float3.zero;
+            float3 pointJ = float3.zero;
+            float3 pointK = float3.zero;
+
+            bool flag = false;
+            if (Maths.IsInTriangle(vB0, vA0, vA1, vA2, 0.01f))
+            {
+                intersectI = true;
+                pointI = vB0;
+                flag = true;
+            }
+            if (Maths.IsInTriangle(vB1, vA0, vA1, vA2, 0.01f))
+            {
+                intersectJ = true;
+                pointJ = vB1;
+                flag = true;
+            }
+            if (Maths.IsInTriangle(vB2, vA0, vA1, vA2, 0.01f))
+            {
+                intersectK = true;
+                pointK = vB2;
+                flag = true;
+            }
+
+            if (!flag)
+            {
+                bool3 flags;
+                float2 ip, ip0, ip1, ip2;
+
+
+                flags = Maths.seg_intersect_tri(vB0_flat, vB1_flat, vA0_flat, vA1_flat, vA2_flat, out ip0, out ip1, out ip2);
+                intersectI = math.any(flags);
+                if (intersectI)
+                {
+                    float3 counts = math.select(float3.zero, new float3(1f, 1f, 1f), flags);
+                    float count = counts.x + counts.y + counts.z;
+
+                    ip = (math.select(float2.zero, ip0, flags.x) + math.select(float2.zero, ip1, flags.y) + math.select(float2.zero, ip2, flags.z)) / count;
+                    pointI = (tangent * ip.x) + (bitangent * ip.y);
+                }
+
+
+                flags = Maths.seg_intersect_tri(vB1_flat, vB2_flat, vA0_flat, vA1_flat, vA2_flat, out ip0, out ip1, out ip2);
+                intersectJ = math.any(flags);
+                if (intersectJ)
+                {
+                    float3 counts = math.select(float3.zero, new float3(1f, 1f, 1f), flags);
+                    float count = counts.x + counts.y + counts.z;
+
+                    ip = (math.select(float2.zero, ip0, flags.x) + math.select(float2.zero, ip1, flags.y) + math.select(float2.zero, ip2, flags.z)) / count;
+                    pointJ = (tangent * ip.x) + (bitangent * ip.y);
+                }
+
+
+                flags = Maths.seg_intersect_tri(vB2_flat, vB0_flat, vA0_flat, vA1_flat, vA2_flat, out ip0, out ip1, out ip2);
+                intersectK = math.any(flags);
+                if (intersectK)
+                {
+                    float3 counts = math.select(float3.zero, new float3(1f, 1f, 1f), flags);
+                    float count = counts.x + counts.y + counts.z;
+
+                    ip = (math.select(float2.zero, ip0, flags.x) + math.select(float2.zero, ip1, flags.y) + math.select(float2.zero, ip2, flags.z)) / count;
+                    pointK = (tangent * ip.x) + (bitangent * ip.y); 
+                }
+            }
+
+            bool3 intersects = new bool3(intersectI, intersectJ, intersectK);
+            float3 contr = math.select(float3.zero, new float3(1f, 1f, 1f), intersects);
+            float totalContr = contr.x + contr.y + contr.z;
+
+            boundingCenter = (pointI * contr.x) + (pointJ * contr.y) + (pointK * contr.z);
+
+            boundingCenter = math.select(boundingCenter, boundingCenter / totalContr, totalContr > 0f); 
+
+            return math.any(intersects);
+        }
+        [MethodImpl(MethodImplOptions.AggressiveInlining), Obsolete("Not giving correct results")]
+        public static float3 CalculateTriBoundingCenter2(float4x4 debug, int triIndex, NativeArray<int> triangles, NativeArray<float3> vertices)
+        {
+            int i0 = triangles[triIndex];
+            int i1 = triangles[triIndex + 1];
+            int i2 = triangles[triIndex + 2];
+
+            float3 v0 = vertices[i0];
+            float3 v1 = vertices[i1];
+            float3 v2 = vertices[i2];
+
+            float3 triCenter = (v0 + v1 + v2) / 3f;
+
+            float3 normalRaw = Maths.calcNormal(v0, v1, v2);
+            float3 normal = math.normalizesafe(normalRaw);
+            float3 tangent = math.normalizesafe(v1 - v0);
+            float3 bitangent = math.normalizesafe(math.cross(normal, tangent));
+
+            float2 v0_flat = new float2(math.dot(v0, tangent), math.dot(v0, bitangent));
+            float2 v1_flat = new float2(math.dot(v1, tangent), math.dot(v1, bitangent));
+            float2 v2_flat = new float2(math.dot(v2, tangent), math.dot(v2, bitangent));
+
+            float4 closestCenter = new float4(triCenter, float.MaxValue);
+            for (int tri = 0; tri < triIndex; tri += 3)
+            {
+                int i3 = triangles[tri];
+                int i4 = triangles[tri + 1];
+                int i5 = triangles[tri + 2];
+
+                bool containsOrIntersects = HasBoundingCenterBetweenTris2(normal, tangent, bitangent, v0, v1, v2, v0_flat, v1_flat, v2_flat, vertices[i3], vertices[i4], vertices[i5], out float3 boundingCenter);
+                float dist = math.distance(triCenter, boundingCenter);
+
+                bool isCloser = containsOrIntersects && dist < closestCenter.w;
+                closestCenter = math.select(closestCenter, new float4(boundingCenter, dist), isCloser); 
+
+                //if (containsOrIntersects)
+                //{
+                //    Debug.DrawLine(math.transform(debug, triCenter), math.transform(debug, boundingCenter), Color.red, 60);
+                //    Debug.DrawLine(math.transform(debug, boundingCenter), math.transform(debug, (vertices[tri] + vertices[tri + 1] + vertices[tri + 2]) / 3f), Color.yellow, 60);
+                //}
+            }
+            // split to avoid local tri index
+            for (int tri = triIndex + 3; tri < triangles.Length; tri += 3)
+            {
+                int i3 = triangles[tri];
+                int i4 = triangles[tri + 1];
+                int i5 = triangles[tri + 2];
+
+                bool containsOrIntersects = HasBoundingCenterBetweenTris2(normal, tangent, bitangent, v0, v1, v2, v0_flat, v1_flat, v2_flat, vertices[i3], vertices[i4], vertices[i5], out float3 boundingCenter);
+                float dist = math.distance(triCenter, boundingCenter);
+
+                bool isCloser = containsOrIntersects && dist < closestCenter.w;
+                closestCenter = math.select(closestCenter, new float4(boundingCenter, dist), isCloser);
+
+                //if (containsOrIntersects)
+                //{
+                //    Debug.DrawLine(math.transform(debug, triCenter), math.transform(debug, boundingCenter), Color.red, 60);
+                //    Debug.DrawLine(math.transform(debug, boundingCenter), math.transform(debug, (vertices[tri] + vertices[tri + 1] + vertices[tri + 2]) / 3f), Color.yellow, 60);
+                //}
+            }
+
+            return (closestCenter.xyz + triCenter) * 0.5f;
+        }
+
+
+        [BurstCompile]
+        public struct CalculateTriBoundingCentersJob : IJobParallelFor
+        {
+
+            public float4x4 debug;
+
+            [ReadOnly]
+            public NativeArray<int> triangles;
+            [ReadOnly]
+            public NativeArray<float3> vertices;
+
+            [NativeDisableParallelForRestriction]
+            public NativeArray<float3> centers;
+
+            public void Execute(int triIndex)
+            {
+                centers[triIndex] = CalculateTriBoundingCenter(debug, triIndex * 3, triangles, vertices);
+            }
         }
 
         #endregion
@@ -2554,6 +3299,690 @@ namespace Swole
 
         #endregion
 
+        #region Mesh Creation
+
+        [Serializable]
+        public enum GeneratedPlaneOrientation
+        {
+            XY, XZ, ZY, YX, ZX, YZ
+        }
+
+        public static Mesh GeneratePlaneMesh(int faceCountHorizontal, int faceCountVertical, float sizeMetersHor, float sizeMetersVer, GeneratedPlaneOrientation orientation = GeneratedPlaneOrientation.XZ, bool flipFaces = false, float depth = 0, float centerX = 0.5f, float centerY = 0.5f, bool flipUV_u = false, bool flipUV_v = false) => GeneratePlaneMesh(faceCountHorizontal, faceCountVertical, sizeMetersHor, sizeMetersVer, out _, out _, orientation, flipFaces, depth, centerX, centerY, flipUV_u, flipUV_v);
+        public static Mesh GeneratePlaneMesh(int faceCountHorizontal, int faceCountVertical, float sizeMetersHor, float sizeMetersVer, out List<int> boundaryIndices, out List<MeshQuad> quads, GeneratedPlaneOrientation orientation = GeneratedPlaneOrientation.XZ, bool flipFaces = false, float depth = 0, float centerX = 0.5f, float centerY = 0.5f, bool flipUV_u = false, bool flipUV_v = false)
+        {
+            faceCountHorizontal = Mathf.Max(1, faceCountHorizontal);
+            faceCountVertical = Mathf.Max(1, faceCountVertical);
+
+            int columns = Mathf.Max(2, (faceCountHorizontal * 2) - 1);
+            int rows = Mathf.Max(2, (faceCountVertical * 2) - 1);
+
+            int columnsM1 = columns - 1;
+            int rowsM1 = rows - 1;
+
+            float columnsM1f = columns - 1f;
+            float rowsM1f = rows - 1f;
+
+            switch (orientation)
+            {
+                case GeneratedPlaneOrientation.YX:
+                case GeneratedPlaneOrientation.ZX:
+                case GeneratedPlaneOrientation.YZ:
+                    flipFaces = !flipFaces;
+                    break;
+            }
+
+            Mesh mesh = new Mesh();
+
+            List<int> triangles = new List<int>();
+            List<Vector3> vertices = new List<Vector3>();
+            List<Vector3> normals = new List<Vector3>();
+            List<Vector2> uvs = new List<Vector2>();
+            boundaryIndices = new List<int>();
+            quads = new List<MeshQuad>();
+
+            int GetVertexIndex(int x, int y) => (y * columns) + x; 
+
+            for (int y = 0; y < rows; y++)
+            {
+                float v = y / rowsM1f;
+                for (int x = 0; x < columns; x++)
+                {
+                    int index = GetVertexIndex(x, y);
+                    
+                    bool isBoundary = x == 0 || y == 0 || x == columnsM1 || y == rowsM1;
+
+                    float u = x / columnsM1f;
+
+                    uvs.Add(new Vector2(flipUV_u ? 1f - u : u, flipUV_v ? (1f - v) : v));
+
+                    float u_ = u - centerX;
+                    float v_ = v - centerY; 
+                    switch (orientation)
+                    {
+                        case GeneratedPlaneOrientation.XY:
+                            vertices.Add(new Vector3(u_ * sizeMetersHor, v_ * sizeMetersVer, depth));
+                            normals.Add(flipFaces ? Vector3.forward : Vector3.back);
+                            break;
+
+                        case GeneratedPlaneOrientation.XZ:
+                            vertices.Add(new Vector3(u_ * sizeMetersHor, depth, v_ * sizeMetersVer));
+                            normals.Add(flipFaces ? Vector3.down : Vector3.up);
+                            break;
+
+                        case GeneratedPlaneOrientation.ZY:
+                            vertices.Add(new Vector3(depth, v_ * sizeMetersVer, u_ * sizeMetersHor));
+                            normals.Add(flipFaces ? Vector3.left : Vector3.right);
+                            break;
+
+                        case GeneratedPlaneOrientation.YX:
+                            vertices.Add(new Vector3(v_ * sizeMetersVer, u_ * sizeMetersHor,  depth)); 
+                            normals.Add(flipFaces ? Vector3.back : Vector3.forward);  
+                            break;
+
+                        case GeneratedPlaneOrientation.ZX:
+                            vertices.Add(new Vector3(v_ * sizeMetersVer, depth, u_ * sizeMetersHor)); 
+                            normals.Add(flipFaces ? Vector3.up : Vector3.down);
+                            break;
+
+                        case GeneratedPlaneOrientation.YZ:
+                            vertices.Add(new Vector3(depth, u_ * sizeMetersHor, v_ * sizeMetersVer)); 
+                            normals.Add(flipFaces ? Vector3.right : Vector3.left);
+                            break;
+                    }
+
+                    if (y < rowsM1 && x < columnsM1)
+                    {
+
+                        MeshQuad quad = default;
+
+                        int i0 = index;
+                        int i1 = GetVertexIndex(x + 1, y);
+                        int i2 = GetVertexIndex(x, y + 1);
+                        int i3 = GetVertexIndex(x + 1, y + 1);
+
+                        quad.i0 = i0;
+                        quad.i1 = i1;
+                        quad.i2 = i2;
+                        quad.i3 = i3;
+
+                        quad.sharedEdge0 = i1;
+                        quad.sharedEdge1 = i2; 
+
+                        if (flipFaces)
+                        {
+                            quad.triA = triangles.Count;
+                            triangles.Add(i0);
+                            triangles.Add(i1);
+                            triangles.Add(i2);
+
+                            quad.triB = triangles.Count;
+                            triangles.Add(i1);
+                            triangles.Add(i3);
+                            triangles.Add(i2);
+                        }
+                        else
+                        {
+                            quad.triA = triangles.Count;
+                            triangles.Add(i0);
+                            triangles.Add(i2);
+                            triangles.Add(i1); 
+
+                            quad.triB = triangles.Count;
+                            triangles.Add(i1);
+                            triangles.Add(i2);
+                            triangles.Add(i3);
+                        }
+
+                        quads.Add(quad);
+                    }
+
+                    if (isBoundary)
+                    {
+                        boundaryIndices.Add(index);
+                    }
+                }
+            }
+
+            mesh.indexFormat = vertices.Count >= 65534 ? IndexFormat.UInt32 : IndexFormat.UInt16;   
+
+            mesh.SetVertices(vertices);
+            mesh.SetNormals(normals);
+            mesh.SetUVs(0, uvs);
+
+            mesh.subMeshCount = 1;
+            mesh.SetTriangles(triangles, 0); 
+
+            mesh.RecalculateTangents();
+            mesh.RecalculateBounds();
+            return mesh;
+        }
+
+        #endregion
+
+        #region Mesh Baking
+
+        [Serializable]
+        public class MeshBakeTexture
+        {
+            public Texture2D texture;
+            public int width;
+            public int height;
+
+            public bool isNormalMap;
+
+            public int Width => texture == null ? width : texture.width;
+            public int Height => texture == null ? height : texture.height;
+
+            [NonSerialized]
+            public Color[] pixels;
+            public Color[] Pixels
+            {
+                get
+                {
+                    if (pixels == null && texture != null) pixels = texture.GetPixels();
+                    return pixels;
+                }
+            }
+
+            public Color defaultPixel;
+        }
+        [Serializable]
+        public struct MeshBakeTextureToTexture
+        {
+            public MeshBakeTexture referenceTex;
+            public MeshBakeTexture destinationTex;
+
+            public bool clearDestinationPixels;
+        }
+
+        public static void BakeMeshToTextures(
+            Matrix4x4 worldToLocal,
+            IEnumerable<Vector3> worldVerticesToBake, IEnumerable<Vector3> worldNormalsToBake, IEnumerable<Vector4> worldTangentsToBake, IEnumerable<int> trianglesToBake, IEnumerable<Vector2> uvsToBake, // Reference
+            IEnumerable<Vector3> worldVerticesDest, IEnumerable<Vector3> worldNormalsDest, IEnumerable<Vector4> worldTangentsDest, IEnumerable<int> trianglesDest, IEnumerable<Vector2> uvsDest, // Destination
+            IEnumerable<MeshBakeTextureToTexture> textures, IEnumerable<float> alphaValues, Vector2Int alphaTexDimensions, float alphaClipThreshold = 0.5f, bool doubleSided = false, float triTestErrorMargin = 0.01f, float depthThreshold = float.MinValue, bool flipDepth = false, List<MeshIsland> meshIslands = null)
+        { 
+            
+            List<float3> worldVerticesToBake_ = new List<float3>();
+            foreach (var val in worldVerticesToBake) worldVerticesToBake_.Add(val);
+            List<float3> worldNormalsToBake_ = new List<float3>();
+            foreach (var val in worldNormalsToBake) worldNormalsToBake_.Add(val);
+            List<float4> worldTangentsToBake_ = new List<float4>();
+            foreach (var val in worldTangentsToBake) worldTangentsToBake_.Add(val); 
+            List<float2> uvsToBake_ = new List<float2>();
+            foreach (var val in uvsToBake) uvsToBake_.Add(val);
+
+            List<float3> worldVerticesDest_ = new List<float3>();
+            foreach (var val in worldVerticesDest) worldVerticesDest_.Add(val);
+            List<float3> worldNormalsDest_ = new List<float3>();
+            foreach (var val in worldNormalsDest) worldNormalsDest_.Add(val);
+            List<float4> worldTangentsDest_ = new List<float4>();
+            foreach (var val in worldTangentsDest) worldTangentsDest_.Add(val);
+            List<float2> uvsDest_ = new List<float2>();
+            foreach (var val in uvsDest) uvsDest_.Add(val);
+
+            BakeMeshToTextures(
+                (float4x4)worldToLocal,
+                worldVerticesToBake_, worldNormalsToBake_, worldTangentsToBake_, trianglesToBake, uvsToBake_,
+                worldVerticesDest_, worldNormalsDest_, worldTangentsDest_, trianglesDest, uvsDest_,
+                textures, alphaValues, new int2(alphaTexDimensions.x, alphaTexDimensions.y), alphaClipThreshold, doubleSided, triTestErrorMargin, depthThreshold, flipDepth,
+                meshIslands  
+                );
+        }
+            public static void BakeMeshToTextures(
+            float4x4 worldToLocal,
+            IEnumerable<float3> worldVerticesToBake, IEnumerable<float3> worldNormalsToBake, IEnumerable<float4> worldTangentsToBake, IEnumerable<int> trianglesToBake, IEnumerable<float2> uvsToBake, // Reference
+            IEnumerable<float3> worldVerticesDest, IEnumerable<float3> worldNormalsDest, IEnumerable<float4> worldTangentsDest, IEnumerable<int> trianglesDest, IEnumerable<float2> uvsDest, // Destination
+            IEnumerable<MeshBakeTextureToTexture> textures, IEnumerable<float> alphaValues, int2 alphaTexDimensions, float alphaClipThreshold = 0.5f, bool doubleSided = false, float triTestErrorMargin = 0.01f, float depthThreshold = float.MinValue, bool flipDepth = false, List<MeshIsland> meshIslands = null)
+        {
+            int[] trianglesDest_ = trianglesDest.AsManagedArray();
+             
+            if (meshIslands == null) meshIslands = CalculateMeshIslands(worldVerticesDest.GetCount(), trianglesDest_, null, null, true);
+            if (meshIslands == null || meshIslands.Count <= 0) return;
+
+            NativeList<int> meshIslandTris = new NativeList<int>(trianglesDest_.Length, Allocator.Persistent);
+            //NativeArray<int2> meshIslandTriIndexBounds = new NativeArray<int2>(meshIslands.Count, Allocator.Persistent);
+            for (int i = 0; i < meshIslands.Count; i++)
+            {
+                var meshIsland = meshIslands[i];
+                if (meshIsland.triangles == null) continue;
+
+                //int startIndex = meshIslandTris.Length;
+                for (int a = 0; a < meshIsland.triangles.Length; a++)
+                {
+                    var tri = meshIsland.triangles[a];
+                    meshIslandTris.Add(tri.i0);
+                    meshIslandTris.Add(tri.i1);
+                    meshIslandTris.Add(tri.i2);   
+                }
+
+                //meshIslandTriIndexBounds[i] = new int2(startIndex, meshIslandTris.Length - 1);
+            }
+
+            float flipDepth_ = flipDepth ? 1f : -1f;
+            float minFaceNormalDot = doubleSided ? -1f : 0f;
+
+            NativeArray<float3> worldVerticesToBake_ = worldVerticesToBake.AsNativeArray(out bool dispose_worldVerticesToBake);
+            NativeArray<float2> uvsToBake_ = uvsToBake.AsNativeArray(out bool dispose_uvsToBake);
+
+            NativeArray<int> trianglesToBake_ = trianglesToBake.AsNativeArray(out bool dispose_trianglesToBake);
+            NativeArray<float3> triangleNormalsToBake = new NativeArray<float3>(trianglesToBake_.Length/3, Allocator.Persistent);
+            for (int a = 0; a < trianglesToBake_.Length; a += 3)
+            {
+                int ref_i0 = trianglesToBake_[a];
+                int ref_i1 = trianglesToBake_[a + 1];
+                int ref_i2 = trianglesToBake_[a + 2];
+
+                float3 ref_v0 = worldVerticesToBake_[ref_i0];
+                float3 ref_v1 = worldVerticesToBake_[ref_i1];
+                float3 ref_v2 = worldVerticesToBake_[ref_i2];
+
+                triangleNormalsToBake[a / 3] = math.normalizesafe(math.cross(ref_v1 - ref_v0, ref_v2 - ref_v0));
+            }
+
+            NativeArray<float> alphaValues_ = alphaValues.AsNativeArray(out bool dispose_alphaValues);
+
+
+
+            NativeArray<float3> worldVerticesDest_ = worldVerticesDest.AsNativeArray(out bool dispose_worldVerticesDest);
+            NativeArray<float2> uvsDest_ = uvsDest.AsNativeArray(out bool dispose_uvsDest);
+
+            NativeArray<float3> triangleNormalsDest = new NativeArray<float3>(trianglesDest_.Length / 3, Allocator.Persistent);
+            for (int a = 0; a < trianglesDest_.Length; a += 3)
+            {
+                int ref_i0 = trianglesDest_[a];
+                int ref_i1 = trianglesDest_[a + 1];
+                int ref_i2 = trianglesDest_[a + 2];
+
+                float3 ref_v0 = worldVerticesDest_[ref_i0];
+                float3 ref_v1 = worldVerticesDest_[ref_i1];
+                float3 ref_v2 = worldVerticesDest_[ref_i2];
+
+                triangleNormalsDest[a / 3] = math.normalizesafe(math.cross(ref_v1 - ref_v0, ref_v2 - ref_v0)); 
+            } 
+
+
+            NativeQueue<TriPixel> triPixels = new NativeQueue<TriPixel>(Allocator.Persistent);
+
+            MeshBakeTextureToTexture prevTex2Tex = default;
+            foreach (var tex2tex in textures)
+            {
+                triPixels.Clear();
+                if (tex2tex.referenceTex == null || tex2tex.destinationTex == null) continue;;
+
+
+                int2 texDimsRef = new int2(tex2tex.referenceTex.Width, tex2tex.referenceTex.Height); 
+
+                if (tex2tex.destinationTex.texture == null)
+                {
+                    tex2tex.destinationTex.texture = new Texture2D(tex2tex.destinationTex.width <= 0 ? texDimsRef.x : tex2tex.destinationTex.width, tex2tex.destinationTex.height <= 0 ? texDimsRef.y : tex2tex.destinationTex.height, TextureFormat.RGBA32/*tex2tex.referenceTex.texture.format*/, tex2tex.referenceTex.texture.mipmapCount > 0, TextureUtils.IsLinear(tex2tex.referenceTex.texture));
+                    tex2tex.destinationTex.pixels = null;
+                }
+
+                int width = tex2tex.destinationTex.Width;
+                int height = tex2tex.destinationTex.Height;
+                int2 texDims = new int2(width, height);
+
+                bool isNormalMap = tex2tex.destinationTex.isNormalMap = tex2tex.referenceTex.isNormalMap;
+
+                var referencePixels = tex2tex.referenceTex.Pixels;
+                if (referencePixels == null) continue;
+
+                NativeArray<float4> referencePixels_ = new NativeArray<Color>(referencePixels, Allocator.Persistent).Reinterpret<float4>(); 
+                
+                var destinationPixels = tex2tex.destinationTex.Pixels;
+                NativeArray<float4> destinationPixels_ = new NativeArray<Color>(destinationPixels, Allocator.Persistent).Reinterpret<float4>();  
+                if (tex2tex.clearDestinationPixels)
+                {
+                    Debug.Log("Clearing pixels");
+                    for (int a = 0; a < destinationPixels.Length; a++) destinationPixels_[a] = (Vector4)tex2tex.destinationTex.defaultPixel;
+                }
+                 
+                var job = new PrepareTriPixelsJob()
+                {
+                    triTestErrorMargin = triTestErrorMargin,
+                    uvs = uvsDest_,
+                    texDims = texDims,
+                    triangles = meshIslandTris,
+                    triPixels = triPixels.AsParallelWriter()
+                }.Schedule(meshIslandTris.Length / 3, 1, default); 
+
+                NativeArray<TriPixel> triPixels_ = default;
+                if (isNormalMap)
+                {
+                     
+                } 
+                else
+                {
+                    job.Complete();
+                    triPixels_ = triPixels.ToArray(Allocator.TempJob);   
+                    job = new BakeMeshToPixelsJob()
+                    {
+
+                        defaultPixel = (Vector4)tex2tex.destinationTex.defaultPixel, 
+                        alphaClipThreshold = alphaClipThreshold,
+                        flipDepth = flipDepth_,
+                        minFaceNormalDot = minFaceNormalDot,
+                        depthThreshold = depthThreshold,
+                        triTestErrorMargin = triTestErrorMargin, 
+
+
+                        texDimsReference = texDimsRef,
+                        texDimsAlphaReference = alphaTexDimensions,
+
+
+                        referenceTriangles = trianglesToBake_,
+                        referenceTriNormals = triangleNormalsToBake,
+                        referenceVertices = worldVerticesToBake_,
+                        referenceUVs = uvsToBake_,
+                        referencePixels = referencePixels_,
+                        referencePixelAlphas = alphaValues_,
+
+
+                        destVertices = worldVerticesDest_,
+                        destTriNormals = triangleNormalsDest,
+
+
+                        triPixels = triPixels_,
+                        outputPixels = destinationPixels_,
+
+                    }.Schedule(triPixels_.Length, 1, job);
+                }
+
+                if (prevTex2Tex.destinationTex != null && prevTex2Tex.destinationTex.pixels != null && prevTex2Tex.destinationTex.texture != null) // upload previous job output to previous texture while we wait for the current job.
+                {
+                    prevTex2Tex.destinationTex.texture.SetPixels(prevTex2Tex.destinationTex.pixels); 
+                    prevTex2Tex.destinationTex.texture.Apply();
+                    Debug.Log("Applying pixels"); 
+                }
+
+                job.Complete(); // wait for job completion if not finished
+                if (triPixels_.IsCreated) triPixels_.Dispose(); 
+
+                destinationPixels_.Reinterpret<Color>().CopyTo(destinationPixels);
+                tex2tex.destinationTex.pixels = destinationPixels;
+
+                prevTex2Tex = tex2tex;
+
+                destinationPixels_.Dispose(); 
+                referencePixels_.Dispose();   
+            }
+
+            if (prevTex2Tex.destinationTex != null && prevTex2Tex.destinationTex.pixels != null && prevTex2Tex.destinationTex.texture != null)
+            {
+                prevTex2Tex.destinationTex.texture.SetPixels(prevTex2Tex.destinationTex.pixels);
+                prevTex2Tex.destinationTex.texture.Apply();  
+            }
+
+            triPixels.Dispose();
+
+            if (dispose_alphaValues) alphaValues_.Dispose();
+
+            if (dispose_worldVerticesToBake) worldVerticesToBake_.Dispose();   
+            if (dispose_uvsToBake) uvsToBake_.Dispose();
+
+            if (dispose_trianglesToBake) trianglesToBake_.Dispose();
+            triangleNormalsToBake.Dispose();
+
+            if (dispose_worldVerticesDest) worldVerticesDest_.Dispose();
+            if (dispose_uvsDest) uvsDest_.Dispose();
+
+            triangleNormalsDest.Dispose(); 
+
+
+            meshIslandTris.Dispose(); 
+            //meshIslandTriIndexBounds.Dispose();
+        }
+
+        private struct TriPixel : IEquatable<TriPixel>
+        {
+            public int triIndex;
+            public int pixelIndex;
+            public int2 pixelCoords;
+            public int3 indices;
+            public float3 barycentricCoords;
+
+            public bool Equals(TriPixel other)
+            {
+                return pixelIndex == other.pixelIndex;
+            }
+        }
+        [BurstCompile]
+        private struct PrepareTriPixelsJob : IJobParallelFor
+        {
+
+            public float triTestErrorMargin; 
+             
+            public int2 texDims;
+
+            [ReadOnly]
+            public NativeList<int> triangles;
+            [ReadOnly]
+            public NativeArray<float2> uvs;
+
+            [WriteOnly]
+            public NativeQueue<TriPixel>.ParallelWriter triPixels;
+
+            public void Execute(int index)
+            {
+                int tIndex = index * 3;
+                int i0 = triangles[tIndex];
+                int i1 = triangles[tIndex + 1];
+                int i2 = triangles[tIndex + 2];
+
+                int3 indices = new int3(i0, i1, i2);
+
+                float2 dest_uv0 = Maths.wrap(uvs[indices.x], 1f);
+                float2 dest_uv1 = Maths.wrap(uvs[indices.y], 1f);
+                float2 dest_uv2 = Maths.wrap(uvs[indices.z], 1f);    
+
+                float2 boundsMin = math.min(dest_uv0, math.min(dest_uv1, dest_uv2));
+                float2 boundsMax = math.max(dest_uv0, math.max(dest_uv1, dest_uv2));
+                float2 bounds = boundsMax - boundsMin;
+
+                float2 dest_pix0 = dest_uv0 * texDims;
+                float2 dest_pix1 = dest_uv1 * texDims;
+                float2 dest_pix2 = dest_uv2 * texDims;
+
+                int2 pixelsStart = new int2(math.floor(boundsMin * texDims));
+                int2 pixelsXY = new int2(math.ceil(bounds * texDims));
+                pixelsXY = math.min(texDims - pixelsStart, pixelsXY);
+                int size = pixelsXY.x * pixelsXY.y; 
+
+                for(int i = 0; i < size; i++)
+                //for (int x = 0; x <= pixelsXY.x; x++)
+                {
+                    //for (int y = 0; y <= pixelsXY.y; y++) 
+                    //{
+                        int x = i % pixelsXY.x;
+                        int y = i / pixelsXY.x;
+
+                        var pixCoords = new int2(x, y) + pixelsStart;
+                        var coords = Maths.BarycentricCoords2D(pixCoords, dest_pix0, dest_pix1, dest_pix2); 
+
+                        if (Maths.IsInTriangle2D(coords, triTestErrorMargin))
+                        {
+                            triPixels.Enqueue(new TriPixel()
+                            {
+                                triIndex = index,
+                                pixelIndex = (pixCoords.y * texDims.x) + pixCoords.x,
+                                pixelCoords = pixCoords,
+                                indices = indices,
+                                barycentricCoords = coords
+                            });
+                        }
+                    //}
+                }
+
+                /*float4 dest_pix0_x2 = new float4(dest_pix0, dest_pix0);
+                float4 dest_pix1_x2 = new float4(dest_pix1, dest_pix1);
+                float4 dest_pix2_x2 = new float4(dest_pix2, dest_pix2);
+                int4 pixelsStart2 = new int4(pixelsStart, pixelsStart);
+                size = ((int)math.ceil(size / 2f)) * 2;
+                for (int i = 0; i < size; i += 2)
+                {
+                    int ip1 = i + 1;
+                    int4 xy2 = new int4(i, i, ip1, ip1);  
+                    xy2.xz = xy2.xz % pixelsXY.x;
+                    xy2.yw = xy2.yw / pixelsXY.x;
+
+                    int4 pixCoords = xy2 + pixelsStart2;
+                    var coords = Maths.BarycentricCoords2D_x2(pixCoords, dest_pix0_x2, dest_pix1_x2, dest_pix2_x2);
+
+                    var inTri = Maths.IsInTriangle2D_x2(coords, triTestErrorMargin);
+                    if (inTri.x)
+                    {
+                        triPixels.Enqueue(new TriPixel()
+                        {
+                            triIndex = index,
+                            pixelIndex = (pixCoords.y * texDims.x) + pixCoords.x,
+                            pixelCoords = pixCoords.xy,
+                            indices = indices,
+                            barycentricCoords = new float3(coords.c0.x, coords.c1.x, coords.c2.x)
+                        });
+                    }
+                    if (inTri.y)
+                    {
+                        triPixels.Enqueue(new TriPixel()
+                        {
+                            triIndex = index,
+                            pixelIndex = (pixCoords.w * texDims.x) + pixCoords.z,
+                            pixelCoords = pixCoords.zw,
+                            indices = indices,
+                            barycentricCoords = new float3(coords.c0.y, coords.c1.y, coords.c2.y)
+                        });
+                    }
+                }*/
+            }
+        }
+        [BurstCompile]
+        private struct BakeMeshToPixelsJob : IJobParallelFor
+        {
+            public float minFaceNormalDot;
+            public float alphaClipThreshold;
+            public float triTestErrorMargin;
+            public float depthThreshold;
+            public float flipDepth;
+
+            //public int2 texDims;
+            public int2 texDimsReference;
+            public int2 texDimsAlphaReference;
+
+            public float4 defaultPixel;
+
+            //public float4x4 worldToLocal;
+
+            [ReadOnly]
+            public NativeArray<TriPixel> triPixels;
+
+            [ReadOnly]
+            public NativeArray<int> referenceTriangles;
+            [ReadOnly]
+            public NativeArray<float3> referenceVertices;
+            [ReadOnly]
+            public NativeArray<float2> referenceUVs;
+            [ReadOnly]
+            public NativeArray<float3> referenceTriNormals;
+            //[ReadOnly]
+            //public NativeArray<float4> referenceNormals;
+            //[ReadOnly]
+            //public NativeArray<float4> referenceTangents;
+            //[ReadOnly]
+            //public NativeArray<float4> referenceBitangents;
+
+            [ReadOnly]
+            public NativeArray<float> referencePixelAlphas;
+            [ReadOnly]
+            public NativeArray<float4> referencePixels;
+
+
+            [ReadOnly]
+            public NativeArray<float3> destVertices;
+            [ReadOnly]
+            public NativeArray<float3> destTriNormals;
+            //[ReadOnly]
+            //public NativeArray<float4> destNormals;
+            //[ReadOnly]
+            //public NativeArray<float4> destTangents;
+            //[ReadOnly]
+            //public NativeArray<float4> destBitangents;
+
+            [NativeDisableParallelForRestriction, WriteOnly]
+            public NativeArray<float4> outputPixels;
+
+            public void Execute(int index)
+            {
+                var triPixel = triPixels[index];
+                float3 dest_v0 = destVertices[triPixel.indices.x];
+                float3 dest_v1 = destVertices[triPixel.indices.y];
+                float3 dest_v2 = destVertices[triPixel.indices.z];
+                float3x3 dest_v012 = new float3x3(dest_v0, dest_v1, dest_v2);
+
+                //float3 dest_n = math.normalize(math.cross(dest_v1 - dest_v0, dest_v2 - dest_v0));
+                float3 dest_n = destTriNormals[triPixel.triIndex];
+                float3 depth_n = dest_n * flipDepth;
+
+                float3 dest_pos = math.mul(dest_v012, triPixel.barycentricCoords);
+                float startDepth = math.dot(dest_pos, depth_n);
+
+                int2 texDimsReferenceM1 = texDimsReference - 1;
+                int2 texDimsAlphaReferenceM1 = texDimsAlphaReference - 1;
+
+                bool hits = false;
+
+                float closestDepth = float.MaxValue;
+                float4 finalPixel = defaultPixel;
+                for (int t = 0; t < referenceTriangles.Length; t += 3)
+                {
+                    int ref_triIndex = t / 3;
+
+                    float3 ref_n = referenceTriNormals[ref_triIndex];  
+                    float dot = math.dot(dest_n, ref_n);
+                    if (dot < minFaceNormalDot) continue;
+
+                    int ref_i0 = referenceTriangles[t];
+                    int ref_i1 = referenceTriangles[t + 1];
+                    int ref_i2 = referenceTriangles[t + 2];
+
+                    float3 ref_v0 = referenceVertices[ref_i0];
+                    float3 ref_v1 = referenceVertices[ref_i1];
+                    float3 ref_v2 = referenceVertices[ref_i2];
+                    //float3x3 ref_v012 = new float3x3(ref_v0, ref_v1, ref_v2);
+
+                    float2 ref_uv0 = Maths.wrap(referenceUVs[ref_i0], 1f);
+                    float2 ref_uv1 = Maths.wrap(referenceUVs[ref_i1], 1f);
+                    float2 ref_uv2 = Maths.wrap(referenceUVs[ref_i2], 1f); 
+                    float2x3 ref_uv012 = new float2x3(ref_uv0, ref_uv1, ref_uv2);
+
+                    bool didHit = Maths.ray_intersect_triangle(dest_pos - depth_n * 10000, depth_n, ref_v0, ref_v1, ref_v2, out Maths.RaycastHitResult hit);
+                    var coords = hit.barycentricCoordinate;
+                    float3 ref_pos = hit.point;//math.mul(ref_v012, coords);
+                    float2 ref_uv = Maths.wrap(math.mul(ref_uv012, math.saturate(coords)), 1f);   
+
+                    int2 ref_pixelIndex2 = new int2(math.floor(ref_uv * texDimsReferenceM1));
+                    int2 ref_alphaPixelIndex2 = new int2(math.floor(ref_uv * texDimsAlphaReferenceM1)); 
+
+                    int ref_pixelIndex = (ref_pixelIndex2.y * texDimsReference.x) + ref_pixelIndex2.x;
+                    int ref_alphaPixelIndex = (ref_alphaPixelIndex2.y * texDimsAlphaReference.x) + ref_alphaPixelIndex2.x;
+
+                    float alpha = referencePixelAlphas[ref_alphaPixelIndex];
+                    float depth = math.select(math.dot(ref_pos, depth_n) - startDepth, float.MaxValue, alpha < alphaClipThreshold);  
+
+                    float4 ref_pixel = referencePixels[ref_pixelIndex]; 
+
+                    bool isCloser = math.all(new bool3(depth < closestDepth, depth >= depthThreshold, didHit));
+
+                    finalPixel = math.select(finalPixel, ref_pixel, isCloser);  
+                    closestDepth = math.select(closestDepth, depth, isCloser);
+
+                    hits = didHit || hits;
+                }   
+
+                outputPixels[triPixel.pixelIndex] = finalPixel;
+            }
+        }
+
+        #endregion
+
         #region Edges
 
         [Serializable]
@@ -2574,9 +4003,6 @@ namespace Swole
         [Serializable]
         public struct OpenEdgeData
         {
-            /// <summary>
-            /// The position of this index in the triangle. 0 - first corner, 1 - second corner, 2 - third corner
-            /// </summary>
             public List<Edge> openEdges;
 
             public bool IsOpenEdge() => openEdges != null && openEdges.Count > 0;
@@ -2713,6 +4139,265 @@ namespace Swole
             }
 
             return edgeStates;
+        }
+
+        #endregion
+
+        #region UV Unwrapping
+
+        [Serializable]
+        public struct UnwrapSettings
+        {
+            [Tooltip("Maximum allowed angle distortion (0..1).")]
+            public float angleError;
+
+            [Tooltip("Maximum allowed area distortion (0..1).")]  
+            public float areaError;
+
+            [Tooltip("This angle (in degrees) or greater between triangles will cause seam to be created.")]
+            public float hardAngle;
+
+            [Tooltip("How much uv-islands will be padded.")]
+            public float packMargin;
+
+            public bool IsInvalid => angleError == 0 && areaError == 0 && hardAngle == 0 && packMargin == 0;
+
+#if UNITY_EDITOR
+            public static implicit operator UnityEditor.UnwrapParam(UnwrapSettings settings) => new UnityEditor.UnwrapParam()
+            {
+                angleError = settings.angleError,
+                areaError = settings.areaError,
+                hardAngle = settings.hardAngle,
+                packMargin = settings.packMargin
+            }; public static implicit operator UnwrapSettings(UnityEditor.UnwrapParam settings) => new UnwrapSettings()
+            {
+                angleError = settings.angleError,
+                areaError = settings.areaError,
+                hardAngle = settings.hardAngle,
+                packMargin = settings.packMargin
+            };
+#endif
+        }
+
+        public static Mesh Unwrap(this Mesh mesh, UVChannelURP destinationChannel, UnwrapSettings settings = default, bool instantiateMesh = false)
+        {
+#if UNITY_EDITOR
+            bool flag = false;
+
+            var tempMesh = instantiateMesh ? Duplicate(mesh) : mesh;
+            var uv2 = tempMesh.uv2;
+            bool hasUV2 = false;
+            if (uv2 != null && uv2.Length > 0)  
+            {
+                hasUV2 = true;
+                tempMesh.uv5 = uv2;
+            }
+
+            tempMesh.uv2 = null;
+
+            if (settings.IsInvalid)
+            {
+                if (!UnityEditor.Unwrapping.GenerateSecondaryUVSet(tempMesh) && tempMesh.indexFormat == IndexFormat.UInt16)
+                {
+                    int[][] submeshes = new int[tempMesh.subMeshCount][];
+                    for (int a = 0; a < tempMesh.subMeshCount; a++) submeshes[a] = tempMesh.GetTriangles(a);
+
+                    tempMesh.indexFormat = IndexFormat.UInt32;
+                    tempMesh.subMeshCount = submeshes.Length;
+                    for (int a = 0; a < tempMesh.subMeshCount; a++) tempMesh.SetTriangles(submeshes[a], a);
+
+                    if (UnityEditor.Unwrapping.GenerateSecondaryUVSet(tempMesh)) flag = true;
+                }
+            } 
+            else
+            {
+                if (!UnityEditor.Unwrapping.GenerateSecondaryUVSet(tempMesh, settings) && tempMesh.indexFormat == IndexFormat.UInt16)  
+                {
+                    int[][] submeshes = new int[tempMesh.subMeshCount][];
+                    for (int a = 0; a < tempMesh.subMeshCount; a++) submeshes[a] = tempMesh.GetTriangles(a);
+
+                    tempMesh.indexFormat = IndexFormat.UInt32;
+                    tempMesh.subMeshCount = submeshes.Length;
+                    for (int a = 0; a < tempMesh.subMeshCount; a++) tempMesh.SetTriangles(submeshes[a], a);
+
+                    if (UnityEditor.Unwrapping.GenerateSecondaryUVSet(tempMesh, settings)) flag = true;
+                }
+            }
+             
+            if (flag)
+            {
+                tempMesh.SetUVs((int)destinationChannel, tempMesh.uv2);
+                if (hasUV2) 
+                {
+                    tempMesh.SetUVs(1, tempMesh.uv5);
+                    tempMesh.uv5 = null;
+                } 
+
+                return tempMesh;
+            }
+#endif
+
+            return mesh;
+        }
+
+        #endregion
+
+        #region UV Packing
+
+        [Serializable]
+        public struct UVIsland
+        {
+            public float weight;
+            public MeshIsland meshData;
+
+            public float2 boundsMin;
+            public float2 boundsMax;
+        }
+
+        public static void PackUVByArea(int[] triangles, Vector2[] uvs, float margin, float downsizingFactor = 0.001f)
+        {
+            if (margin >= 0.5f) return;
+
+            downsizingFactor = 1f - downsizingFactor; 
+
+            var meshIslands = CalculateMeshIslands(uvs.Length, triangles, null, null, false);
+
+            float totalWeight = 0f;
+            List<UVIsland> uvIslands = new List<UVIsland>();
+            foreach (var meshIsland in meshIslands)
+            {
+                if (meshIsland.vertices == null || meshIsland.vertices.Length < 3) continue;
+
+                var uvIsland = new UVIsland();
+                uvIsland.meshData = meshIsland;
+
+                float2 min = float.MaxValue;
+                float2 max = float.MinValue;
+
+                for (int a = 0; a < meshIsland.vertices.Length; a++)
+                {
+                    var uv_ = uvs[meshIsland.vertices[a]];
+
+                    min = math.select(min, uv_, uv_ < min);
+                    max = math.select(max, uv_, uv_ > max);
+                }
+
+                uvIsland.weight = math.abs((max.x - min.x) * (max.y - min.y)); // area
+                totalWeight += uvIsland.weight;
+
+                uvIsland.boundsMin = min;
+                uvIsland.boundsMax = max;
+                uvIslands.Add(uvIsland);
+            }
+
+            uvIslands.Sort((UVIsland A, UVIsland B) => Math.Sign(B.weight - A.weight));
+            /*float size = Mathf.Sqrt(totalWeight);
+            float sizeScaling = 1f / size;
+            for (int a = 0; a < uvs.Length; a++) uvs[a] = uvs[a] * sizeScaling;
+            for (int a = 0; a < uvIslands.Count; a++)
+            {
+                var uvIsland = uvIslands[a];
+                uvIsland.boundsMin = uvIsland.boundsMin * sizeScaling;
+                uvIsland.boundsMax = uvIsland.boundsMax * sizeScaling;
+                uvIslands[a] = uvIsland;
+            }*/
+
+            int columns = Mathf.CeilToInt(1f / margin);
+            int columnsM1 = columns - 1;
+            float[] lineHeights = new float[columns];
+            float[] prevLineHeights = new float[columns]; 
+            void ResetLineHeights()
+            {
+                for (int a = 0; a < lineHeights.Length; a++) prevLineHeights[a] = lineHeights[a] = 0f;
+            }
+            void PrepareLineHeights()
+            {
+                for (int a = 0; a < lineHeights.Length; a++)
+                {
+                    prevLineHeights[a] = lineHeights[a];
+                }
+            }
+
+            int ind = 0;
+            float x = 0f;
+            float minBound = margin;
+            float maxBound = 1f - margin;
+
+            bool Downsize()
+            {
+                if (downsizingFactor <= 0f) return false;
+
+                for (int a = 0; a < uvs.Length; a++) uvs[a] = uvs[a] * downsizingFactor;
+                for (int a = 0; a < uvIslands.Count; a++)
+                {
+                    var uvIsland = uvIslands[a];
+                    uvIsland.boundsMin = uvIsland.boundsMin * downsizingFactor;
+                    uvIsland.boundsMax = uvIsland.boundsMax * downsizingFactor; 
+                    uvIslands[a] = uvIsland;
+                }
+
+                x = margin;
+
+                ind = 0;
+                ResetLineHeights();
+                return true;
+            }
+
+            while (ind < uvIslands.Count)
+            {
+                x = math.max(x, minBound);
+
+                var currentIsland = uvIslands[ind];
+                float2 bounds = currentIsland.boundsMax - currentIsland.boundsMin;
+                if (x + bounds.x >= maxBound)
+                {
+                    x = margin;
+                    if (x + bounds.x >= maxBound)
+                    {
+                        if (!Downsize()) break;
+                        continue;
+                    }
+
+                    PrepareLineHeights();
+                }
+
+                int xStart = Mathf.Min(columns, Mathf.FloorToInt(x / margin));
+                int xSize = math.min(columns - xStart, Mathf.CeilToInt(bounds.x / margin) + 1);
+                float heightOffset = 0f;
+                for (int a = 0; a < xSize; a++) heightOffset = Mathf.Max(heightOffset, prevLineHeights[xStart + a]);
+
+                float targetY = heightOffset + margin;
+                float targetHeight = targetY + bounds.y;
+                if (targetHeight > maxBound)
+                {
+                    if (!Downsize()) break;
+                    continue;
+                }
+
+                float2 boundsMin = new float2(x, targetY);
+                float2 boundsMax = boundsMin + bounds;
+
+                for (int a = 0; a < currentIsland.meshData.vertices.Length; a++)
+                {
+                    int vIndex = currentIsland.meshData.vertices[a];
+                    uvs[vIndex] = (uvs[vIndex] - (Vector2)currentIsland.boundsMin) + (Vector2)boundsMin;
+                }
+
+                currentIsland.boundsMin = boundsMin; 
+                currentIsland.boundsMax = boundsMax;
+
+                uvIslands[ind] = currentIsland;
+
+                ind++;
+
+                for (int a = 0; a < xSize; a++)
+                {
+                    int i = xStart + a;
+                    lineHeights[i] = math.max(lineHeights[i], targetHeight);
+                }
+
+                x += bounds.x + margin;
+            }
         }
 
         #endregion

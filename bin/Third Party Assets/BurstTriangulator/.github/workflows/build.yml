@@ -1,0 +1,66 @@
+name: Build
+
+on:
+  pull_request_target: {}
+  push: { branches: [main] }
+  workflow_dispatch:
+
+env:
+  UNITY_LICENSE: ${{ secrets.UNITY_LICENSE }}
+  UNITY_EMAIL: ${{ secrets.UNITY_EMAIL }}
+  UNITY_PASSWORD: ${{ secrets.UNITY_PASSWORD }}
+
+jobs:
+  testAllModes:
+    name: Build for ${{ matrix.targetPlatform }} on version ${{ matrix.unityVersion }} (${{ matrix.manifest }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        packageName:
+          - com.andywiecko.burst.triangulator
+        projectPath:
+          - Samples~/BurstTriangulatorTestProject
+        unityVersion:
+          - 2022.2.1f1
+        targetPlatform:
+          - StandaloneWindows
+        manifest:
+          - default
+          - fixed-math
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          lfs: true
+          ref: ${{ github.event.pull_request.head.sha || github.ref }}
+      - uses: actions/cache@v3
+        with:
+          path: ${{ matrix.projectPath }}/Library
+          key: Library-${{ matrix.projectPath }}-${{ matrix.targetPlatform }}
+          restore-keys: |
+            Library-${{ matrix.projectPath }}-
+            Library-
+      - name: Preparing sample project
+        run: |
+          echo "############################"
+          echo "# Preparing sample project #"
+          echo "############################"
+          echo "Creating dir ${{ matrix.projectPath }}/Packages/${{ matrix.packageName }}"
+          mkdir ${{ matrix.projectPath }}/Packages/${{ matrix.packageName }}
+          echo "Selecting the manifest:"
+          cp ${{ matrix.projectPath }}/Packages/${{ matrix.manifest }} ${{ matrix.projectPath }}/Packages/manifest.json
+          cat ${{ matrix.projectPath }}/Packages/manifest.json
+          echo "Copying package data"
+          cp -r `ls -I Samples~` ${{ matrix.projectPath }}/Packages/${{ matrix.packageName }}
+          ls -alF ${{ matrix.projectPath }}/Packages/${{ matrix.packageName }}
+      - uses: game-ci/unity-builder@v4
+        with:
+          projectPath: ${{ matrix.projectPath }}
+          unityVersion: ${{ matrix.unityVersion }}
+          targetPlatform: ${{ matrix.targetPlatform }}
+          allowDirtyBuild: true
+          versioning: None
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Build-${{ matrix.manifest }}
+          path: build

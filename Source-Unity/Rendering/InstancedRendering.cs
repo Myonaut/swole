@@ -437,7 +437,9 @@ namespace Swole
             public RenderParams RenderParams => renderParams;
             public void SetRenderParams(RenderParams renderParams)
             {
+                var group = RenderGroup;
 
+                renderParams.lightProbeUsage = group == null ? LightProbeUsage.Off : (group.UseLightProbes ? LightProbeUsage.CustomProvided :  LightProbeUsage.Off);
                 renderParams.matProps = this.renderParams.matProps;
                 this.renderParams = renderParams;
 
@@ -578,7 +580,7 @@ namespace Swole
                 renderParams.matProps = block;
 
             }
-
+            
             public MaterialPropertyOverride<float> GetOverrideFloat(string propertyName, float defaultValue = 0)
             {
 
@@ -621,6 +623,11 @@ namespace Swole
             public SubRenderSequence SubRenderSequence { get; }
 
             public bool Valid { get; }
+
+            public Vector3 WorldPosition { get; set; }
+            public void SetHasMoved(bool flag);
+            public bool HasMoved { get; set; }
+            public bool GetAndConsumeHasMovedFlag();
 
             public void Dispose(bool refreshRenderIndices, bool removeFromRenderGroup);
             public void Destroy(bool refreshRenderIndices = true, bool removeFromRenderGroup = true);
@@ -688,6 +695,38 @@ namespace Swole
                 return renderGroup.GetInstanceData(index);
             }
 
+            private Vector3 worldPosition;
+            public Vector3 WorldPosition 
+            {
+                get => worldPosition;
+
+                set
+                {
+                    if (worldPosition != value) SetHasMoved(true);
+                    worldPosition = value;
+                }
+            }
+
+            private bool hasMoved;
+            public void SetHasMoved(bool flag) 
+            { 
+                hasMoved = flag;
+
+                //if (!hasMoved || renderGroup == null) return;
+                //SubRenderSequence.SetDirty();
+            }
+            public bool HasMoved
+            {
+                get => hasMoved;
+                set => SetHasMoved(value);
+            }
+            public bool GetAndConsumeHasMovedFlag()
+            {
+                bool flag = hasMoved;
+                hasMoved = false;
+                return flag;
+            }
+            
             public void SetMaterialPropertyOverrides(ICollection<MaterialPropertyInstanceOverride<float>> instanceFloatPropertyOverrides)
             {
                 if (instanceFloatPropertyOverrides == null || renderGroup == null) return; 
@@ -825,6 +864,8 @@ namespace Swole
 
             public Camera Camera { get; }
 
+            public bool UseLightProbes { get; set; }
+
         }
 
         public const int _defaultBatchSize = 511; // Unity default https://docs.unity3d.com/ScriptReference/Graphics.RenderMeshInstanced.html
@@ -889,6 +930,21 @@ namespace Swole
 
             protected NativeList<T> instanceData;
             public NativeArray<T> InstanceData => instanceData.AsArray();
+
+            protected List<Vector3> probes_positions;
+            protected List<SphericalHarmonicsL2> probes_lightProbes;
+            protected List<Vector4> probes_occlusionProbes;
+
+            protected bool useLightProbes;
+            public bool UseLightProbes
+            {
+                get => useLightProbes;
+
+                set
+                {
+                    useLightProbes = value;
+                }
+            }
 
             protected List<RenderingInstance<T>> indexReferences;
             protected int lastCount;
@@ -1052,7 +1108,6 @@ namespace Swole
                 
                 if (instanceData.IsCreated) instanceData.Dispose();
                 instanceData = default;
-
             }
 
             public RenderGroup(Mesh mesh, int submeshIndex, List<RenderSequence> renderSequences, NativeList<T> instanceData, int batchSize = _defaultBatchSize)
@@ -1227,7 +1282,7 @@ namespace Swole
 
             }
 
-            public RenderGroup<T> SetLightProbeProxyVolume(LightProbeProxyVolume proxyVolume, int renderParamsIndex = -1)
+            /*public RenderGroup<T> SetLightProbeProxyVolume(LightProbeProxyVolume proxyVolume, int renderParamsIndex = -1)
             {
 
                 void SetValue(int i)
@@ -1283,7 +1338,7 @@ namespace Swole
 
                 return this;
 
-            }
+            }*/
 
             public RenderGroup<T> SetMaterial(Material material, int renderParamsIndex = -1)
             {

@@ -81,6 +81,9 @@ namespace Swole
         public virtual bool ExecuteInStack => true;
 
         public virtual int Priority => 0;
+        public virtual int UpdatePriority => Priority;
+        public virtual int LateUpdatePriority => Priority;
+        public virtual int FixedUpdatePriority => Priority;
 
         public int CompareTo(ISingletonBehaviour other) => other == null ? 1 : Priority.CompareTo(other.Priority);
         public int CompareTo(IExecutableBehaviour other) => other == null ? 1 : Priority.CompareTo(other.Priority);
@@ -88,6 +91,9 @@ namespace Swole
         public abstract void OnUpdate();
         public abstract void OnLateUpdate();
         public abstract void OnFixedUpdate();
+
+        public virtual void OnPreFixedUpdate() { }
+        public virtual void OnPostFixedUpdate() { }
 
         public virtual bool DestroyOnLoad => true;
 
@@ -171,6 +177,9 @@ namespace Swole
         public virtual bool ExecuteInOrder => true;
 
         public virtual int Priority => 0;
+        public virtual int UpdatePriority => Priority;
+        public virtual int LateUpdatePriority => Priority;
+        public virtual int FixedUpdatePriority => Priority;
 
         public int CompareTo(ISingletonBehaviour other) => other == null ? 1 : Priority.CompareTo(other.Priority);
         public int CompareTo(IExecutableBehaviour other) => other == null ? 1 : Priority.CompareTo(other.Priority);
@@ -178,6 +187,9 @@ namespace Swole
         public abstract void OnUpdate();
         public abstract void OnLateUpdate();
         public abstract void OnFixedUpdate();
+
+        public virtual void OnPreFixedUpdate() { }
+        public virtual void OnPostFixedUpdate() { }
 
         public virtual bool DestroyOnLoad => true;
 
@@ -211,16 +223,57 @@ namespace Swole
     }
 #endif
 
+#if (UNITY_STANDALONE || UNITY_EDITOR)
+    public abstract class ExecutableBehaviourObject : MonoBehaviour, IExecutableBehaviour
+    {
+        public abstract int Priority { get; }
+        public virtual int UpdatePriority => Priority;
+        public virtual int LateUpdatePriority => Priority;
+        public virtual int FixedUpdatePriority => Priority;
+
+        public int CompareTo(IExecutableBehaviour other) => other == null ? 1 : Priority.CompareTo(other.Priority);
+
+        public virtual void OnFixedUpdate() {}
+
+        public virtual void OnLateUpdate() {}
+
+        public virtual void OnUpdate() {}
+
+        public virtual void OnPreFixedUpdate() { }
+        public virtual void OnPostFixedUpdate() { }
+
+    }
+#else
+    public abstract class ExecutableBehaviourObject : IExecutableBehaviour
+    {
+        public abstract int Priority { get; }
+
+        public int CompareTo(IExecutableBehaviour other) => other == null ? 1 : Priority.CompareTo(other.Priority);
+
+        public virtual void OnFixedUpdate() {}
+
+        public virtual void OnLateUpdate() {}
+
+        public virtual void OnUpdate() {}
+    }
+#endif
+
     public interface IExecutableBehaviour : IComparable<IExecutableBehaviour>
     {
         /// <summary>
         /// Used for order of execution in the call stack, if using it. Lower values are called sooner.
         /// </summary>
         public int Priority { get; }
+        public int UpdatePriority { get; }
+        public int LateUpdatePriority { get; }
+        public int FixedUpdatePriority { get; }
 
         public void OnUpdate();
         public void OnLateUpdate();
         public void OnFixedUpdate();
+
+        public void OnPreFixedUpdate();
+        public void OnPostFixedUpdate();
     }
     public interface ISingletonBehaviour : IExecutableBehaviour, IComparable<ISingletonBehaviour>
     {
@@ -235,10 +288,49 @@ namespace Swole
     internal class SingletonCallStack : SingletonBehaviour<SingletonCallStack>
     {
 
+        public static int CompareUpdatePriority(IExecutableBehaviour a, IExecutableBehaviour b) => Math.Sign(a.UpdatePriority - b.UpdatePriority);
+        public static int CompareLateUpdatePriority(IExecutableBehaviour a, IExecutableBehaviour b) => Math.Sign(a.LateUpdatePriority - b.LateUpdatePriority);
+        public static int CompareFixedUpdatePriority(IExecutableBehaviour a, IExecutableBehaviour b) => Math.Sign(a.FixedUpdatePriority - b.FixedUpdatePriority);
+
         public override bool ExecuteInStack => false;
         public override bool DestroyOnLoad => false;
 
         protected List<IExecutableBehaviour> behaviours = new List<IExecutableBehaviour>();
+
+        protected List<IExecutableBehaviour> behavioursUpdateSorted = new List<IExecutableBehaviour>();
+        protected List<IExecutableBehaviour> behavioursLateUpdateSorted = new List<IExecutableBehaviour>();
+        protected List<IExecutableBehaviour> behavioursFixedUpdateSorted = new List<IExecutableBehaviour>();
+
+        public void CopyAndSortBehaviours()
+        {
+            if (behavioursUpdateSorted == null) behavioursUpdateSorted = new List<IExecutableBehaviour>();
+            behavioursUpdateSorted.Clear();
+            behavioursUpdateSorted.AddRange(behaviours); 
+
+            if (behavioursLateUpdateSorted == null) behavioursLateUpdateSorted = new List<IExecutableBehaviour>();
+            behavioursLateUpdateSorted.Clear();
+            behavioursLateUpdateSorted.AddRange(behaviours);
+
+            if (behavioursFixedUpdateSorted == null) behavioursFixedUpdateSorted = new List<IExecutableBehaviour>();
+            behavioursFixedUpdateSorted.Clear();
+            behavioursFixedUpdateSorted.AddRange(behaviours);
+
+            behavioursUpdateSorted.Sort(CompareUpdatePriority);
+            behavioursLateUpdateSorted.Sort(CompareLateUpdatePriority);
+            behavioursFixedUpdateSorted.Sort(CompareFixedUpdatePriority);
+        }
+        public void SortBehaviours()
+        {
+            if (behavioursUpdateSorted != null) behavioursUpdateSorted.Sort(CompareUpdatePriority);
+            if (behavioursLateUpdateSorted != null) behavioursLateUpdateSorted.Sort(CompareLateUpdatePriority);
+            if (behavioursFixedUpdateSorted != null) behavioursFixedUpdateSorted.Sort(CompareFixedUpdatePriority);
+        }
+        protected void SortBehavioursFast()
+        {
+            behavioursUpdateSorted.Sort(CompareUpdatePriority);
+            behavioursLateUpdateSorted.Sort(CompareLateUpdatePriority);
+            behavioursFixedUpdateSorted.Sort(CompareFixedUpdatePriority);
+        }
 
         public bool InsertLocal(IExecutableBehaviour behaviour)
         {
@@ -246,7 +338,19 @@ namespace Swole
             if (behaviours.Contains(behaviour)) return false;
 
             behaviours.Add(behaviour);
-            behaviours.Sort(); // Recalculate execution order.
+            //behaviours.Sort(); // Recalculate execution order.
+            
+            if (behavioursUpdateSorted == null || behavioursLateUpdateSorted == null || behavioursFixedUpdateSorted == null)
+            {
+                CopyAndSortBehaviours();
+            } 
+            else
+            {
+                behavioursUpdateSorted.Add(behaviour);
+                behavioursLateUpdateSorted.Add(behaviour);
+                behavioursFixedUpdateSorted.Add(behaviour);
+                SortBehavioursFast();
+            }
 
             return true; 
         }
@@ -263,7 +367,11 @@ namespace Swole
         public bool RemoveLocal(IExecutableBehaviour behaviour)
         {
             if (behaviour == null || behaviours == null) return false;
-            return behaviours.RemoveAll(i => ReferenceEquals(i, behaviour)) > 0;
+            bool removed = behaviours.RemoveAll(i => ReferenceEquals(i, behaviour)) > 0;
+
+            if (removed) CopyAndSortBehaviours();
+
+            return removed;
         }
 
         public static bool Remove(IExecutableBehaviour behaviour)
@@ -281,8 +389,9 @@ namespace Swole
         {
             if (hasNull)
             {
-                behaviours.RemoveAll(i => i == null);
                 hasNull = false;
+                bool removed = behaviours.RemoveAll(i => i == null) > 0;
+                if (removed) CopyAndSortBehaviours();
             }
         }
 
@@ -294,13 +403,13 @@ namespace Swole
         /// </summary>
         public override void OnUpdate()
         {
-            if (behaviours == null || IsQuitting()) return;
+            if (behavioursUpdateSorted == null || IsQuitting()) return;
 
             PreUpdate?.Invoke();
 
-            for (int i = 0; i < behaviours.Count; i++) 
+            for (int i = 0; i < behavioursUpdateSorted.Count; i++) 
             {
-                var behaviour = behaviours[i];
+                var behaviour = behavioursUpdateSorted[i];
                 if (behaviour == null) 
                 {
                     hasNull = true;
@@ -308,7 +417,7 @@ namespace Swole
                 }
                 try
                 {
-                    behaviours[i].OnUpdate();
+                    behavioursUpdateSorted[i].OnUpdate();
                 }
                 catch (Exception e)
                 {
@@ -328,13 +437,13 @@ namespace Swole
         /// </summary>
         public override void OnLateUpdate()
         {
-            if (behaviours == null || IsQuitting()) return;
+            if (behavioursLateUpdateSorted == null || IsQuitting()) return;
 
             PreLateUpdate?.Invoke();
 
-            for (int i = 0; i < behaviours.Count; i++)
+            for (int i = 0; i < behavioursLateUpdateSorted.Count; i++)
             {
-                var behaviour = behaviours[i]; 
+                var behaviour = behavioursLateUpdateSorted[i]; 
                 if (behaviour == null)
                 {
                     hasNull = true;
@@ -342,7 +451,7 @@ namespace Swole
                 }
                 try
                 {
-                    behaviours[i].OnLateUpdate();
+                    behavioursLateUpdateSorted[i].OnLateUpdate();
                 } 
                 catch(Exception e)
                 {
@@ -358,6 +467,24 @@ namespace Swole
         public static event VoidParameterlessDelegate PostFixedUpdate;
 
         /// <summary>
+        /// Executes the OnPreFixedUpdate call stack. Must be called manually if not using an engine.
+        /// </summary>
+        public override void OnPreFixedUpdate()
+        {
+            if (behavioursFixedUpdateSorted == null || IsQuitting()) return;
+
+            for (int i = 0; i < behavioursFixedUpdateSorted.Count; i++)
+            {
+                var behaviour = behavioursFixedUpdateSorted[i];
+                if (behaviour == null)
+                {
+                    hasNull = true;
+                    continue;
+                }
+                behavioursFixedUpdateSorted[i].OnPreFixedUpdate();
+            }
+        }
+        /// <summary>
         /// Executes the OnFixedUpdate call stack. Must be called manually if not using an engine.
         /// </summary>
         public override void OnFixedUpdate()
@@ -366,19 +493,38 @@ namespace Swole
 
             PreFixedUpdate?.Invoke();
 
-            for (int i = 0; i < behaviours.Count; i++)
+            for (int i = 0; i < behavioursFixedUpdateSorted.Count; i++)
             {
-                var behaviour = behaviours[i];
+                var behaviour = behavioursFixedUpdateSorted[i];
                 if (behaviour == null)
                 {
                     hasNull = true;
                     continue;
                 }
-                behaviours[i].OnFixedUpdate();
+                behavioursFixedUpdateSorted[i].OnFixedUpdate();
             }
-            RemoveNull();
 
             PostFixedUpdate?.Invoke();
+        }
+        /// <summary>
+        /// Executes the OnPostFixedUpdate call stack. Must be called manually if not using an engine.
+        /// </summary>
+        public override void OnPostFixedUpdate()
+        {
+            if (behavioursFixedUpdateSorted == null || IsQuitting()) return;
+
+            for (int i = 0; i < behavioursFixedUpdateSorted.Count; i++)
+            {
+                var behaviour = behavioursFixedUpdateSorted[i];
+                if (behaviour == null)
+                {
+                    hasNull = true;
+                    continue;
+                }
+                behavioursFixedUpdateSorted[i].OnPostFixedUpdate();
+            }
+
+            RemoveNull();
         }
 
         /* ---- Revised to be handled by the engine hook instead.
@@ -415,11 +561,23 @@ namespace Swole
             instance.OnLateUpdate();
         }
 
+        public static void ExecutePreFixed()
+        {
+            var instance = Instance;
+            if (instance == null) return;
+            instance.OnPreFixedUpdate();
+        }
         public static void ExecuteFixed()
         {
             var instance = Instance;
             if (instance == null) return;
             instance.OnFixedUpdate();
+        }
+        public static void ExecutePostFixed()
+        {
+            var instance = Instance;
+            if (instance == null) return;
+            instance.OnPostFixedUpdate();
         }
 
     }

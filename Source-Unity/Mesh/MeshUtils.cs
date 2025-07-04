@@ -24,6 +24,7 @@ namespace Swole
 
         }
 
+        public static List<Vector2> GetUVsByChannelAsList(this Mesh mesh, UVChannelURP uvChannel) => GetUVsByChannelAsList(mesh, (int)uvChannel);
         public static List<Vector2> GetUVsByChannelAsList(this Mesh mesh, int uvChannel)
         {
 
@@ -35,6 +36,7 @@ namespace Swole
 
         }
 
+        public static Vector2[] GetUVsByChannel(this Mesh mesh, UVChannelURP uvChannel) => GetUVsByChannel(mesh, (int)uvChannel);
         public static Vector2[] GetUVsByChannel(this Mesh mesh, int uvChannel)
         {
 
@@ -42,6 +44,7 @@ namespace Swole
 
         }
 
+        public static List<Vector3> GetUVsByChannelAsListV3(this Mesh mesh, UVChannelURP uvChannel) => GetUVsByChannelAsListV3(mesh, (int)uvChannel);
         public static List<Vector3> GetUVsByChannelAsListV3(this Mesh mesh, int uvChannel)
         {
 
@@ -53,6 +56,7 @@ namespace Swole
 
         }
 
+        public static Vector3[] GetUVsByChannelV3(this Mesh mesh, UVChannelURP uvChannel) => GetUVsByChannelV3(mesh, (int)uvChannel);
         public static Vector3[] GetUVsByChannelV3(this Mesh mesh, int uvChannel)
         {
 
@@ -60,6 +64,7 @@ namespace Swole
 
         }
 
+        public static List<Vector4> GetUVsByChannelAsListV4(this Mesh mesh, UVChannelURP uvChannel) => GetUVsByChannelAsListV4(mesh, (int)uvChannel);
         public static List<Vector4> GetUVsByChannelAsListV4(this Mesh mesh, int uvChannel)
         {
 
@@ -71,6 +76,7 @@ namespace Swole
 
         }
 
+        public static Vector4[] GetUVsByChannelV4(this Mesh mesh, UVChannelURP uvChannel) => GetUVsByChannelV4(mesh, (int)uvChannel);
         public static Vector4[] GetUVsByChannelV4(this Mesh mesh, int uvChannel)
         {
 

@@ -136,6 +136,7 @@ namespace Swole
         private static readonly List<GameObject> _tempGameObjects = new List<GameObject>();
         private static readonly List<Transform> _tempTransforms = new List<Transform>();
         private static readonly List<Transform> _tempTransforms2 = new List<Transform>();
+        private static readonly List<TransformState> _tempTransformStates = new List<TransformState>();
 
         public string additiveEditorScene = "sc_RLD-Add";
 
@@ -244,6 +245,8 @@ namespace Swole
             [NonSerialized]
             public bool delaySync;
 
+            public bool preserveChildrenAfterRevert;
+
             public float3 boundWorldPosition;
             public float3 boundLocalPosition;
             public quaternion boundWorldRotation;
@@ -281,6 +284,12 @@ namespace Swole
         }
 
         [Serializable]
+        public enum RootMotionPositionMode
+        {
+            Default, Planar, Vertical, LeftRight, ForwardBack, LeftRightVertical, ForwardBackVertical
+        }
+
+        [Serializable]
         public class RemapPreset : ICloneable
         {
             public string name;
@@ -291,6 +300,22 @@ namespace Swole
                 this.name = name;
                 this.animatable = animatable;
             }
+
+            // !!!IMPORTANT!!! new fields must be added to the Duplicate() method!
+
+            public bool bakeRootMotion = false;
+            public bool bakeRootMotionAtSeparateInverval = false;
+            public float bakeRootMotionIntervalPos = 0.1f;
+            public float bakeRootMotionIntervalRot = 0.1f;
+            public float bakeRootMotionMaxTime = 0.998f;
+            public string targetRootBone;
+            public RootMotionPositionMode rootMotionPositionMode;
+
+            public List<string> referencePositionBones;
+            public bool BakeRootMotionPosition => referencePositionBones != null && referencePositionBones.Count > 0;
+
+            public List<string> referenceRotationBones;
+            public bool BakeRootMotionRotation => referenceRotationBones != null && referenceRotationBones.Count > 0;
 
             public static string GetFileName(string presetName, string animatable) => (string.IsNullOrWhiteSpace(animatable) ? "" : $"{animatable}_") + presetName + $".{ContentManager.fileExtension_JSON}";
             public string FileName => GetFileName(name, animatable);
@@ -307,8 +332,24 @@ namespace Swole
             {
                 var clone = new RemapPreset(name, animatable);
 
-                clone.remapBindings = new List<BoneBindings>();
-                foreach (var binding in remapBindings) clone.remapBindings.Add(binding.Duplicate());
+                clone.bakeRootMotion = bakeRootMotion;
+                clone.targetRootBone = targetRootBone;
+                clone.rootMotionPositionMode = rootMotionPositionMode;
+
+                clone.bakeRootMotionMaxTime = bakeRootMotionMaxTime;
+
+                clone.bakeRootMotionAtSeparateInverval = bakeRootMotionAtSeparateInverval;
+                clone.bakeRootMotionIntervalPos = bakeRootMotionIntervalPos;
+                clone.bakeRootMotionIntervalRot = bakeRootMotionIntervalRot;
+
+                clone.referencePositionBones = referencePositionBones == null ? null : new List<string>(referencePositionBones);
+                clone.referenceRotationBones = referenceRotationBones == null ? null : new List<string>(referenceRotationBones);
+
+                if (remapBindings != null) 
+                {
+                    clone.remapBindings = new List<BoneBindings>();
+                    foreach (var binding in remapBindings) if (binding != null) clone.remapBindings.Add(binding.Duplicate()); 
+                }
 
                 return clone;
             }
@@ -402,10 +443,10 @@ namespace Swole
                     if (import.controlLayer == null) continue;
 
                     import.controlLayer.mix = 1;
-                    if (import.controlLayer.HasActiveState && import.controlLayer.ActiveState is CustomStateMachine stateMachine && stateMachine.MotionControllerIndex >= 0)
+                    if (import.controlLayer.HasActiveState && import.controlLayer.ActiveState is CustomAnimationLayerState state && state.MotionControllerIndex >= 0)
                     {
-                        var mc = import.controlLayer.GetMotionControllerUnsafe(stateMachine.MotionControllerIndex);
-                        if (mc is CustomMotionController.AnimationReference ar)
+                        var mc = import.controlLayer.GetMotionControllerUnsafe(state.MotionControllerIndex);
+                        if (mc is AnimationReference ar)
                         {
                             ar.BaseSpeed = 1;  
                         }
@@ -418,8 +459,8 @@ namespace Swole
                 {
                     if (animator.OnPostLateUpdate == null) animator.OnPostLateUpdate = new UnityEvent();
 
-                    animator.OnPostLateUpdate.RemoveListener(SyncRemapTargetPose);
-                    animator.OnPostLateUpdate.AddListener(SyncRemapTargetPose);  
+                    animator.OnPostLateUpdate.RemoveListener(SyncRemapTargetPoseDefault);
+                    animator.OnPostLateUpdate.AddListener(SyncRemapTargetPoseDefault);  
                 }
             }
 
@@ -433,10 +474,10 @@ namespace Swole
                 {
                     if (import.controlLayer == null) continue;
 
-                    if (import.controlLayer.HasActiveState && import.controlLayer.ActiveState is CustomStateMachine stateMachine && stateMachine.MotionControllerIndex >= 0)
+                    if (import.controlLayer.HasActiveState && import.controlLayer.ActiveState is CustomAnimationLayerState state && state.MotionControllerIndex >= 0)
                     {
-                        var mc = import.controlLayer.GetMotionControllerUnsafe(stateMachine.MotionControllerIndex);
-                        if (mc is CustomMotionController.AnimationReference ar)
+                        var mc = import.controlLayer.GetMotionControllerUnsafe(state.MotionControllerIndex);
+                        if (mc is AnimationReference ar)
                         {
                             ar.BaseSpeed = 0;
                         }
@@ -447,10 +488,10 @@ namespace Swole
 
                 if (animator != null && animator.OnPostLateUpdate != null)
                 {
-                    animator.OnPostLateUpdate.RemoveListener(SyncRemapTargetPose);
+                    animator.OnPostLateUpdate.RemoveListener(SyncRemapTargetPoseDefault);
                 }
 
-                SyncRemapTargetPoseDelayed(2); 
+                SyncRemapTargetPoseDelayed(2, true, false); 
             }
 
             public void StopPlayback(ModelEditor editor)
@@ -465,10 +506,10 @@ namespace Swole
 
                     import.controlLayer.mix = 0;
 
-                    if (import.controlLayer.HasActiveState && import.controlLayer.ActiveState is CustomStateMachine stateMachine && stateMachine.MotionControllerIndex >= 0)
+                    if (import.controlLayer.HasActiveState && import.controlLayer.ActiveState is CustomAnimationLayerState state && state.MotionControllerIndex >= 0)
                     {
-                        var mc = import.controlLayer.GetMotionControllerUnsafe(stateMachine.MotionControllerIndex);
-                        if (mc is CustomMotionController.AnimationReference ar)
+                        var mc = import.controlLayer.GetMotionControllerUnsafe(state.MotionControllerIndex);
+                        if (mc is AnimationReference ar)
                         {
                             ar.BaseSpeed = 0;
                             ar.SetTime(import.controlLayer, 0);
@@ -480,10 +521,10 @@ namespace Swole
 
                 if (animator != null && animator.OnPostLateUpdate != null)
                 {
-                    animator.OnPostLateUpdate.RemoveListener(SyncRemapTargetPose); 
+                    animator.OnPostLateUpdate.RemoveListener(SyncRemapTargetPoseDefault); 
                 }
 
-                SyncRemapTargetPoseDelayed(2);
+                SyncRemapTargetPoseDelayed(2, true, false);
             }
 
             public List<ImportedAnimatable> importedObjects;
@@ -526,6 +567,19 @@ namespace Swole
 
             private ImportedAnimatable remapTarget;
             public ImportedAnimatable RemapTarget => remapTarget;
+            private TransformState[] remapDefaultPose;
+            public int IndexOfRemapBone(Transform bone)
+            {
+                if (remapTarget == null || remapTarget.animator == null || remapTarget.animator.Bones == null) return - 1;
+
+                var bones = remapTarget.animator.Bones.bones;
+                if (bones != null)
+                {
+                    for (int a = 0; a < bones.Length; a++) if (ReferenceEquals(bones[a], bone)) return a;
+                }
+
+                return -1;
+            }
             public bool HasRemapTarget => remapTarget != null;
             private readonly List<string> dependentRemapBones = new List<string>();
             public void SetRemapTarget(ImportedAnimatable remapTarget)
@@ -541,10 +595,15 @@ namespace Swole
                 dependentRemapBones.Clear();
                 if (remapTarget != null && remapTarget.instance != null && remapTarget.animator != null && remapTarget.animator.Bones != null)
                 {
+                    remapTarget.animator.ResetToPreInitializedBindPose();
+
                     var bones = remapTarget.animator.Bones.bones; 
 
                     if (bones != null)
                     {
+                        remapDefaultPose = new TransformState[bones.Length];
+                        for (int a = 0; a < bones.Length; a++) remapDefaultPose[a] = new TransformState(bones[a], false); 
+
                         var proxyTransforms = remapTarget.instance.GetComponentsInChildren<ProxyTransform>(true);
                         var proxyBones = remapTarget.instance.GetComponentsInChildren<ProxyBone>(true);
 
@@ -655,20 +714,48 @@ namespace Swole
             }
 
             public bool hideImport = false;
-            public bool hideRemap = false; 
+            public bool hideRemap = false;
 
+            private readonly Dictionary<Component, bool> cachedComponentStates = new Dictionary<Component, bool>(); 
             private void SetVisibilityForRoot(GameObject root, bool visible)
             {
                 if (root != null)
                 {
                     var meshRenderers = root.GetComponentsInChildren<MeshRenderer>(true);
-                    foreach (var meshRenderer in meshRenderers) meshRenderer.enabled = visible;
+                    foreach (var meshRenderer in meshRenderers)
+                    {
+                        if (!cachedComponentStates.TryGetValue(meshRenderer, out bool state)) 
+                        {
+                            state = meshRenderer.enabled;
+                            cachedComponentStates[meshRenderer] = state;
+                        }
+
+                        meshRenderer.enabled = visible ? state : false;
+                    }
 
                     var skinnedRenderers = root.GetComponentsInChildren<SkinnedMeshRenderer>(true);
-                    foreach (var skinnedRenderer in skinnedRenderers) skinnedRenderer.enabled = visible;
+                    foreach (var skinnedRenderer in skinnedRenderers) 
+                    {
+                        if (!cachedComponentStates.TryGetValue(skinnedRenderer, out bool state))
+                        {
+                            state = skinnedRenderer.enabled;
+                            cachedComponentStates[skinnedRenderer] = state;
+                        }
+
+                        skinnedRenderer.enabled = visible ? state : false;
+                    }
 
                     var customizableCharacters = root.GetComponentsInChildren<CustomizableCharacterMesh>(true);
-                    foreach (var customizableCharacter in customizableCharacters) customizableCharacter.enabled = visible; 
+                    foreach (var customizableCharacter in customizableCharacters) 
+                    {
+                        if (!cachedComponentStates.TryGetValue(customizableCharacter, out bool state))
+                        {
+                            state = customizableCharacter.enabled;
+                            cachedComponentStates[customizableCharacter] = state;
+                        }
+
+                        customizableCharacter.enabled = visible ? state : false;
+                    }
                 }
             }
             public void RefreshImportVisibility()
@@ -992,11 +1079,15 @@ namespace Swole
                     }
                 }
 
-                SyncRemapTargetPoseDelayed(2);
+                SyncRemapTargetPoseDelayed(2, true, false);
             }
-            public void InstantiateRemapPreset()
+            public void ValidateRemapPreset()
             {
                 if (remapData == null) RemapData = new RemapPreset("new", remapTarget == null ? string.Empty : remapTarget.displayName);
+            }
+            public void InstantiateRemapPreset()
+            { 
+                ValidateRemapPreset();
                 if (remapData.IsSavedPreset) RemapData = remapData.Duplicate(); 
             }
 
@@ -1096,6 +1187,8 @@ namespace Swole
             {
                 if (remapData == null || remapData.remapBindings == null) return;
 
+                InstantiateRemapPreset();
+
                 foreach (var b in remapData.remapBindings)
                 {
                     if (b.targetBone == targetRemapBone)
@@ -1113,6 +1206,8 @@ namespace Swole
             {
                 if (remapData == null || remapData.remapBindings == null) return;
 
+                InstantiateRemapPreset();
+
                 foreach (var b in remapData.remapBindings)
                 {
                     if (b.targetBone == targetRemapBone)
@@ -1127,54 +1222,101 @@ namespace Swole
                 }
             }
 
-            public struct BoneSync
+            public struct BoneRemapSync
             {
                 public int depth;
                 public Transform syncBone;
                 public BoneBindings binding;
 
-                public void Sync(ICollection<Transform> targetBones)
+                public void Sync(Session session, ICollection<Transform> referenceBones, bool revertToDefaultPosition = true, bool revertToDefaultRotation = false)
                 {
                     if (binding != null)
                     {
-                         
+
+                        var syncBone_ = syncBone;
+                        var binding_ = binding;
+
                         if (binding.bindings != null && binding.bindings.Count > 0)
                         {
+
+                            if (syncBone_.parent != null)
+                            {
+                                var parentBinding = session.GetRemapBindingsForBone(syncBone_.parent.name);
+                                if (parentBinding != null && parentBinding.preserveChildrenAfterRevert)
+                                {
+                                    revertToDefaultPosition = false;
+                                    revertToDefaultRotation = false;
+                                } 
+                            }
 
                             Vector3 offset = Vector3.zero;
                             Quaternion rotOffset = Quaternion.identity; 
 
                             foreach (var bindingToReference in binding.bindings)
                             {
-                                foreach (var targetBone in targetBones)
+                                foreach (var referenceBone in referenceBones)
                                 {
-                                    if (targetBone.name == bindingToReference.bone)
+                                    if (referenceBone.name == bindingToReference.bone)
                                     {
-                                        Quaternion convertRot = bindingToReference.boundParentWorldRotation * Quaternion.Inverse(binding.boundParentWorldRotation); 
+                                        Vector3 offset_ = ((Quaternion)bindingToReference.boundParentWorldRotation * (referenceBone.localPosition - (Vector3)bindingToReference.boundLocalPosition));
+                                        offset_ = Quaternion.Inverse(binding.boundParentWorldRotation) * offset_; 
+
+                                        offset = offset + offset_ * bindingToReference.weight;
+
+                                        Quaternion rotOffset_ = (((bindingToReference.boundParentWorldRotation * referenceBone.localRotation))) * Quaternion.Inverse(bindingToReference.boundWorldRotation);
+                                        rotOffset_ = Quaternion.Inverse(binding.boundParentWorldRotation) * (rotOffset_ * binding.boundWorldRotation);
+                                        rotOffset_ = Quaternion.Slerp(Quaternion.identity, rotOffset_ * Quaternion.Inverse(binding.boundLocalRotation), bindingToReference.weight);
+
+                                        rotOffset = rotOffset_ * rotOffset;
                                          
-                                        offset = offset + (Quaternion.Inverse(binding.boundParentWorldRotation) * (convertRot * (((Quaternion)binding.boundParentWorldRotation) * (targetBone.localPosition - (Vector3)bindingToReference.boundLocalPosition)))) * bindingToReference.weight;
-                                        rotOffset = Quaternion.SlerpUnclamped(Quaternion.identity, Maths.ShortestRotationLocal((Quaternion)bindingToReference.boundWorldRotation, targetBone.rotation), bindingToReference.weight) * rotOffset;
-                                         
-                                        break;  
+                                        break;
                                     }
-                                } 
+                                }
                             }
-                             
-                            syncBone.localPosition = (Vector3)binding.boundLocalPosition + offset; 
-                            syncBone.rotation = rotOffset * ((Quaternion)binding.boundWorldRotation);
+
+                            int boneIndex = session.IndexOfRemapBone(syncBone);
+                            void SyncTransform(bool revertToDefaultPosition, bool revertToDefaultRotation) 
+                            {
+                                var localPos = (revertToDefaultPosition && boneIndex >= 0 ? session.remapDefaultPose[boneIndex].position : (Vector3)binding_.boundLocalPosition) + offset;
+                                var localRot = rotOffset * (revertToDefaultRotation && boneIndex >= 0 ? session.remapDefaultPose[boneIndex].rotation : (Quaternion)binding_.boundLocalRotation);
+
+                                syncBone_.SetLocalPositionAndRotation(localPos, localRot);
+                            }
+
+                            bool preserveChildren = binding.preserveChildrenAfterRevert && (revertToDefaultPosition || revertToDefaultRotation);
+                            if (preserveChildren)
+                            {
+                                SyncTransform(false, false);
+                                 
+                                _tempTransformStates.Clear();
+                                for (int a = 0; a < syncBone.childCount; a++) _tempTransformStates.Add(new TransformState(syncBone.GetChild(a), true));
+                            }
+
+                            SyncTransform(revertToDefaultPosition, revertToDefaultRotation);
+                            
+                            if (preserveChildren)
+                            {
+                                for (int a = 0; a < _tempTransformStates.Count; a++) _tempTransformStates[a].ApplyWorld(syncBone.GetChild(a));  
+                                _tempTransformStates.Clear();
+                            }
                         }
-                    } 
+                    }
                 }
             }
 
-            private readonly List<BoneSync> boneSyncs = new List<BoneSync>();
-            private readonly List<BoneSync> boneSyncsDelayed = new List<BoneSync>();
-            public void SyncRemapTargetPose()
+            private readonly List<BoneRemapSync> boneSyncs = new List<BoneRemapSync>();
+            private readonly List<BoneRemapSync> boneSyncsPreserve = new List<BoneRemapSync>();
+            private readonly List<BoneRemapSync> boneSyncsDelayed = new List<BoneRemapSync>();
+            private readonly List<BoneRemapSync> boneSyncsPreserveDelayed = new List<BoneRemapSync>();
+            public void SyncRemapTargetPoseDefault() => SyncRemapTargetPose(true, false); 
+            public void SyncRemapTargetPose(bool revertToDefaultPositions, bool revertToDefaultRotations)
             {
                 if (remapData == null || remapData.remapBindings == null || animator == null || animator.Bones == null || animator.Bones.bones == null || remapTarget == null || remapTarget.animator == null) return;
 
                 boneSyncs.Clear();
+                boneSyncsPreserve.Clear();
                 boneSyncsDelayed.Clear();
+                boneSyncsPreserveDelayed.Clear();
 
                 foreach (var bindings in remapData.remapBindings)
                 {
@@ -1189,19 +1331,28 @@ namespace Swole
                         parent = parent.parent;
                     }
 
-                    var sync = new BoneSync()
+                    var sync = new BoneRemapSync()
                     {
                         depth = depth,
                         syncBone = bone,
                         binding = bindings
                     };
 
-                    if (bindings.delaySync) boneSyncsDelayed.Add(sync); else boneSyncs.Add(sync);
+                    if (bindings.delaySync)
+                    {
+                        if (bindings.preserveChildrenAfterRevert) boneSyncsPreserveDelayed.Add(sync); else boneSyncsDelayed.Add(sync); 
+                    }
+                    else 
+                    {
+                        if (bindings.preserveChildrenAfterRevert) boneSyncsPreserve.Add(sync); else boneSyncs.Add(sync);
+                    }
                 }
-                 
-                boneSyncs.Sort((BoneSync syncA, BoneSync syncB) => Math.Sign(syncA.depth - syncB.depth));
+                
+                boneSyncs.Sort((BoneRemapSync syncA, BoneRemapSync syncB) => Math.Sign(syncA.depth - syncB.depth));
+                foreach (var sync in boneSyncs) sync.Sync(this, animator.Bones.bones, revertToDefaultPositions, revertToDefaultRotations);
 
-                foreach (var sync in boneSyncs) sync.Sync(animator.Bones.bones);
+                boneSyncsPreserve.Sort((BoneRemapSync syncA, BoneRemapSync syncB) => Math.Sign(syncA.depth - syncB.depth));
+                foreach (var sync in boneSyncsPreserve) sync.Sync(this, animator.Bones.bones, revertToDefaultPositions, revertToDefaultRotations);
 
                 if (boneSyncsDelayed.Count > 0)
                 {
@@ -1210,31 +1361,35 @@ namespace Swole
                         yield return null;
                         //yield return new WaitForEndOfFrame(); 
 
-                        foreach (var sync in boneSyncsDelayed) sync.Sync(animator.Bones.bones);
+                        boneSyncsDelayed.Sort((BoneRemapSync syncA, BoneRemapSync syncB) => Math.Sign(syncA.depth - syncB.depth));
+                        foreach (var sync in boneSyncsDelayed) sync.Sync(this, animator.Bones.bones, revertToDefaultPositions, revertToDefaultRotations);
+
+                        boneSyncsPreserveDelayed.Sort((BoneRemapSync syncA, BoneRemapSync syncB) => Math.Sign(syncA.depth - syncB.depth));
+                        foreach (var sync in boneSyncsPreserveDelayed) sync.Sync(this, animator.Bones.bones, revertToDefaultPositions, revertToDefaultRotations);
                     }
 
                     CoroutineProxy.Start(SyncDelayed());
                 }
             }
 
-            private IEnumerator SyncRemapTargetPoseRoutine(int frameDelay)
+            private IEnumerator SyncRemapTargetPoseRoutine(int frameDelay, bool revertToDefaultPositions, bool revertToDefaultRotations)
             {
                 for(int a = 0; a < frameDelay; a++)
                 {
                     yield return null;
                 }
 
-                SyncRemapTargetPose();
+                SyncRemapTargetPose(revertToDefaultPositions, revertToDefaultRotations);
             }
-            public void SyncRemapTargetPoseDelayed(int frameDelay)
+            public void SyncRemapTargetPoseDelayed(int frameDelay, bool revertToDefaultPositions, bool revertToDefaultRotations)
             {
                 if (frameDelay > 0)
                 {
-                    CoroutineProxy.Start(SyncRemapTargetPoseRoutine(frameDelay));
+                    CoroutineProxy.Start(SyncRemapTargetPoseRoutine(frameDelay, revertToDefaultPositions, revertToDefaultRotations));
                 } 
                 else
                 {
-                    SyncRemapTargetPose();
+                    SyncRemapTargetPose(revertToDefaultPositions, revertToDefaultRotations);
                 }
             }
 
@@ -1640,6 +1795,39 @@ namespace Swole
         #endregion
 
         #region Animations
+        public RectTransform curveEditorWindow;
+
+        public void OpenCurveEditorWindow(EditableAnimationCurve curveToEdit, UnityAction<AnimationCurveEditor.State, AnimationCurveEditor.State> onStateChange) => OpenCurveEditorWindow(curveToEdit, curveEditorWindow, onStateChange);
+        public void OpenCurveEditorWindow(EditableAnimationCurve curveToEdit, RectTransform curveEditorWindow, UnityAction<AnimationCurveEditor.State, AnimationCurveEditor.State> onStateChange)
+        {
+            UIPopup popup = curveEditorWindow.GetComponentInChildren<UIPopup>(true);
+
+            curveEditorWindow.gameObject.SetActive(true);
+            curveEditorWindow.SetAsLastSibling();
+            if (popup != null) popup.Elevate();
+
+            RefreshCurveEditorWindow(curveToEdit, curveEditorWindow, onStateChange);
+        }
+
+        public void RefreshCurveEditorWindow(EditableAnimationCurve curveToEdit, RectTransform curveEditorWindow, UnityAction<AnimationCurveEditor.State, AnimationCurveEditor.State> onStateChange)
+        {
+            if (curveEditorWindow == null) return;
+
+            var curveEditor = curveEditorWindow.GetComponentInChildren<SwoleCurveEditor>(true);
+            if (curveEditor != null)
+            {
+                curveEditor.SetCurve(curveToEdit);
+                curveEditor.Redraw();
+
+                if (onStateChange != null)
+                {
+                    if (curveEditor.OnStateChange == null) curveEditor.OnStateChange = new UnityEvent<AnimationCurveEditor.State, AnimationCurveEditor.State>();
+                    curveEditor.OnStateChange.RemoveAllListeners();
+                    curveEditor.OnStateChange.AddListener(onStateChange);
+                }
+            }
+        }
+
         public RectTransform animationsWindow;
 
         public void UpdateAnimationsWindow(Session session) => UpdateAnimationsWindow(animationsWindow, session);
@@ -1688,6 +1876,24 @@ namespace Swole
                 var anim = session.animationImports[a];
                 int index = a;
 
+                if (anim.asset.timeCurve == null || anim.asset.timeCurve.length < 1)
+                {
+                    anim.asset.timeCurve = new EditableAnimationCurve();
+                    anim.asset.timeCurve.InsertKey(new AnimationCurveEditor.KeyframeStateRaw()
+                    {
+                        time = 0,
+                        value = 0
+                    }, 
+                    false, false, default, AnimationUtils.InsertAutoSmoothBehaviour.AlwaysLinear);
+                    anim.asset.timeCurve.InsertKey(new AnimationCurveEditor.KeyframeStateRaw()
+                    {
+                        time = 1,
+                        value = 1
+                    },
+                    false, false, default, AnimationUtils.InsertAutoSmoothBehaviour.AlwaysLinear);
+                    AnimationUtils.ForceLinear(anim.asset.timeCurve, null, false); 
+                }
+
                 list.AddNewMember(anim.asset.Name, null, false, (UIRecyclingList.MemberData memberData, GameObject instance) =>
                 {
                     CustomEditorUtils.SetToggleOnValueChangeAction(instance, (bool selected) =>
@@ -1708,8 +1914,35 @@ namespace Swole
                     });
 
                     CustomEditorUtils.SetToggleValue(instance, session.selectedAnimations.Contains(index));
+
+                    CustomEditorUtils.SetInputFieldOnEndEditActionByName(instance, "length", (string val) =>
+                    {
+                        float timeLength = anim.asset.LengthInSeconds * (anim.asset.timeCurve.length <= 1 ? 0f : anim.asset.timeCurve[anim.asset.timeCurve.length - 1].time);
+
+                        if (float.TryParse(val, out float result) && result > 0f && timeLength > 0f)
+                        {
+                            anim.asset.timeCurve.Scale(result / timeLength);
+                            if (curveEditorWindow.gameObject.activeInHierarchy) RefreshCurveEditorWindow(anim.asset.timeCurve, curveEditorWindow, (AnimationCurveEditor.State a, AnimationCurveEditor.State b) =>
+                            {
+                                CustomEditorUtils.SetInputFieldTextByName(instance, "length", (anim.asset.LengthInSeconds * (b.keyframes.Length <= 1 ? 0f : b.keyframes[b.keyframes.Length - 1].time)).ToString());
+                            });
+                        } 
+                        else
+                        {
+                            CustomEditorUtils.SetInputFieldTextByName(instance, "length", "0"); 
+                        }
+                    });
+                    CustomEditorUtils.SetInputFieldTextByName(instance, "length", (anim.asset.LengthInSeconds * (anim.asset.timeCurve.length <= 1 ? 0f : anim.asset.timeCurve[anim.asset.timeCurve.length - 1].time)).ToString());
+
+                    CustomEditorUtils.SetButtonOnClickActionByName(instance, "timeCurve", () =>
+                    {
+                        OpenCurveEditorWindow(anim.asset.timeCurve, curveEditorWindow, (AnimationCurveEditor.State a, AnimationCurveEditor.State b) =>
+                        {
+                            CustomEditorUtils.SetInputFieldTextByName(instance, "length", (anim.asset.LengthInSeconds * (b.keyframes.Length <= 1 ? 0f : b.keyframes[b.keyframes.Length - 1].time)).ToString()); 
+                        });
+                    });
                 });
-            }
+            } 
 
             list.Refresh();
         }
@@ -1723,6 +1956,8 @@ namespace Swole
         public RectTransform boneBindingsWindow;
 
         public RectTransform boneSelectionWindow;
+
+        public RectTransform rootMotionWindow;
 
         public void OpenRemapWindow() => OpenRemapWindow(activeSession);
         public void OpenRemapWindow(Session session)
@@ -1753,7 +1988,11 @@ namespace Swole
 
                         var presetItem = dropdown.CreateNewMenuItem(preset.name);
                         CustomEditorUtils.SetButtonOnClickAction(presetItem,
-                        () => session.LoadRemapPreset(preset_));
+                        () => 
+                        {
+                            session.LoadRemapPreset(preset_);
+                            RefreshRemapWindow(session, remapWindow); 
+                        });
                     }
 
                     if (isValidPreset) 
@@ -1766,10 +2005,10 @@ namespace Swole
                     }
                 }
 
-                var buttons = remapWindow.FindDeepChildLiberal("buttons");
+                var buttons = presetObj.FindDeepChildLiberal("buttons");
                 if (buttons != null)
                 {
-                    var deleteObj = remapWindow.FindDeepChildLiberal("delete");
+                    var deleteObj = presetObj.FindDeepChildLiberal("delete");
                     if (deleteObj != null)
                     {
                         if (isValidPreset)
@@ -1800,6 +2039,7 @@ namespace Swole
                         if (!isValidPreset)
                         {
                             saveObj.gameObject.SetActive(true);
+                            session.ValidateRemapPreset();
                             var preset_ = session.RemapData;
                             CustomEditorUtils.SetButtonOnClickAction(saveObj, () => 
                             {
@@ -1997,7 +2237,7 @@ namespace Swole
                 var showTargetObj = visibilityObj.FindDeepChildLiberal("showTarget");
                 Transform showTargetActiveObj = null;
                 if (showTargetObj != null)
-                {
+                { 
                     showTargetActiveObj = showTargetObj.FindDeepChildLiberal("active");
                     showTargetActiveObj.gameObject.SetActive(!session.hideRemap);
 
@@ -2010,6 +2250,39 @@ namespace Swole
                 }
             }
 
+            session.ValidateRemapPreset();
+            var preset = session.RemapData;
+
+            var editRootMotionObj = remapWindow.FindDeepChildLiberal("editRootMotion");
+            if (editRootMotionObj != null)
+            {
+                CustomEditorUtils.SetButtonOnClickAction(editRootMotionObj, () =>
+                {
+                    OpenRootMotionWindow(session, rootMotionWindow);
+                });
+                CustomEditorUtils.SetButtonInteractable(editRootMotionObj, session.HasRemapTarget && preset.bakeRootMotion);
+            }
+
+            var rootMotionToggleObj = remapWindow.FindDeepChildLiberal("rootMotionToggle"); 
+            if (rootMotionToggleObj != null)
+            {
+                var toggle = rootMotionToggleObj.GetComponentInChildren<Toggle>(true);  
+                if (toggle != null)
+                {
+                    toggle.SetIsOnWithoutNotify(preset.bakeRootMotion);
+
+                    if (toggle.onValueChanged == null) toggle.onValueChanged = new Toggle.ToggleEvent(); else toggle.onValueChanged.RemoveAllListeners();
+                    toggle.onValueChanged.AddListener((bool val) =>
+                    { 
+                        session.InstantiateRemapPreset();
+                        preset = session.RemapData;
+                        preset.bakeRootMotion = val;
+                        
+                        if (editRootMotionObj != null) CustomEditorUtils.SetButtonInteractable(editRootMotionObj, session.HasRemapTarget && preset.bakeRootMotion);
+                    });
+                }
+            }
+
             CustomEditorUtils.SetButtonOnClickActionByName(remapWindow, "exportAnimation", () =>
             {
                 OpenAnimationBakeWindow(session); 
@@ -2018,6 +2291,227 @@ namespace Swole
             remapWindow.gameObject.SetActive(true); 
             remapWindow.SetAsLastSibling();  
             if (popup != null) popup.Elevate(); 
+        }
+
+        public void OpenRootMotionWindow() => OpenRootMotionWindow(activeSession, rootMotionWindow);
+
+        public void OpenRootMotionWindow(Session session, RectTransform rootMotionWindow)
+        {
+            if (session == null || rootMotionWindow == null) return;
+
+            UIPopup popup = rootMotionWindow.GetComponentInChildren<UIPopup>(true);
+
+            rootMotionWindow.gameObject.SetActive(true);
+            rootMotionWindow.SetAsLastSibling();
+            if (popup != null) popup.Elevate();
+
+            RefreshRootMotionWindow(session, rootMotionWindow);
+        }
+
+        public void RefreshRootMotionWindow(Session session, RectTransform rootMotionWindow)
+        {
+            if (session == null || rootMotionWindow == null) return;
+
+            session.ValidateRemapPreset();
+            var preset = session.RemapData;
+
+            var targetRootBoneObj = rootMotionWindow.FindDeepChildLiberal("rootBone");
+            if (targetRootBoneObj != null)
+            {
+                CustomEditorUtils.SetComponentText(targetRootBoneObj, string.IsNullOrWhiteSpace(preset.targetRootBone) && session.RemapTarget != null && session.RemapTarget.animator.avatar != null ? session.RemapTarget.animator.avatar.RootBone : preset.targetRootBone);
+                CustomEditorUtils.SetButtonOnClickAction(targetRootBoneObj, () =>
+                {
+                    if (session.RemapTarget != null && session.RemapTarget.animator != null && session.RemapTarget.animator.Bones != null)
+                    {
+                        OpenBoneSelectWindow(session, session.RemapTarget.animator.Bones.bones, (string boneName) =>
+                        {
+                            session.InstantiateRemapPreset();
+                            preset = session.RemapData;
+
+                            preset.targetRootBone = boneName;
+
+                            CustomEditorUtils.SetComponentText(targetRootBoneObj, string.IsNullOrWhiteSpace(preset.targetRootBone) && session.RemapTarget != null && session.RemapTarget.animator.avatar != null ? session.RemapTarget.animator.avatar.RootBone : preset.targetRootBone);
+                        });
+                    }
+                });
+            }
+
+            var rootPositionModeObj = rootMotionWindow.FindDeepChildLiberal("rootPositionMode");
+            if (rootPositionModeObj != null)
+            {
+                var dropdown = rootPositionModeObj.GetComponentInChildren<UIDynamicDropdown>(true);
+                if (dropdown != null)
+                {
+                    dropdown.ClearMenuItems();
+                    foreach (var mode in Enum.GetNames(typeof(RootMotionPositionMode)))
+                    {
+                        dropdown.CreateNewMenuItem(mode);
+                    }
+                    
+                    if (dropdown.OnSelectionChanged == null) dropdown.OnSelectionChanged = new UnityEvent<string>();
+                    dropdown.OnSelectionChanged.RemoveAllListeners();
+                    dropdown.SetSelectionText(preset.rootMotionPositionMode.ToString(), false); 
+                    dropdown.OnSelectionChanged.AddListener((string selection) =>
+                    {  
+                        if (Enum.TryParse<RootMotionPositionMode>(selection, true, out var result))
+                        {
+                            session.InstantiateRemapPreset();
+                            preset = session.RemapData;
+                            preset.rootMotionPositionMode = result;
+                        }
+                    });
+                }
+            }
+
+            CustomEditorUtils.SetInputFieldTextByName(rootMotionWindow, "maxTime", preset.bakeRootMotionMaxTime.ToString());
+            CustomEditorUtils.SetInputFieldOnEndEditActionByName(rootMotionWindow, "maxTime", (string val) => 
+            {
+                if (float.TryParse(val, out float result))
+                {
+                    session.InstantiateRemapPreset();
+                    preset = session.RemapData;
+                    preset.bakeRootMotionMaxTime = result;
+                }
+            });
+
+            var bakeIntervalToggleObj = rootMotionWindow.FindDeepChildLiberal("separateInterval");
+            if (bakeIntervalToggleObj != null)
+            {
+                var toggle = bakeIntervalToggleObj.GetComponentInChildren<Toggle>(true);
+                if (toggle != null)
+                {
+                    
+                    if (toggle.onValueChanged == null) toggle.onValueChanged = new Toggle.ToggleEvent();
+                    toggle.onValueChanged.RemoveAllListeners();
+                    toggle.SetIsOnWithoutNotify(preset.bakeRootMotionAtSeparateInverval);
+                    toggle.onValueChanged.AddListener((bool val) =>
+                    {
+                        session.InstantiateRemapPreset();
+                        preset = session.RemapData;
+                        preset.bakeRootMotionAtSeparateInverval = val;
+                    });
+                }
+            }
+            
+            CustomEditorUtils.SetInputFieldTextByName(rootMotionWindow, "intervalPos", preset.bakeRootMotionIntervalPos.ToString());
+            CustomEditorUtils.SetInputFieldOnEndEditActionByName(rootMotionWindow, "intervalPos", (string val) =>
+            {
+                if (float.TryParse(val, out float result))
+                {
+                    session.InstantiateRemapPreset();
+                    preset = session.RemapData;
+                    preset.bakeRootMotionIntervalPos = result;
+                }
+            });
+
+            CustomEditorUtils.SetInputFieldTextByName(rootMotionWindow, "intervalRot", preset.bakeRootMotionIntervalRot.ToString());
+            CustomEditorUtils.SetInputFieldOnEndEditActionByName(rootMotionWindow, "intervalRot", (string val) =>
+            {
+                if (float.TryParse(val, out float result))
+                {
+                    session.InstantiateRemapPreset();
+                    preset = session.RemapData;
+                    preset.bakeRootMotionIntervalRot = result;  
+                }
+            });
+
+            var referencePositionBonesObj = rootMotionWindow.FindDeepChildLiberal("rootPositionBones");
+            if (referencePositionBonesObj != null)
+            {
+                var list = referencePositionBonesObj.GetComponentInChildren<UIRecyclingList>(true);
+                if (list != null)
+                {
+                    list.Clear();
+
+                    CustomEditorUtils.SetButtonOnClickActionByName(referencePositionBonesObj, "addBone", () =>
+                    {
+                        if (session.RemapTarget != null && session.RemapTarget.animator != null && session.RemapTarget.animator.Bones != null)
+                        {
+                            OpenBoneSelectWindow(session, session.RemapTarget.animator.Bones.bones, (string boneName) =>
+                            {
+                                session.InstantiateRemapPreset();
+                                preset = session.RemapData;
+
+                                if (preset.referencePositionBones == null) preset.referencePositionBones = new List<string>();
+                                preset.referencePositionBones.Add(boneName);
+
+                                RefreshRootMotionWindow(session, rootMotionWindow);
+                            });
+                        }
+                    });
+
+                    if (preset.referencePositionBones != null)
+                    {
+                        foreach (var bone in preset.referencePositionBones)
+                        {
+                            if (string.IsNullOrWhiteSpace(bone)) continue;
+
+                            list.AddNewMember(bone, null, false, (UIRecyclingList.MemberData memberData, GameObject instance) =>
+                            {
+                                CustomEditorUtils.SetButtonOnClickActionByName(instance, "remove", () =>
+                                {
+                                    session.InstantiateRemapPreset();
+                                    preset = session.RemapData;
+
+                                    if (preset.referencePositionBones != null) preset.referencePositionBones.Remove(bone);
+                                    RefreshRootMotionWindow(session, rootMotionWindow);
+                                });
+                            });
+                        }
+
+                        list.Refresh();
+                    }
+                }
+            }
+
+            var referenceRotationBonesObj = rootMotionWindow.FindDeepChildLiberal("rootRotationBones");
+            if (referenceRotationBonesObj != null)
+            {
+                var list = referenceRotationBonesObj.GetComponentInChildren<UIRecyclingList>(true);
+                if (list != null)
+                {
+                    list.Clear();
+
+                    CustomEditorUtils.SetButtonOnClickActionByName(referenceRotationBonesObj, "addBone", () =>
+                    {
+                        if (session.RemapTarget != null && session.RemapTarget.animator != null && session.RemapTarget.animator.Bones != null)
+                        {
+                            OpenBoneSelectWindow(session, session.RemapTarget.animator.Bones.bones, (string boneName) =>
+                            {
+                                session.InstantiateRemapPreset();
+                                preset = session.RemapData;
+
+                                if (preset.referenceRotationBones == null) preset.referenceRotationBones = new List<string>();
+                                preset.referenceRotationBones.Add(boneName);
+
+                                RefreshRootMotionWindow(session, rootMotionWindow);
+                            });
+                        }
+                    });
+
+                    if (preset.referenceRotationBones != null)
+                    {
+                        foreach (var bone in preset.referenceRotationBones)
+                        {
+                            if (string.IsNullOrWhiteSpace(bone)) continue;
+
+                            list.AddNewMember(bone, null, false, (UIRecyclingList.MemberData memberData, GameObject instance) =>
+                            {
+                                CustomEditorUtils.SetButtonOnClickActionByName(instance, "remove", () =>
+                                {
+                                    session.InstantiateRemapPreset();
+                                    preset = session.RemapData;
+
+                                    if (preset.referenceRotationBones != null) preset.referenceRotationBones.Remove(bone);
+                                    RefreshRootMotionWindow(session, rootMotionWindow);
+                                });
+                            });
+                        }
+                         
+                        list.Refresh();
+                    }
+                }
+            }
         }
 
         public RectTransform animatableImporterWindow;
@@ -2212,21 +2706,53 @@ namespace Swole
 
                     foreach (var bone in bones)
                     {
-                        var cat = list.AddOrGetCategory(bone.name, icon_bone);
+                        var cat = list.AddOrGetCategory(bone.name, icon_bone);  
                         cat.Expand();
-                        if (cat.gameObject != null)
+                        if (cat.gameObject != null) 
                         {
+                            void UpdatePreserveChildrenButton()
+                            {
+                                var preserveChildrenObj = cat.gameObject.transform.FindDeepChildLiberal("preserveChildren"); 
+                                if (preserveChildrenObj != null)
+                                {
+                                    var bindings = session.GetRemapBindingsForBone(bone.name);
+
+                                    var activeObj = preserveChildrenObj.FindDeepChildLiberal("active");
+                                    if (activeObj != null) activeObj.gameObject.SetActive(bindings != null && bindings.preserveChildrenAfterRevert);
+                                    
+                                    if (bindings == null)
+                                    {
+                                        CustomEditorUtils.SetButtonInteractable(preserveChildrenObj, false);
+                                    }
+                                    else
+                                    {
+                                        CustomEditorUtils.SetButtonOnClickAction(preserveChildrenObj, () =>
+                                        {
+                                            session.InstantiateRemapPreset();
+
+                                            bindings = session.GetRemapBindingsForBone(bone.name); // refetch after instantiation
+                                            bindings.preserveChildrenAfterRevert = !bindings.preserveChildrenAfterRevert;
+                                            if (activeObj != null) activeObj.gameObject.SetActive(bindings.preserveChildrenAfterRevert); 
+                                        });
+                                    }
+                                }
+                            }
+
+                            UpdatePreserveChildrenButton();
+
                             CustomEditorUtils.SetButtonOnClickActionByName(cat.gameObject, "addBinding", () =>
                             {
-                                OpenBoneSelectWindow(session, (string selection) =>
+                                OpenBoneSelectWindow(session, session.animator.Bones.bones, (string selection) =>
                                 {
-                                    var boneTransform = session.animator.GetUnityBone(selection);
+                                    var boneTransform = session.animator.GetUnityBone(selection);  
 
                                     if (boneTransform != null)
                                     {
                                         AddValidMirrorableBinding(bones, cat, selection, bone, boneTransform, 1.0f, session.mirrorBoneBindings);
 
                                         if (session.editRemapBoneBindings) session.ResetBoneBindingsSelection(this);
+
+                                        UpdatePreserveChildrenButton();
                                     }
                                 });
                             });
@@ -2253,6 +2779,8 @@ namespace Swole
                                             AddValidMirrorableBinding(bones, cat, mapping.rig2Bone, bone, boneTransform, 1.0f, session.mirrorBoneBindings);
 
                                             if (session.editRemapBoneBindings) session.ResetBoneBindingsSelection(this);
+
+                                            UpdatePreserveChildrenButton();
                                         }
                                     }
                                 }
@@ -2311,9 +2839,18 @@ namespace Swole
             }
         }
          
-        public void OpenBoneSelectWindow() => OpenBoneSelectWindow(activeSession, null);
-        public void OpenBoneSelectWindow(Session session, Action<string> callback) => OpenBoneSelectWindow(session, boneSelectionWindow, callback);
-        public void OpenBoneSelectWindow(Session session, RectTransform boneSelectionWindow, Action<string> callback)
+        public void OpenBoneSelectWindow() => OpenBoneSelectWindow(activeSession, null); 
+        public void OpenBoneSelectWindow(Session session, Action<string> callback) => OpenBoneSelectWindow(session, boneSelectionWindow, callback); 
+        public void OpenBoneSelectWindow(Session session, IEnumerable<Transform> bones, Action<string> callback) => OpenBoneSelectWindow(session, boneSelectionWindow, bones, callback);
+        public void OpenBoneSelectWindow(Session session, IEnumerable<string> bones, Action<string> callback) => OpenBoneSelectWindow(session, boneSelectionWindow, bones, callback);
+        public void OpenBoneSelectWindow(Session session, RectTransform boneSelectionWindow, Action<string> callback) 
+        {
+            if (session.animator != null && session.animator.Bones != null)
+            {
+                OpenBoneSelectWindow(session, boneSelectionWindow, session.animator.Bones.bones, callback); 
+            }
+        }
+        public void OpenBoneSelectWindow(Session session, RectTransform boneSelectionWindow, IEnumerable<Transform> bones, Action<string> callback)
         {
             if (boneSelectionWindow == null) return;
 
@@ -2323,31 +2860,60 @@ namespace Swole
             boneSelectionWindow.SetAsLastSibling();
             if (popup != null) popup.Elevate();
 
-            SyncBoneSelectWindow(session, boneSelectionWindow, callback); 
+            SyncBoneSelectWindow(session, boneSelectionWindow, bones, callback);
         }
-        public void SyncBoneSelectWindow(Session session, RectTransform boneSelectionWindow, Action<string> callback)
+        public void OpenBoneSelectWindow(Session session, RectTransform boneSelectionWindow, IEnumerable<string> bones, Action<string> callback)
+        {
+            if (boneSelectionWindow == null) return;
+
+            UIPopup popup = boneSelectionWindow.GetComponentInChildren<UIPopup>(true);
+
+            boneSelectionWindow.gameObject.SetActive(true);
+            boneSelectionWindow.SetAsLastSibling();
+            if (popup != null) popup.Elevate();
+
+            SyncBoneSelectWindow(session, boneSelectionWindow, bones, callback);
+        }
+        public void SyncBoneSelectWindow(Session session, RectTransform boneSelectionWindow, IEnumerable<Transform> bones, Action<string> callback)
         {
             if (boneSelectionWindow == null) return;
 
             var list = boneSelectionWindow.gameObject.GetComponentInChildren<UIRecyclingList>(true);
             list.Clear();
-             
-            if (session.animator != null && session.animator.Bones != null)
-            {
-                var bones = session.animator.Bones.bones;
-                if (bones != null)
-                {
-                    foreach(var bone in bones)
-                    {
-                        list.AddNewMember(bone.name, () =>
-                        {
-                            boneSelectionWindow.gameObject.SetActive(false);
-                            callback(bone.name);
-                        });
-                    }
 
-                    list.Refresh(); 
+            if (bones != null)
+            {
+                foreach (var bone in bones)
+                {
+                    list.AddNewMember(bone.name, () =>
+                    {
+                        boneSelectionWindow.gameObject.SetActive(false);
+                        callback(bone.name);
+                    });
                 }
+                 
+                list.Refresh();
+            }
+        }
+        public void SyncBoneSelectWindow(Session session, RectTransform boneSelectionWindow, IEnumerable<string> bones, Action<string> callback)
+        {
+            if (boneSelectionWindow == null) return;
+
+            var list = boneSelectionWindow.gameObject.GetComponentInChildren<UIRecyclingList>(true);
+            list.Clear();
+
+            if (bones != null)
+            {
+                foreach (var bone in bones)
+                {
+                    list.AddNewMember(bone, () =>
+                    {
+                        boneSelectionWindow.gameObject.SetActive(false);
+                        callback(bone);
+                    });
+                }
+
+                list.Refresh();
             }
         }
 
@@ -2426,7 +2992,7 @@ namespace Swole
                                 }
                             }
                         }
-                    }
+                    } 
 
                     bool bakeFkToIk = true;
                     bool forceBakeIkPosition = true;
@@ -2435,21 +3001,21 @@ namespace Swole
                     float resampleIntervalRot = 0.1f;
                     float resampleIntervalScale = 0.1f;
 
-                    var bakeFkIkObj = mainObj.FindDeepChildLiberal("bakeFkIk");
+                    var bakeFkIkObj = animationBakeWindow.FindDeepChildLiberal("bakeFkIk");
                     if (bakeFkIkObj != null)
                     {
                         var toggle = bakeFkIkObj.GetComponentInChildren<Toggle>(true);
                         if (toggle != null) bakeFkToIk = toggle.isOn; 
                     }
 
-                    var forceBakeIkPosObj = mainObj.FindDeepChildLiberal("forceBakeFkIkPosition");
+                    var forceBakeIkPosObj = animationBakeWindow.FindDeepChildLiberal("forceBakeFkIkPosition");
                     if (forceBakeIkPosObj != null)
                     {
                         var toggle = forceBakeIkPosObj.GetComponentInChildren<Toggle>(true);
                         if (toggle != null) forceBakeIkPosition = toggle.isOn; 
                     }
 
-                    var bakeOptionsObj = mainObj.FindDeepChildLiberal("bakeOptions");
+                    var bakeOptionsObj = animationBakeWindow.FindDeepChildLiberal("bakeOptions");
                     if (bakeOptionsObj != null)
                     {
                         switch (bakeType)
@@ -2552,8 +3118,17 @@ namespace Swole
                 return null;
             }
 
-            animationBake = new AnimationBake(activeSession.animator, activeSession.RemapTarget.animator, animationToTransfer, activeSession.RemapTarget.RestPose, () => activeSession.SyncRemapTargetPoseDelayed(1));   
+            animationBake = new AnimationBake(activeSession.animator, activeSession.RemapTarget.animator, animationToTransfer, activeSession.RemapTarget.RestPose, () => activeSession.SyncRemapTargetPoseDelayed(1, true, false));   
             animationBake.insertionFrameDelay = 3;
+
+            activeSession.ValidateRemapPreset();
+            var preset = activeSession.RemapData;
+            animationBake.bakeRootMotion = preset.bakeRootMotion;
+            animationBake.bakeRootMotionMaxTime = preset.bakeRootMotionMaxTime;
+            animationBake.rootMotionPositionMode = preset.rootMotionPositionMode;
+            animationBake.bakeRootMotionAtSeparateInterval = preset.bakeRootMotionAtSeparateInverval;
+            animationBake.rootMotionBakeIntervalPos = preset.bakeRootMotionIntervalPos; 
+            animationBake.rootMotionBakeIntervalRot = preset.bakeRootMotionIntervalRot;
 
             IEnumerator Bake()
             {
@@ -2580,7 +3155,7 @@ namespace Swole
                     }
                 }
 
-                animationBake.Initialize(newAnimationName, bakeType, bindings, null);
+                animationBake.Initialize(newAnimationName, bakeType, bindings, null, preset.targetRootBone, preset.referencePositionBones, preset.referenceRotationBones); 
 
                 yield return null;
 
@@ -2591,7 +3166,7 @@ namespace Swole
                     animationBakeProgressBar.gameObject.SetActive(true);
                     animationBakeProgressBar.SetAsLastSibling();
 
-                    var popup = animationBakeProgressBar.GetComponentInChildren<UIPopup>(true);
+                    var popup = animationBakeProgressBar.GetComponentInChildren<UIPopup>(true); 
                     if (popup != null)
                     {
                         popup.Elevate();
@@ -2633,11 +3208,11 @@ namespace Swole
                     session.rootObject = Instantiate(activeSession.RemapTarget.instance);
 
                     session.animator = session.rootObject.GetComponentInChildren<CustomAnimator>(true);
-                    session.animator.ClearLayers();
+                    session.animator.ClearLayers(false);
                     session.animator.enabled = true;
                     session.animator.ResetToPreInitializedBindPose();
 
-                    var controller = CustomAnimationController.BuildDefaultController("imported", bakedAnimations, 0);
+                    var controller = CustomAnimationController.BuildDefaultController("imported", bakedAnimations, 0); 
                     session.animator.ApplyController(controller);
 
                     foreach (var anim in bakedAnimations)
@@ -2950,6 +3525,8 @@ namespace Swole
                 {
                     if (obj.instance != null)
                     {
+                        activeSession.InstantiateRemapPreset();
+
                         if (activeSession.mirrorPoseEditing)
                         {
                             _tempTransforms.Clear();
@@ -3273,6 +3850,56 @@ namespace Swole
         public bool bakeFkToIk = true;
         public bool forceBakeIkPosition = true;
 
+        public bool bakeRootMotion = false;
+        public float bakeRootMotionMaxTime = 0.998f;
+        public bool bakeRootMotionAtSeparateInterval = false;
+        public float rootMotionBakeIntervalPos = 0.1f;
+        public float rootMotionBakeIntervalRot = 0.1f;
+        public ModelEditor.RootMotionPositionMode rootMotionPositionMode;
+        private Transform rootMotionBone;
+        private struct WeightedTransform
+        {
+            public Transform transform;
+            public float weight;
+        }
+        private List<WeightedTransform> rootMotionPositionReferenceBones = new List<WeightedTransform>();
+        private List<WeightedTransform> rootMotionRotationReferenceBones = new List<WeightedTransform>();
+        private Quaternion worldToRootRot;
+        private Quaternion rootToWorldRot;
+        private Matrix4x4 worldToRoot;
+        private Matrix4x4 rootToWorld;
+        private Vector3 baseRootLocalPosition;
+        private Quaternion baseRootLocalRotation;
+        private Vector3 currentRootLocalPosition;
+        private Quaternion currentRootLocalRotation;
+        private Vector3 startRootPosition;
+        private Quaternion startRootRotation;
+        private Vector3 previousRootPosition;
+        private Quaternion previousRootRotation;
+        private bool rootMotionInitialized;
+
+        private void CalculateRootMotionPositionAndRotation(out Vector3 rootPosition, out Quaternion rootRotation)
+        {
+            rootPosition = Vector3.zero;
+            rootRotation = Quaternion.identity;
+
+            if (rootMotionPositionReferenceBones != null && rootMotionPositionReferenceBones.Count > 0) 
+            {
+                foreach(var wt in rootMotionPositionReferenceBones)
+                {
+                    rootPosition += wt.transform.position * wt.weight;
+                }
+            }
+
+            if (rootMotionRotationReferenceBones != null && rootMotionRotationReferenceBones.Count > 0)
+            {
+                foreach (var wt in rootMotionRotationReferenceBones)
+                {
+                    rootRotation = Quaternion.Slerp(Quaternion.identity, wt.transform.rotation, wt.weight) * rootRotation; 
+                }
+            }
+        }
+
         public int insertionFrameDelay = 3;
 
         public int samplesPerKey = 1;
@@ -3347,7 +3974,7 @@ namespace Swole
             this.syncPose = syncPose;
         }
 
-        public void Initialize(string animationName, AnimationBakeType bakeType, List<TransformAnimationBakePair> boneBindings, CustomAnimation animationTarget = null)
+        public void Initialize(string animationName, AnimationBakeType bakeType, List<TransformAnimationBakePair> boneBindings, CustomAnimation animationTarget = null, string rootMotionBoneName = null, IEnumerable<string> rootMotionPositionReferenceBones = null, IEnumerable<string> rootMotionRotationReferenceBones = null)
         {
             /*string GetReferenceBoneName(string targetBoneName)
             {
@@ -3367,7 +3994,7 @@ namespace Swole
             this.bakeType = bakeType;
 
             for (int a = 0; a < animatorReference.LayerCount; a++) originalLayers.Add(animatorReference.GetLayer(a));
-            animatorReference.ClearLayers();
+            animatorReference.ClearLayers(false);
 
             this.lastFrame = Time.frameCount;
 
@@ -3375,10 +4002,10 @@ namespace Swole
             animatorReference.ApplyController(controller);
             controlLayer = animatorReference.FindTypedLayer($"bake/{animationReference.Name}");
             controlLayer.mix = 1;
-            if (controlLayer.HasActiveState && controlLayer.ActiveState is CustomStateMachine stateMachine && stateMachine.MotionControllerIndex >= 0)
+            if (controlLayer.HasActiveState && controlLayer.ActiveState is CustomAnimationLayerState state && state.MotionControllerIndex >= 0)
             {
-                var mc = controlLayer.GetMotionControllerUnsafe(stateMachine.MotionControllerIndex);
-                if (mc is CustomMotionController.AnimationReference ar)
+                var mc = controlLayer.GetMotionControllerUnsafe(state.MotionControllerIndex);
+                if (mc is AnimationReference ar)
                 {
                     ar.BaseSpeed = 0;
                     ar.SetNormalizedTime(controlLayer, 0);
@@ -3398,7 +4025,7 @@ namespace Swole
 
             insertionLine.Clear();
             completionLine.Clear();
-            
+
             switch (bakeType)
             {
                 case AnimationBakeType.ResamplePerKey:
@@ -3464,7 +4091,7 @@ namespace Swole
                                         if (string.IsNullOrWhiteSpace(targetBoneName))
                                         {
 #if UNITY_EDITOR
-                                            Debug.Log($"Skipping curves for bone {curve.TransformName}");
+                                            Debug.Log($"Skipping curves for bone {curve.TransformName}");   
 #endif
                                             continue;
                                         }
@@ -3627,9 +4254,11 @@ namespace Swole
 
                 case AnimationBakeType.ResampleInterval:
 
-                    int insertionsPos = resampleIntervalPos > 0 ? Mathf.FloorToInt(length / resampleIntervalPos) : 0;
-                    int insertionsRot = resampleIntervalRot > 0 ? Mathf.FloorToInt(length / resampleIntervalRot) : 0;
-                    int insertionsScale = resampleIntervalScale > 0 ? Mathf.FloorToInt(length / resampleIntervalScale) : 0;
+                    var length_ = length * 0.998f;
+
+                    int insertionsPos = resampleIntervalPos > 0 ? Mathf.FloorToInt(length_ / resampleIntervalPos) : 0;
+                    int insertionsRot = resampleIntervalRot > 0 ? Mathf.FloorToInt(length_ / resampleIntervalRot) : 0;
+                    int insertionsScale = resampleIntervalScale > 0 ? Mathf.FloorToInt(length_ / resampleIntervalScale) : 0;
 
                     foreach (var curveInfo in animationReference.transformAnimationCurves)
                     {
@@ -3680,7 +4309,7 @@ namespace Swole
                             {
                                 for (int i = 0; i < insertionsPos; i++)
                                 {
-                                    float time = i == insertionsPos - 1 ? length : (i * resampleIntervalPos);
+                                    float time = i == insertionsPos - 1 ? length_ : (i * resampleIntervalPos);
 
                                     insertionLine.Add(new TransformDataInsertion()
                                     {
@@ -3706,7 +4335,7 @@ namespace Swole
                             {
                                 for (int i = 0; i < insertionsRot; i++)
                                 {
-                                    float time = i == insertionsRot - 1 ? length : (i * resampleIntervalPos);
+                                    float time = i == insertionsRot - 1 ? length_ : (i * resampleIntervalPos);
 
                                     insertionLine.Add(new TransformDataInsertion()
                                     {
@@ -3738,7 +4367,7 @@ namespace Swole
                             {
                                 for (int i = 0; i < insertionsScale; i++)
                                 {
-                                    float time = i == insertionsScale - 1 ? length : (i * resampleIntervalPos);
+                                    float time = i == insertionsScale - 1 ? length_ : (i * resampleIntervalPos);
 
                                     insertionLine.Add(new TransformDataInsertion()
                                     {
@@ -4142,6 +4771,257 @@ namespace Swole
                     break;
             }
 
+            if (bakeRootMotion)
+            {
+                if (this.rootMotionPositionReferenceBones == null) this.rootMotionPositionReferenceBones = new List<WeightedTransform>();
+                this.rootMotionPositionReferenceBones.Clear();
+
+                if (rootMotionPositionReferenceBones != null)
+                {
+                    foreach (var boneName in rootMotionPositionReferenceBones)
+                    {
+                        if (string.IsNullOrWhiteSpace(boneName)) continue;
+
+                        var targetBone = animatorTarget.GetUnityBone(boneName);
+                        if (targetBone == null) continue;
+
+                        this.rootMotionPositionReferenceBones.Add(new WeightedTransform() { transform = targetBone });
+                    }
+
+                    float weight = 1f / this.rootMotionPositionReferenceBones.Count();
+                    for (int a = 0; a < this.rootMotionPositionReferenceBones.Count(); a++)
+                    {
+                        var wt = this.rootMotionPositionReferenceBones[a];
+                        wt.weight = weight;
+                        this.rootMotionPositionReferenceBones[a] = wt;
+                    }
+                }
+
+                if (this.rootMotionRotationReferenceBones == null) this.rootMotionRotationReferenceBones = new List<WeightedTransform>();
+                this.rootMotionRotationReferenceBones.Clear();
+
+                if (rootMotionRotationReferenceBones != null)
+                {
+                    foreach (var boneName in rootMotionRotationReferenceBones)
+                    {
+                        if (string.IsNullOrWhiteSpace(boneName)) continue;
+
+                        var targetBone = animatorTarget.GetUnityBone(boneName);
+                        if (targetBone == null) continue;
+
+                        this.rootMotionRotationReferenceBones.Add(new WeightedTransform() { transform = targetBone });
+                    }
+
+                    float weight = 1f / this.rootMotionRotationReferenceBones.Count();
+                    for (int a = 0; a < this.rootMotionRotationReferenceBones.Count(); a++)
+                    {
+                        var wt = this.rootMotionRotationReferenceBones[a];
+                        wt.weight = weight;
+                        this.rootMotionRotationReferenceBones[a] = wt;
+                    }
+                }
+
+                worldToRootRot = Quaternion.identity;
+                rootToWorldRot = Quaternion.identity;
+                worldToRoot = Matrix4x4.identity;
+                rootToWorld = Matrix4x4.identity;
+
+                baseRootLocalPosition = currentRootLocalPosition = Vector3.zero;
+                baseRootLocalRotation = currentRootLocalRotation = Quaternion.identity;
+
+                rootMotionBone = string.IsNullOrWhiteSpace(rootMotionBoneName) ? animatorTarget.RootMotionBone : animatorTarget.GetUnityBone(rootMotionBoneName);
+                if (rootMotionBone != null)
+                {
+                    baseRootLocalPosition = currentRootLocalPosition = rootMotionBone.localPosition;
+                    baseRootLocalRotation = baseRootLocalRotation = rootMotionBone.localRotation;
+
+                    if (rootMotionBone.parent != null)
+                    {
+                        rootToWorldRot = rootMotionBone.parent.rotation;
+                        worldToRootRot = Quaternion.Inverse(rootToWorldRot);
+
+                        rootToWorld = rootMotionBone.parent.localToWorldMatrix;
+                        worldToRoot = rootMotionBone.parent.worldToLocalMatrix;
+                    }
+                }
+
+                rootMotionInitialized = false;
+
+                bool IsRootMotionBoneChild(Transform bone)
+                {
+                    if (bone == null) return false;
+                    if (bone == rootMotionBone) return true;
+
+                    return bone.parent == rootMotionBone;
+                }
+                HashSet<float> posTimes = new HashSet<float>();
+                HashSet<float> rotTimes = new HashSet<float>();
+                foreach (var wt in this.rootMotionPositionReferenceBones)
+                {
+                    if (wt.transform == null) continue;
+
+                    foreach (var insertion in insertionLine)
+                    {
+                        if (insertion.bone != wt.transform) continue;
+
+                        if (insertion.channel == TransformDataChannel.LocalPositionX
+                            || insertion.channel == TransformDataChannel.LocalPositionY
+                            || insertion.channel == TransformDataChannel.LocalPositionZ) posTimes.Add(insertion.time);
+                    }
+                }
+                foreach (var wt in this.rootMotionRotationReferenceBones)
+                {
+                    if (wt.transform == null) continue;
+
+                    foreach (var insertion in insertionLine)
+                    {
+                        if (insertion.bone != wt.transform) continue;
+
+                        if (insertion.channel == TransformDataChannel.LocalRotationX
+                            || insertion.channel == TransformDataChannel.LocalRotationY
+                            || insertion.channel == TransformDataChannel.LocalRotationZ
+                            || insertion.channel == TransformDataChannel.LocalRotationW) rotTimes.Add(insertion.time);
+                    }
+                }
+                foreach (var insertion in insertionLine)
+                {
+                    if (!IsRootMotionBoneChild(insertion.bone)) continue;
+
+                    if (insertion.channel == TransformDataChannel.LocalPositionX
+                        || insertion.channel == TransformDataChannel.LocalPositionY
+                        || insertion.channel == TransformDataChannel.LocalPositionZ) posTimes.Add(insertion.time);
+                    else if (insertion.channel == TransformDataChannel.LocalRotationX
+                        || insertion.channel == TransformDataChannel.LocalRotationY
+                        || insertion.channel == TransformDataChannel.LocalRotationZ
+                        || insertion.channel == TransformDataChannel.LocalRotationW) rotTimes.Add(insertion.time);
+                }
+                insertionLine.RemoveAll(i => i.channel != TransformDataChannel.LocalScaleX && i.channel != TransformDataChannel.LocalScaleY && i.channel != TransformDataChannel.LocalScaleZ && IsRootMotionBoneChild(i.bone)); // children will get readded further along
+
+                if (bakeRootMotionAtSeparateInterval)
+                {
+                    var length_ = length * 0.998f;
+
+                    int insertionsPos = rootMotionBakeIntervalPos > 0 ? Mathf.FloorToInt(length_ / rootMotionBakeIntervalPos) : 0;
+                    int insertionsRot = rootMotionBakeIntervalRot > 0 ? Mathf.FloorToInt(length_ / rootMotionBakeIntervalRot) : 0;
+
+                    for (int i = 0; i < insertionsPos; i++)
+                    {
+                        float time = i == insertionsPos - 1 ? length_ : (i * resampleIntervalPos);
+                        posTimes.Add(time);
+                    }
+
+                    for (int i = 0; i < insertionsRot; i++)
+                    {
+                        float time = i == insertionsRot - 1 ? length_ : (i * resampleIntervalPos); 
+                        rotTimes.Add(time);
+                    }
+                }
+
+                foreach (var time in posTimes)
+                {
+                    insertionLine.Add(new TransformDataInsertion()
+                    {
+                        bone = rootMotionBone,
+                        time = time,
+                        channel = TransformDataChannel.LocalPositionX
+                    });
+                    insertionLine.Add(new TransformDataInsertion()
+                    {
+                        bone = rootMotionBone,
+                        time = time,
+                        channel = TransformDataChannel.LocalPositionY
+                    });
+                    insertionLine.Add(new TransformDataInsertion()
+                    {
+                        bone = rootMotionBone,
+                        time = time,
+                        channel = TransformDataChannel.LocalPositionZ
+                    });
+
+                    for (int a = 0; a < rootMotionBone.childCount; a++)
+                    {
+                        var child = rootMotionBone.GetChild(a);
+                        insertionLine.Add(new TransformDataInsertion()
+                        {
+                            bone = child,
+                            time = time,
+                            channel = TransformDataChannel.LocalPositionX
+                        });
+                        insertionLine.Add(new TransformDataInsertion()
+                        {
+                            bone = child,
+                            time = time,
+                            channel = TransformDataChannel.LocalPositionY
+                        });
+                        insertionLine.Add(new TransformDataInsertion()
+                        {
+                            bone = child,
+                            time = time,
+                            channel = TransformDataChannel.LocalPositionZ
+                        });
+                    }
+                }
+                foreach (var time in rotTimes)
+                {
+                    insertionLine.Add(new TransformDataInsertion()
+                    {
+                        bone = rootMotionBone,
+                        time = time,
+                        channel = TransformDataChannel.LocalRotationX
+                    });
+                    insertionLine.Add(new TransformDataInsertion()
+                    {
+                        bone = rootMotionBone,
+                        time = time,
+                        channel = TransformDataChannel.LocalRotationY
+                    });
+                    insertionLine.Add(new TransformDataInsertion()
+                    {
+                        bone = rootMotionBone,
+                        time = time,
+                        channel = TransformDataChannel.LocalRotationZ
+                    });
+                    insertionLine.Add(new TransformDataInsertion()
+                    {
+                        bone = rootMotionBone,
+                        time = time,
+                        channel = TransformDataChannel.LocalRotationW
+                    });
+
+                    for (int a = 0; a < rootMotionBone.childCount; a++)
+                    {
+                        var child = rootMotionBone.GetChild(a);
+                        insertionLine.Add(new TransformDataInsertion()
+                        {
+                            bone = child,
+                            time = time, 
+                            channel = TransformDataChannel.LocalRotationX
+                        });
+                        insertionLine.Add(new TransformDataInsertion() 
+                        {
+                            bone = child,
+                            time = time,
+                            channel = TransformDataChannel.LocalRotationY
+                        });
+                        insertionLine.Add(new TransformDataInsertion()
+                        {
+                            bone = child,
+                            time = time,
+                            channel = TransformDataChannel.LocalRotationZ
+                        });
+                        insertionLine.Add(new TransformDataInsertion()
+                        {
+                            bone = child,
+                            time = time,
+                            channel = TransformDataChannel.LocalRotationW
+                        });
+                    }
+                }
+
+                float rootMotionMaxTime = length * bakeRootMotionMaxTime;
+                insertionLine.RemoveAll(i => i.time > rootMotionMaxTime && i.bone == rootMotionBone); 
+            }
+
             insertionLine.Sort((TransformDataInsertion dataA, TransformDataInsertion dataB) => (int)Mathf.Sign(dataA.time - dataB.time));
             insertionCount = insertionLine.Count;
 
@@ -4188,19 +5068,23 @@ namespace Swole
                 float nextTime = insertionLine[0].time;
 
                 controlLayer.mix = 1;
-                if (controlLayer.HasActiveState && controlLayer.ActiveState is CustomStateMachine stateMachine && stateMachine.MotionControllerIndex >= 0)
+                if (controlLayer.HasActiveState && controlLayer.ActiveState is CustomAnimationLayerState state && state.MotionControllerIndex >= 0)
                 {
-                    var mc = controlLayer.GetMotionControllerUnsafe(stateMachine.MotionControllerIndex);
-                    if (mc is CustomMotionController.AnimationReference ar)
+                    var mc = controlLayer.GetMotionControllerUnsafe(state.MotionControllerIndex);
+                    if (mc is AnimationReference ar)
                     {
                         ar.BaseSpeed = 0;
                         ar.SetTime(controlLayer, nextTime);
+#if UNITY_EDITOR
+                        //Debug.Log(nextTime);
+#endif
                     }
                 }
 
+                animatorTarget.ResetToBindPose();
                 syncPose?.Invoke();
 
-                if (bakeFkToIk) animatorTarget.SyncIKFK(false);
+                if (bakeFkToIk) animatorTarget.SyncIKFK(false); 
 
                 waiting = true;
             }
@@ -4208,8 +5092,6 @@ namespace Swole
             if ((waiting && Time.frameCount - lastFrame >= insertionFrameDelay) || insertionFrameDelay <= 0)
             {
                 waiting = false;
-
-                if (bakeFkToIk) animatorTarget.SyncIKFK(false);
 
                 float bakeTime = insertionLine[0].time;
                 toInsert.Clear();
@@ -4224,6 +5106,93 @@ namespace Swole
                 }
                 insertionLine.RemoveAll(i => i.time == bakeTime);
 
+                if (bakeRootMotion)
+                {
+                    if (!rootMotionInitialized)
+                    {
+                        rootMotionInitialized = true; 
+
+                        CalculateRootMotionPositionAndRotation(out var rootPos_, out var rootRot_);
+                        startRootPosition = previousRootPosition = rootPos_;
+                        startRootRotation = previousRootRotation = rootRot_;
+                    }
+
+                    CalculateRootMotionPositionAndRotation(out var rootPos, out var rootRot);
+
+                    if (rootMotionPositionReferenceBones.Count > 0)
+                    {
+                        Vector3 rootTranslation = rootPos - startRootPosition;
+
+                        //Debug.DrawLine(startRootPosition, rootPos, Color.Lerp(Color.red, Color.green, 1 - (insertionLine.Count / (float)insertionCount)), 120); 
+
+                        float3 verticalAxis = math.abs((float3)animatorTarget.transform.TransformDirection(animatorTarget.yawAxis));
+                        float3 forwardAxis = math.abs((float3)animatorTarget.transform.TransformDirection(animatorTarget.forwardAxis));
+                        float3 sidewaysAxis = math.abs(math.cross(forwardAxis, verticalAxis));
+                        switch (rootMotionPositionMode)
+                        {
+                            case ModelEditor.RootMotionPositionMode.Planar: 
+                                //rootTranslation.y = 0; 
+                                rootTranslation = Vector3.ProjectOnPlane(rootTranslation, verticalAxis); 
+                                break;
+                            case ModelEditor.RootMotionPositionMode.Vertical:
+                                rootTranslation = verticalAxis * Vector3.Dot(rootTranslation, verticalAxis);
+                                break;
+                            case ModelEditor.RootMotionPositionMode.LeftRight:
+                                rootTranslation = sidewaysAxis * Vector3.Dot(rootTranslation, sidewaysAxis);
+                                break;
+                            case ModelEditor.RootMotionPositionMode.ForwardBack:
+                                rootTranslation = forwardAxis * Vector3.Dot(rootTranslation, forwardAxis);
+                                break;
+                            case ModelEditor.RootMotionPositionMode.LeftRightVertical:
+                                rootTranslation = (sidewaysAxis * Vector3.Dot(rootTranslation, sidewaysAxis)) + (verticalAxis * Vector3.Dot(rootTranslation, verticalAxis));  
+                                break;
+                            case ModelEditor.RootMotionPositionMode.ForwardBackVertical:
+                                rootTranslation = (forwardAxis * Vector3.Dot(rootTranslation, forwardAxis)) + (verticalAxis * Vector3.Dot(rootTranslation, verticalAxis));
+                                break;
+                        }
+
+                        rootMotionBone.position = rootTranslation + (rootMotionBone.parent.rotation * baseRootLocalPosition);
+                        for (int a = 0; a < rootMotionBone.childCount; a++)
+                        {
+                            var child = rootMotionBone.GetChild(a);
+                            child.position = child.position - rootTranslation; 
+                        }
+                    } 
+
+                    if (rootMotionRotationReferenceBones.Count > 0)
+                    {
+                        Quaternion rootRotation = rootRot * Quaternion.Inverse(startRootRotation);
+                        float yaw = Vector3.SignedAngle(animatorTarget.forwardAxis, rootRotation * animatorTarget.forwardAxis, animatorTarget.yawAxis);
+
+                        switch (rootMotionPositionMode)
+                        {
+                            case ModelEditor.RootMotionPositionMode.LeftRight:
+                                yaw = 0;
+                                break;
+                            case ModelEditor.RootMotionPositionMode.ForwardBack: 
+                                yaw = 0;
+                                break;
+                        } 
+
+                        Quaternion yawRot = Quaternion.AngleAxis(yaw, animatorTarget.yawAxis);
+                        Quaternion inverseYawRot = Quaternion.Inverse(yawRot);
+
+                        //Debug.DrawRay(startRootPosition, yawRot * animatorTarget.forwardAxis, Color.Lerp(Color.blue, Color.magenta, 1 - (insertionLine.Count / (float)insertionCount)), 120);
+
+                        rootMotionBone.rotation = yawRot * (rootMotionBone.parent.rotation * baseRootLocalRotation);
+                        for (int a = 0; a < rootMotionBone.childCount; a++)
+                        {
+                            var child = rootMotionBone.GetChild(a);
+                            child.rotation = inverseYawRot * child.rotation;
+                        } 
+                    }
+
+                    previousRootPosition = rootPos;
+                    previousRootRotation = rootRot;
+                }
+
+                if (bakeFkToIk) animatorTarget.SyncIKFK(false);
+                
                 List<Transform> insertionBones = new List<Transform>();
                 foreach (var insertion in toInsert)
                 {
@@ -4244,7 +5213,7 @@ namespace Swole
                                 relationBone.SetPositionAndRotation(insertion.bone.TransformPoint(relation.offsetPosition), insertion.bone.rotation * relation.offsetRotation);
                             }
 
-                            insertionBones.Add(relationBone);
+                            insertionBones.Add(relationBone); 
                         }
                     }
                     
@@ -4253,40 +5222,40 @@ namespace Swole
                         switch (channel)
                         {
                             case TransformDataChannel.LocalPositionX:
-                                foreach (var bone in insertionBones) AnimationUtils.Pose.InsertElement(new KeyValuePair<string, float>(AnimationUtils.TransformLocalPositionXKey(bone.name), bone.localPosition.x), animatorTarget.avatar, animationSource.rawAnimation, bakeTime, restPoseTarget, null, false, null, false, true, false, false, insertion.useExistingKeyframe, insertion.keyframe);
+                                foreach (var bone in insertionBones) AnimationUtils.Pose.InsertElement(new KeyValuePair<string, float>(AnimationUtils.TransformLocalPositionXKey(bone.name), bone.localPosition.x), animatorTarget.avatar, animationSource.rawAnimation, bakeTime, restPoseTarget, null, false, null, false, true, false, false, insertion.useExistingKeyframe, insertion.keyframe, AnimationUtils.InsertAutoSmoothBehaviour.AlwaysLinear);
                                 break;
                             case TransformDataChannel.LocalPositionY:
-                                foreach (var bone in insertionBones) AnimationUtils.Pose.InsertElement(new KeyValuePair<string, float>(AnimationUtils.TransformLocalPositionYKey(bone.name), bone.localPosition.y), animatorTarget.avatar, animationSource.rawAnimation, bakeTime, restPoseTarget, null, false, null, false, true, false, false, insertion.useExistingKeyframe, insertion.keyframe);
+                                foreach (var bone in insertionBones) AnimationUtils.Pose.InsertElement(new KeyValuePair<string, float>(AnimationUtils.TransformLocalPositionYKey(bone.name), bone.localPosition.y), animatorTarget.avatar, animationSource.rawAnimation, bakeTime, restPoseTarget, null, false, null, false, true, false, false, insertion.useExistingKeyframe, insertion.keyframe, AnimationUtils.InsertAutoSmoothBehaviour.AlwaysLinear);
                                 break;
                             case TransformDataChannel.LocalPositionZ:
-                                foreach (var bone in insertionBones) AnimationUtils.Pose.InsertElement(new KeyValuePair<string, float>(AnimationUtils.TransformLocalPositionZKey(bone.name), bone.localPosition.z), animatorTarget.avatar, animationSource.rawAnimation, bakeTime, restPoseTarget, null, false, null, false, true, false, false, insertion.useExistingKeyframe, insertion.keyframe);
+                                foreach (var bone in insertionBones) AnimationUtils.Pose.InsertElement(new KeyValuePair<string, float>(AnimationUtils.TransformLocalPositionZKey(bone.name), bone.localPosition.z), animatorTarget.avatar, animationSource.rawAnimation, bakeTime, restPoseTarget, null, false, null, false, true, false, false, insertion.useExistingKeyframe, insertion.keyframe, AnimationUtils.InsertAutoSmoothBehaviour.AlwaysLinear);
                                 break;
                                  
                             case TransformDataChannel.LocalRotationX:
-                                foreach (var bone in insertionBones) AnimationUtils.Pose.InsertElement(new KeyValuePair<string, float>(AnimationUtils.TransformLocalRotationXKey(bone.name), CalculateAndStoreBoneRotation(bone, bakeTime).x), animatorTarget.avatar, animationSource.rawAnimation, bakeTime, restPoseTarget, null, false, null, false, false, true, false, insertion.useExistingKeyframe, insertion.keyframe);
+                                foreach (var bone in insertionBones) AnimationUtils.Pose.InsertElement(new KeyValuePair<string, float>(AnimationUtils.TransformLocalRotationXKey(bone.name), CalculateAndStoreBoneRotation(bone, bakeTime).x), animatorTarget.avatar, animationSource.rawAnimation, bakeTime, restPoseTarget, null, false, null, false, false, true, false, insertion.useExistingKeyframe, insertion.keyframe, AnimationUtils.InsertAutoSmoothBehaviour.Always);
                                 break; 
                             case TransformDataChannel.LocalRotationY:
-                                foreach (var bone in insertionBones) AnimationUtils.Pose.InsertElement(new KeyValuePair<string, float>(AnimationUtils.TransformLocalRotationYKey(bone.name), CalculateAndStoreBoneRotation(bone, bakeTime).y), animatorTarget.avatar, animationSource.rawAnimation, bakeTime, restPoseTarget, null, false, null, false, false, true, false, insertion.useExistingKeyframe, insertion.keyframe);
+                                foreach (var bone in insertionBones) AnimationUtils.Pose.InsertElement(new KeyValuePair<string, float>(AnimationUtils.TransformLocalRotationYKey(bone.name), CalculateAndStoreBoneRotation(bone, bakeTime).y), animatorTarget.avatar, animationSource.rawAnimation, bakeTime, restPoseTarget, null, false, null, false, false, true, false, insertion.useExistingKeyframe, insertion.keyframe, AnimationUtils.InsertAutoSmoothBehaviour.Always);
                                 break;
                             case TransformDataChannel.LocalRotationZ:
-                                foreach (var bone in insertionBones) AnimationUtils.Pose.InsertElement(new KeyValuePair<string, float>(AnimationUtils.TransformLocalRotationZKey(bone.name), CalculateAndStoreBoneRotation(bone, bakeTime).z), animatorTarget.avatar, animationSource.rawAnimation, bakeTime, restPoseTarget, null, false, null, false, false, true, false, insertion.useExistingKeyframe, insertion.keyframe);
+                                foreach (var bone in insertionBones) AnimationUtils.Pose.InsertElement(new KeyValuePair<string, float>(AnimationUtils.TransformLocalRotationZKey(bone.name), CalculateAndStoreBoneRotation(bone, bakeTime).z), animatorTarget.avatar, animationSource.rawAnimation, bakeTime, restPoseTarget, null, false, null, false, false, true, false, insertion.useExistingKeyframe, insertion.keyframe, AnimationUtils.InsertAutoSmoothBehaviour.Always);
                                 break;
                             case TransformDataChannel.LocalRotationW:
-                                foreach (var bone in insertionBones) AnimationUtils.Pose.InsertElement(new KeyValuePair<string, float>(AnimationUtils.TransformLocalRotationWKey(bone.name), CalculateAndStoreBoneRotation(bone, bakeTime).w), animatorTarget.avatar, animationSource.rawAnimation, bakeTime, restPoseTarget, null, false, null, false, false, true, false, insertion.useExistingKeyframe, insertion.keyframe);
+                                foreach (var bone in insertionBones) AnimationUtils.Pose.InsertElement(new KeyValuePair<string, float>(AnimationUtils.TransformLocalRotationWKey(bone.name), CalculateAndStoreBoneRotation(bone, bakeTime).w), animatorTarget.avatar, animationSource.rawAnimation, bakeTime, restPoseTarget, null, false, null, false, false, true, false, insertion.useExistingKeyframe, insertion.keyframe, AnimationUtils.InsertAutoSmoothBehaviour.Always);
                                 break;
 
                             case TransformDataChannel.LocalScaleX:
-                                foreach (var bone in insertionBones) AnimationUtils.Pose.InsertElement(new KeyValuePair<string, float>(AnimationUtils.TransformLocalScaleXKey(bone.name), bone.localScale.x), animatorTarget.avatar, animationSource.rawAnimation, bakeTime, restPoseTarget, null, false, null, false, false, false, true, insertion.useExistingKeyframe, insertion.keyframe);
+                                foreach (var bone in insertionBones) AnimationUtils.Pose.InsertElement(new KeyValuePair<string, float>(AnimationUtils.TransformLocalScaleXKey(bone.name), bone.localScale.x), animatorTarget.avatar, animationSource.rawAnimation, bakeTime, restPoseTarget, null, false, null, false, false, false, true, insertion.useExistingKeyframe, insertion.keyframe, AnimationUtils.InsertAutoSmoothBehaviour.AlwaysLinear);
                                 break;
                             case TransformDataChannel.LocalScaleY:
-                                foreach (var bone in insertionBones) AnimationUtils.Pose.InsertElement(new KeyValuePair<string, float>(AnimationUtils.TransformLocalScaleYKey(bone.name), bone.localScale.y), animatorTarget.avatar, animationSource.rawAnimation, bakeTime, restPoseTarget, null, false, null, false, false, false, true, insertion.useExistingKeyframe, insertion.keyframe);
+                                foreach (var bone in insertionBones) AnimationUtils.Pose.InsertElement(new KeyValuePair<string, float>(AnimationUtils.TransformLocalScaleYKey(bone.name), bone.localScale.y), animatorTarget.avatar, animationSource.rawAnimation, bakeTime, restPoseTarget, null, false, null, false, false, false, true, insertion.useExistingKeyframe, insertion.keyframe, AnimationUtils.InsertAutoSmoothBehaviour.AlwaysLinear);
                                 break;
                             case TransformDataChannel.LocalScaleZ:
-                                foreach (var bone in insertionBones) AnimationUtils.Pose.InsertElement(new KeyValuePair<string, float>(AnimationUtils.TransformLocalScaleZKey(bone.name), bone.localScale.z), animatorTarget.avatar, animationSource.rawAnimation, bakeTime, restPoseTarget, null, false, null, false, false, false, true, insertion.useExistingKeyframe, insertion.keyframe);
+                                foreach (var bone in insertionBones) AnimationUtils.Pose.InsertElement(new KeyValuePair<string, float>(AnimationUtils.TransformLocalScaleZKey(bone.name), bone.localScale.z), animatorTarget.avatar, animationSource.rawAnimation, bakeTime, restPoseTarget, null, false, null, false, false, false, true, insertion.useExistingKeyframe, insertion.keyframe, AnimationUtils.InsertAutoSmoothBehaviour.AlwaysLinear); 
                                 break;
                         }
                     }
-
+                    
                     InsertInChannel(insertion.channel);
 
                     insertionBones.Clear();
@@ -4431,7 +5400,7 @@ namespace Swole
 
             if (animatorReference != null && originalLayers.Count > 0)
             {
-                animatorReference.ClearLayers();
+                animatorReference.ClearLayers(true);
                 animatorReference.AddLayers(originalLayers, false);
 
                 originalLayers.Clear();

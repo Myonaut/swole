@@ -217,6 +217,316 @@ namespace Swole.API.Unity.Animation
 
         #endregion
 
+        #region State
+
+        [Serializable]
+        public struct StateData
+        {
+            public AnimationCurveEditor.State timeCurveState;
+
+            public CustomAnimation.CurveInfoPair[] transformAnimationCurves;
+            public CustomAnimation.CurveInfoPair[] propertyAnimationCurves;
+
+            public TransformCurveState[] transformCurveStates;
+            public TransformLinearCurveState[] transformLinearCurveStates;
+
+            public PropertyCurveState[] propertyCurveStates;
+            public PropertyLinearCurveState[] propertyLinearCurveStates;
+
+            public AnimationEventsState[] animationEventStates;
+        }
+
+        [Serializable]
+        public struct TransformCurveState
+        {
+            public TransformCurve.StateData state;
+
+            [NonSerialized]
+            public TransformCurve reference;
+
+            public TransformCurve Apply()
+            {
+                if (reference != null)
+                {
+                    reference.State = state;
+                }
+
+                return reference;
+            }
+            public static implicit operator TransformCurveState(TransformCurve curve)
+            {
+                var state = new TransformCurveState();
+
+                if (curve != null)
+                {
+                    state.state = curve.State;
+                    state.reference = curve;
+                }
+
+                return state;
+            }
+        }
+        [Serializable]
+        public struct TransformLinearCurveState
+        {
+            public TransformLinearCurve.StateData state;
+
+            [NonSerialized]
+            public TransformLinearCurve reference;
+
+            public TransformLinearCurve Apply()
+            {
+                if (reference != null)
+                {
+                    reference.State = state;
+                }
+
+                return reference;
+            }
+            public static implicit operator TransformLinearCurveState(TransformLinearCurve curve)
+            {
+                var state = new TransformLinearCurveState();
+
+                if (curve != null)
+                {
+                    state.state = curve.State;
+                    state.reference = curve;
+                }
+
+                return state;
+            }
+        }
+
+        [Serializable]
+        public struct PropertyCurveState
+        {
+            public PropertyCurve.StateData state;
+
+            [NonSerialized]
+            public PropertyCurve reference;
+
+            public PropertyCurve Apply()
+            {
+                if (reference != null)
+                {
+                    reference.State = state;
+                }
+
+                return reference;
+            }
+            public static implicit operator PropertyCurveState(PropertyCurve curve)
+            {
+                var state = new PropertyCurveState();
+
+                if (curve != null)
+                {
+                    state.state = curve.State;
+                    state.reference = curve;
+                }
+
+                return state;
+            }
+        }
+        [Serializable]
+        public struct PropertyLinearCurveState
+        {
+            public PropertyLinearCurve.StateData state;
+
+            [NonSerialized]
+            public PropertyLinearCurve reference;
+
+            public PropertyLinearCurve Apply()
+            {
+                if (reference != null)
+                {
+                    reference.State = state;
+                }
+
+                return reference;
+            }
+            public static implicit operator PropertyLinearCurveState(PropertyLinearCurve curve)
+            {
+                var state = new PropertyLinearCurveState();
+
+                if (curve != null)
+                {
+                    state.state = curve.State;
+                    state.reference = curve;
+                }
+
+                return state;
+            }
+        }
+
+        [Serializable]
+        public struct AnimationEventsState
+        {
+            public CustomAnimation.Event.Serialized state;
+
+            [NonSerialized]
+            public CustomAnimation.Event reference;
+
+            public CustomAnimation.Event Apply()
+            {
+                if (reference != null)
+                {
+                    reference.State = state; 
+                }
+
+                return reference;
+            }
+            public static implicit operator AnimationEventsState(CustomAnimation.Event curve)
+            {
+                var state = new AnimationEventsState();
+
+                if (curve != null)
+                {
+                    state.state = curve.State;
+                    state.reference = curve;
+                }
+
+                return state;
+            }
+        }
+
+        public StateData State
+        {
+            get 
+            {
+                var state = new StateData();
+
+                state.timeCurveState = rawAnimation.timeCurve == null ? default : rawAnimation.timeCurve.CloneState();
+
+                state.transformAnimationCurves = rawAnimation.transformAnimationCurves == null ? null : (CustomAnimation.CurveInfoPair[])rawAnimation.transformAnimationCurves.Clone();
+                state.propertyAnimationCurves = rawAnimation.propertyAnimationCurves == null ? null : (CustomAnimation.CurveInfoPair[])rawAnimation.propertyAnimationCurves.Clone(); 
+
+                if (rawAnimation.transformCurves != null && rawAnimation.transformCurves.Length > 0) 
+                { 
+                    state.transformCurveStates = new TransformCurveState[rawAnimation.transformCurves.Length];
+                    for(int a = 0; a < rawAnimation.transformCurves.Length; a++)
+                    {
+                        var curve = rawAnimation.transformCurves[a];
+                        if (curve == null) continue;
+
+                        state.transformCurveStates[a] = curve; 
+                    }
+                }
+                if (rawAnimation.transformLinearCurves != null && rawAnimation.transformLinearCurves.Length > 0)
+                {
+                    state.transformLinearCurveStates = new TransformLinearCurveState[rawAnimation.transformLinearCurves.Length];
+                    for (int a = 0; a < rawAnimation.transformLinearCurves.Length; a++)
+                    {
+                        var curve = rawAnimation.transformLinearCurves[a];
+                        if (curve == null) continue;
+
+                        state.transformLinearCurveStates[a] = curve;
+                    }
+                }
+
+                if (rawAnimation.propertyCurves != null && rawAnimation.propertyCurves.Length > 0)
+                {
+                    state.propertyCurveStates = new PropertyCurveState[rawAnimation.propertyCurves.Length];
+                    for (int a = 0; a < rawAnimation.propertyCurves.Length; a++)
+                    {
+                        var curve = rawAnimation.propertyCurves[a];
+                        if (curve == null) continue;
+
+                        state.propertyCurveStates[a] = curve;
+                    }
+                }
+                if (rawAnimation.propertyLinearCurves != null && rawAnimation.propertyLinearCurves.Length > 0)
+                {
+                    state.propertyLinearCurveStates = new PropertyLinearCurveState[rawAnimation.propertyLinearCurves.Length];
+                    for (int a = 0; a < rawAnimation.propertyLinearCurves.Length; a++)
+                    {
+                        var curve = rawAnimation.propertyLinearCurves[a];
+                        if (curve == null) continue;
+
+                        state.propertyLinearCurveStates[a] = curve;
+                    }
+                }
+
+                if (rawAnimation.events != null && rawAnimation.events.Length > 0)
+                {
+                    state.animationEventStates = new AnimationEventsState[rawAnimation.events.Length];
+                    for (int a = 0; a < rawAnimation.events.Length; a++)
+                    {
+                        var event_ = rawAnimation.events[a];
+                        if (event_ == null) continue;
+
+                        state.animationEventStates[a] = event_;
+                    }
+                }
+
+                return state;
+            }
+
+            set 
+            {
+
+                if (value.timeCurveState.keyframes != null && value.timeCurveState.keyframes.Length > 0)
+                {
+                    if (rawAnimation.timeCurve == null) rawAnimation.timeCurve = new EditableAnimationCurve();
+                    rawAnimation.timeCurve.State = value.timeCurveState; 
+                }
+
+                rawAnimation.transformAnimationCurves = value.transformAnimationCurves == null ? null : (CustomAnimation.CurveInfoPair[])value.transformAnimationCurves.Clone();
+                rawAnimation.propertyAnimationCurves = value.propertyAnimationCurves == null ? null : (CustomAnimation.CurveInfoPair[])value.propertyAnimationCurves.Clone();
+
+                if (value.transformCurveStates == null)
+                {
+                    rawAnimation.transformCurves = null;
+                } 
+                else
+                {
+                    rawAnimation.transformCurves = new TransformCurve[ value.transformCurveStates.Length];
+                    for (int a = 0; a < value.transformCurveStates.Length; a++) rawAnimation.transformCurves[a] = value.transformCurveStates[a].Apply();
+                }
+
+                if (value.transformLinearCurveStates == null)
+                {
+                    rawAnimation.transformLinearCurves = null;
+                }
+                else
+                {
+                    rawAnimation.transformLinearCurves = new TransformLinearCurve[value.transformLinearCurveStates.Length];
+                    for (int a = 0; a < value.transformLinearCurveStates.Length; a++) rawAnimation.transformLinearCurves[a] = value.transformLinearCurveStates[a].Apply();
+                }
+
+                if (value.propertyCurveStates == null)
+                {
+                    rawAnimation.propertyCurves = null;
+                }
+                else
+                {
+                    rawAnimation.propertyCurves = new PropertyCurve[value.propertyCurveStates.Length];
+                    for (int a = 0; a < value.propertyCurveStates.Length; a++) rawAnimation.propertyCurves[a] = value.propertyCurveStates[a].Apply();
+                }
+
+                if (value.propertyLinearCurveStates == null)
+                {
+                    rawAnimation.propertyLinearCurves = null; 
+                }
+                else
+                {
+                    rawAnimation.propertyLinearCurves = new PropertyLinearCurve[value.propertyLinearCurveStates.Length];
+                    for (int a = 0; a < value.propertyLinearCurveStates.Length; a++) rawAnimation.propertyLinearCurves[a] = value.propertyLinearCurveStates[a].Apply();
+                }
+
+                if (value.animationEventStates == null)
+                {
+                    rawAnimation.events = null;
+                }
+                else if (rawAnimation.events != null)
+                {
+                    rawAnimation.events = new CustomAnimation.Event[value.animationEventStates.Length];
+                    for (int a = 0; a < value.animationEventStates.Length; a++) rawAnimation.events[a] = value.animationEventStates[a].Apply();  
+                }
+            }
+        }
+
+        #endregion
+
         public AnimationSource() : base(default) { }
 
         /// <summary>
@@ -238,7 +548,7 @@ namespace Swole.API.Unity.Animation
         /// <summary>
         /// The state machine that controls playback in the preview layer.
         /// </summary>
-        public CustomStateMachine PreviewState
+        public CustomAnimationLayerState PreviewState
         {
             get
             {

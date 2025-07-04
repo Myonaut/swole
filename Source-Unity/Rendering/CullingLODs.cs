@@ -38,6 +38,8 @@ namespace Swole
                 var renderer = new RendererCullLOD(this, boundsRootTransform, renderers.Count);
                 renderers.Add(renderer);
 
+                EnsureJobCompletion();
+
                 centers.Add(boundsCenter);
                 extents.Add(boundsExtents);
 
@@ -65,7 +67,9 @@ namespace Swole
                 renderers[rendererIndex] = swapRenderer;
                 renderers.RemoveAt(renderers.Count - 1);
                 swapRenderer.index = rendererIndex;
-                renderer.index = -1; 
+                renderer.index = -1;
+
+                EnsureJobCompletion();
 
                 centers.RemoveAtSwapBack(rendererIndex);
                 extents.RemoveAtSwapBack(rendererIndex);
@@ -170,6 +174,11 @@ namespace Swole
                 updateJobHandle = cullingLODJob.ScheduleAppend(updatedIndices, renderers.Count, 4, TransformTracking.JobDependency);
 #endif
                 TransformTracking.AddInputDependency(updateJobHandle); 
+            }
+
+            public void EnsureJobCompletion()
+            {
+                updateJobHandle.Complete();
             }
 
             public void RefreshRenderers()
@@ -347,6 +356,13 @@ namespace Swole
             { 
                 pair.Value.OutputDependency.Complete();
                 pair.Value.RefreshRenderers();
+            }
+        }
+        public void EnsureJobCompletion()
+        {
+            foreach (var pair in perCameraCullLODs)
+            {
+                pair.Value.EnsureJobCompletion();
             }
         }
 

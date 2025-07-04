@@ -63,6 +63,12 @@ namespace Swole.API.Unity.Animation
 
             public float value;
 
+            /// <summary>
+            /// Used to store a float during animation editing.
+            /// </summary>
+            [NonSerialized]
+            public float tempFloat;
+
             public Frame Lerp(Frame other, float t)
             {
 

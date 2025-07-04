@@ -8,17 +8,19 @@ using UnityEngine;
 namespace Swole.API.Unity
 {
 
+    [DefaultExecutionOrder(-40)]
     public class SubstepPhysicsManager : SingletonBehaviour<SubstepPhysicsManager>
     {
 
-        public override int Priority => 50;
+        public static int ExecutionPriority => -9999;
+        public override int Priority => ExecutionPriority;
 
         protected List<SubstepPhysicsBehaviour> behaviours = new List<SubstepPhysicsBehaviour>();
 
         protected void RegisterLocal(SubstepPhysicsBehaviour behaviour)
         {
 
-            behaviours.Add(behaviour);
+            if (!behaviours.Contains(behaviour)) behaviours.Add(behaviour);
 
         }
 
@@ -59,10 +61,19 @@ namespace Swole.API.Unity
 
             base.OnDestroyed();
 
-            Time.fixedDeltaTime = fixedDeltaTime;
+            if (fixedDeltaTime > 0) Time.fixedDeltaTime = fixedDeltaTime;
 
         }
 
+        public bool forceSetSimulationMode;
+        protected override void OnAwake()
+        {
+            base.OnAwake();
+
+            if (forceSetSimulationMode) Physics.simulationMode = SimulationMode.Script; 
+        }
+
+        public bool applyFinalCatchUpStep = true;
         public bool updateManually;
         public static bool AutoSimulate
         {
@@ -91,96 +102,125 @@ namespace Swole.API.Unity
             SimulateLocal();
         }
 
-        public void SimulateLocal()
+        private float fixedDeltaStep = 0;
+        public void SimulateLocal() => SimulateLocal(Time.deltaTime);
+        public void SimulateLocal(float deltaTime)
         {
+            if (fixedDeltaTime > 0) Time.fixedDeltaTime = fixedDeltaTime;
+            float mainFixedDeltaTime = Time.fixedDeltaTime;
 
-            Time.fixedDeltaTime = fixedDeltaTime;
+            Physics.SyncTransforms();
 
-            //Physics.SyncTransforms(); Physics.Simulate almost certainly does this for us?
-
-            int nCalls = Mathf.FloorToInt(Time.deltaTime / fixedDeltaTime);
+            int nCalls = Mathf.FloorToInt(deltaTime / mainFixedDeltaTime);
             for (int i = 0; i < nCalls; i++)
             {
 
-                Physics.Simulate(fixedDeltaTime);
-                UpdateBehaviours();
+                Physics.Simulate(mainFixedDeltaTime);
+                UpdateBehaviours(); 
 
             }
-
-            float remainingTime = Time.deltaTime - (nCalls * fixedDeltaTime);
-
-            if (remainingTime > 0)
+            
+            if (applyFinalCatchUpStep)
             {
-                Time.fixedDeltaTime = remainingTime;
+                float remainingTime = deltaTime - (nCalls * mainFixedDeltaTime);
+                if (remainingTime > 0)
+                {
+                    Time.fixedDeltaTime = remainingTime;
 
-                Physics.Simulate(remainingTime);
-                UpdateBehaviours();
+                    // simulate pre upate bhaviours here
+                    PreUpdateBehaviours();
+                    Physics.Simulate(remainingTime);
+                    UpdateBehaviours();
+                }
+
+                Time.fixedDeltaTime = mainFixedDeltaTime;
+            } 
+            else
+            {
+                float remainingTime = deltaTime - (nCalls * mainFixedDeltaTime);
+                fixedDeltaStep += remainingTime;
+
+                if (fixedDeltaStep >= mainFixedDeltaTime)
+                {
+                    fixedDeltaStep -= mainFixedDeltaTime;
+                    PreUpdateBehaviours();
+                    Physics.Simulate(mainFixedDeltaTime); 
+                    UpdateBehaviours();
+                }
             }
         }
-        public static void Simulate()
+        public static void Simulate() => Simulate(Time.deltaTime);
+        public static void Simulate(float deltaTime)
         {
             var instance = Instance;
             if (instance == null) return;;
 
-            instance.SimulateLocal(); 
+            instance.SimulateLocal(deltaTime);  
         }
 
-        protected void UpdateBehaviours()
+        protected void PreUpdateBehaviours()
         {
-
-            bool purge = false;
-
             foreach (var behaviour in behaviours)
             {
-
                 if (behaviour == null)
                 {
-
-                    purge = true;
-
                     continue;
-
                 }
 
                 if (behaviour.isActiveAndEnabled)
                 {
+                    behaviour.SubstepEarlyUpdate();
+                }
 
-                    behaviour.SubstepUpdate();
+            }
+        }
+        protected void UpdateBehaviours()
+        {
+            bool purge = false;
 
+            foreach (var behaviour in behaviours) 
+            {
+                if (behaviour == null)
+                {
+                    purge = true;
+                    continue;
+                }
+
+                if (behaviour.isActiveAndEnabled)
+                {
+                    behaviour.SubstepUpdate(); 
                 }
 
             }
 
             foreach (var behaviour in behaviours)
             {
-
                 if (behaviour != null && behaviour.isActiveAndEnabled)
                 {
-
                     behaviour.SubstepLateUpdate();
-
                 }
-
             }
 
             if (purge) behaviours.RemoveAll(i => i == null);  
-
         }
 
         public override void OnFixedUpdate()
         {
 
 #if UNITY_2022_3_OR_NEWER
-            if (Physics.simulationMode != SimulationMode.Script || !AutoSimulate) return; 
+            if (Physics.simulationMode == SimulationMode.Script || !AutoSimulate) return;
+#elif UNITY_2018_3_OR_NEWER
+            if (!Physics.autoSimulation || !AutoSimulate) return;
 #else
-            if (Physics.autoSimulation || !AutoSimulate) return;
+            return;
 #endif
 
-            UpdateBehaviours();
+            PreUpdateBehaviours();
+            UpdateBehaviours(); 
 
         }
 
-        public override void OnLateUpdate() { }
+        public override void OnLateUpdate() { } 
 
     }
 

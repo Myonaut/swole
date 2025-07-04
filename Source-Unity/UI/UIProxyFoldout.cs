@@ -293,7 +293,6 @@ namespace Swole.UI
 
         public void Fold(float tweenTime, bool easeIn = false, bool easeOut = false)
         {
-
             if (!IsInitialized)
             {
                 Initialize();
@@ -666,7 +665,7 @@ namespace Swole.UI
                 {
 
                     yield return null;
-
+                    
                     if (ClickedOff() && state && !tweening) Fold();
 
                 }

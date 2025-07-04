@@ -187,6 +187,8 @@ namespace Swole.API.Unity.Animation
 
                 }
 
+                Reset(); 
+
             }
 
             public override float Value
@@ -364,6 +366,8 @@ namespace Swole.API.Unity.Animation
         }
 
         public abstract float GetDefaultValue();
+
+        public void Reset() => m_value = GetDefaultValue();
 
         public virtual float UpdateAndGetValue() => Value;
 

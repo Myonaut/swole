@@ -8,6 +8,7 @@ using UnityEngine.UI;
 using UnityEngine.Events;
 
 using TMPro;
+using Swole.API.Unity;
 
 namespace Swole.UI
 {
@@ -132,7 +133,7 @@ namespace Swole.UI
             }
         }
 
-        public GameObject CreateNewMenuItem(string name = null)
+        public GameObject CreateNewMenuItem(string name = null, bool addDefaultOnClickListener = false, bool clearExistingListeners = false, UnityAction customOnClick = null)
         {
             if (string.IsNullOrEmpty(name)) name = $"item_{layoutGroupTransform.childCount}";
             GameObject item;
@@ -141,6 +142,21 @@ namespace Swole.UI
             if (layoutGroupTransform != null) item.transform.SetParent(layoutGroupTransform, false); else item.transform.SetParent(transform, false); 
             SetItemName(item, name);
             item.SetActive(true);
+
+            if (addDefaultOnClickListener)
+            {
+                CustomEditorUtils.SetButtonOnClickAction(item, () =>
+                {
+                    SetSelectionText(name, true);
+                    FoldInstant(); 
+
+                }, true, clearExistingListeners);  
+            }
+            if (customOnClick != null)
+            {
+                CustomEditorUtils.SetButtonOnClickAction(item, customOnClick, true, clearExistingListeners && !addDefaultOnClickListener);
+            }
+
             return item;
         }
 
@@ -166,7 +182,7 @@ namespace Swole.UI
                 var item = GetMenuItem(a);
                 if (item == null) continue;
 
-                if ((caseSensitive ? item.name : item.name.ToLower().Trim()) == name) return item; 
+                if ((caseSensitive ? item.name : item.name.ToLower().Trim()) == name) return item;  
             }
 
             return null;
@@ -174,7 +190,7 @@ namespace Swole.UI
 
         public UnityEvent<string> OnSelectionChanged = new UnityEvent<string>();
 
-        public void SetSelectionText(string text) => SetSelectionText(text, true);
+        public void SetSelectionText(string text) => SetSelectionText(text, true); 
         public void SetSelectionText(string text, bool notifyListeners)
         {
             if (selectedText != null) selectedText.text = text;

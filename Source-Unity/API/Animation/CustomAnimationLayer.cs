@@ -16,6 +16,8 @@ namespace Swole.API.Unity.Animation
     public class CustomAnimationLayer : IAnimationLayer
     {
 
+        private const int _loopLimit = 16384;
+
         protected bool m_disposed;
         public bool Valid => !m_disposed;
 
@@ -40,17 +42,85 @@ namespace Swole.API.Unity.Animation
             m_animationPlayers = null;
 
         }
-        
-        public bool HasPrefix(string prefix) => name == null ? false : name.ToLower().Trim().StartsWith(prefix);
-        public bool DisposeIfHasPrefix(string prefix)
+
+        [NonSerialized]
+        public IAnimationController source;
+        public IAnimationController Source => source;
+
+        public bool IsFromSource(IAnimationController source) => ReferenceEquals(source, this.source);
+        public bool DisposeIfIsFromSource(IAnimationController source)
         {
-            bool dispose = HasPrefix(prefix);
+            bool dispose = IsFromSource(source);
             if (dispose) Dispose();
 
             return dispose;
         }
 
-        private const int loopLimit = 8192;
+        public bool HasPrefix(string prefix) => name == null ? false : name.ToLower().Trim().StartsWith(prefix);
+        public bool DisposeIfHasPrefix(string prefix)
+        {
+            bool dispose = HasPrefix(prefix); 
+            if (dispose) Dispose();
+
+            return dispose;
+        }
+
+        [SerializeField]
+        protected CustomAvatarMaskAsset avatarMaskAsset;
+
+        protected WeightedAvatarMask avatarMask;
+
+        [SerializeField]
+        protected bool invertAvatarMask;
+
+        public WeightedAvatarMask AvatarMask 
+        {
+            get => avatarMask == null ? (avatarMaskAsset == null ? null : avatarMaskAsset.mask) : avatarMask;    
+            set => SetAvatarMask(value, false); 
+        }
+        public bool InvertAvatarMask 
+        { 
+            get => invertAvatarMask;
+            set => SetAvatarMask(avatarMask, value);
+        }
+
+        private static readonly List<AvatarMaskUsage> tempAvatarMasks = new List<AvatarMaskUsage>();
+        public void SetAvatarMask(WeightedAvatarMask mask, bool invertMask = false)
+        {
+            this.avatarMask = mask;
+            this.invertAvatarMask = invertMask;
+
+            if (this.m_motionControllers != null)
+            {
+                tempAvatarMasks.Clear();
+                if (avatarMask != null) tempAvatarMasks.Add(new AvatarMaskUsage() { mask = avatarMask.AsComposite(true), invertMask = invertAvatarMask });
+                foreach (var controller in this.m_motionControllers)
+                {
+                    if (controller == null || controller.HasParent) continue; 
+
+                    controller.Initialize(this, tempAvatarMasks);
+                }
+                tempAvatarMasks.Clear(); 
+            }
+        }
+
+        public void ReinitializeController(int controllerIndex)
+        {
+            if (m_motionControllers == null || controllerIndex < 0 || controllerIndex >= m_motionControllers.Length) return;
+            ReinitializeController(m_motionControllers[controllerIndex]);
+        }
+        public void ReinitializeController(IAnimationMotionController controller)
+        {
+            if (controller == null) return;
+
+            tempAvatarMasks.Clear();
+            if (avatarMask != null) tempAvatarMasks.Add(new AvatarMaskUsage() { mask = avatarMask.AsComposite(true), invertMask = invertAvatarMask });
+
+            while (controller.HasParent) controller = controller.Parent; // Find top level parent. All children will get initialized by this parent.
+            controller.Initialize(this, tempAvatarMasks, null);
+            
+            tempAvatarMasks.Clear();
+        }
 
         public IAnimationLayer NewInstance(IAnimator animator, IAnimationController animationController = null)
         {
@@ -58,13 +128,33 @@ namespace Swole.API.Unity.Animation
 
             CustomAnimationLayer layer = new CustomAnimationLayer(animator);
 
+            layer.source = animationController;
+
             layer.name = name;
             layer.isAdditive = isAdditive;
             layer.mix = mix;
 
-            layer.stateMachines = new CustomStateMachine[stateMachines == null ? 0 : stateMachines.Length];
-            if (stateMachines != null) for (int a = 0; a < stateMachines.Length; a++) if (stateMachines[a] != null) layer.stateMachines[a] = stateMachines[a].NewInstance(layer);
+            layer.avatarMask = avatarMask;
+            layer.invertAvatarMask = invertAvatarMask;
+            
+            Dictionary<int, int> layerStateIndexRemapper = new Dictionary<int, int>();
+            layer.states = new CustomAnimationLayerState[states == null ? 0 : states.Length];
+            if (states != null)
+            {
+                for (int a = 0; a < states.Length; a++)
+                {
+                    if (states[a] != null)
+                    {
+                        var newState = states[a].NewInstance(layer);
+                        newState.Index = a;
+                        layer.states[a] = newState;
 
+                        layerStateIndexRemapper[a] = newState.Index;
+                    }
+                }
+            }
+
+            int initialMotionControllerCount = 0;
             List<CustomMotionController> newMotionControllers = new List<CustomMotionController>();
             if (m_motionControllers != null && m_motionControllers.Length > 0) // Instantiating from an already instantiated layer
             {
@@ -75,44 +165,117 @@ namespace Swole.API.Unity.Animation
                     if (m_motionControllers[a] != null) newMotionControllers.Add((CustomMotionController)m_motionControllers[a].Clone()); else newMotionControllers.Add(null);
 
                 }
+                initialMotionControllerCount = newMotionControllers.Count;
 
             }
             else if (motionControllerIdentifiers != null && animationController != null)  // Instantiating from a prototype layer
             {
 
-                List<MotionControllerIdentifier> identifiers = new List<MotionControllerIdentifier>(motionControllerIdentifiers); // Allows non nested motion controllers to keep the same index
-                for (int a = 0; a < motionControllerIdentifiers.Length; a++) // Add identifiers of nested motion controllers first
-                {
+                initialMotionControllerCount = motionControllerIdentifiers.Length;
 
+                List<int> childIndices = new List<int>();
+                List<MotionControllerIdentifier> identifiers = new List<MotionControllerIdentifier>(motionControllerIdentifiers); // Allows non nested motion controllers to keep the same index
+                for (int a = 0; a < motionControllerIdentifiers.Length; a++) // Clones base motion controllers and sets up nested motion controllers to be cloned. This separates motion controllers that are referenced by layer states and motion controllers that are referenced by other motion controllers.
+                {
                     var identifier = motionControllerIdentifiers[a];
                     var motionController = animationController.GetMotionController(identifier);
+                    if (motionController != null)
+                    {
+                        motionController = (CustomMotionController)motionController.Clone();
+                        newMotionControllers.Add((CustomMotionController)motionController);
+                    }
+                    else
+                    {
+                        newMotionControllers.Add(null);
+                        continue;
+                    }
 
-                    if (motionController == null) continue;
+                    if (layer.states != null)
+                    {
+                        childIndices.Clear();
+                        motionController.GetChildIndices(childIndices, false);
+                        for (int b = 0; b < childIndices.Count; b++)
+                        {
+                            bool clone = false;
+                            int ind = childIndices[b];
+                            for (int c = 0; c < layer.states.Length; c++)
+                            {
+                                var state = layer.states[c];
+                                if (state == null) continue; ;
 
-                    motionController.GetChildIndexIdentifiers(identifiers);
+                                if (state.motionControllerIndex == ind)
+                                {
+                                    clone = true;
+                                    break;
+                                }
+                            }
 
+                            if (clone)
+                            {
+                                motionController.SetChildIndex(b, identifiers.Count);
+                                identifiers.Add(identifiers[ind]);
+                            }
+                        }
+                    }
                 }
 
-                Dictionary<MotionControllerIdentifier, int> childIndexRemapper = new Dictionary<MotionControllerIdentifier, int>();
-                for (int a = 0; a < identifiers.Count; a++) // Find and clone all referenced motion controllers using the collection of identifiers
+                for (int a = motionControllerIdentifiers.Length; a < identifiers.Count; a++) // Clone all new motion controllers using the collection of identifiers.
                 {
 
                     var identifier = identifiers[a];
                     var motionController = animationController.GetMotionController(identifier);
 
-                    if (motionController != null) newMotionControllers.Add((CustomMotionController)motionController.Clone()); else newMotionControllers.Add(null); // Clone the motion controller reference. Non nested motion controlls will have the exact same index as their identifier
+                    identifier.index = newMotionControllers.Count; // Keep track of the index of this newly cloned motion controller
+                    identifiers[a] = identifier;
 
-                    childIndexRemapper[identifier] = newMotionControllers.Count - 1; // Keep track of the index of this newly cloned motion controller
+                    if (motionController != null) newMotionControllers.Add((CustomMotionController)motionController.Clone()); else newMotionControllers.Add(null); // Clone the nested motion controller reference
+                }
+            }
 
+            for (int a = 0; a < layer.states.Length; a++) // Duplicate motion controllers if they're referenced by multiple states. Duplicate states if they appear in the state array multiple times. Avoids conflicts when transitioning between states.
+            {
+
+                var state = layer.states[a];
+
+                int motionControllerIndex = state.MotionControllerIndex;
+                if (motionControllerIndex < 0 || motionControllerIndex >= newMotionControllers.Count) continue; 
+
+                bool cloneState = false;
+                bool cloneController = false;
+                for (int b = 0; b < a; b++)
+                {
+                    var state2 = layer.states[b];
+                    if (state2.MotionControllerIndex == motionControllerIndex)
+                    {
+                        cloneController = true;
+                    }
+                    if (ReferenceEquals(state, state2))
+                    {
+                        cloneState = true;
+                        cloneController = true; // if the state is cloned, always clone the top level motion controller as well.
+                    }
                 }
 
-                foreach (var controller in newMotionControllers) if (controller != null) controller.RemapChildIndices(childIndexRemapper, true); // Update nested motion controller indices to their cloned equivalents. Non nested motion controllers will already have the same index as their identifier, as they are added to the list first.
+                if (cloneState) // Only clone states if necessary 
+                {
+                    var newState = state.NewInstance(state.Layer);
+                    newState.Index = a;
+                    layer.states[a] = newState;
+                    layerStateIndexRemapper[a] = newState.Index;
+                }
 
+                if (cloneController)
+                {
+                    layer.states[a].motionControllerIndex = newMotionControllers.Count;
+                    newMotionControllers.Add((CustomMotionController)newMotionControllers[motionControllerIndex].Clone()); 
+                }
             }
 
             // Checks for deep references to the indices provided in the list
-            bool IsCyclic(List<int> indices, CustomMotionController controller, string inPath, out string outPath)
+            bool IsCyclic(List<int> indices, CustomMotionController controller, string inPath, out string outPath, out string culprit)
             {
+
+                culprit = string.Empty;
 
                 outPath = inPath;
                 List<int> children = new List<int>();
@@ -123,23 +286,28 @@ namespace Swole.API.Unity.Animation
 
                     if (child < 0 || child >= newMotionControllers.Count) continue;
                     var childController = newMotionControllers[child];
-                    if (childController == null || !childController.HasChildControllers) continue;
-                    if (indices.Contains(child)) return true;
+                    if (childController == null || !childController.HasChildControllers) continue; 
+                    if (indices.Contains(child)) 
+                    { 
+                        culprit = childController.name;
+                        return true;
+                    }
 
                 }
 
-                List<int> combined = new List<int>(children);
-                combined.AddRange(indices);
-
+                //List<int> combined = new List<int>(children);
+                //combined.AddRange(indices);
                 for (int a = 0; a < children.Count; a++)
                 {
 
                     int childIndex = children[a];
                     if (childIndex < 0 || childIndex >= newMotionControllers.Count) continue;
                     var childController = newMotionControllers[childIndex];
-                    if (childController == null || !controller.HasChildControllers) continue;
+                    if (childController == null || !controller.HasChildControllers) continue; 
 
-                    if (IsCyclic(combined, childController, inPath + "/" + childController.name, out outPath)) return true;
+                    List<int> combined = new List<int>(indices); 
+                    combined.Add(childIndex);
+                    if (IsCyclic(combined, childController, inPath + "/" + childController.name, out outPath, out culprit)) return true;  
 
                 }
 
@@ -153,23 +321,24 @@ namespace Swole.API.Unity.Animation
                 var controller = newMotionControllers[a];
                 if (controller == null || !controller.HasChildControllers) continue;
 
-                if (IsCyclic(new List<int>() { a }, controller, controller.name, out string outPath))
+                if (IsCyclic(new List<int>() { a }, controller, controller.name, out string outPath, out string culprit))
                 {
 
-                    swole.LogError($"[{nameof(CustomAnimationLayer)}] Found circular reference in layer '{layer.name}' for '{outPath}'");
+                    swole.LogError($"[{nameof(CustomAnimationLayer)}] Found circular reference '{culprit}' in layer '{layer.name}' for '{outPath}'");
                     newMotionControllers[a] = null;
 
                 }
 
             }
-
+            
             List<CustomMotionController> backupControllers = new List<CustomMotionController>(newMotionControllers);
             HashSet<int> reservedIndices = new HashSet<int>();
             List<int> referencedIndices = new List<int>();
-            Dictionary<int, int> remapper = new Dictionary<int, int>();
+            Dictionary<int, CustomMotionController> firstIndexReferencers = new Dictionary<int, CustomMotionController>();
+            Dictionary<int, int> cloneCounts = new Dictionary<int, int>();
             int count = newMotionControllers.Count;
             int i = 0;
-            while (i < count) // Duplicate motion controllers if they're referenced by multiple parents. Avoids conflicts when transitioning between states.
+            while (i < count) // Duplicate motion controllers if they're referenced by multiple parents or the same parent multiple times. Avoids conflicts when blending or transitioning between states.
             {
 
                 var controller = newMotionControllers[i];
@@ -177,39 +346,54 @@ namespace Swole.API.Unity.Animation
                 {
 
                     referencedIndices.Clear();
-                    remapper.Clear();
-
-                    controller.GetChildIndices(referencedIndices);
+                    controller.GetChildIndices(referencedIndices, false);
                     for (int b = 0; b < referencedIndices.Count; b++)
                     {
 
                         int index = referencedIndices[b];
-                        if (index < 0 || index >= count) continue;
+                        if (index < 0 || index >= newMotionControllers.Count) continue;
 
-                        if (reservedIndices.Contains(index))
+                        int currentIndex = controller.GetChildIndex(b);
+                        if (reservedIndices.Contains(currentIndex))
                         {
 
-                            var referencedController = newMotionControllers[index];
-                            if (referencedController != null)
+                            var originalReferencedController = newMotionControllers[index];
+                            var referencedController = newMotionControllers[currentIndex];
+                            if (originalReferencedController != null && referencedController != null)
                             {
+                                int newIndex = newMotionControllers.Count;
+                                controller.SetChildIndex(b, newIndex);
+                                cloneCounts.TryGetValue(index, out int cloneCount); 
+                                cloneCount += 1;
+                                cloneCounts[index] = cloneCount;
+                                reservedIndices.Add(newIndex);
+                                firstIndexReferencers[newIndex] = controller;
 
-                                remapper[index] = newMotionControllers.Count;
-                                newMotionControllers.Add((CustomMotionController)referencedController.Clone());
-
+                                var clone = (CustomMotionController)referencedController.Clone(); 
+                                clone.name = originalReferencedController.name + $"_{(cloneCount + 1)}";  
+                                newMotionControllers.Add(clone);
+                                swole.Log($"Duplicated multi-referenced controller '{referencedController.name}'. (Clone Count: {cloneCount}) (Referenced by '{controller.name}' (index:{i})) (First referenced by '{firstIndexReferencers[index].name}')");
+                            } 
+                            else
+                            {
+                                swole.LogError($"Controller duplication mismatch for '{controller.name}' at child index {b}. (Original child controller: {(originalReferencedController == null ? "null" : originalReferencedController.Name)}) (Reference child controller: {(referencedController == null ? "null" : referencedController.Name)})"); 
                             }
 
                         }
-                        else reservedIndices.Add(index);
+                        else 
+                        { 
+                            reservedIndices.Add(currentIndex);
+                            firstIndexReferencers[currentIndex] = controller;
+                            //swole.Log($"Registering first reference of '{newMotionControllers[index].name}' (index:{index}) by '{controller.name}' (index:{i})"); 
+                        }
 
                     }
 
-                    controller.RemapChildIndices(remapper);
-
                 }
-
+                
                 count = newMotionControllers.Count;
                 i++;
-                if (i >= loopLimit)
+                if (i >= _loopLimit)
                 {
 
                     swole.LogError($"[{nameof(CustomAnimationLayer)}] Controller duplication loop limit reached for layer '{layer.name}' - aborting...'");
@@ -217,46 +401,108 @@ namespace Swole.API.Unity.Animation
                     break;
 
                 }
-
             }
 
-            reservedIndices.Clear();
-            // State machine motion controller indices do not need to be remapped because they reference non nested motion controllers, which do not change index.
-            for (int a = 0; a < layer.stateMachines.Length; a++) // Duplicate motion controllers if they're referenced by multiple state machines. Avoids conflicts when transitioning between states.
+            layer.m_motionControllers = newMotionControllers.ToArray(); 
+
+            tempAvatarMasks.Clear();
+            if (avatarMask != null) tempAvatarMasks.Add(new AvatarMaskUsage() { mask = avatarMask.AsComposite(true), invertMask = invertAvatarMask });
+            for (int a = 0; a < layer.m_motionControllers.Length; a++)
             {
-
-                var state = layer.stateMachines[a];
-
-                int motionControllerIndex = state.MotionControllerIndex;
-                if (motionControllerIndex < 0 || motionControllerIndex >= newMotionControllers.Count) continue;
-
-                if (reservedIndices.Contains(motionControllerIndex))
-                {
-
-                    layer.stateMachines[a] = state.NewInstance(state.Layer, newMotionControllers.Count); // Only clone state machines if necessary 
-                    newMotionControllers.Add((CustomMotionController)newMotionControllers[motionControllerIndex].Clone()); // TODO: clone all child motion controllers as well?
-                    // could add the new index to reserved indices, but nothing else should ever be referencing it; so it would only slow things down
-                }
-                else reservedIndices.Add(motionControllerIndex);
-
+                var controller = layer.m_motionControllers[a];
+                if (controller == null) continue;
+                 
+                if (!controller.HasParent) controller.Initialize(layer, tempAvatarMasks); // Essentially tells all animation reference motion controllers to create their animation players
+                controller.ForceSetLoopMode(layer, controller.GetLoopMode(layer));  
+            }
+            tempAvatarMasks.Clear();
+             
+            int entryIndex = EntryStateIndex;
+            if (layerStateIndexRemapper.TryGetValue(entryIndex, out int newEntryIndex))
+            {
+                entryIndex = newEntryIndex;
             }
 
-            layer.m_motionControllers = newMotionControllers.ToArray();
+            layer.m_activeState = layer.entryStateIndex = entryIndex; 
 
-            for (int a = 0; a < layer.m_motionControllers.Length; a++) if (layer.m_motionControllers[a] != null)
+            for(int a = 0; a < layer.states.Length; a++)
+            {
+                var state = layer.states[a];
+
+                if (state.transitions != null) 
                 {
+                    var transitions = new Transition[state.transitions.Length]; // instantiate transitions
+                    for (int b = 0; b < transitions.Length; b++) transitions[b] = state.transitions[b].Duplicate();
+                    state.transitions = transitions;
 
-                    var controller = layer.m_motionControllers[a];
-
-                    controller.Initialize(layer); // Essentially tells all animation reference motion controllers to create their animation players
-                    controller.ForceSetLoopMode(layer, controller.GetLoopMode(layer));
-
+                    foreach(var transition in state.transitions)
+                    {
+                        if (layerStateIndexRemapper.TryGetValue(transition.targetStateIndex, out int newIndex))
+                        {
+                            transition.targetStateIndex = newIndex;    
+                        }
+                    }
+                }
+            }
+             
+            for(int a = 0; a < layer.m_motionControllers.Length; a++)
+            {
+                var mc = layer.m_motionControllers[a];
+                //string path = $"/{mc.name}";
+                var parent = mc.Parent;
+                if (parent == null) 
+                {
+                    bool isStateReferenced = false;
+                    for (int b = 0; b < layer.states.Length; b++)
+                    {
+                        var state = layer.states[b];
+                        if (state.MotionControllerIndex == a)
+                        {
+                            isStateReferenced = true;
+                        }
+                    }
+                    if (!isStateReferenced)
+                    {
+                        if (a < initialMotionControllerCount)
+                        {
+                            swole.LogWarning($"Found isolated motion controller '{mc.Name}'! (Not referenced by a state or another motion controller) ");  
+                        } 
+                        else
+                        {
+                            swole.LogError($"Found isolated cloned motion controller '{mc.Name}'! (Not referenced by a parent controller or layer state. This should not be possible.) ");
+                        }
+                    }
                 }
 
-            layer.m_activeState = layer.entryStateIndex = EntryStateIndex;
+                var topLevelParent = parent;
+                while(parent != null)
+                {
+                    //path = $"/{parent.Name}{path}";
+                    parent = parent.Parent;
+                    if (parent != null) topLevelParent = parent;
+                }
+                if (topLevelParent == null) topLevelParent = mc;
 
+                CustomAnimationLayerState stateRef = null;
+                for (int b = 0; b < layer.states.Length; b++)
+                {
+                    var state = layer.states[b];
+                    if (state.MotionControllerIndex < 0) 
+                    {
+                        swole.LogWarning($"Layer state '{state.Name}' has no associated motion controller!"); 
+                        continue;
+                    }
+
+                    if (ReferenceEquals(layer.m_motionControllers[state.MotionControllerIndex], topLevelParent))
+                    {
+                        stateRef = state;
+                        break;
+                    }
+                }
+                //Debug.Log($"STATE:{(stateRef == null ? "NULL" : stateRef.Name)}::: {a}:: {path}");   
+            }
+             
             return layer;
-
         }
 
         public CustomAnimationLayer() { }
@@ -359,7 +605,8 @@ namespace Swole.API.Unity.Animation
             get => deactivate;
             set => deactivate = value;
         }
-        public bool IsActive => mix != 0 && !deactivate;
+        public bool deactivateAtZeroMix;
+        public bool IsActive => !deactivate && (mix != 0 || !deactivateAtZeroMix); 
         public void SetActive(bool active)
         {
             deactivate = !active;
@@ -410,6 +657,30 @@ namespace Swole.API.Unity.Animation
 
         }
 
+        public IAnimationParameter GetParameter(int index)
+        {
+            if (Animator == null) return null;     
+            return Animator.GetParameter(index);
+        }
+
+        public int FindParameterIndex(string name)
+        {
+            if (Animator == null) return -1;
+            return Animator.FindParameterIndex(name);
+        }
+        public IAnimationParameter FindParameter(string name, out int parameterIndex)
+        {
+            parameterIndex = -1;
+            if (Animator == null) return null;
+
+            return Animator.FindParameter(name, out parameterIndex);
+        }
+        public IAnimationParameter FindParameter(string name)
+        {
+            if (Animator == null) return null;
+            return Animator.FindParameter(name);
+        }
+
         [SerializeField]
         public MotionControllerIdentifier[] motionControllerIdentifiers;
         public MotionControllerIdentifier[] MotionControllerIdentifiers
@@ -435,6 +706,44 @@ namespace Swole.API.Unity.Animation
         }
         public IAnimationMotionController GetMotionControllerUnsafe(int index) => m_motionControllers[index];
 
+        public int FindMotionControllerIndex(string id)
+        {
+            if (m_motionControllers == null) return -1;
+
+            for (int a = 0; a < m_motionControllers.Length; a++)
+            {
+                if (m_motionControllers[a] != null && m_motionControllers[a].Name == id)
+                {
+                    return a;
+                }
+            }
+
+            return -1;
+        }
+        public IAnimationMotionController FindMotionController(string id, out int controllerIndex)
+        {
+            controllerIndex = FindMotionControllerIndex(id);
+            if (controllerIndex < 0) return null;
+
+            return m_motionControllers[controllerIndex];
+        }
+        public IAnimationMotionController FindMotionController(string id) => FindMotionController(id, out _);
+
+        public int FindStateIndex(string id)
+        {
+            if (states == null) return -1;
+
+            for (int a = 0; a < states.Length; a++)
+            {
+                if (states[a] != null && states[a].Name == id)
+                {
+                    return a;
+                }
+            }
+
+            return -1;
+        }
+
         [SerializeField]
         public int entryStateIndex;
         public int EntryStateIndex
@@ -444,72 +753,81 @@ namespace Swole.API.Unity.Animation
         }
 
         [SerializeField]
-        public CustomStateMachine[] stateMachines;
-        public IAnimationStateMachine[] StateMachines
+        public CustomAnimationLayerState[] states;
+        public IAnimationLayerState[] States
         {
             get
             {
-                if (stateMachines == null) return null;
-                var array = new IAnimationStateMachine[stateMachines.Length];
-                for (int a = 0; a < stateMachines.Length; a++) array[a] = stateMachines[a];
+                if (states == null) return null;
+                var array = new IAnimationLayerState[states.Length];
+                for (int a = 0; a < states.Length; a++) array[a] = states[a];
                 return array;
             }
             set
             {
-                SetStateMachines(value);
+                SetStates(value);
             }
         }
-        public void SetStateMachines(IAnimationStateMachine[] stateMachines)
+        public IAnimationLayerState FindState(string id, out int stateIndex)
         {
-            if (stateMachines == null)
+            stateIndex = FindStateIndex(id);
+            if (stateIndex < 0) return null;
+
+            return states[stateIndex];
+        }
+        public IAnimationLayerState FindState(string id) => FindState(id, out _);
+
+        public void SetStates(IAnimationLayerState[] states)
+        {
+            if (states == null)
             {
-                this.stateMachines = null; 
+                this.states = null; 
                 return;
             }
-            this.stateMachines = new CustomStateMachine[stateMachines.Length];
-            for (int a = 0; a < stateMachines.Length; a++)
+            this.states = new CustomAnimationLayerState[states.Length];
+            for (int a = 0; a < states.Length; a++)
             {
-                var stateMachine = stateMachines[a];
-                if (stateMachines[a] is not CustomStateMachine csm)
+                var state = states[a];
+                if (states[a] is not CustomAnimationLayerState als)
                 {
-                    csm = new CustomStateMachine();
-                    if (stateMachine != null)
+                    als = new CustomAnimationLayerState();
+                    if (state != null)
                     {
-                        csm.name = stateMachine.Name;
-                        csm.index = stateMachine.Index;
-                        csm.motionControllerIndex = stateMachine.MotionControllerIndex;
-                        csm.transitions = stateMachine.Transitions;
+                        als.name = state.Name;
+                        als.index = state.Index;
+                        als.motionControllerIndex = state.MotionControllerIndex;
+                        als.transitions = state.Transitions;
                     } 
                     else
                     {
-                        csm.name = "null";
-                        csm.index = a;
-                        csm.motionControllerIndex = -1;
+                        als.name = "null";
+                        als.index = a;
+                        als.motionControllerIndex = -1;
                     }
                 }
-                this.stateMachines[a] = csm;
+                this.states[a] = als;
             }
         }
 
-        public int StateCount => stateMachines == null ? 0 : stateMachines.Length;
-        public IAnimationStateMachine GetStateMachine(int index)
+        public int StateCount => states == null ? 0 : states.Length;
+        public IAnimationLayerState GetState(int index)
         {
 
-            if (stateMachines == null || index < 0 || index >= stateMachines.Length) return null;
+            if (states == null || index < 0 || index >= states.Length) return null;
 
-            return GetStateMachineUnsafe(index);
+            return GetStateUnsafe(index);
 
         }
-        public IAnimationStateMachine GetStateMachineUnsafe(int index) => stateMachines[index];
-        public void SetStateMachine(int index, IAnimationStateMachine stateMachine)
+        public IAnimationLayerState GetStateUnsafe(int index) => states[index];
+        public void SetState(int index, IAnimationLayerState state)
         {
-            if (stateMachine is not CustomStateMachine csm) return;
-            SetStateMachine(index, csm);
+            if (state is not CustomAnimationLayerState als) return;
+            SetState(index, als);
         }
-        public void SetStateMachine(int index, CustomStateMachine stateMachine)
+        public void SetState(int index, CustomAnimationLayerState state)
         {
-            if (stateMachines == null || index < 0 || index >= stateMachines.Length) return;
-            stateMachines[index] = stateMachine;
+            if (states == null || index < 0 || index >= states.Length) return;
+            states[index] = state;
         }
 
         [NonSerialized]
@@ -518,14 +836,24 @@ namespace Swole.API.Unity.Animation
 
         [NonSerialized]
         protected int m_activeState;
-        public int ActiveStateIndex => m_activeState;
-        public IAnimationStateMachine ActiveState => GetStateMachine(ActiveStateIndex);
-        public CustomStateMachine ActiveStateTyped 
+        public void SetActiveState(int index)
+        {
+            m_activeState = -1;
+            if (index >= 0 && states != null && index < states.Length) m_activeState = index;
+        }
+        public void SetActiveStateUnsafe(int index) => m_activeState = index;
+        public int ActiveStateIndex
+        {
+            get => m_activeState;
+            set => SetActiveState(value);  
+        }
+        public IAnimationLayerState ActiveState => GetState(ActiveStateIndex);
+        public CustomAnimationLayerState ActiveStateTyped 
         { 
             get
             {
                 var state = ActiveState;
-                if (state is CustomStateMachine csm) return csm;
+                if (state is CustomAnimationLayerState als) return als;
                 return null;
             }
         }
@@ -536,8 +864,8 @@ namespace Swole.API.Unity.Animation
             {
 
                 var activeState = ActiveState;
-                bool active = false;
 
+                bool active = false;
                 if (activeState != null) active = activeState.IsActive();
 
                 return active;
@@ -581,6 +909,10 @@ namespace Swole.API.Unity.Animation
             swole.LogError($"Cannot create animation player for type {animation.GetType().Name}!");
             return null;
         }
+
+        public delegate void CreateAnimationPlayerDelegate(CustomAnimation.Player player);
+        public event CreateAnimationPlayerDelegate OnCreateAnimationPlayer; 
+        public void ClearAnimationPlayerCreationListeners() => OnCreateAnimationPlayer = null;
         public IAnimationPlayer GetNewAnimationPlayer(CustomAnimation animation)
         {
             if (animation == null || !Valid) return null;
@@ -595,10 +927,13 @@ namespace Swole.API.Unity.Animation
                 m_animationPlayers[id] = players;
             }
 
-            var player = new CustomAnimation.Player(ca, animation, isAdditive, true);
+            var player = new CustomAnimation.Player(this, ca, animation, AvatarMask == null ? default : AvatarMask.AsComposite(true), InvertAvatarMask, isAdditive, true); 
             player.index = players.Count;
-
+            
             players.Add(player);
+
+            OnCreateAnimationPlayer?.Invoke(player);
+
             return player;
         }
         public IAnimationPlayer GetNewAnimationPlayer(CustomAnimationAsset asset)
@@ -615,10 +950,13 @@ namespace Swole.API.Unity.Animation
                 m_animationPlayers[id] = players;
             }
 
-            var player = new CustomAnimation.Player(ca, asset, isAdditive, true);
+            var player = new CustomAnimation.Player(this, ca, asset, AvatarMask == null ? default : AvatarMask.AsComposite(true), InvertAvatarMask, isAdditive, true);
             player.index = players.Count;
 
             players.Add(player);
+
+            OnCreateAnimationPlayer?.Invoke(player);
+
             return player;
         }
         public bool RemoveAnimationPlayer(IAnimationAsset animation, int playerIndex) => RemoveAnimationPlayer(animation == null ? null : animation.ID, playerIndex);
@@ -708,12 +1046,12 @@ namespace Swole.API.Unity.Animation
             }*/
 
             var activeState = ActiveState;
-            if (activeState is CustomStateMachine csm)
+            if (activeState is CustomAnimationLayerState als)
             {
-                
-                m_activeState = csm.Progress(nextHierarchy, nextIsAdditiveOrBlended, false, deltaTime, ref m_jobHandle, !disableMultithreading, isFinal, true, true, localHierarchy);
 
-            }
+                m_activeState = als.Progress(nextHierarchy, nextIsAdditiveOrBlended, false, deltaTime, ref m_jobHandle, !disableMultithreading, isFinal, true, false, true, localHierarchy);
+
+            }// else Debug.Log(name + $" has no state! {EntryStateIndex} {ActiveStateIndex}"); 
 
             return OutputDependency;
 
@@ -738,6 +1076,77 @@ namespace Swole.API.Unity.Animation
 
             return null;
 
+        }
+
+        protected readonly List<SwolePuppetMaster.MuscleConfigMix> muscleConfigMixes = new List<SwolePuppetMaster.MuscleConfigMix>();
+        public List<SwolePuppetMaster.MuscleConfigMix> GetCurrentMuscleConfigMix()
+        {
+            muscleConfigMixes.Clear();
+
+            var activeState = ActiveState;
+            if (activeState is CustomAnimationLayerState als)
+            {
+                var activeConfig = als.PuppetConfiguration;
+
+                bool flag = true;
+                if (activeState.IsTransitioning)
+                {
+                    var transitionTarget = GetState(activeState.TransitionTarget);
+                    if (transitionTarget is CustomAnimationLayerState targetAls)
+                    {
+                        var transition = activeState.ActiveTransition;
+
+                        if (transition.overrideMuscleConfig)
+                        {
+                            flag = false;
+
+                            var targetConfig = targetAls.PuppetConfiguration;
+                            if (targetConfig != null && targetConfig.IsValid)
+                            {
+                                muscleConfigMixes.Add(new SwolePuppetMaster.MuscleConfigMix()
+                                {
+                                    mix = 1f,
+                                    config = targetConfig
+                                });
+                            }
+                        }
+                        else
+                        {
+                            var targetConfig = targetAls.PuppetConfiguration;
+                            if (targetConfig != null && targetConfig.IsValid)
+                            {
+                                flag = false;
+
+                                float progress = activeState.TransitionProgress; 
+                                muscleConfigMixes.Add(new SwolePuppetMaster.MuscleConfigMix() 
+                                {
+                                    mix = progress,
+                                    config = targetConfig
+                                });
+                                muscleConfigMixes.Add(new SwolePuppetMaster.MuscleConfigMix()
+                                {
+                                    mix = 1f - progress,
+                                    config = activeConfig == null ? default : activeConfig // An invalid config will get converted to the default config automatically. Inserting an invalid config is desireable to maintain the mixing behaviour.
+                                });
+                            }
+                        }
+                    }
+                }
+
+                if (flag)
+                {
+                    if (activeConfig != null && activeConfig.IsValid)
+                    { 
+                        muscleConfigMixes.Add(new SwolePuppetMaster.MuscleConfigMix() 
+                        {
+                            mix = 1f,
+                            config = activeConfig
+                        });
+                    }
+                }
+            }
+
+            return muscleConfigMixes;
         }
 
     }

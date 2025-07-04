@@ -1,5 +1,7 @@
 #if (UNITY_STANDALONE || UNITY_EDITOR)
 
+using System;
+
 using UnityEngine;
 
 namespace Swole.API.Unity
@@ -20,6 +22,8 @@ namespace Swole.API.Unity
         public int PointCount { get; }
         public Vector3 GetPoint(int index);
         public Vector2 GetPoint2D(int index);
+        public Vector3 GetTangent(int index);
+        public Vector3 GetNormal(int index);
 
         public Vector3[] GetVertices();
         public Vector2[] GetVertices2D();
@@ -33,12 +37,51 @@ namespace Swole.API.Unity
         public float VertexSpacing { get; set; }
         public int VertexAccuracy { get; set; }
 
-        public Vector3 GetPositionOnCurve(float normalizedPos);
-        public Vector2 GetPositionOnCurve2D(float normalizedPos);
+        public Vector3 GetPositionOnCurve(float normalizedPos, SwoleEndOfPathInstruction endOfPathInstruction = SwoleEndOfPathInstruction.Stop);
+        public Vector2 GetPositionOnCurve2D(float normalizedPos, SwoleEndOfPathInstruction endOfPathInstruction = SwoleEndOfPathInstruction.Stop);
         public float EstimatedLength { get; }
-        public Vector3 GetPositionOnCurveFromDistance(float distance);
-        public Vector2 GetPositionOnCurveFromDistance2D(float distance);
+        public Vector3 GetPositionFromDistanceAlongCurve(float distance, SwoleEndOfPathInstruction endOfPathInstruction = SwoleEndOfPathInstruction.Stop);
+        public Vector2 GetPositionFromDistanceAlongCurve2D(float distance, SwoleEndOfPathInstruction endOfPathInstruction = SwoleEndOfPathInstruction.Stop);
+
+        /// <summary>
+        /// Gets point on path based on 'time' (where 0 is start, and 1 is end of path).
+        /// </summary>
+        public Vector3 GetPointAtTime(float t, SwoleEndOfPathInstruction endOfPathInstruction = SwoleEndOfPathInstruction.Stop);
+
+        /// <summary>
+        /// Gets forward direction on path based on 'time' (where 0 is start, and 1 is end of path).
+        /// </summary>
+        public Vector3 GetDirection(float t, SwoleEndOfPathInstruction endOfPathInstruction = SwoleEndOfPathInstruction.Stop);
+
+        /// <summary>
+        /// Gets normal vector on path based on 'time' (where 0 is start, and 1 is end of path).
+        /// </summary>
+        public Vector3 GetNormal(float t, SwoleEndOfPathInstruction endOfPathInstruction = SwoleEndOfPathInstruction.Stop);
+
+        /// <summary>
+        /// Gets a rotation that will orient an object in the direction of the path at this point, with local up point along the path's normal
+        /// </summary>
+        public Quaternion GetRotation(float t, SwoleEndOfPathInstruction endOfPathInstruction = SwoleEndOfPathInstruction.Stop);
+
+        /// <summary>
+        /// Finds the closest point on the path from any point in the world
+        /// </summary>
+        public Vector3 GetClosestPointOnPath(Vector3 worldPoint);
+
+        /// <summary>
+        /// Finds the 'time' (0=start of path, 1=end of path) along the path that is closest to the given point
+        /// </summary>
+        public float GetClosestTimeOnPath(Vector3 worldPoint);
+
+        /// <summary>
+        /// Finds the distance along the path that is closest to the given point
+        /// </summary>
+        public float GetClosestDistanceAlongPath(Vector3 worldPoint);
+
     }
+
+    [Serializable]
+    public enum SwoleEndOfPathInstruction { Loop, Reverse, Stop };
 }
 
 #endif

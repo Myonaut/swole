@@ -82,7 +82,11 @@ namespace Swole.API.Unity
         public object Clone()
         {
             var clone = ScriptableObject.CreateInstance<BezierCurveUnity>();
+
+            clone.vertexSpacing = vertexSpacing;
+            clone.vertexAccuracy = vertexAccuracy;
             clone.points = (Vector3[])points.Clone();
+
             return clone;
         }
 
@@ -103,8 +107,10 @@ namespace Swole.API.Unity
         public Vector2[] GetNormalizedVertices2D(float minX, float minY, float maxX, float maxY, float startX = 0, float endX = 1, float startY = 0, float endY = 1) => Curve.GetNormalizedVertices2D(minX, minY, maxX, maxY, startX, endX, startY, endY);
 
         public Vector3 GetPoint(int index) => Curve.GetPoint(index);
-
         public Vector2 GetPoint2D(int index) => Curve.GetPoint2D(index);
+
+        public Vector3 GetNormal(int index) => Curve.GetNormal(index);
+        public Vector3 GetTangent(int index) => Curve.GetTangent(index);
 
         public Vector3[] GetPoints() => Curve.GetPoints();
 
@@ -112,13 +118,27 @@ namespace Swole.API.Unity
 
         public Keyframe[] GetPointsAsKeyframes() => Curve.GetPointsAsKeyframes();
 
-        public Vector3 GetPositionOnCurve(float normalizedPos) => Curve.GetPositionOnCurve(normalizedPos);
+        public Vector3 GetPositionOnCurve(float normalizedPos, SwoleEndOfPathInstruction endOfPathInstruction = SwoleEndOfPathInstruction.Stop) => Curve.GetPositionOnCurve(normalizedPos, endOfPathInstruction);
 
-        public Vector2 GetPositionOnCurve2D(float normalizedPos) => Curve.GetPositionOnCurve2D(normalizedPos);
+        public Vector2 GetPositionOnCurve2D(float normalizedPos, SwoleEndOfPathInstruction endOfPathInstruction = SwoleEndOfPathInstruction.Stop) => Curve.GetPositionOnCurve2D(normalizedPos, endOfPathInstruction);
 
-        public Vector3 GetPositionOnCurveFromDistance(float distance) => Curve.GetPositionOnCurveFromDistance(distance);
+        public Vector3 GetPositionFromDistanceAlongCurve(float distance, SwoleEndOfPathInstruction endOfPathInstruction = SwoleEndOfPathInstruction.Stop) => Curve.GetPositionFromDistanceAlongCurve(distance, endOfPathInstruction);
 
-        public Vector2 GetPositionOnCurveFromDistance2D(float distance) => Curve.GetPositionOnCurveFromDistance2D(distance);
+        public Vector2 GetPositionFromDistanceAlongCurve2D(float distance, SwoleEndOfPathInstruction endOfPathInstruction = SwoleEndOfPathInstruction.Stop) => Curve.GetPositionFromDistanceAlongCurve2D(distance, endOfPathInstruction);
+
+        public Vector3 GetPointAtTime(float t, SwoleEndOfPathInstruction endOfPathInstruction = SwoleEndOfPathInstruction.Stop) => Curve.GetPointAtTime(t, endOfPathInstruction);
+
+        public Vector3 GetDirection(float t, SwoleEndOfPathInstruction endOfPathInstruction = SwoleEndOfPathInstruction.Stop) => Curve.GetDirection(t, endOfPathInstruction);
+
+        public Vector3 GetNormal(float t, SwoleEndOfPathInstruction endOfPathInstruction = SwoleEndOfPathInstruction.Stop) => Curve.GetNormal(t, endOfPathInstruction);
+
+        public Quaternion GetRotation(float t, SwoleEndOfPathInstruction endOfPathInstruction = SwoleEndOfPathInstruction.Stop) => Curve.GetRotation(t, endOfPathInstruction);
+
+        public Vector3 GetClosestPointOnPath(Vector3 worldPoint) => Curve.GetClosestPointOnPath(worldPoint);
+
+        public float GetClosestTimeOnPath(Vector3 worldPoint) => Curve.GetClosestTimeOnPath(worldPoint);
+
+        public float GetClosestDistanceAlongPath(Vector3 worldPoint) => Curve.GetClosestDistanceAlongPath(worldPoint);
 
         public Vector3 GetVertex(int index) => Curve.GetVertex(index);
 

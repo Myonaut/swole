@@ -430,6 +430,8 @@ namespace Swole.API.Unity.Animation
         {
             if (IsTransformProperty(path, propertyName, out TransformPropertyType propertyType, out TransformPropertyComponent component, out string outputTransformName, out string outputPropertyName))
             {
+                //Debug.Log($"isTransformProp::: {outputTransformName} :: {propertyType.ToString()} :: {outputPropertyName}");
+
                 if (!convertedTransformCurves.TryGetValue(outputTransformName, out TransformCurve transformCurve))
                 {
 
@@ -542,10 +544,15 @@ namespace Swole.API.Unity.Animation
                 foreach (var binding in floatCurveBindings)
                 {
 
-                    //Debug.Log($"Float curve [{binding.path}] [{binding.propertyName}]");
+                    Debug.Log($"Float curve [{binding.path}] [{binding.propertyName}]");
                     ConvertCurveData(rootBoneName, scaleCompensation, clip, binding, convertedTransformCurves);
                 }
 
+                /*foreach(var binding in objectReferenceCurveBindings)
+                {
+                    Debug.Log($"Object Reference curve [{binding.path}] [{binding.propertyName}]"); 
+                }*/
+                
                 string clipName = clip.name;
                 if (string.IsNullOrWhiteSpace(clipName))
                 {
@@ -669,7 +676,7 @@ namespace Swole.API.Unity.Animation
 
                 return Matrix4x4.identity;
             }
-            Matrix4x4 GetNewBP(string boneName)
+            /*Matrix4x4 GetNewBP(string boneName)
             {
                 foreach (var bp in newBindpose)
                 {
@@ -677,7 +684,7 @@ namespace Swole.API.Unity.Animation
                 }
 
                 return Matrix4x4.identity;
-            }
+            }*/
 
             foreach (var remapping in remappings)
             {

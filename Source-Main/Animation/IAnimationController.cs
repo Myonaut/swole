@@ -23,6 +23,8 @@ namespace Swole.Animation
 
         public IAnimationReference[] AnimationReferences { get; set; }
         public IBlendTree1D[] BlendTrees1D { get; set; }
+        public IBlendTree2D[] BlendTrees2D { get; set; }
+        public IMotionComposite[] MotionComposites { get; set; }
         public IAnimationMotionController GetMotionController(MotionControllerIdentifier identifier); 
     }
 
@@ -32,6 +34,12 @@ namespace Swole.Animation
 
         public AnimationParameterValueType type;
         public int index;
+
+        public AnimationParameterIdentifier(AnimationParameterValueType type, int index)
+        {
+            this.type = type;
+            this.index = index;
+        }
 
     }
 

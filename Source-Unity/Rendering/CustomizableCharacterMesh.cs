@@ -3,13 +3,16 @@
 using System;
 using System.Collections;
 using System.Collections.Generic;
+using System.Runtime.InteropServices;
 
 using UnityEngine;
+using UnityEngine.Events;
 
 using Unity.Mathematics;
-using Swole.API.Unity.Animation;
 using Unity.Collections;
-using System.Runtime.InteropServices;
+
+using Swole.API.Unity;
+using Swole.API.Unity.Animation;
 
 namespace Swole.Morphing
 {
@@ -460,19 +463,17 @@ namespace Swole.Morphing
 
         #endregion
 
-#if UNITY_EDITOR
-
-        public void OnValidate() 
+        public void UpdateInEditor()
         {
             if (Application.isPlaying && isActiveAndEnabled)
-            { 
+            {
                 if (prevBustSizeEditor != bustSizeEditor)
                 {
                     prevBustSizeEditor = bustSizeEditor;
                     SetBustSize(bustSizeEditor);
                 }
-                if (prevShapeWeightsEditor == null || prevShapeWeightsEditor.Length == 0)  
-                { 
+                if (prevShapeWeightsEditor == null || prevShapeWeightsEditor.Length == 0)
+                {
                     prevShapeWeightsEditor = new NamedFloat[CharacterMeshData.StandaloneShapesCount];
                     for (int a = 0; a < prevShapeWeightsEditor.Length; a++) prevShapeWeightsEditor[a] = new NamedFloat() { name = CharacterMeshData.GetStandaloneShape(a).name };
                 }
@@ -493,7 +494,7 @@ namespace Swole.Morphing
                     for (int a = 0; a < muscleWeightsEditor.Length; a++) muscleWeightsEditor[a] = new NamedMuscleData() { name = CharacterMeshData.GetVertexGroup(a + CharacterMeshData.muscleVertexGroupsBufferRange.x).name };
                 }
 
-                if (prevFatWeightsEditor == null || prevFatWeightsEditor.Length == 0) 
+                if (prevFatWeightsEditor == null || prevFatWeightsEditor.Length == 0)
                 {
                     prevFatWeightsEditor = new NamedFloat[CharacterMeshData.FatVertexGroupCount];
                     for (int a = 0; a < prevFatWeightsEditor.Length; a++) prevFatWeightsEditor[a] = new NamedFloat() { name = CharacterMeshData.GetVertexGroup(a + CharacterMeshData.fatVertexGroupsBufferRange.x).name };
@@ -506,12 +507,12 @@ namespace Swole.Morphing
 
                 if (prevVariationWeightsEditor == null || prevVariationWeightsEditor.Length == 0)
                 {
-                    prevVariationWeightsEditor = new NamedFloat2[VariationShapesControlDataSize]; 
-                    for (int a = 0; a < prevVariationWeightsEditor.Length; a++) 
+                    prevVariationWeightsEditor = new NamedFloat2[VariationShapesControlDataSize];
+                    for (int a = 0; a < prevVariationWeightsEditor.Length; a++)
                     {
                         int groupIndex = a / CharacterMeshData.VariationShapesCount;
                         int shapeIndex = a % CharacterMeshData.VariationShapesCount;
-                        prevVariationWeightsEditor[a] = new NamedFloat2() { name = CharacterMeshData.GetVertexGroup(CharacterMeshData.variationGroupIndices[groupIndex]).name + "_" + CharacterMeshData.GetVariationShape(shapeIndex).name }; 
+                        prevVariationWeightsEditor[a] = new NamedFloat2() { name = CharacterMeshData.GetVertexGroup(CharacterMeshData.variationGroupIndices[groupIndex]).name + "_" + CharacterMeshData.GetVariationShape(shapeIndex).name };
                     }
                 }
                 if (variationWeightsEditor == null || variationWeightsEditor.Length == 0)
@@ -531,6 +532,61 @@ namespace Swole.Morphing
                     {
                         SetStandaloneShapeWeightUnsafe(a, shapeWeightsEditor[a].value);
                         prevShapeWeightsEditor[a].value = shapeWeightsEditor[a].value;
+                    }
+                }
+
+                if (prevGlobalMass != globalMass)
+                {
+                    prevGlobalMass = globalMass;
+                    for (int a = 0; a < muscleWeightsEditor.Length; a++)
+                    {
+                        var values = muscleWeightsEditor[a].value;
+                        var vl = values.valuesLeft;
+                        var vr = values.valuesRight;
+                        vl.mass = globalMass;
+                        vr.mass = globalMass;
+                        values.valuesLeft = vl;
+                        values.valuesRight = vr;
+
+                        SetMuscleDataUnsafe(a, values);
+
+                        prevMuscleWeightsEditor[a].value = muscleWeightsEditor[a].value = values;
+                    }
+                }
+                if (prevGlobalFlex != globalFlex)
+                {
+                    prevGlobalFlex = globalFlex;
+                    for (int a = 0; a < muscleWeightsEditor.Length; a++)
+                    {
+                        var values = muscleWeightsEditor[a].value;
+                        var vl = values.valuesLeft;
+                        var vr = values.valuesRight;
+                        vl.flex = globalFlex;
+                        vr.flex = globalFlex;
+                        values.valuesLeft = vl;
+                        values.valuesRight = vr;
+
+                        SetMuscleDataUnsafe(a, values);
+
+                        prevMuscleWeightsEditor[a].value = muscleWeightsEditor[a].value = values;
+                    }
+                }
+                if (prevGlobalPump != globalPump)
+                {
+                    prevGlobalPump = globalPump;
+                    for (int a = 0; a < muscleWeightsEditor.Length; a++)
+                    {
+                        var values = muscleWeightsEditor[a].value;
+                        var vl = values.valuesLeft;
+                        var vr = values.valuesRight;
+                        vl.pump = globalPump;
+                        vr.pump = globalPump;
+                        values.valuesLeft = vl;
+                        values.valuesRight = vr;
+
+                        SetMuscleDataUnsafe(a, values);
+
+                        prevMuscleWeightsEditor[a].value = muscleWeightsEditor[a].value = values;
                     }
                 }
 
@@ -556,12 +612,45 @@ namespace Swole.Morphing
                 {
                     if (math.any(prevVariationWeightsEditor[a].value != variationWeightsEditor[a].value))
                     {
-                        SetVariationWeightUnsafe(a, variationWeightsEditor[a].value);   
-                        prevVariationWeightsEditor[a].value = variationWeightsEditor[a].value;  
+                        SetVariationWeightUnsafe(a, variationWeightsEditor[a].value);
+                        prevVariationWeightsEditor[a].value = variationWeightsEditor[a].value;
                     }
                 }
             }
         }
+
+        public string configSaveDir;
+        public string configAssetName;
+        public bool saveConfig;
+
+        public EditorCharacterCustomizationConfig editorCustomizationConfig;
+
+        public void LoadEditorConfig(EditorCharacterCustomizationConfig config)
+        {
+            if (config != null) config.Apply(this);   
+        }
+
+#if UNITY_EDITOR
+
+        public void OnValidate() 
+        {
+            UpdateInEditor();
+
+            if (saveConfig)
+            {
+                saveConfig = false;
+                SaveNewEditorConfig();
+            }
+        }
+
+        public void SaveNewEditorConfig() => SaveNewEditorConfig(configSaveDir, configAssetName);
+        public void SaveNewEditorConfig(string configSaveDir) => SaveNewEditorConfig(configSaveDir, configAssetName);
+        public void SaveNewEditorConfig(string configSaveDir, string configAssetName)
+        {
+            editorCustomizationConfig = EditorCharacterCustomizationConfig.CreateAndSave(configSaveDir, configAssetName, this);
+        }
+
+#endif
 
         [Serializable]
         public struct NamedFloat
@@ -582,27 +671,73 @@ namespace Swole.Morphing
             public MuscleDataLR value;
         }
 
+        private float prevGlobalMass;
+#if UNITY_EDITOR
+        [SerializeField]
+#endif
+        [Range(0f, 2f)]
+        private float globalMass;
+
+        private float prevGlobalFlex;
+#if UNITY_EDITOR
+        [SerializeField]
+#endif
+        [Range(0f, 2f)]
+        private float globalFlex;
+
+        private float prevGlobalPump;
+#if UNITY_EDITOR
+        [SerializeField]
+#endif
+        [Range(0f, 1f)]
+        private float globalPump;
+
         private float prevBustSizeEditor;
+#if !UNITY_EDITOR
+        [NonSerialized]
+#endif
         [Range(0, 2)]
         public float bustSizeEditor;
 
+#if !UNITY_EDITOR
+        [NonSerialized]
+#endif
         [HideInInspector]
         public NamedFloat[] prevShapeWeightsEditor;
+#if !UNITY_EDITOR
+        [NonSerialized]
+#endif
         public NamedFloat[] shapeWeightsEditor;
 
+#if !UNITY_EDITOR
+        [NonSerialized]
+#endif
         [HideInInspector]
         public NamedMuscleData[] prevMuscleWeightsEditor;
+#if !UNITY_EDITOR
+        [NonSerialized]
+#endif
         public NamedMuscleData[] muscleWeightsEditor;
 
+#if !UNITY_EDITOR
+        [NonSerialized]
+#endif
         [HideInInspector]
         public NamedFloat[] prevFatWeightsEditor;
+#if !UNITY_EDITOR
+        [NonSerialized]
+#endif
         public NamedFloat[] fatWeightsEditor;
 
+#if !UNITY_EDITOR
+        [NonSerialized]
+#endif
         [HideInInspector]
         public NamedFloat2[] prevVariationWeightsEditor;
-        public NamedFloat2[] variationWeightsEditor;
-
+#if !UNITY_EDITOR
+        [NonSerialized]
 #endif
+        public NamedFloat2[] variationWeightsEditor;
 
         public override void Dispose()
         {
@@ -916,6 +1051,8 @@ namespace Swole.Morphing
             }
 
             SetAnimatablePropertiesController(animatablePropertiesController); 
+
+            Animator = animator; // force subscribe listeners
         }
 
         protected override void OnStart()
@@ -923,6 +1060,39 @@ namespace Swole.Morphing
             base.OnStart();
 
             InitInstanceIDs();
+
+            if (editorCustomizationConfig != null) LoadEditorConfig(editorCustomizationConfig);
+        }
+
+        public override CustomAnimator Animator
+        {
+            get => animator;
+            set
+            {
+                if (animator != null)
+                {
+                    animator.RemoveListener(CustomAnimator.BehaviourEvent.OnResetPose, OnAnimatorResetPose);
+                }
+
+                animator = value;
+                if (animator != null)
+                {
+                    animator.AddListener(CustomAnimator.BehaviourEvent.OnResetPose, OnAnimatorResetPose);
+                }
+            }
+        }
+
+        protected void OnAnimatorResetPose()
+        {
+            if (!HasInstance) return;
+
+            for(int a = 0; a < CharacterMeshData.MuscleVertexGroupCount; a++)
+            {
+                var data = GetMuscleDataUnsafe(a);
+                data.valuesLeft.flex = 0f;
+                data.valuesRight.flex = 0f;
+                SetMuscleDataUnsafe(a, data);
+            }
         }
 
         public override string RigID => rigRoot.GetInstanceID().ToString();
@@ -1141,11 +1311,12 @@ namespace Swole.Morphing
                     }
                     else if (!meshGroup.HasRuntimeData(bufferID))
                     {
-                        for (int a = 0; a < meshGroup.MaterialCount; a++)
+                        meshGroup.BindInstanceMaterialBuffer(matProperty, standaloneShapeControlBuffer);
+                        /*for (int a = 0; a < meshGroup.MaterialCount; a++)
                         {
                             var material = meshGroup.GetMaterial(a);
                             standaloneShapeControlBuffer.BindMaterialProperty(material, matProperty);
-                        }
+                        }*/
 
                         meshGroup.SetRuntimeData(bufferID, true);
                     }
@@ -1178,6 +1349,7 @@ namespace Swole.Morphing
             if (instance == null || groupIndex < 0 || groupIndex >= CharacterMeshData.MuscleVertexGroupCount) return default;
             return GetMuscleDataUnsafe(groupIndex);
         }
+        public UnityEvent<int> OnMuscleDataChanged;
         public void SetMuscleDataUnsafe(int groupIndex, MuscleDataLR data)   
         {
             //var array = MuscleGroupsControl;
@@ -1190,6 +1362,8 @@ namespace Swole.Morphing
             SyncMuscleFlexData(groupIndex, data.valuesLeft.flex, data.valuesRight.flex);
 
             //dirtyFlag_muscleGroupsControl = true;
+
+            OnMuscleDataChanged?.Invoke(groupIndex);
         }
         public void SetMuscleData(int groupIndex, MuscleDataLR data)
         {
@@ -1216,11 +1390,12 @@ namespace Swole.Morphing
                     }
                     else if (!meshGroup.HasRuntimeData(bufferID))
                     {
-                        for (int a = 0; a < meshGroup.MaterialCount; a++)
+                        meshGroup.BindInstanceMaterialBuffer(matProperty, muscleGroupsControlBuffer);
+                        /*for (int a = 0; a < meshGroup.MaterialCount; a++)
                         {
                             var material = meshGroup.GetMaterial(a);
                             muscleGroupsControlBuffer.BindMaterialProperty(material, matProperty);
-                        }
+                        }*/
 
                         meshGroup.SetRuntimeData(bufferID, true);
                     }
@@ -1265,6 +1440,7 @@ namespace Swole.Morphing
             if (instance == null || groupIndex < 0 || groupIndex >= CharacterMeshData.FatVertexGroupCount) return 0;
             return GetFatLevelUnsafe(groupIndex);
         }
+        public UnityEvent<int> OnFatDataChanged;
         public void SetFatLevelUnsafe(int groupIndex, float level)
         {
             //var array = FatGroupsControl;
@@ -1281,6 +1457,8 @@ namespace Swole.Morphing
             SyncFatLevel(groupIndex, level);
 
             //dirtyFlag_fatGroupsControl = true;
+
+            OnFatDataChanged?.Invoke(groupIndex);
         }
         public void SetFatLevel(int groupIndex, float level)
         {
@@ -1307,11 +1485,12 @@ namespace Swole.Morphing
                     }
                     else if (!meshGroup.HasRuntimeData(bufferID))
                     {
-                        for (int a = 0; a < meshGroup.MaterialCount; a++)
+                        meshGroup.BindInstanceMaterialBuffer(matProperty, fatGroupsControlBuffer);
+                        /*for (int a = 0; a < meshGroup.MaterialCount; a++)
                         {
                             var material = meshGroup.GetMaterial(a);
                             fatGroupsControlBuffer.BindMaterialProperty(material, matProperty); 
-                        }
+                        }*/
 
                         meshGroup.SetRuntimeData(bufferID, true);
                     }
@@ -1407,11 +1586,12 @@ namespace Swole.Morphing
                     }
                     else if (!meshGroup.HasRuntimeData(bufferID))
                     {
-                        for (int a = 0; a < meshGroup.MaterialCount; a++)
+                        meshGroup.BindInstanceMaterialBuffer(matProperty, variationShapesControlBuffer);
+                        /*for (int a = 0; a < meshGroup.MaterialCount; a++)
                         {
                             var material = meshGroup.GetMaterial(a);
                             variationShapesControlBuffer.BindMaterialProperty(material, matProperty);
-                        }
+                        }*/
 
                         meshGroup.SetRuntimeData(bufferID, true);
                     }
@@ -1486,6 +1666,49 @@ namespace Swole.Morphing
                 if (VariationShapesControlBuffer.WriteToBuffer(VariationShapesControl, 0, InstanceSlot * count, count)) dirtyFlag_variationShapesControl = false;
             }*/
         }
+
+        #region Events
+
+        [Serializable]
+        public enum ListenableEvent
+        {
+            OnMuscleDataChanged,
+            OnFatDataChanged
+        }
+
+        public void AddListener(ListenableEvent event_, UnityAction<int> listener)
+        {
+            switch (event_)
+            {
+                case ListenableEvent.OnMuscleDataChanged:
+                    if (OnMuscleDataChanged == null) OnMuscleDataChanged = new UnityEvent<int>(); 
+                    OnMuscleDataChanged.AddListener(listener);
+                    break;
+                case ListenableEvent.OnFatDataChanged:
+                    if (OnFatDataChanged == null) OnFatDataChanged = new UnityEvent<int>();
+                    OnFatDataChanged.AddListener(listener);
+                    break;
+            }
+        }
+        public void RemoveListener(ListenableEvent event_, UnityAction<int> listener)
+        {
+            switch (event_)
+            {
+                case ListenableEvent.OnMuscleDataChanged:
+                    if (OnMuscleDataChanged != null) OnMuscleDataChanged.RemoveListener(listener);
+                    break;
+                case ListenableEvent.OnFatDataChanged:
+                    if (OnFatDataChanged != null) OnFatDataChanged.RemoveListener(listener);
+                    break;
+            }
+        }
+        public void ClearListeners()
+        {
+            if (OnMuscleDataChanged != null) OnMuscleDataChanged.RemoveAllListeners();
+            if (OnFatDataChanged != null) OnFatDataChanged.RemoveAllListeners();
+        }
+
+        #endregion
     }
 
     [Serializable, StructLayout(LayoutKind.Sequential)]

@@ -28,6 +28,14 @@ namespace Swole.DataStructures
 
     }
 
+    [Serializable, Flags]
+    public enum XYZChannel
+    {
+
+        None = 0, X = 1, Y = 2, Z = 4
+
+    }
+
     [Serializable, StructLayout(LayoutKind.Sequential)]
     public struct WeightIndexPair
     {
@@ -488,6 +496,22 @@ namespace Swole.DataStructures
         public float3 position;
         public quaternion rotation;
 
+        public TransformDataPair(Transform transform, bool worldSpace = false)
+        {
+            if (worldSpace)
+            {
+                transform.GetPositionAndRotation(out var position, out var rotation);
+                this.position = position;
+                this.rotation = rotation;
+            } 
+            else
+            {
+                transform.GetLocalPositionAndRotation(out var position, out var rotation);
+                this.position = position;
+                this.rotation = rotation;
+            }
+        }
+
         public void Apply(Transform t)
         {
             t.SetPositionAndRotation(position, rotation); 
@@ -499,6 +523,53 @@ namespace Swole.DataStructures
     }
 
     [Serializable, StructLayout(LayoutKind.Sequential)]
+    public struct TransformDataState
+    {
+        public float3 position;
+        public quaternion rotation;
+
+        public TransformDataState(Transform transform, bool worldSpace = false)
+        {
+            if (worldSpace)
+            {
+                transform.GetPositionAndRotation(out var position, out var rotation);
+                this.position = position;
+                this.rotation = rotation;
+            }
+            else
+            {
+                transform.GetLocalPositionAndRotation(out var position, out var rotation);
+                this.position = position;
+                this.rotation = rotation;
+            }
+        }
+    }
+    [Serializable, StructLayout(LayoutKind.Sequential)]
+    public struct TransformDataStateTemporal
+    {
+        public float3 position;
+        public quaternion rotation;
+
+        public float3 prevPosition;
+        public quaternion prevRotation;
+
+        public TransformDataStateTemporal(Transform transform, bool worldSpace = false)
+        {
+            if (worldSpace)
+            {
+                transform.GetPositionAndRotation(out var position, out var rotation);
+                prevPosition = this.position = position;
+                prevRotation = this.rotation = rotation;
+            }
+            else
+            {
+                transform.GetLocalPositionAndRotation(out var position, out var rotation);
+                prevPosition = this.position = position;
+                prevRotation = this.rotation = rotation;
+            }
+        }
+    }
+    [Serializable, StructLayout(LayoutKind.Sequential)]
     public struct TransformDataWorldLocal
     {
         public float3 position;
@@ -506,6 +577,40 @@ namespace Swole.DataStructures
 
         public float3 localPosition;
         public quaternion localRotation;
+
+        public TransformDataWorldLocal(Transform transform)
+        {
+            transform.GetPositionAndRotation(out var position, out var rotation);
+            this.position = position;
+            this.rotation = rotation;
+
+            transform.GetLocalPositionAndRotation(out var lpos, out var lrot);
+            this.localPosition = lpos;
+            this.localRotation = lrot;
+        }
+    }
+    [Serializable, StructLayout(LayoutKind.Sequential)]
+    public struct TransformDataWorldLocalAndMatrix
+    {
+        public float4x4 toWorld;
+        public float3 position;
+        public quaternion rotation;
+
+        public float3 localPosition;
+        public quaternion localRotation;
+
+        public TransformDataWorldLocalAndMatrix(Transform transform)
+        {
+            toWorld = transform.localToWorldMatrix;
+
+            transform.GetPositionAndRotation(out var position, out var rotation);
+            this.position = position;
+            this.rotation = rotation;
+
+            transform.GetLocalPositionAndRotation(out var lpos, out var lrot);
+            this.localPosition = lpos;
+            this.localRotation = lrot;
+        }
     }
 
     [Serializable, StructLayout(LayoutKind.Sequential)]
@@ -515,6 +620,15 @@ namespace Swole.DataStructures
 
         public float3 localPosition;
         public quaternion localRotation;
+
+        public ParentedTransformDataPair(Transform transform)
+        {
+            localToWorld = transform.localToWorldMatrix;
+
+            transform.GetLocalPositionAndRotation(out var lpos, out var lrot);
+            this.localPosition = lpos;
+            this.localRotation = lrot;
+        }
     }
 
 }

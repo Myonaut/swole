@@ -18,7 +18,8 @@
         "PathCreator",
         "Unity.RenderPipelines.Core.Runtime",
         "Unity.RenderPipelines.Universal.Shaders",
-        "Unity.RenderPipelines.Universal.Config.Runtime"
+        "Unity.RenderPipelines.Universal.Config.Runtime",
+        "andywiecko.BurstTriangulator"
     ],
     "includePlatforms": [],
     "excludePlatforms": [],

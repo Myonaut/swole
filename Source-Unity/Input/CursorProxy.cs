@@ -66,7 +66,7 @@ namespace Swole
             if (raycasters == null) raycasters = new List<BaseRaycaster>();
             raycasters.Clear();
 
-            raycasters.AddRange(GameObject.FindObjectsOfType<BaseRaycaster>());
+            raycasters.AddRange(GameObject.FindObjectsOfType<BaseRaycaster>(true));
         }
 
         public static void UpdateRaycasterList()

@@ -23,9 +23,17 @@ namespace Swole.API.Unity.Animation
         {
             CustomAnimation[] anims = new CustomAnimation[animations.Count];
 
-            int i = 0;
+            int i = 0; 
             foreach(var asset in animations)
             {
+                if (asset == null)
+                {
+#if UNITY_EDITOR
+                    Debug.LogError("An asset in the provided animation asset list was null!");
+#endif
+                    continue;
+                }
+
                 anims[i] = asset.Animation;
                 i++;
             }
@@ -37,7 +45,7 @@ namespace Swole.API.Unity.Animation
             var controller = ScriptableObject.CreateInstance<CustomAnimationController>();
             controller.name = prefix;
 
-            List<CustomMotionController.AnimationReference> animationReferences = new List<CustomMotionController.AnimationReference>();
+            List<AnimationReference> animationReferences = new List<AnimationReference>();
             int i = 0;
             foreach(var anim in animations)
             {
@@ -47,7 +55,7 @@ namespace Swole.API.Unity.Animation
                     animName = $"anim_{i}";
                 }
 
-                animationReferences.Add(new CustomMotionController.AnimationReference(animName, anim, AnimationLoopMode.Loop));
+                animationReferences.Add(new AnimationReference(animName, anim, AnimationLoopMode.Loop));
             }
 
             List<CustomAnimationLayer> animationLayers = new List<CustomAnimationLayer>();
@@ -71,8 +79,8 @@ namespace Swole.API.Unity.Animation
                 layer.IsAdditive = additiveLayers;
                 layer.motionControllerIdentifiers = new MotionControllerIdentifier[] { new MotionControllerIdentifier() { index = index, type = MotionControllerType.AnimationReference } };
 
-                CustomStateMachine previewStateMachine = new CustomStateMachine() { name = $"{animName}_state", motionControllerIndex = 0 };
-                layer.stateMachines = new CustomStateMachine[] { previewStateMachine };
+                CustomAnimationLayerState previewState = new CustomAnimationLayerState() { name = $"{animName}_state", motionControllerIndex = 0 };
+                layer.states = new CustomAnimationLayerState[] { previewState };
 
                 animationLayers.Add(layer);
             }
@@ -105,6 +113,7 @@ namespace Swole.API.Unity.Animation
             get => (string.IsNullOrEmpty(name) ? "null" : name) + "/";
             set => name = value;
         }
+        public string ConvertLayerName(string layerName) => Prefix + layerName;
 
 #if UNITY_EDITOR
         protected void OnValidate()
@@ -119,7 +128,7 @@ namespace Swole.API.Unity.Animation
                     for (int a = 0; a < layer.StateCount; a++)
                     {
 
-                        var state = layer.GetStateMachineUnsafe(a);
+                        var state = layer.GetStateUnsafe(a);
 
                         if (state == null) continue;
 
@@ -134,8 +143,6 @@ namespace Swole.API.Unity.Animation
 
         }
 #endif
-
-        public AnimationParameterIdentifier[] parameters;
 
         public CustomAnimationParameter.Float[] floatParameters;
         public IAnimationParameter[] FloatParameters
@@ -215,6 +222,8 @@ namespace Swole.API.Unity.Animation
             }
         }
 
+        public AnimationParameterIdentifier[] parameters;
+
         public IAnimationParameter[] Parameters
         {
 
@@ -226,7 +235,7 @@ namespace Swole.API.Unity.Animation
                 IAnimationParameter[] array = new IAnimationParameter[parameters.Length];
 
                 for (int a = 0; a < parameters.Length; a++) array[a] = GetAnimationParameter(parameters[a]);
-
+                 
                 return array;
 
             }
@@ -237,7 +246,12 @@ namespace Swole.API.Unity.Animation
 
             var parameterRefs = Parameters;
 
-            if (instantiate) for (int a = 0; a < parameterRefs.Length; a++) parameterRefs[a] = (IAnimationParameter)parameterRefs[a].Clone();
+            if (instantiate) for (int a = 0; a < parameterRefs.Length; a++) 
+                { 
+                    var p = (IAnimationParameter)parameterRefs[a].Clone();
+                    p.Reset();
+                    parameterRefs[a] = p;
+                }
 
             return parameterRefs;
 
@@ -273,7 +287,7 @@ namespace Swole.API.Unity.Animation
                             cal.blendParameterIndex = l.BlendParameterIndex;
                             cal.indexInAnimator = l.IndexInAnimator;
                             cal.motionControllerIdentifiers = l.MotionControllerIdentifiers;
-                            cal.StateMachines = l.StateMachines;
+                            cal.States = l.States;
                             cal.mix = l.Mix;
                             cal.deactivate = l.Deactivate;
                             cal.entryStateIndex = l.EntryStateIndex;
@@ -305,11 +319,11 @@ namespace Swole.API.Unity.Animation
         }
         public void SetLayerUnsafe(int index, IAnimationLayer layer)
         {
-            if (layer is not CustomAnimationLayer cal) return;
+            if (layer is not CustomAnimationLayer cal) return; 
             layers[index] = cal;
         }
 
-        public CustomMotionController.AnimationReference[] animationReferences;
+        public AnimationReference[] animationReferences;
         public IAnimationReference[] AnimationReferences
         {
             get => animationReferences;
@@ -321,13 +335,13 @@ namespace Swole.API.Unity.Animation
                     return;
                 }
 
-                animationReferences = new CustomMotionController.AnimationReference[value.Length];
+                animationReferences = new AnimationReference[value.Length];
                 for (int a = 0; a < value.Length; a++)
                 {
                     var ext = value[a];
-                    if (ext is not CustomMotionController.AnimationReference inst)
+                    if (ext is not AnimationReference inst)
                     {
-                        inst = new CustomMotionController.AnimationReference(ext.Name, ext.Animation, ext.LoopMode);
+                        inst = new AnimationReference(ext.Name, ext.Animation, ext.LoopMode);
                         inst.baseSpeed = ext.BaseSpeed;
                         inst.speedMultiplierParameter = ext.SpeedMultiplierParameter;
                     }
@@ -336,7 +350,7 @@ namespace Swole.API.Unity.Animation
             }
         }
 
-        public CustomMotionController.BlendTree1D[] blendTrees1D;
+        public BlendTree1D[] blendTrees1D;
         public IBlendTree1D[] BlendTrees1D
         {
             get => blendTrees1D;
@@ -348,18 +362,74 @@ namespace Swole.API.Unity.Animation
                     return;
                 }
 
-                blendTrees1D = new CustomMotionController.BlendTree1D[value.Length];
+                blendTrees1D = new BlendTree1D[value.Length];
                 for (int a = 0; a < value.Length; a++)
                 {
                     var ext = value[a];
-                    if (ext is not CustomMotionController.BlendTree1D inst)
+                    if (ext is not BlendTree1D inst)
                     {
-                        inst = new CustomMotionController.BlendTree1D(ext.Name, ext.ParameterIndex, null);
+                        inst = new BlendTree1D(ext.Name, ext.ParameterIndex, null);
                         inst.MotionFields = ext.MotionFields;
                         inst.baseSpeed = ext.BaseSpeed;
                         inst.speedMultiplierParameter = ext.SpeedMultiplierParameter;
                     }
                     blendTrees1D[a] = inst;
+                }
+            }
+        }
+
+        public BlendTree2D[] blendTrees2D;
+        public IBlendTree2D[] BlendTrees2D
+        {
+            get => blendTrees2D;
+            set
+            {
+                if (value == null)
+                {
+                    blendTrees2D = null;
+                    return;
+                }
+
+                blendTrees2D = new BlendTree2D[value.Length];
+                for (int a = 0; a < value.Length; a++)
+                {
+                    var ext = value[a];
+                    if (ext is not BlendTree2D inst)
+                    {
+                        inst = new BlendTree2D(ext.Name, ext.ParameterIndexX, ext.ParameterIndexY, null);
+                        inst.MotionFields = ext.MotionFields;
+                        inst.baseSpeed = ext.BaseSpeed;
+                        inst.speedMultiplierParameter = ext.SpeedMultiplierParameter;
+                    }
+                    blendTrees2D[a] = inst;
+                }
+            }
+        }
+
+        public MotionComposite[] motionComposites;
+        public IMotionComposite[] MotionComposites
+        {
+            get => motionComposites;
+            set
+            {
+                if (value == null)
+                {
+                    motionComposites = null;
+                    return;
+                }
+
+                motionComposites = new MotionComposite[value.Length];
+                for (int a = 0; a < value.Length; a++)
+                {
+                    var ext = value[a];
+                    if (ext is not MotionComposite inst)
+                    {
+                        inst = new MotionComposite(ext.Name, null);
+                        inst.BaseMotionParts = ext.BaseMotionParts;
+                        inst.baseSpeed = ext.BaseSpeed;
+                        inst.speedMultiplierParameter = ext.SpeedMultiplierParameter;
+                    }
+                    motionComposites[a] = inst;
                 }
             }
         }
@@ -379,6 +449,18 @@ namespace Swole.API.Unity.Animation
                 case MotionControllerType.BlendTree1D:
 
                     if (blendTrees1D != null && identifier.index >= 0 && identifier.index < blendTrees1D.Length) return blendTrees1D[identifier.index];
+
+                    break;
+
+                case MotionControllerType.BlendTree2D:
+
+                    if (blendTrees2D != null && identifier.index >= 0 && identifier.index < blendTrees2D.Length) return blendTrees2D[identifier.index];
+
+                    break;
+
+                case MotionControllerType.MotionComposite:
+
+                    if (motionComposites != null && identifier.index >= 0 && identifier.index < motionComposites.Length) return motionComposites[identifier.index];
 
                     break;
 

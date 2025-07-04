@@ -13,7 +13,7 @@ namespace Swole.Animation
         public IAnimationController DefaultController { get; set; }
         public void ReinitializeControllers();
 
-        public void ApplyController(IAnimationController controller, bool usePrefix = true, bool incrementDuplicateParameters = false);
+        public void ApplyController(IAnimationController controller, bool usePrefixForLayers = true, bool incrementDuplicateParameters = false, bool usePrefixForParameters = false);
 
         public bool HasControllerData(IAnimationController controller);
         public bool HasControllerData(string prefix);
@@ -64,7 +64,8 @@ namespace Swole.Animation
         public bool RemoveLayer(int layerIndex, bool dispose = true);
         public bool RemoveLayer(string layerName, bool dispose = true);
         public int RemoveLayersStartingWith(string prefix, bool dispose = true);
-        public void ClearLayers();
+        public int RemoveLayersFromSource(IAnimationController source, bool dispose = true);
+        public void ClearLayers(bool disposeLayers);
 
         public Dictionary<int, int> RearrangeLayer(int layerIndex, int swapIndex, bool recalculateIndices = true);
         public void RearrangeLayerNoRemap(int layerIndex, int swapIndex, bool recalculateIndices = true);

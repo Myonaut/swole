@@ -1,5 +1,6 @@
 #if (UNITY_STANDALONE || UNITY_EDITOR)
 
+using System;
 using System.Runtime.CompilerServices;
 
 using Unity.Mathematics;
@@ -10,6 +11,45 @@ namespace Swole
 
     public static class Maths
     {
+
+        #region Physics
+
+        #region Friction
+
+        /// <summary>
+        /// source: https://www.sciencing.com/calculate-force-friction-6454395/
+        /// </summary>
+        public static float CalculateFrictionForce(float mass, float3 gravity, float3 surfaceNormal, float currentSpeed, float frictionStatic, float frictionDynamic)
+        {
+            float gravityMagnitude = math.length(gravity);
+            if (gravityMagnitude <= 0f) return 0f;
+
+            float3 gravityDir = gravity / gravityMagnitude;
+            return CalculateFrictionForce(mass, gravityMagnitude, gravityDir, surfaceNormal, currentSpeed, frictionStatic, frictionDynamic);
+        }
+        public static float CalculateFrictionForce(float mass, float gravityMagnitude, float3 gravityDir, float3 surfaceNormal, float currentSpeed, float frictionStatic, float frictionDynamic)
+        {
+            var normalForce = mass * gravityMagnitude * math.cos(math.min(90, Vector3.Angle(-gravityDir, surfaceNormal)) * Mathf.Deg2Rad);
+            return math.select(frictionStatic, frictionDynamic, math.abs(currentSpeed) > 0.01f) * normalForce;
+        }
+
+        public static float CalculateFrictionForce(float mass, float3 gravity, float3 surfaceNormal, float frictionC)
+        {
+            float gravityMagnitude = math.length(gravity);
+            if (gravityMagnitude <= 0f) return 0f;
+
+            float3 gravityDir = gravity / gravityMagnitude;
+            return CalculateFrictionForce(mass, gravityMagnitude, gravityDir, surfaceNormal, frictionC);
+        }
+        public static float CalculateFrictionForce(float mass, float gravityMagnitude, float3 gravityDir, float3 surfaceNormal, float frictionC)
+        {
+            var normalForce = mass * gravityMagnitude * math.cos(math.min(90, Vector3.Angle(-gravityDir, surfaceNormal)) * Mathf.Deg2Rad);
+            return frictionC * normalForce;
+        }
+
+        #endregion
+
+        #endregion
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static int countTrue(bool4 b4)
@@ -68,7 +108,7 @@ namespace Swole
         public static float3 ObjectSpaceToTangentSpaceOffset(float3 OSoffset, float3 OSnormal, float4 OStangent, bool normalizeVectors = true)
         {
 
-            if (OSoffset.x == 0 && OSoffset.y == 0 && OSoffset.z == 0) return float3.zero;
+            if (OSoffset.x == 0 & OSoffset.y == 0 & OSoffset.z == 0) return float3.zero;
 
             float3 OStangentXYZ = new float3(OStangent.x, OStangent.y, OStangent.z);
 
@@ -206,6 +246,7 @@ namespace Swole
         /// <summary>
         /// Compute barycentric coordinates (u, v, w) for point p with respect to triangle (a, b, c)
         /// </summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static float3 BarycentricCoords(float3 p, float3 a, float3 b, float3 c)
         {
             float3 v0 = b - a, v1 = c - a, v2 = p - a;
@@ -215,21 +256,88 @@ namespace Swole
             float d20 = math.dot(v2, v0);
             float d21 = math.dot(v2, v1);
             float denom = d00 * d11 - d01 * d01;
+            float denom_r = 1f / denom;
 
-            float v = (d11 * d20 - d01 * d21) / denom;
-            float w = (d00 * d21 - d01 * d20) / denom;
-            float u = 1.0f - v - w;
+            float2 vw = new float2((d11 * d20 - d01 * d21), (d00 * d21 - d01 * d20)); 
+            vw = vw * denom_r;
+            //float v = (d11 * d20 - d01 * d21) * denom_r;
+            //float w = (d00 * d21 - d01 * d20) * denom_r;
+            //float u = 1.0f - v - w;
+            float u = 1.0f - vw.x - vw.y;
 
-            return new float3(u, v, w);
-
+            //return new float3(u, v, w);
+            return new float3(u, vw.xy);
         }
 
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static bool IsInTriangle(float3 barycentricCoords, float errorMargin = 0) 
         { 
             float upperBound = 1 + errorMargin; 
-            return barycentricCoords.x >= -errorMargin && barycentricCoords.y >= -errorMargin && barycentricCoords.z >= -errorMargin && barycentricCoords.x <= upperBound && barycentricCoords.y <= upperBound && barycentricCoords.z <= upperBound; 
+            return barycentricCoords.x >= -errorMargin & barycentricCoords.y >= -errorMargin & barycentricCoords.z >= -errorMargin & barycentricCoords.x <= upperBound & barycentricCoords.y <= upperBound & barycentricCoords.z <= upperBound; 
         }
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static bool IsInTriangle(float3 p, float3 a, float3 b, float3 c, float errorMargin = 0) => IsInTriangle(BarycentricCoords(p, a, b, c), errorMargin);
+
+        [Obsolete("Not giving expected results. Fix."), MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static bool2 IsInTriangle_x2(float2x3 barycentricCoords, float errorMargin = 0)
+        {
+            float upperBound = 1 + errorMargin;
+            return barycentricCoords.c0 >= -errorMargin & barycentricCoords.c1 >= -errorMargin & barycentricCoords.c2 >= -errorMargin & barycentricCoords.c0 <= upperBound & barycentricCoords.c1 <= upperBound & barycentricCoords.c2 <= upperBound;
+        }
+        #endregion
+
+        #region Source: https://gamedev.stackexchange.com/a/63203
+        /// <summary>
+        /// Compute barycentric coordinates (u, v, w) for point p with respect to triangle (a, b, c)
+        /// </summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static float3 BarycentricCoords2D(float2 p, float2 a, float2 b, float2 c)
+        {
+            float2 v0 = b - a, v1 = c - a, v2 = p - a;
+            float denom = v0.x * v1.y - v1.x * v0.y;
+            float denom_r = 1f / denom; 
+
+            float2 vw = new float2((v2.x * v1.y - v1.x * v2.y), (v0.x * v2.y - v2.x * v0.y));
+            vw = vw * denom_r;
+            ///float v = (v2.x * v1.y - v1.x * v2.y) * denom_r;
+            //float w = (v0.x * v2.y - v2.x * v0.y) * denom_r;
+            //float u = 1.0f - v - w;
+            float u = 1.0f - vw.x - vw.y;
+
+            //return new float3(u, v, w);
+            return new float3(u, vw.xy);
+        }
+        [Obsolete("Not giving expected results. Fix."), MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static float2x3 BarycentricCoords2D_x2(float2 p0, float2 a0, float2 b0, float2 c0, float2 p1, float2 a1, float2 b1, float2 c1)
+        {
+            return BarycentricCoords2D_x2(new float4(p0, p1), new float4(a0, a1), new float4(b0, b1), new float4(c0, c1)); 
+        }
+        [Obsolete("Not giving expected results. Fix."), MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static float2x3 BarycentricCoords2D_x2(float4 p, float4 a, float4 b, float4 c)
+        {
+            float4 v0 = b - a, v1 = c - a, v2 = p - a;
+            float2 denom = v0.xz * v1.yw - v1.xz * v0.yw;
+            float2 denom_r = 1f / denom;
+
+            float4 vw = new float4((v2.xz * v1.yw - v1.xz * v2.yw), (v0.xz * v2.yw - v2.xz * v0.yw));
+            vw.xy = vw.xy * denom_r.x;
+            vw.zw = vw.zw * denom_r.y;
+            float2 u = 1.0f - vw.xz - vw.yw;
+
+            return new float2x3(u, vw.xz, vw.yw);
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static bool IsInTriangle2D(float3 barycentricCoords, float errorMargin = 0) => IsInTriangle(barycentricCoords, errorMargin);
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static bool IsInTriangle2D(float2 p, float2 a, float2 b, float2 c, float errorMargin = 0) => IsInTriangle(BarycentricCoords2D(p, a, b, c), errorMargin);
+
+        [Obsolete("Not giving expected results. Fix."), MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static bool2 IsInTriangle2D_x2(float2x3 barycentricCoords, float errorMargin = 0) => IsInTriangle_x2(barycentricCoords, errorMargin);
+        [Obsolete("Not giving expected results. Fix."), MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static bool2 IsInTriangle2D_x2(float4 p, float4 a, float4 b, float4 c, float errorMargin = 0) => IsInTriangle_x2(BarycentricCoords2D_x2(p, a, b, c), errorMargin);
+        [Obsolete("Not giving expected results. Fix."), MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static bool2 IsInTriangle2D_x2(float2 p0, float2 a0, float2 b0, float2 c0, float2 p1, float2 a1, float2 b1, float2 c1, float errorMargin = 0) => IsInTriangle_x2(BarycentricCoords2D_x2(p0, a0, b0, c0, p1, a1, b1, c1), errorMargin);
         #endregion
 
         #region Source: https://gist.github.com/keenanwoodall/c37ce12e0b7c08bd59f7235ec9614562
@@ -252,8 +360,32 @@ namespace Swole
         {
             return (index % length + length) % length;
         }
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static float wrap(float value, float max) => value - (math.floor(value / max) * max);
 
-        public static float Wrap(float value, float max) => value - (Mathf.Floor(value / max) * max);
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static int2 wrap(int2 index, int2 length)
+        {
+            return (index % length + length) % length;
+        }
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static float2 wrap(float2 value, float2 max) => value - (math.floor(value / max) * max);
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static int3 wrap(int3 index, int3 length)
+        {
+            return (index % length + length) % length;
+        }
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static float3 wrap(float3 value, float3 max) => value - (math.floor(value / max) * max);
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static int4 wrap(int4 index, int4 length)
+        {
+            return (index % length + length) % length;
+        }
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static float4 wrap(float4 value, float4 max) => value - (math.floor(value / max) * max);
 
         public static float NormalizeDegrees(float degrees)
         {
@@ -407,6 +539,8 @@ namespace Swole
         }
 
         public static Vector3 CalcNormal(Vector3 v1, Vector3 v2, Vector3 v3) => Vector3.Cross((v2 - v1), (v3 - v1));
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static float3 calcNormal(float3 v1, float3 v2, float3 v3) => math.cross((v2 - v1), (v3 - v1));
 
         public static void QuaternionToMatrix(Quaternion q, ref Matrix4x4 m)
         {
@@ -475,6 +609,27 @@ namespace Swole
                 return new Quaternion(-curr.x, -curr.y, -curr.z, -curr.w);
             }
             return curr;
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static quaternion JobsEnsureQuaternionContinuity(quaternion lastQ, quaternion q)
+        {
+            quaternion flipped = new quaternion(-q.value);
+
+            quaternion midQ = new quaternion(math.lerp(lastQ.value, q.value, 0.5f));
+
+            quaternion midQFlipped = new quaternion(math.lerp(lastQ.value, flipped.value, 0.5f));
+
+            float angle = math.angle(lastQ, midQ);
+            float angleFlipped = math.angle(lastQ, midQFlipped);
+
+            return angleFlipped < angle ? flipped : q;
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static quaternion JobsEnsureQuaternionContinuity2(quaternion last, quaternion curr)
+        {
+            return new quaternion(math.select(curr.value, -curr.value, last.value.x * curr.value.x + last.value.y * curr.value.y + last.value.z * curr.value.z + last.value.w * curr.value.w < 0f));
         }
 
         /// <summary>
@@ -569,6 +724,48 @@ namespace Swole
             outputRotation = rotation.ReflectX();
         }
         #endregion
+
+        #region Line Segment Intersection
+
+        /// <summary>
+        /// Source: https://gamedev.stackexchange.com/a/117294
+        /// </summary>
+        public static bool seg_intersect_seg(float2 A, float2 B, float2 C, float2 D, out float2 intersectionPoint)
+        {
+            intersectionPoint = float2.zero;
+
+            float2 AB = B - A;
+            float2 CD = D - C;
+
+            float denom = AB.x * CD.y - AB.y * CD.x;
+            if (denom == 0f) return false;
+
+            float nuR = (A.y - C.y) * CD.x - (A.x - C.x) * CD.y;
+            float nuS = (A.y - C.y) * AB.x - (A.x - C.x) * AB.y;
+
+            float r = nuR / denom;
+            float s = nuS / denom;
+
+            intersectionPoint = A + r * AB;
+
+            bool4 intersects = new bool4(r >= 0f, r <= 1f, s >= 0f, s <= 1f);
+            return math.all(intersects);
+        }
+
+        public static bool3 seg_intersect_tri(float2 sA, float2 sB, float2 tA, float2 tB, float2 tC, out float2 ip0, out float2 ip1, out float2 ip2)
+        {
+            bool3 flags = default;
+
+            flags.x = seg_intersect_seg(sA, sB, tA, tB, out ip0);
+            flags.y = seg_intersect_seg(sA, sB, tB, tC, out ip1);
+            flags.z = seg_intersect_seg(sA, sB, tC, tA, out ip2);
+
+            return flags;
+        }
+
+        #endregion
+
+        #region Triangle Intersection
 
         // intersect a ray with a 3D triangle
         //    Input:  a ray R, and 3 vector3 forming a triangle
@@ -775,6 +972,138 @@ namespace Swole
             return true;
         }
 
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static void prep_intersect_triangle(float3 A, float3 B, float3 C, out float3 E1, out float3 E2, out float3 N)
+        {
+            E1 = B - A;
+            E2 = C - A;
+            N = math.cross(E1, E2);
+        }
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private static void intersect_triangle(float3 E1, float3 E2, float3 N, float3 rayOrigin, float3 rayDir, float3 A, float3 B, float3 C, out float t, out float u, out float v, out float det)
+        {
+
+            det = -math.dot(rayDir, N);
+            float invdet = 1.0f / det;
+            float3 AO = rayOrigin - A;
+            float3 DAO = math.cross(AO, rayDir);
+            u = math.dot(E2, DAO) * invdet;
+            v = -math.dot(E1, DAO) * invdet;
+            t = math.dot(AO, N) * invdet;
+        }
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private static void intersect_triangle(float3 rayOrigin, float3 rayDir, float3 A, float3 B, float3 C, out float t, out float u, out float v, out float3 N, out float det)
+        {
+            prep_intersect_triangle(A, B, C, out float3 E1, out float3 E2, out N);
+            intersect_triangle(E1, E2, N, rayOrigin, rayDir, A, B, C, out t, out u, out v, out det);
+        }
+
+        /// <summary>
+        /// Source: https://stackoverflow.com/a/42752998
+        /// </summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static bool ray_intersect_triangle(float3 rayOrigin, float3 rayDir, float3 A, float3 B, float3 C, out float t, out float u, out float v, out float3 N)
+        {
+            prep_intersect_triangle(A, B, C, out float3 E1, out float3 E2, out N);
+            return ray_intersect_triangle(E1, E2, N, rayOrigin, rayDir, A, B, C, out t, out u, out v);
+        }
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static bool ray_intersect_triangle(float3 rayOrigin, float3 rayDir, float3 A, float3 B, float3 C, out float3 intersectionPoint)
+        {
+            prep_intersect_triangle(A, B, C, out float3 E1, out float3 E2, out float3 N);
+            return ray_intersect_triangle(E1, E2, N, rayOrigin, rayDir, A, B, C, out intersectionPoint);
+        }
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static bool ray_intersect_triangle(float3 rayOrigin, float3 rayDir, float3 A, float3 B, float3 C, out RaycastHitResult hit)
+        {
+            prep_intersect_triangle(A, B, C, out float3 E1, out float3 E2, out float3 N);
+            return ray_intersect_triangle(E1, E2, N, rayOrigin, rayDir, A, B, C, out hit);
+        }
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static bool ray_intersect_triangle(float3 E1, float3 E2, float3 N, float3 rayOrigin, float3 rayDir, float3 A, float3 B, float3 C, out float t, out float u, out float v)
+        {
+            intersect_triangle(E1, E2, N, rayOrigin, rayDir, A, B, C, out t, out u, out v, out float det);
+            return (math.abs(det) >= 1e-6f & t >= 0.0f & u >= 0.0f & v >= 0.0f & (u + v) <= 1.0f);
+        }
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static bool ray_intersect_triangle_one_side(float3 E1, float3 E2, float3 N, float3 rayOrigin, float3 rayDir, float3 A, float3 B, float3 C, out float t, out float u, out float v)
+        {
+            intersect_triangle(E1, E2, N, rayOrigin, rayDir, A, B, C, out t, out u, out v, out float det);
+            return (det >= 1e-6f & t >= 0.0f & u >= 0.0f & v >= 0.0f & (u + v) <= 1.0f);
+        }
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static bool ray_intersect_triangle(float3 E1, float3 E2, float3 N, float3 rayOrigin, float3 rayDir, float3 A, float3 B, float3 C, out float3 intersectionPoint)
+        {
+            bool flag = ray_intersect_triangle(E1, E2, N, rayOrigin, rayDir, A, B, C, out float t, out float u, out float v);
+            intersectionPoint = rayOrigin + t * rayDir;
+
+            return flag;
+        }
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static bool ray_intersect_triangle(float3 E1, float3 E2, float3 N, float3 rayOrigin, float3 rayDir, float3 A, float3 B, float3 C, out RaycastHitResult hit)
+        {
+            hit = default;
+
+            bool flag = ray_intersect_triangle(E1, E2, N, rayOrigin, rayDir, A, B, C, out float t, out float u, out float v);
+            hit.point = rayOrigin + t * rayDir;
+            hit.normal = math.normalize(N);
+            hit.UV = new float2(u, v);
+
+            return flag;
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static bool seg_intersect_triangle(float3 rayOrigin, float3 rayOffset, float3 A, float3 B, float3 C, out float t, out float u, out float v, out float3 N)
+        {
+            prep_intersect_triangle(A, B, C, out float3 E1, out float3 E2, out N);
+            return seg_intersect_triangle(E1, E2, N, rayOrigin, rayOffset, A, B, C, out t, out u, out v);
+        }
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static bool seg_intersect_triangle(float3 rayOrigin, float3 rayOffset, float3 A, float3 B, float3 C, out float3 intersectionPoint)
+        {
+            prep_intersect_triangle(A, B, C, out float3 E1, out float3 E2, out float3 N);
+            return seg_intersect_triangle(E1, E2, N, rayOrigin, rayOffset, A, B, C, out intersectionPoint);
+        }
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static bool seg_intersect_triangle(float3 rayOrigin, float3 rayOffset, float3 A, float3 B, float3 C, out RaycastHitResult hit)
+        {
+            prep_intersect_triangle(A, B, C, out float3 E1, out float3 E2, out float3 N);
+            return seg_intersect_triangle(E1, E2, N, rayOrigin, rayOffset, A, B, C, out hit);
+        }
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static bool seg_intersect_triangle(float3 E1, float3 E2, float3 N, float3 rayOrigin, float3 rayOffset, float3 A, float3 B, float3 C, out float t, out float u, out float v)
+        {
+            intersect_triangle(E1, E2, N, rayOrigin, rayOffset, A, B, C, out t, out u, out v, out float det);
+            return (math.abs(det) >= 1e-6f & t >= 0.0f & t <= 1.0f & u >= 0.0f & v >= 0.0f & (u + v) <= 1.0f); 
+        }
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static bool seg_intersect_triangle_one_side(float3 E1, float3 E2, float3 N, float3 rayOrigin, float3 rayOffset, float3 A, float3 B, float3 C, out float t, out float u, out float v)
+        {
+            intersect_triangle(E1, E2, N, rayOrigin, rayOffset, A, B, C, out t, out u, out v, out float det);
+            return (det >= 1e-6f & t >= 0.0f & t <= 1.0f & u >= 0.0f & v >= 0.0f & (u + v) <= 1.0f);
+        }
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static bool seg_intersect_triangle(float3 E1, float3 E2, float3 N, float3 rayOrigin, float3 rayOffset, float3 A, float3 B, float3 C, out float3 intersectionPoint)
+        {
+            bool flag = seg_intersect_triangle(E1, E2, N, rayOrigin, rayOffset, A, B, C, out float t, out float u, out float v);
+            intersectionPoint = rayOrigin + t * rayOffset;
+
+            return flag;
+        }
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static bool seg_intersect_triangle(float3 E1, float3 E2, float3 N, float3 rayOrigin, float3 rayOffset, float3 A, float3 B, float3 C, out RaycastHitResult hit)
+        {
+            hit = default;
+
+            bool flag = seg_intersect_triangle(E1, E2, N, rayOrigin, rayOffset, A, B, C, out float t, out float u, out float v);
+            hit.point = rayOrigin + t * rayOffset;
+            hit.normal = math.normalize(N);
+            hit.UV = new float2(u, v);
+
+            return flag;
+        }
+
+        #endregion
     }
 
 }

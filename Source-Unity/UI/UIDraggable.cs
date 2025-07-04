@@ -43,7 +43,13 @@ namespace Swole.UI
         public MouseButtonMask clickMouseButtonMask = MouseButtonMask.All;
 
         public UnityEvent OnClick = new UnityEvent();
+        [HideInInspector]
+        public UnityEvent<PointerEventData> OnClickData = new UnityEvent<PointerEventData>();
+
         public UnityEvent OnPress = new UnityEvent();
+        [HideInInspector]
+        public UnityEvent<PointerEventData> OnPressData = new UnityEvent<PointerEventData>();
+
         [NonSerialized]
         public PointerEventData.InputButton lastClickButton;
 
@@ -310,6 +316,7 @@ namespace Swole.UI
             } 
 
             OnClick?.Invoke();
+            OnClickData?.Invoke(eventData);
         }
 
         public override void OnPointerDown(PointerEventData eventData)
@@ -336,6 +343,7 @@ namespace Swole.UI
             }
 
             OnPress?.Invoke();
+            OnPressData?.Invoke(eventData); 
         }
     }
 }

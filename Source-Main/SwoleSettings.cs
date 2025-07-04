@@ -22,6 +22,11 @@ namespace Swole
             gamepadRightStickSensitivityX = 1,
             gamepadRightStickSensitivityY = 1,
 
+            gamepadLeftStickDeadzoneX = 0.11f,
+            gamepadLeftStickDeadzoneY = 0.11f,
+            gamepadRightStickDeadzoneX = 0.11f,
+            gamepadRightStickDeadzoneY = 0.11f, 
+
             mouseSensitivityBase = 1,
             mouseSensitivityX = 1,
             mouseSensitivityY = 1,
@@ -43,9 +48,15 @@ namespace Swole
         public float gamepadLeftStickSensitivityX;
         public float gamepadLeftStickSensitivityY;
 
+        public float gamepadLeftStickDeadzoneX;
+        public float gamepadLeftStickDeadzoneY;
+
         public float gamepadRightStickSensitivityBase;
         public float gamepadRightStickSensitivityX;
         public float gamepadRightStickSensitivityY;
+
+        public float gamepadRightStickDeadzoneX;
+        public float gamepadRightStickDeadzoneY;
 
         public float mouseSensitivityBase;
         public float mouseSensitivityX;

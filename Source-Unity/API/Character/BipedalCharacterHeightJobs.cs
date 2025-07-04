@@ -15,7 +15,6 @@ using Unity.Burst;
 using Swole.API.Unity.Animation;
 using Swole.DataStructures;
 
-
 namespace Swole.API.Unity
 {
     public class BipedalCharacterHeightJobs : SingletonBehaviour<BipedalCharacterHeightJobs>
@@ -50,6 +49,21 @@ namespace Swole.API.Unity
 
             try
             {
+                if (transformsToSet.isCreated)
+                {
+                    transformsToSet.Dispose();
+                    transformsToSet = default;
+                }
+            }
+            catch (Exception ex)
+            {
+#if UNITY_EDITOR
+                Debug.LogException(ex);
+#endif
+            }
+
+            try
+            {
                 if (transformData.IsCreated)
                 {
                     transformData.Dispose();
@@ -65,10 +79,10 @@ namespace Swole.API.Unity
 
             try
             {
-                if (limbAxis.IsCreated)
+                if (transformDataToSet.IsCreated)
                 {
-                    limbAxis.Dispose();
-                    limbAxis = default;
+                    transformDataToSet.Dispose();
+                    transformDataToSet = default;
                 }
             }
             catch (Exception ex)
@@ -80,10 +94,25 @@ namespace Swole.API.Unity
 
             try
             {
-                if (previousLimbLengths.IsCreated)
+                if (limbData.IsCreated)
                 {
-                    previousLimbLengths.Dispose();
-                    previousLimbLengths = default;
+                    limbData.Dispose();
+                    limbData = default;
+                }
+            }
+            catch (Exception ex)
+            {
+#if UNITY_EDITOR
+                Debug.LogException(ex);
+#endif
+            }
+
+            try
+            {
+                if (previousSizes.IsCreated)
+                {
+                    previousSizes.Dispose();
+                    previousSizes = default;
                 }
             } 
             catch(Exception ex)
@@ -95,70 +124,10 @@ namespace Swole.API.Unity
 
             try
             {
-                if (currentLimbLengths.IsCreated)
+                if (currentSizes.IsCreated)
                 {
-                    currentLimbLengths.Dispose();
-                    currentLimbLengths = default;
-                }
-            }
-            catch (Exception ex)
-            {
-#if UNITY_EDITOR
-                Debug.LogException(ex);
-#endif
-            }
-
-            try
-            {
-                if (previousSpineLengths.IsCreated)
-                {
-                    previousSpineLengths.Dispose(); 
-                    previousSpineLengths = default;
-                }
-            }
-            catch (Exception ex)
-            {
-#if UNITY_EDITOR
-                Debug.LogException(ex);
-#endif
-            }
-
-            try
-            {
-                if (currentSpineLengths.IsCreated)
-                {
-                    currentSpineLengths.Dispose();
-                    currentSpineLengths = default;
-                }
-            }
-            catch (Exception ex)
-            {
-#if UNITY_EDITOR
-                Debug.LogException(ex);
-#endif
-            }
-
-            try
-            {
-                if (limbPreservationWeights.IsCreated)
-                {
-                    limbPreservationWeights.Dispose();
-                    limbPreservationWeights = default;
-                }
-            }
-            catch (Exception ex)
-            {
-#if UNITY_EDITOR
-                Debug.LogException(ex);
-#endif
-            }
-
-            try
-            {
-                if (kneePreservationWeights.IsCreated)
-                {
-                    kneePreservationWeights.Dispose();
-                    kneePreservationWeights = default;
+                    currentSizes.Dispose();
+                    currentSizes = default;
                 }
             }
             catch (Exception ex)
@@ -180,43 +149,83 @@ namespace Swole.API.Unity
         protected bool updateFlag;
         public override void OnLateUpdate()
         {
-            if (destroyed || !updateFlag) return;
+            if (destroyed /*|| !updateFlag*/) return; 
 
             updateFlag = false;
 
-            JobHandle handle = new FetchTransformDataJob()
+            JobHandle handle = new SharedJobs.FetchTransformDataJob()
             {
 
-                transformData = transformData
+                transformData = transformData.AsArray()
 
             }.Schedule(transforms, default);
 
             handle = new UpdateLimbsJob()
             {
 
-                limbAxis = limbAxis,
-                transformData = transformData,
-                previousLimbLengths = previousLimbLengths,
-                currentLimbLengths = currentLimbLengths,
-                previousSpineLengths = previousSpineLengths,
-                currentSpineLengths = currentSpineLengths,
-                limbPreservationWeights = limbPreservationWeights,
-                kneePreservationWeights = kneePreservationWeights
+                limbData = limbData,
+                transformData_READ = transformData,
+                transformData_WRITE = transformDataToSet,
+                previousSizes = previousSizes,
+                currentSizes = currentSizes
 
             }.Schedule(registered.Count, 1, handle);
              
             handle = new UpdateTransformDataJob()
             {
 
-                transformData = transformData
+                transformData = transformDataToSet
 
-            }.Schedule(transforms, handle);
+            }.Schedule(transformsToSet, handle);
 
-            handle.Complete(); 
+            handle.Complete();
         }
 
         public override void OnUpdate()
         {
+        }
+
+        [Serializable]
+        public struct LimbData
+        {
+            public float2 socketLimbSplits;
+
+            public float4 limbPreservation;
+            public float2 kneePreservation;
+
+            public float3 leftShoulderExtensionAxis;
+            public float3 leftArmWidthExtensionAxis;
+            public float3 leftArmExtensionAxis;
+            public float3 leftArmRotationAxis;
+
+            public float3 rightShoulderExtensionAxis;
+            public float3 rightArmWidthExtensionAxis;
+            public float3 rightArmExtensionAxis;
+            public float3 rightArmRotationAxis;
+
+            public float3 leftHipExtensionAxis;
+            public float3 leftLegWidthExtensionAxis;
+            public float3 leftLegExtensionAxis;
+            public float3 leftLegRotationAxis;
+
+            public float3 rightHipExtensionAxis;
+            public float3 rightLegWidthExtensionAxis;
+            public float3 rightLegExtensionAxis;
+            public float3 rightLegRotationAxis;
+
+            public float3 spineExtensionAxis;
+
+            public float3 neckExtensionAxis;
+        }
+
+        [Serializable]
+        public struct Sizes
+        {
+            public float spineLength;
+            public float neckLength;
+            public float4 widths;
+            public float4 armLengths;
+            public float4 legLengths;
         }
 
         protected override void OnAwake()
@@ -226,19 +235,15 @@ namespace Swole.API.Unity
 
             registered = new List<IndexReference>();
 
-            transforms = new TransformAccessArray(21);
-            transformData = new NativeList<TransformDataWorldLocal>(21, Allocator.Persistent);
+            transforms = new TransformAccessArray(TransformCount);
+            transformsToSet = new TransformAccessArray(TransformCount);
+            transformData = new NativeList<TransformDataWorldLocal>(TransformCount, Allocator.Persistent);
+            transformDataToSet = new NativeList<TransformDataWorldLocal>(TransformCount, Allocator.Persistent); 
 
-            limbAxis = new NativeList<float3>(10, Allocator.Persistent);
+            limbData = new NativeList<LimbData>(10, Allocator.Persistent);
 
-            previousLimbLengths = new NativeList<float4>(2, Allocator.Persistent);
-            currentLimbLengths = new NativeList<float4>(2, Allocator.Persistent);
-
-            previousSpineLengths = new NativeList<float>(1, Allocator.Persistent);
-            currentSpineLengths = new NativeList<float>(1, Allocator.Persistent);
-
-            limbPreservationWeights = new NativeList<float4>(1, Allocator.Persistent);
-            kneePreservationWeights = new NativeList<float2>(1, Allocator.Persistent);
+            previousSizes = new NativeList<Sizes>(2, Allocator.Persistent);
+            currentSizes = new NativeList<Sizes>(2, Allocator.Persistent);
         }
 
         public class IndexReference : IDisposable
@@ -276,31 +281,26 @@ namespace Swole.API.Unity
                     owner.registered[index] = owner.registered[swapIndex];
                     owner.registered.RemoveAt(swapIndex);
 
-                    int transformIndex = index * 21;
-                    for(int a = 20; a >= 0; a--)
+                    int transformIndex = index * TransformCount;
+                    for(int a = TransformCount - 1; a >= 0; a--)
                     {
-                        owner.transforms.RemoveAtSwapBack(transformIndex + a);
-                        owner.transformData.RemoveAtSwapBack(transformIndex + a); 
+                        int ind = transformIndex + a;
+
+                        owner.transforms.RemoveAtSwapBack(ind);
+                        owner.transformData.RemoveAtSwapBack(ind);
+                    }
+                    for (int a = SettableTransformCount - 1; a >= 0; a--)
+                    {
+                        int ind = transformIndex + a;
+
+                        owner.transformsToSet.RemoveAtSwapBack(ind); 
+                        owner.transformDataToSet.RemoveAtSwapBack(ind);
                     }
 
-                    int limbAxisIndex = index * 10;
-                    for (int a = 9; a >= 0; a--)
-                    {
-                        owner.limbAxis.RemoveAtSwapBack(limbAxisIndex + a);
-                    }
+                    owner.limbData.RemoveAtSwapBack(index);
 
-                    int limbIndex = index * 2;
-                    for (int a = 1; a >= 0; a--)
-                    {
-                        owner.previousLimbLengths.RemoveAtSwapBack(limbIndex + a);
-                        owner.currentLimbLengths.RemoveAtSwapBack(limbIndex + a); 
-                    }
-
-                    owner.previousSpineLengths.RemoveAtSwapBack(index);
-                    owner.currentSpineLengths.RemoveAtSwapBack(index);
-
-                    owner.limbPreservationWeights.RemoveAtSwapBack(index);
-                    owner.kneePreservationWeights.RemoveAtSwapBack(index);
+                    owner.previousSizes.RemoveAtSwapBack(index);
+                    owner.currentSizes.RemoveAtSwapBack(index);
 
                     if (!ReferenceEquals(this, swapped)) swapped.SetIndex(index);
                 }
@@ -309,121 +309,193 @@ namespace Swole.API.Unity
                 owner = null;
             }
 
-
+            public float4 GetWidths() => owner.currentSizes[index].widths;
             public void GetLimbLengths(out float4 armLengths, out float4 legLengths)
             {
-                int limbIndex = index * 2;
-                armLengths = owner.currentLimbLengths[limbIndex];
-                legLengths = owner.currentLimbLengths[limbIndex + 1];
-            }
-            public float4 GetArmLengths()
-            {
-                int limbIndex = index * 2;
-                return owner.currentLimbLengths[limbIndex];
-            }
-            public float4 GetLegLengths()
-            {
-                int limbIndex = index * 2;
-                return owner.currentLimbLengths[limbIndex + 1];
-            }
-            public float GetSpineLength()
-            {
-                return owner.currentSpineLengths[index];
+                var data = owner.currentSizes[index];
+                armLengths = data.armLengths;
+                legLengths = data.legLengths;
             }
 
+            public float2 GetShoulderWidths() => owner.currentSizes[index].widths.xy;
+            public float4 GetArmLengths() => owner.currentSizes[index].armLengths;
 
+            public float2 GetHipWidths() => owner.currentSizes[index].widths.zw;
+            public float4 GetLegLengths() => owner.currentSizes[index].legLengths;
+            
+            public float GetSpineLength() => owner.currentSizes[index].spineLength;
+            public float GetNeckLength() => owner.currentSizes[index].neckLength;
+
+
+            public void SetWidths(float4 widths)
+            {
+                var data = owner.currentSizes[index];
+                data.widths = widths;
+                owner.currentSizes[index] = data;
+
+                owner.updateFlag = true;
+            }
+            public void SetShoulderWidths(float2 shoulderWidths)
+            {
+                var data = owner.currentSizes[index];
+                data.widths.xy = shoulderWidths;
+                owner.currentSizes[index] = data; 
+
+                owner.updateFlag = true;
+            }
+            public void SetHipWidths(float2 hipWidths)
+            {
+                var data = owner.currentSizes[index];
+                data.widths.zw = hipWidths;
+                owner.currentSizes[index] = data;
+
+                owner.updateFlag = true;
+            }
             public void SetLimbLengths(float4 armLengths, float4 legLengths)
             {
-                int limbIndex = index * 2;
-                owner.currentLimbLengths[limbIndex] = armLengths;
-                owner.currentLimbLengths[limbIndex + 1] = legLengths;
+                var data = owner.currentSizes[index];
+                data.armLengths = armLengths;
+                data.legLengths = legLengths;
+                owner.currentSizes[index] = data;
 
                 owner.updateFlag = true;
             }
             public void SetArmLengths(float4 armLengths)
             {
-                int limbIndex = index * 2;
-                owner.currentLimbLengths[limbIndex] = armLengths;
+                var data = owner.currentSizes[index];
+                data.armLengths = armLengths;
+                owner.currentSizes[index] = data;
 
                 owner.updateFlag = true;
             }
             public void SetLegLengths(float4 legLengths)
             {
-                int limbIndex = index * 2;
-                owner.currentLimbLengths[limbIndex + 1] = legLengths;
+                var data = owner.currentSizes[index];
+                data.legLengths = legLengths;
+                owner.currentSizes[index] = data;
 
                 owner.updateFlag = true;
             }
             public void SetSpineLength(float spineLength)
             {
-                owner.currentSpineLengths[index] = spineLength;
+                var data = owner.currentSizes[index];
+                data.spineLength = spineLength;
+                owner.currentSizes[index] = data;
+
+                owner.updateFlag = true;
+            }
+            public void SetNeckLength(float neckLength)
+            {
+                var data = owner.currentSizes[index];
+                data.neckLength = neckLength;
+                owner.currentSizes[index] = data;
 
                 owner.updateFlag = true;
             }
 
 
+            public float4 GetPreviousWidths() => owner.previousSizes[index].widths;
+            public float2 GetPreviousShoulderWidths() => owner.previousSizes[index].widths.xy;
+            public float2 GetPreviousHipWidths() => owner.previousSizes[index].widths.zw;
+
             public void GetPreviousLimbLengths(out float4 armLengths, out float4 legLengths)
             {
-                int limbIndex = index * 2;
-                armLengths = owner.previousLimbLengths[limbIndex];
-                legLengths = owner.previousLimbLengths[limbIndex + 1];
+                var data = owner.previousSizes[index];
+                armLengths = data.armLengths;
+                legLengths = data.legLengths;
             }
-            public float4 GetPreviousArmLengths()
-            {
-                int limbIndex = index * 2;
-                return owner.previousLimbLengths[limbIndex];
-            }
-            public float4 GetPreviousLegLengths()
-            {
-                int limbIndex = index * 2;
-                return owner.previousLimbLengths[limbIndex + 1]; 
-            }
-            public float GetPreviousSpineLength()
-            {
-                return owner.previousSpineLengths[index];
-            }
+            public float4 GetPreviousArmLengths() => owner.previousSizes[index].armLengths;
+            public float4 GetPreviousLegLengths() => owner.previousSizes[index].legLengths;
+            public float GetPreviousSpineLength() => owner.previousSizes[index].spineLength;
+            public float GetPreviousNeckLength() => owner.previousSizes[index].neckLength;
 
 
+            public void SetPreviousWidths(float4 widths)
+            {
+                var data = owner.previousSizes[index];
+                data.widths = widths;
+                owner.previousSizes[index] = data;
+            }
+            public void SetPreviousShoulderWidths(float2 shoulderWidths)
+            {
+                var data = owner.previousSizes[index];
+                data.widths.xy = shoulderWidths;
+                owner.previousSizes[index] = data;
+            }
+            public void SetPreviousHipWidths(float2 hipWidths)
+            {
+                var data = owner.previousSizes[index];
+                data.widths.zw = hipWidths;
+                owner.previousSizes[index] = data;
+            }
             public void SetPrevousLimbLengths(float4 armLengths, float4 legLengths)
             {
-                int limbIndex = index * 2;
-                owner.previousLimbLengths[limbIndex] = armLengths;
-                owner.previousLimbLengths[limbIndex + 1] = legLengths;
+                var data = owner.previousSizes[index];
+                data.armLengths = armLengths;
+                data.legLengths = legLengths;
+                owner.previousSizes[index] = data;
             }
             public void SetPrevousArmLengths(float4 armLengths)
             {
-                int limbIndex = index * 2;
-                owner.previousLimbLengths[limbIndex] = armLengths;
+                var data = owner.previousSizes[index];
+                data.armLengths = armLengths;
+                owner.previousSizes[index] = data;
             }
             public void SetPreviousLegLengths(float4 legLengths)
             {
-                int limbIndex = index * 2;
-                owner.previousLimbLengths[limbIndex + 1] = legLengths;
+                var data = owner.previousSizes[index];
+                data.legLengths = legLengths;
+                owner.previousSizes[index] = data;
             }
             public void SetPrevousSpineLength(float spineLength)
             {
-                owner.previousSpineLengths[index] = spineLength;
+                var data = owner.previousSizes[index];
+                data.spineLength = spineLength;
+                owner.previousSizes[index] = data;
+            }
+            public void SetPreviousNeckLength(float neckLength)
+            {
+                var data = owner.previousSizes[index];
+                data.neckLength = neckLength;
+                owner.previousSizes[index] = data;
             }
 
 
             public float4 GetLimbPreservationWeights()
             {
-                return owner.limbPreservationWeights[index];
+                return owner.limbData[index].limbPreservation;
             }
             public float2 GetKneePreservationWeights()
             {
-                return owner.kneePreservationWeights[index]; 
+                return owner.limbData[index].kneePreservation; 
             }
 
             public void SetLimbPreservationWeights(float4 weights)
             {
-                owner.limbPreservationWeights[index] = weights;
+                var data = owner.limbData[index];
+                data.limbPreservation = weights;
+                owner.limbData[index] = data;
 
                 owner.updateFlag = true;
             }
             public void SetKneePreservationWeights(float2 weights)
             {
-                owner.kneePreservationWeights[index] = weights;
+                var data = owner.limbData[index];
+                data.kneePreservation = weights;
+                owner.limbData[index] = data;
+
+                owner.updateFlag = true;
+            }
+
+            public float2 GetSocketLimbSplits()
+            {
+                return owner.limbData[index].socketLimbSplits;
+            }
+            public void SetSocketLimbSplits(float2 socketLimbSplits)
+            {
+                var data = owner.limbData[index];
+                data.socketLimbSplits = socketLimbSplits;
+                owner.limbData[index] = data;
 
                 owner.updateFlag = true;
             }
@@ -432,50 +504,91 @@ namespace Swole.API.Unity
         protected List<IndexReference> registered;
 
         protected TransformAccessArray transforms;
+        protected TransformAccessArray transformsToSet;
         protected NativeList<TransformDataWorldLocal> transformData;
-        protected void AddTransform(Transform transform)
+        protected NativeList<TransformDataWorldLocal> transformDataToSet;
+        protected void AddTransform(Transform transform, bool isSettable = true)
         {
             transforms.Add(transform);
-            transformData.Add(new TransformDataWorldLocal());   
+            transformData.Add(new TransformDataWorldLocal());
+            if (isSettable) 
+            {
+                transformsToSet.Add(transform);
+                transformDataToSet.Add(new TransformDataWorldLocal());
+            }
         }
 
-        protected NativeList<float3> limbAxis;
+        protected NativeList<LimbData> limbData;
 
-        protected NativeList<float4> previousLimbLengths;
-        protected NativeList<float4> currentLimbLengths;
+        protected NativeList<Sizes> previousSizes;
+        protected NativeList<Sizes> currentSizes;
 
-        protected NativeList<float> previousSpineLengths;
-        protected NativeList<float> currentSpineLengths;
+        public const int TransformCount = 26;
+        public const int SettableTransformCount = 21;
 
-        protected NativeList<float4> limbPreservationWeights;
-        protected NativeList<float2> kneePreservationWeights;
+        public const int ShoulderLeftIndex = 0;
+        public const int ArmLeftIndex = 1;
+        public const int ForearmLeftIndex = 2;
+        public const int WristLeftIndex = 3;
+
+        public const int ShoulderRightIndex = 4;
+        public const int ArmRightIndex = 5;
+        public const int ForearmRightIndex = 6;
+        public const int WristRightIndex = 7;
+
+        public const int HipLeftIndex = 8;
+        public const int LegLeftIndex = 9;
+        public const int CalfLeftIndex = 10;
+        public const int FootLeftIndex = 11;
+
+        public const int HipRightIndex = 12;
+        public const int LegRightIndex = 13;
+        public const int CalfRightIndex = 14;
+        public const int FootRightIndex = 15;
+
+        public const int Spine1Index = 16;
+        public const int Spine2Index = 17;
+        public const int Spine3Index = 18;
+
+        public const int PelvisIndex = 19;
+
+        public const int NeckIndex = 20;
+
+        public const int ParentArmLeftIndex = 21;
+        public const int ParentArmRightIndex = 22;
+        public const int ParentLegLeftIndex = 23;
+        public const int ParentLegRightIndex = 24;
+        public const int ParentPelvisIndex = 25;
 
         public IndexReference RegisterLocal(float3 extensionAxisSpine, float3 bendAxisSpine,
             Transform spine1, Transform spine2, Transform spine3, float lengthSpine,
-            float3 extensionAxisArms, float3 bendAxisArms, float3 extensionAxisLegs, float3 bendAxisLegs, bool flipArmAxisForMirror, bool flipLegAxisForMirror,
-            Transform parentArmLeft, Transform armLeft, Transform forearmLeft, Transform wristLeft, float lengthArmLeft, float lengthForearmLeft,
-            Transform parentArmRight, Transform armRight, Transform forearmRight, Transform wristRight, float lengthArmRight, float lengthForearmRight,
-            Transform parentLegLeft, Transform legLeft, Transform calfLeft, Transform footLeft, float lengthLegLeft, float lengthCalfLeft,
-            Transform parentLegRight, Transform legRight, Transform calfRight, Transform footRight, float lengthLegRight, float lengthCalfRight,
-            Transform pelvis)
+            float3 extensionAxisShoulders, float3 widthExtensionAxisArms, float3 extensionAxisArms, float3 bendAxisArms, float3 extensionAxisHips, float3 widthExtensionAxisLegs, float3 extensionAxisLegs, float3 bendAxisLegs, bool flipShoulderAxisForMirror, bool flipArmWidthAxisForMirror, bool flipArmAxisForMirror, bool flipHipAxisForMirror, bool flipLegWidthAxisForMirror, bool flipLegAxisForMirror,
+            float shoulderArmWidthSplit,
+            Transform shoulderLeft, float shoulderWidthLeft, Transform parentArmLeft, Transform armLeft, Transform forearmLeft, Transform wristLeft, float lengthArmLeft, float lengthForearmLeft,
+            Transform shoulderRight, float shoulderWidthRight, Transform parentArmRight, Transform armRight, Transform forearmRight, Transform wristRight, float lengthArmRight, float lengthForearmRight,
+            float hipThighWidthSplit,
+            Transform hipLeft, float hipWidthLeft, Transform parentLegLeft, Transform legLeft, Transform calfLeft, Transform footLeft, float lengthLegLeft, float lengthCalfLeft,
+            Transform hipRight, float hipWidthRight, Transform parentLegRight, Transform legRight, Transform calfRight, Transform footRight, float lengthLegRight, float lengthCalfRight,
+            Transform pelvis,
+            float3 extensionAxisNeck, float3 bendAxisNeck, Transform neck, float lengthNeck)
         {
             if (destroyed) return null;
 
             int index = registered.Count;
-             
-            AddTransform(parentArmLeft); // 1
+
+            AddTransform(shoulderLeft); // 1
             AddTransform(armLeft); // 2
             AddTransform(forearmLeft); // 3
             AddTransform(wristLeft); // 4
-            AddTransform(parentArmRight); // 5
+            AddTransform(shoulderRight); // 5
             AddTransform(armRight); // 6
             AddTransform(forearmRight); // 7
             AddTransform(wristRight); // 8
-            AddTransform(parentLegLeft); // 9
+            AddTransform(hipLeft); // 9
             AddTransform(legLeft); // 10
             AddTransform(calfLeft); // 11
             AddTransform(footLeft); // 12
-            AddTransform(parentLegRight); // 13
+            AddTransform(hipRight); // 13
             AddTransform(legRight); // 14
             AddTransform(calfRight); // 15
             AddTransform(footRight); // 16
@@ -483,32 +596,57 @@ namespace Swole.API.Unity
             AddTransform(spine2); // 18
             AddTransform(spine3); // 19
             AddTransform(pelvis); // 20
-            AddTransform(pelvis.parent); // 21
+            AddTransform(neck); // 21
 
-            limbAxis.Add(extensionAxisArms);
-            limbAxis.Add(bendAxisArms);
-            limbAxis.Add(extensionAxisArms);
-            limbAxis.Add(flipArmAxisForMirror ? -bendAxisArms : bendAxisArms);
-            limbAxis.Add(extensionAxisLegs);
-            limbAxis.Add(bendAxisLegs);
-            limbAxis.Add(extensionAxisLegs);
-            limbAxis.Add(flipLegAxisForMirror ? -bendAxisLegs : bendAxisLegs);
-            limbAxis.Add(extensionAxisSpine);
-            limbAxis.Add(bendAxisSpine);
+            AddTransform(parentArmLeft, false); // 22
+            AddTransform(parentArmRight, false); // 23
+            AddTransform(parentLegLeft, false); // 24
+            AddTransform(parentLegRight, false); // 25
+            AddTransform(pelvis.parent, false); // 26
+
+            var limbData_ = new LimbData();
+            limbData_.limbPreservation = new float4(1, 1, 1, 1);
+            limbData_.kneePreservation = new float2(1, 1);
+
+            limbData_.socketLimbSplits = new float2(shoulderArmWidthSplit, hipThighWidthSplit);
+
+            limbData_.leftShoulderExtensionAxis = extensionAxisShoulders;
+            limbData_.leftArmWidthExtensionAxis = widthExtensionAxisArms;
+            limbData_.leftArmExtensionAxis = extensionAxisArms;
+            limbData_.leftArmRotationAxis = bendAxisArms;
+
+            limbData_.rightShoulderExtensionAxis = flipShoulderAxisForMirror ? -extensionAxisShoulders : extensionAxisShoulders;
+            limbData_.rightArmWidthExtensionAxis = flipArmWidthAxisForMirror ? -widthExtensionAxisArms : widthExtensionAxisArms;
+            limbData_.rightArmExtensionAxis = extensionAxisArms;
+            limbData_.rightArmRotationAxis = flipArmAxisForMirror ? -bendAxisArms : bendAxisArms;
+
+            limbData_.leftHipExtensionAxis = extensionAxisHips;
+            limbData_.leftLegWidthExtensionAxis = widthExtensionAxisLegs;
+            limbData_.leftLegExtensionAxis = extensionAxisLegs;
+            limbData_.leftLegRotationAxis = bendAxisLegs;
+
+            limbData_.rightHipExtensionAxis = flipHipAxisForMirror ? -extensionAxisHips : extensionAxisHips; 
+            limbData_.rightLegWidthExtensionAxis = flipLegWidthAxisForMirror ? -widthExtensionAxisLegs : widthExtensionAxisLegs;
+            limbData_.rightLegExtensionAxis = extensionAxisLegs;
+            limbData_.rightLegRotationAxis = flipLegAxisForMirror ? -bendAxisLegs : bendAxisLegs; 
+
+            limbData_.spineExtensionAxis = extensionAxisSpine;
+            limbData_.neckExtensionAxis = extensionAxisNeck;
+
+            limbData.Add(limbData_); 
 
             float4 armLengths = new float4(lengthArmLeft, lengthForearmLeft, lengthArmRight, lengthForearmRight);
-            float4 legLengths = new float4(lengthLegLeft, lengthCalfLeft, lengthLegRight, lengthCalfRight);
+            float4 legLengths = new float4(lengthLegLeft, lengthCalfLeft, lengthLegRight, lengthCalfRight); 
 
-            previousLimbLengths.Add(armLengths);
-            previousLimbLengths.Add(legLengths);
-            currentLimbLengths.Add(armLengths);
-            currentLimbLengths.Add(legLengths);
+            var sizes = new Sizes();
+            sizes.spineLength = lengthSpine;
+            sizes.neckLength = lengthNeck;
+            sizes.armLengths = armLengths;
+            sizes.legLengths = legLengths;
+            sizes.widths = new float4(shoulderWidthLeft, shoulderWidthRight, hipWidthLeft, hipWidthRight);
 
-            previousSpineLengths.Add(lengthSpine);
-            currentSpineLengths.Add(lengthSpine); 
-
-            limbPreservationWeights.Add(new float4(1, 1, 1, 1));
-            kneePreservationWeights.Add(new float2(1, 1));
+            previousSizes.Add(sizes);
+            currentSizes.Add(sizes);
 
             updateFlag = true;
 
@@ -525,25 +663,30 @@ namespace Swole.API.Unity
 
         public static IndexReference Register(float3 extensionAxisSpine, float3 bendAxisSpine,
             Transform spine1, Transform spine2, Transform spine3, float lengthSpine,
-            float3 extensionAxisArms, float3 bendAxisArms, float3 extensionAxisLegs, float3 bendAxisLegs, bool flipArmAxisForMirror, bool flipLegAxisForMirror,
-            Transform parentArmLeft, Transform armLeft, Transform forearmLeft, Transform wristLeft, float lengthArmLeft, float lengthForearmLeft,
-            Transform parentArmRight, Transform armRight, Transform forearmRight, Transform wristRight, float lengthArmRight, float lengthForearmRight,
-            Transform parentLegLeft, Transform legLeft, Transform calfLeft, Transform footLeft, float lengthLegLeft, float lengthCalfLeft,
-            Transform parentLegRight, Transform legRight, Transform calfRight, Transform footRight, float lengthLegRight, float lengthCalfRight,
-            Transform pelvis)
+            float3 extensionAxisShoulders, float3 widthExtensionAxisArms, float3 extensionAxisArms, float3 bendAxisArms, float3 extensionAxisHips, float3 widthExtensionAxisLegs, float3 extensionAxisLegs, float3 bendAxisLegs, bool flipShoulderAxisForMirror, bool flipArmWidthAxisForMirror, bool flipArmAxisForMirror, bool flipHipAxisForMirror, bool flipLegWidthAxisForMirror, bool flipLegAxisForMirror,
+            float shoulderArmWidthSplit,
+            Transform shoulderLeft, float shoulderWidthLeft, Transform parentArmLeft, Transform armLeft, Transform forearmLeft, Transform wristLeft, float lengthArmLeft, float lengthForearmLeft,
+            Transform shoulderRight, float shoulderWidthRight, Transform parentArmRight, Transform armRight, Transform forearmRight, Transform wristRight, float lengthArmRight, float lengthForearmRight,
+            float hipThighWidthSplit,
+            Transform hipLeft, float hipWidthLeft, Transform parentLegLeft, Transform legLeft, Transform calfLeft, Transform footLeft, float lengthLegLeft, float lengthCalfLeft,
+            Transform hipRight, float hipWidthRight, Transform parentLegRight, Transform legRight, Transform calfRight, Transform footRight, float lengthLegRight, float lengthCalfRight,
+            Transform pelvis,
+            float3 extensionAxisNeck, float3 bendAxisNeck, Transform neck, float lengthNeck)
         {
             var instance = Instance;
             if (instance == null) return null;
 
             return instance.RegisterLocal(extensionAxisSpine, bendAxisSpine,
                 spine1, spine2, spine3, lengthSpine,
-                extensionAxisArms, bendAxisArms, extensionAxisLegs, bendAxisLegs, flipArmAxisForMirror, flipLegAxisForMirror,
-                parentArmLeft, armLeft, forearmLeft, wristLeft, lengthArmLeft, lengthForearmLeft,
-                parentArmRight, armRight, forearmRight, wristRight, lengthArmRight, lengthForearmRight,
-                parentLegLeft, legLeft, calfLeft, footLeft, lengthLegLeft, lengthCalfLeft,
-                parentLegRight, legRight, calfRight, footRight, lengthLegRight, lengthCalfRight,
-                pelvis
-                );
+                extensionAxisShoulders, widthExtensionAxisArms, extensionAxisArms, bendAxisArms, extensionAxisHips, widthExtensionAxisLegs, extensionAxisLegs, bendAxisLegs, flipShoulderAxisForMirror, flipArmWidthAxisForMirror, flipArmAxisForMirror, flipHipAxisForMirror, flipLegWidthAxisForMirror, flipLegAxisForMirror,
+                shoulderArmWidthSplit,
+                shoulderLeft, shoulderWidthLeft, parentArmLeft, armLeft, forearmLeft, wristLeft, lengthArmLeft, lengthForearmLeft,
+                shoulderRight, shoulderWidthRight, parentArmRight, armRight, forearmRight, wristRight, lengthArmRight, lengthForearmRight,
+                hipThighWidthSplit,
+                hipLeft, hipWidthLeft, parentLegLeft, legLeft, calfLeft, footLeft, lengthLegLeft, lengthCalfLeft,
+                hipRight, hipWidthRight, parentLegRight, legRight, calfRight, footRight, lengthLegRight, lengthCalfRight,
+                pelvis,
+                extensionAxisNeck, bendAxisNeck, neck, lengthNeck);
         }
 
         public static void Unregister(IndexReference indRef)
@@ -552,23 +695,6 @@ namespace Swole.API.Unity
             if (instance == null) return;
              
             instance.UnregisterLocal(indRef); 
-        }
-        
-        [BurstCompile]
-        public struct FetchTransformDataJob : IJobParallelForTransform
-        {
-
-            [NativeDisableParallelForRestriction]
-            public NativeList<TransformDataWorldLocal> transformData; 
-
-            public void Execute(int index, TransformAccess transform)
-            {
-                //transform.GetLocalPositionAndRotation(out var lpos, out var lrot); // broken wtf? // TODO: uncomment this after updating project editor version, apparently it's fixed in up-to-date versions
-                var lpos = transform.localPosition; 
-                var lrot = transform.localRotation; 
-                transform.GetPositionAndRotation(out var pos, out var rot);  
-                transformData[index] = new TransformDataWorldLocal() { position = pos, rotation = rot, localPosition = lpos, localRotation = lrot };
-            }
         }
 
         [BurstCompile]
@@ -590,31 +716,24 @@ namespace Swole.API.Unity
         {
 
             [ReadOnly]
-            public NativeList<float3> limbAxis;
+            public NativeList<LimbData> limbData;
+
+            [ReadOnly]
+            public NativeList<TransformDataWorldLocal> transformData_READ;
 
             [NativeDisableParallelForRestriction]
-            public NativeList<TransformDataWorldLocal> transformData;
+            public NativeList<TransformDataWorldLocal> transformData_WRITE;
 
             [NativeDisableParallelForRestriction]
-            public NativeList<float4> previousLimbLengths;
+            public NativeList<Sizes> previousSizes;
             [ReadOnly]
-            public NativeList<float4> currentLimbLengths;
-
-            [NativeDisableParallelForRestriction]
-            public NativeList<float> previousSpineLengths;
-            [ReadOnly]
-            public NativeList<float> currentSpineLengths;
-
-            [ReadOnly]
-            public NativeList<float4> limbPreservationWeights;
-            [ReadOnly]
-            public NativeList<float2> kneePreservationWeights;
+            public NativeList<Sizes> currentSizes;
 
             public void ChangeSpineLength(int index, float3 lengthDelta)
             {
-                TransformDataWorldLocal data = transformData[index];
-                data.localPosition = data.localPosition + lengthDelta;              
-                transformData[index] = data; 
+                TransformDataWorldLocal data = transformData_READ[index];
+                data.localPosition = data.localPosition + lengthDelta; 
+                transformData_WRITE[index] = data; 
             }
 
             public bool CalcRiseBend(float3 bendAxis,/* quaternion parentRot,*/ quaternion startToEndRot, float height, float lengthA, float lengthB, out quaternion riseRot, out quaternion bendRot)
@@ -656,10 +775,10 @@ namespace Swole.API.Unity
 
             public void ChangeLimbLength(float weight, float3 extensionAxis, float3 bendAxis, int parentIndex, int startIndex, int middleIndex, int endIndex, float newLengthA, float newLengthB, float prevLengthA, float prevLengthB, float lengthChangeA, float lengthChangeB)
             {
-                TransformDataWorldLocal parentData = transformData[parentIndex];
-                TransformDataWorldLocal startData = transformData[startIndex];
-                TransformDataWorldLocal middleData = transformData[middleIndex];
-                TransformDataWorldLocal endData = transformData[endIndex];
+                TransformDataWorldLocal parentData = transformData_READ[parentIndex];
+                TransformDataWorldLocal startData = transformData_READ[startIndex];
+                TransformDataWorldLocal middleData = transformData_READ[middleIndex];
+                TransformDataWorldLocal endData = transformData_READ[endIndex];
 
                 quaternion inverseParentRot = math.inverse(parentData.rotation);
 
@@ -687,16 +806,16 @@ namespace Swole.API.Unity
                 quaternion endOffsetRot = math.inverse(math.mul(math.mul(math.inverse(initialStartRot), startData.localRotation), math.mul(math.inverse(initialMiddleRot), middleData.localRotation)));
                 endData.localRotation = math.mul(endOffsetRot, endData.localRotation);
 
-                transformData[startIndex] = startData;
-                transformData[middleIndex] = middleData;
-                transformData[endIndex] = endData;
+                transformData_WRITE[startIndex] = startData;
+                transformData_WRITE[middleIndex] = middleData;
+                transformData_WRITE[endIndex] = endData;
             }
             public void ChangeLimbLengthWorld(float weight, float3 extensionAxis, float3 bendAxis, int parentIndex, int startIndex, int middleIndex, int endIndex, float newLengthA, float newLengthB, float prevLengthA, float prevLengthB, float lengthChangeA, float lengthChangeB)
             {
-                TransformDataWorldLocal parentData = transformData[parentIndex];
-                TransformDataWorldLocal startData = transformData[startIndex];
-                TransformDataWorldLocal middleData = transformData[middleIndex];
-                TransformDataWorldLocal endData = transformData[endIndex];
+                TransformDataWorldLocal parentData = transformData_READ[parentIndex];
+                TransformDataWorldLocal startData = transformData_READ[startIndex];
+                TransformDataWorldLocal middleData = transformData_READ[middleIndex];
+                TransformDataWorldLocal endData = transformData_READ[endIndex];
 
                 quaternion inverseParentRot = math.inverse(parentData.rotation);
 
@@ -724,15 +843,15 @@ namespace Swole.API.Unity
                 quaternion endOffsetRot = math.inverse(math.mul(math.mul(math.inverse(initialStartRot), startData.localRotation), math.mul(math.inverse(initialMiddleRot), middleData.localRotation)));
                 endData.localRotation = math.mul(endOffsetRot, endData.localRotation);
 
-                transformData[startIndex] = startData;
-                transformData[middleIndex] = middleData;
-                transformData[endIndex] = endData;
+                transformData_WRITE[startIndex] = startData;
+                transformData_WRITE[middleIndex] = middleData;
+                transformData_WRITE[endIndex] = endData;
             }
 
             public void ChangeLegLength(TransformDataWorldLocal pelvisTransformData, TransformDataWorldLocal pelvisParentTransformData, out TransformDataWorldLocal pelvisTransformDataOffset, float kneePreservingWeight, float weight, float3 extensionAxis, float3 bendAxis, int parentIndex, int startIndex, int middleIndex, int endIndex, float newLengthA, float newLengthB, float prevLengthA, float prevLengthB, float lengthChangeA, float lengthChangeB)
             {
-                TransformDataWorldLocal startData = transformData[startIndex];
-                TransformDataWorldLocal middleData = transformData[middleIndex];
+                TransformDataWorldLocal startData = transformData_READ[startIndex];
+                TransformDataWorldLocal middleData = transformData_READ[middleIndex];
 
                 ChangeLimbLength(weight * (1f - kneePreservingWeight), extensionAxis, bendAxis, parentIndex, startIndex, middleIndex, endIndex, newLengthA, newLengthB, prevLengthA, prevLengthB, lengthChangeA, lengthChangeB);
 
@@ -748,8 +867,8 @@ namespace Swole.API.Unity
 
             public void ChangeLegLengthWorld(TransformDataWorldLocal pelvisTransformData, TransformDataWorldLocal pelvisParentTransformData, out TransformDataWorldLocal pelvisTransformDataOffset, float kneePreservingWeight, float weight, float3 extensionAxis, float3 bendAxis, int parentIndex, int startIndex, int middleIndex, int endIndex, float newLengthA, float newLengthB, float prevLengthA, float prevLengthB, float lengthChangeA, float lengthChangeB)
             {
-                TransformDataWorldLocal startData = transformData[startIndex];
-                TransformDataWorldLocal middleData = transformData[middleIndex];
+                TransformDataWorldLocal startData = transformData_READ[startIndex];
+                TransformDataWorldLocal middleData = transformData_READ[middleIndex];
 
                 ChangeLimbLengthWorld(weight * (1f - kneePreservingWeight), extensionAxis, bendAxis, parentIndex, startIndex, middleIndex, endIndex, newLengthA, newLengthB, prevLengthA, prevLengthB, lengthChangeA, lengthChangeB);
 
@@ -763,72 +882,86 @@ namespace Swole.API.Unity
                 pelvisTransformDataOffset = pelvisTransformData;
             }
 
+            public void ChangeShoulderWidth() { }
+            public void ChangeHipWidth() { }
+
             public void Execute(int index)
             {
 
-                float4 limbPreservation = limbPreservationWeights[index];
-                float2 kneePreservation = kneePreservationWeights[index];
+                var limbData_ = limbData[index];
 
-                int transformIndex = index * 21;
+                var prevSizes = previousSizes[index];
+                var sizes = currentSizes[index];
 
-                int armIndex = index * 2;
-                int legIndex = armIndex + 1;
+                int transformIndex = index * TransformCount;
 
-                float4 prevArmLengths = previousLimbLengths[armIndex];
-                float4 prevLegLengths = previousLimbLengths[legIndex];
-                float prevSpineLength = previousSpineLengths[index];
+                int armLeftIndex = transformIndex + ArmLeftIndex;
+                int armRightIndex = transformIndex + ArmRightIndex;
+                int legLeftIndex = transformIndex + LegLeftIndex;
+                int legRightIndex = transformIndex + LegRightIndex;
 
-                float4 armLengths = currentLimbLengths[armIndex];
-                float4 legLengths = currentLimbLengths[legIndex];
-                float spineLength = currentSpineLengths[index];
+                float4 armLengthChanges = sizes.armLengths - prevSizes.armLengths;
+                float4 legLengthChanges = sizes.legLengths - prevSizes.legLengths;
 
-                float4 armLengthChanges = armLengths - prevArmLengths;
-                float4 legLengthChanges = legLengths - prevLegLengths;
+                int pelvisIndex = transformIndex + PelvisIndex;
+                int pelvisParentIndex = transformIndex + ParentPelvisIndex;
+                TransformDataWorldLocal pelvisTransformData = transformData_READ[pelvisIndex];
+                TransformDataWorldLocal pelvisParentTransformData = transformData_READ[pelvisParentIndex];
 
-                int limbAxisIndex = index * 10;
 
-                float3 leftArmExtensionAxis = limbAxis[limbAxisIndex];
-                float3 leftArmRotationAxis = limbAxis[limbAxisIndex + 1];
+                //ChangeLimbLengthWorld(limbData_.limbPreservation.x, limbData_.leftArmExtensionAxis, limbData_.leftArmRotationAxis, transformIndex + ParentArmLeftIndex, armLeftIndex, transformIndex + ForearmLeftIndex, transformIndex + WristLeftIndex, sizes.armLengths.x, sizes.armLengths.y, prevSizes.armLengths.x, prevSizes.armLengths.y, armLengthChanges.x, armLengthChanges.y); // left arm
+                //ChangeLimbLengthWorld(limbData_.limbPreservation.y, limbData_.rightArmExtensionAxis, limbData_.rightArmRotationAxis, transformIndex + ParentArmRightIndex, armRightIndex, transformIndex + ForearmRightIndex, transformIndex + WristRightIndex, sizes.armLengths.z, sizes.armLengths.w, prevSizes.armLengths.z, prevSizes.armLengths.w, armLengthChanges.z, armLengthChanges.w); // right arm
 
-                float3 rightArmExtensionAxis = limbAxis[limbAxisIndex + 2];
-                float3 rightArmRotationAxis = limbAxis[limbAxisIndex + 3];
-
-                float3 leftLegExtensionAxis = limbAxis[limbAxisIndex + 4];
-                float3 leftLegRotationAxis = limbAxis[limbAxisIndex + 5];
-
-                float3 rightLegExtensionAxis = limbAxis[limbAxisIndex + 6];
-                float3 rightLegRotationAxis = limbAxis[limbAxisIndex + 7];
-
-                float3 spineExtensionAxis = limbAxis[limbAxisIndex + 8];
-                //float3 spineRotationAxis = limbAxis[limbAxisIndex + 9];
-
-                int pelvisIndex = transformIndex + 19;
-                int pelvisParentIndex = transformIndex + 20;
-                TransformDataWorldLocal pelvisTransformData = transformData[pelvisIndex];
-                TransformDataWorldLocal pelvisParentTransformData = transformData[pelvisParentIndex];  
-
-                ChangeLimbLengthWorld(limbPreservation.x, leftArmExtensionAxis, leftArmRotationAxis, transformIndex + 0, transformIndex + 1, transformIndex + 2, transformIndex + 3, armLengths.x, armLengths.y, prevArmLengths.x, prevArmLengths.y, armLengthChanges.x, armLengthChanges.y); // left arm
-                ChangeLimbLengthWorld(limbPreservation.y, rightArmExtensionAxis, rightArmRotationAxis, transformIndex + 4, transformIndex + 5, transformIndex + 6, transformIndex + 7, armLengths.z, armLengths.w, prevArmLengths.z, prevArmLengths.w, armLengthChanges.z, armLengthChanges.w); // right arm
+                // forget bending preservation for now and use more performant option
+                //transformData_WRITE[armLeftIndex] = transformData_READ[armLeftIndex]; // not needed because of width split as bottom of method
+                //transformData_WRITE[armRightIndex] = transformData_READ[armRightIndex];
+                ChangeSpineLength(transformIndex + ForearmLeftIndex, limbData_.leftArmExtensionAxis * armLengthChanges.x);
+                ChangeSpineLength(transformIndex + ForearmRightIndex, limbData_.rightArmExtensionAxis * armLengthChanges.z);
+                ChangeSpineLength(transformIndex + WristLeftIndex, limbData_.leftArmExtensionAxis * armLengthChanges.y);
+                ChangeSpineLength(transformIndex + WristRightIndex, limbData_.rightArmExtensionAxis * armLengthChanges.w);
 
                 // Legs blend weights between moving pelvis and rotating legs
-                TransformDataWorldLocal pelvisTransformDataA, pelvisTransformDataB;
-                ChangeLegLengthWorld(pelvisTransformData, pelvisParentTransformData, out pelvisTransformDataA, kneePreservation.x, limbPreservation.z, leftLegExtensionAxis, leftLegRotationAxis, transformIndex + 8, transformIndex + 9, transformIndex + 10, transformIndex + 11, legLengths.x, legLengths.y, prevLegLengths.x, prevLegLengths.y, legLengthChanges.x, legLengthChanges.y); // left leg
-                ChangeLegLengthWorld(pelvisTransformData, pelvisParentTransformData, out pelvisTransformDataB, kneePreservation.y, limbPreservation.w, rightLegExtensionAxis, rightLegRotationAxis, transformIndex + 12, transformIndex + 13, transformIndex + 14, transformIndex + 15, legLengths.z, legLengths.w, prevLegLengths.z, prevLegLengths.w, legLengthChanges.z, legLengthChanges.w); // right leg
+                /*TransformDataWorldLocal pelvisTransformDataA, pelvisTransformDataB;
+                ChangeLegLengthWorld(pelvisTransformData, pelvisParentTransformData, out pelvisTransformDataA, limbData_.kneePreservation.x, limbData_.limbPreservation.z, limbData_.leftLegExtensionAxis, limbData_.leftLegRotationAxis, transformIndex + ParentLegLeftIndex, legLeftIndex, transformIndex + CalfLeftIndex, transformIndex + FootLeftIndex, sizes.legLengths.x, sizes.legLengths.y, prevSizes.legLengths.x, prevSizes.legLengths.y, legLengthChanges.x, legLengthChanges.y); // left leg
+                ChangeLegLengthWorld(pelvisTransformData, pelvisParentTransformData, out pelvisTransformDataB, limbData_.kneePreservation.y, limbData_.limbPreservation.w, limbData_.rightLegExtensionAxis, limbData_.rightLegRotationAxis, transformIndex + ParentLegRightIndex, legRightIndex, transformIndex + CalfRightIndex, transformIndex + FootRightIndex, sizes.legLengths.z, sizes.legLengths.w, prevSizes.legLengths.z, prevSizes.legLengths.w, legLengthChanges.z, legLengthChanges.w); // right leg
 
-                pelvisTransformData.localPosition = (pelvisTransformDataA.localPosition + pelvisTransformDataB.localPosition) * 0.5f;
-                //pelvisTransformData.localRotation = math.slerp(pelvisTransformDataA.localRotation, pelvisTransformDataB.localRotation, 0.5f);
-                 
-                transformData[pelvisIndex] = pelvisTransformData;
+                pelvisTransformData.localPosition = (pelvisTransformDataA.localPosition + pelvisTransformDataB.localPosition) * 0.5f;*/
+                //pelvisTransformData.localRotation = math.slerp(pelvisTransformDataA.localRotation, pelvisTransformDataB.localRotation, 0.5f);// do not use
 
-                float3 spineLengthDelta = spineExtensionAxis * (spineLength - prevSpineLength);
-                ChangeSpineLength(transformIndex + 16, spineLengthDelta);
-                ChangeSpineLength(transformIndex + 17, spineLengthDelta);
-                ChangeSpineLength(transformIndex + 18, spineLengthDelta);
+                // forget bending preservation for now and use more performant option
+                //transformData_WRITE[legLeftIndex] = transformData_READ[legLeftIndex]; // not needed because of width split at bottom of method
+                //transformData_WRITE[legRightIndex] = transformData_READ[legRightIndex]; 
+                ChangeSpineLength(transformIndex + CalfLeftIndex, limbData_.leftLegExtensionAxis * legLengthChanges.x);
+                ChangeSpineLength(transformIndex + CalfRightIndex, limbData_.rightLegExtensionAxis * legLengthChanges.z);
+                ChangeSpineLength(transformIndex + FootLeftIndex, limbData_.leftLegExtensionAxis * legLengthChanges.y); 
+                ChangeSpineLength(transformIndex + FootRightIndex, limbData_.rightLegExtensionAxis * legLengthChanges.w);  
 
-                previousLimbLengths[armIndex] = armLengths;
-                previousLimbLengths[legIndex] = legLengths;
-                previousSpineLengths[index] = spineLength;
+                transformData_WRITE[pelvisIndex] = pelvisTransformData;
 
+                float3 spineLengthDelta = limbData_.spineExtensionAxis * (sizes.spineLength - prevSizes.spineLength); 
+                ChangeSpineLength(transformIndex + Spine1Index, spineLengthDelta);
+                ChangeSpineLength(transformIndex + Spine2Index, spineLengthDelta);
+                ChangeSpineLength(transformIndex + Spine3Index, spineLengthDelta);
+
+                float3 neckLengthDelta = limbData_.neckExtensionAxis * (sizes.neckLength - prevSizes.neckLength); 
+                ChangeSpineLength(transformIndex + NeckIndex, neckLengthDelta);
+
+                float2 socketLimbSplitsInv = 1f - limbData_.socketLimbSplits;
+                float4 widthsDelta = sizes.widths - prevSizes.widths;
+                float4 widthsDeltaAlt = widthsDelta * new float4(socketLimbSplitsInv.x, socketLimbSplitsInv.x, socketLimbSplitsInv.y, socketLimbSplitsInv.y);
+                widthsDelta = widthsDelta * new float4(limbData_.socketLimbSplits.x, limbData_.socketLimbSplits.x, limbData_.socketLimbSplits.y, limbData_.socketLimbSplits.y);  
+
+                ChangeSpineLength(transformIndex + ShoulderLeftIndex, limbData_.leftShoulderExtensionAxis * widthsDeltaAlt.x);
+                ChangeSpineLength(transformIndex + ShoulderRightIndex, limbData_.rightShoulderExtensionAxis * widthsDeltaAlt.y);  
+                ChangeSpineLength(transformIndex + HipLeftIndex, limbData_.leftHipExtensionAxis * widthsDeltaAlt.z);
+                ChangeSpineLength(transformIndex + HipRightIndex, limbData_.rightHipExtensionAxis * widthsDeltaAlt.w); 
+
+                ChangeSpineLength(armLeftIndex, limbData_.leftArmWidthExtensionAxis * widthsDelta.x);
+                ChangeSpineLength(armRightIndex, limbData_.rightArmWidthExtensionAxis * widthsDelta.y);
+                ChangeSpineLength(legLeftIndex, limbData_.leftLegWidthExtensionAxis * widthsDelta.z);
+                ChangeSpineLength(legRightIndex, limbData_.rightLegWidthExtensionAxis * widthsDelta.w);
+
+                //previousSizes[index] = sizes; // animators always running and resetting limbs, so this should never be done. If animators are disabled so are the height controller components.
             }
         }
 

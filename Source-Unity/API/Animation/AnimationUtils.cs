@@ -83,6 +83,12 @@ namespace Swole.API.Unity.Animation
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static float WrapNormalizedTimeBackward(float time, WrapMode wrapMode) => 1 - WrapNormalizedTimeForward(1 - time, wrapMode);
 
+        public static int CompareTimelinePos(float a, float b) => Math.Sign(a - b);
+        public static int CompareKey(AnimationCurveEditor.KeyframeStateRaw a, AnimationCurveEditor.KeyframeStateRaw b) => Math.Sign(a.time - b.time);
+        public static int CompareKey(ITransformCurve.Frame a, ITransformCurve.Frame b) => Math.Sign(a.timelinePosition - b.timelinePosition);
+        public static int CompareKey(IPropertyCurve.Frame a, IPropertyCurve.Frame b) => Math.Sign(a.timelinePosition - b.timelinePosition);
+        public static int CompareEvent(CustomAnimation.Event a, CustomAnimation.Event b) => Math.Sign(a.TimelinePosition - b.TimelinePosition);
+
         [Serializable]
         public struct AnimatableElement
         {
@@ -218,7 +224,7 @@ namespace Swole.API.Unity.Animation
         [Serializable]
         public enum InsertAutoSmoothBehaviour
         {
-            Always, IfNew, Never
+            Always, IfNew, Never, AlwaysLinear, LinearIfNew
         }
         private static List<Keyframe> _tempKeyframes = new List<Keyframe>();
         private static List<AnimationCurveEditor.KeyframeStateRaw> _tempKeyframeStates = new List<AnimationCurveEditor.KeyframeStateRaw>();
@@ -274,13 +280,24 @@ namespace Swole.API.Unity.Animation
             }
 
             bool autoSmooth_ = false;
-            switch(autoSmooth)
+            bool linearSmooth = false;
+            switch (autoSmooth)
             {
                 case InsertAutoSmoothBehaviour.Always:
                     autoSmooth_ = true;
                     break;
                 case InsertAutoSmoothBehaviour.IfNew:
                     autoSmooth_ = !replace;
+                    break;
+
+                case InsertAutoSmoothBehaviour.AlwaysLinear:
+                    autoSmooth_ = true;
+                    linearSmooth = true;
+                    break;
+
+                case InsertAutoSmoothBehaviour.LinearIfNew:
+                    autoSmooth_ = !replace;
+                    linearSmooth = true;
                     break;
             }
 
@@ -292,7 +309,20 @@ namespace Swole.API.Unity.Animation
             }
             else if (autoSmooth_)
             {
-                keyframe = AutoSmoothKeyframe(keyframe, pos > 0, pos < keyframes.Length - 1, pos > 0 ? keyframes[pos - 1] : keyframe, pos < keyframes.Length - 1 ? keyframes[keyframes.Length - 1] : keyframe);
+                if (linearSmooth)
+                {
+                    keyframe.inTangent = pos > 0 ? SwoleCurveEditor.CalculateLinearTangent(keyframe, keyframes[pos - 1]) : 0;
+                    keyframe.inWeight = 0;
+
+                    keyframe.outTangent = pos < keyframes.Length - 1 ? SwoleCurveEditor.CalculateLinearTangent(keyframe, keyframes[pos + 1]) : 0; 
+                    keyframe.outWeight = 0;
+
+                    keyframe.weightedMode = (int)WeightedMode.Both;
+                }
+                else
+                {
+                    keyframe = AutoSmoothKeyframe(keyframe, pos > 0, pos < keyframes.Length - 1, pos > 0 ? keyframes[pos - 1] : keyframe, pos < keyframes.Length - 1 ? keyframes[pos + 1] : keyframe);
+                }
                 keyframes[pos] = keyframe;
             }
 
@@ -328,6 +358,7 @@ namespace Swole.API.Unity.Animation
             }
 
             bool autoSmooth_ = false;
+            bool linearSmooth = false;
             switch (autoSmooth)
             {
                 case InsertAutoSmoothBehaviour.Always:
@@ -336,8 +367,18 @@ namespace Swole.API.Unity.Animation
                 case InsertAutoSmoothBehaviour.IfNew:
                     autoSmooth_ = !replace;
                     break;
-            }
 
+                case InsertAutoSmoothBehaviour.AlwaysLinear:
+                    autoSmooth_ = true;
+                    linearSmooth = true;
+                    break;
+
+                case InsertAutoSmoothBehaviour.LinearIfNew:
+                    autoSmooth_ = !replace;
+                    linearSmooth = true;
+                    break;
+            }
+            
             if (useReferenceKey)
             {
                 if (keyframes == null) keyframes = curve.Keys;
@@ -354,7 +395,20 @@ namespace Swole.API.Unity.Animation
                 if (keyframes == null) keyframes = curve.Keys;
 
                 var keyframe = keyframes[pos];
-                keyframe = AutoSmoothKeyframe(keyframe, pos > 0, pos < keyframes.Length - 1, pos > 0 ? keyframes[pos - 1] : keyframe, pos < keyframes.Length - 1 ? keyframes[keyframes.Length - 1] : keyframe);
+                if (linearSmooth)
+                {
+                    keyframe.inTangent = pos > 0 ? SwoleCurveEditor.CalculateLinearTangent(keyframe, keyframes[pos - 1]) : 0;
+                    keyframe.inWeight = 0;
+
+                    keyframe.outTangent = pos < keyframes.Length - 1 ? SwoleCurveEditor.CalculateLinearTangent(keyframe, keyframes[pos + 1]) : 0;
+                    keyframe.outWeight = 0; 
+
+                    keyframe.weightedMode = (int)WeightedMode.Both;
+                }
+                else
+                {
+                    keyframe = AutoSmoothKeyframe(keyframe, pos > 0, pos < keyframes.Length - 1, pos > 0 ? keyframes[pos - 1] : keyframe, pos < keyframes.Length - 1 ? keyframes[pos + 1] : keyframe);
+                }
                 keyframes[pos] = keyframe;
 
                 curve.Keys = keyframes;
@@ -792,10 +846,26 @@ namespace Swole.API.Unity.Animation
 
         public delegate Transform FindTransformDelegate(string name);
 
-        public static bool TryExtractTransformFromPropertyString(string propertyId, FindTransformDelegate findTransform, out Transform transform)
+        public static bool TryExtractTransformFromPropertyString(string propertyId, FindTransformDelegate findTransform, out Transform transform, out string leftOverStr)
         {
+            leftOverStr = propertyId;
+
             string[] substrings = propertyId.Split('.');
-            return TryExtractTransformFromPropertyString(substrings, findTransform, out transform, out _);
+            if (TryExtractTransformFromPropertyString(substrings, findTransform, out transform, out int finalIndex))
+            {
+                if (finalIndex < substrings.Length - 1)
+                {
+                    leftOverStr = string.Join('.', substrings, finalIndex + 1, substrings.Length - finalIndex - 1);
+                }
+                else
+                {
+                    leftOverStr = null;
+                }
+
+                return true;
+            }
+
+            return false;
         }
         public static bool TryExtractTransformFromPropertyString(string[] propertySubstrings, FindTransformDelegate findTransform, out Transform transform, out int finalSubstringIndex)
         {
@@ -824,7 +894,7 @@ namespace Swole.API.Unity.Animation
             Transform objTransform = null;
             if (!TryExtractTransformFromPropertyString(substrings, findTransform, out objTransform, out int finalSubstringIndex) || finalSubstringIndex >= substrings.Length - 1) return 0;
 
-            Type behaviourType = CustomAnimator.FindComponentTypes(substrings[finalSubstringIndex + 1]);
+            Type behaviourType = CustomAnimator.FindComponentType(substrings[finalSubstringIndex + 1]);
             if (behaviourType == null) behaviourType = typeof(Transform);
 
             Component component = objTransform.GetComponent(behaviourType);
@@ -843,7 +913,7 @@ namespace Swole.API.Unity.Animation
             Transform objTransform = null;
             if (!TryExtractTransformFromPropertyString(substrings, findTransform, out objTransform, out int finalSubstringIndex) || finalSubstringIndex >= substrings.Length - 1) return false;
 
-            Type behaviourType = CustomAnimator.FindComponentTypes(substrings[finalSubstringIndex + 1]);
+            Type behaviourType = CustomAnimator.FindComponentType(substrings[finalSubstringIndex + 1]);
             if (behaviourType == null) behaviourType = typeof(Transform);
 
             Component component = objTransform.GetComponent(behaviourType);
@@ -864,21 +934,46 @@ namespace Swole.API.Unity.Animation
 
             float value;
 
-            if (restPose.TryGetValueLiberal($"{transformName}{_localPositionProperty}{_propertyX}", out value)) curve.localPositionCurveX.keys = new Keyframe[] { new Keyframe() { time = 0, value = value } };
-            if (restPose.TryGetValueLiberal($"{transformName}{_localPositionProperty}{_propertyY}", out value)) curve.localPositionCurveY.keys = new Keyframe[] { new Keyframe() { time = 0, value = value } };
-            if (restPose.TryGetValueLiberal($"{transformName}{_localPositionProperty}{_propertyZ}", out value)) curve.localPositionCurveZ.keys = new Keyframe[] { new Keyframe() { time = 0, value = value } };
+            if (restPose.TryGetValueLiberal(TransformLocalPositionXKey(transformName), out value)) curve.localPositionCurveX.keys = new Keyframe[] { new Keyframe() { time = 0, value = value } };
+            if (restPose.TryGetValueLiberal(TransformLocalPositionYKey(transformName), out value)) curve.localPositionCurveY.keys = new Keyframe[] { new Keyframe() { time = 0, value = value } };
+            if (restPose.TryGetValueLiberal(TransformLocalPositionZKey(transformName), out value)) curve.localPositionCurveZ.keys = new Keyframe[] { new Keyframe() { time = 0, value = value } };
 
-            if (restPose.TryGetValueLiberal($"{transformName}{_localRotationProperty}{_propertyX}", out value)) curve.localRotationCurveX.keys = new Keyframe[] { new Keyframe() { time = 0, value = value } };
-            if (restPose.TryGetValueLiberal($"{transformName}{_localRotationProperty}{_propertyY}", out value)) curve.localRotationCurveY.keys = new Keyframe[] { new Keyframe() { time = 0, value = value } };
-            if (restPose.TryGetValueLiberal($"{transformName}{_localRotationProperty}{_propertyZ}", out value)) curve.localRotationCurveZ.keys = new Keyframe[] { new Keyframe() { time = 0, value = value } };
-            if (restPose.TryGetValueLiberal($"{transformName}{_localRotationProperty}{_propertyW}", out value)) curve.localRotationCurveW.keys = new Keyframe[] { new Keyframe() { time = 0, value = value } };
+            if (restPose.TryGetValueLiberal(TransformLocalRotationXKey(transformName), out value)) curve.localRotationCurveX.keys = new Keyframe[] { new Keyframe() { time = 0, value = value } };
+            if (restPose.TryGetValueLiberal(TransformLocalRotationYKey(transformName), out value)) curve.localRotationCurveY.keys = new Keyframe[] { new Keyframe() { time = 0, value = value } };
+            if (restPose.TryGetValueLiberal(TransformLocalRotationZKey(transformName), out value)) curve.localRotationCurveZ.keys = new Keyframe[] { new Keyframe() { time = 0, value = value } };
+            if (restPose.TryGetValueLiberal(TransformLocalRotationWKey(transformName), out value)) curve.localRotationCurveW.keys = new Keyframe[] { new Keyframe() { time = 0, value = value } };
 
-            if (restPose.TryGetValueLiberal($"{transformName}{_localScaleProperty}{_propertyX}", out value)) curve.localScaleCurveX.keys = new Keyframe[] { new Keyframe() { time = 0, value = value } };
-            if (restPose.TryGetValueLiberal($"{transformName}{_localScaleProperty}{_propertyY}", out value)) curve.localScaleCurveY.keys = new Keyframe[] { new Keyframe() { time = 0, value = value } };
-            if (restPose.TryGetValueLiberal($"{transformName}{_localScaleProperty}{_propertyZ}", out value)) curve.localScaleCurveZ.keys = new Keyframe[] { new Keyframe() { time = 0, value = value } };
+            if (restPose.TryGetValueLiberal(TransformLocalScaleXKey(transformName), out value)) curve.localScaleCurveX.keys = new Keyframe[] { new Keyframe() { time = 0, value = value } };
+            if (restPose.TryGetValueLiberal(TransformLocalScaleYKey(transformName), out value)) curve.localScaleCurveY.keys = new Keyframe[] { new Keyframe() { time = 0, value = value } };
+            if (restPose.TryGetValueLiberal(TransformLocalScaleZKey(transformName), out value)) curve.localScaleCurveZ.keys = new Keyframe[] { new Keyframe() { time = 0, value = value } };
 
             return curve;
         }
+        /// <summary>
+        /// Creates a single keyframe base curve that represents the rest pose of the transform
+        /// </summary>
+        public static TransformCurve GetNewBaseTransformCurve(string transformName, Vector3 localPosition, Quaternion localRotation, Vector3 localScale)
+        {
+            var curve = TransformCurve.NewInstance;
+            curve.name = transformName; 
+            //curve.isBone <- might need to do something with this
+
+            curve.localPositionCurveX.keys = new Keyframe[] { new Keyframe() { time = 0, value = localPosition.x } };
+            curve.localPositionCurveY.keys = new Keyframe[] { new Keyframe() { time = 0, value = localPosition.y } };
+            curve.localPositionCurveZ.keys = new Keyframe[] { new Keyframe() { time = 0, value = localPosition.z } };
+
+            curve.localRotationCurveX.keys = new Keyframe[] { new Keyframe() { time = 0, value = localRotation.x } };
+            curve.localRotationCurveY.keys = new Keyframe[] { new Keyframe() { time = 0, value = localRotation.y } };
+            curve.localRotationCurveZ.keys = new Keyframe[] { new Keyframe() { time = 0, value = localRotation.z } };
+            curve.localRotationCurveW.keys = new Keyframe[] { new Keyframe() { time = 0, value = localRotation.w } };
+
+            curve.localScaleCurveX.keys = new Keyframe[] { new Keyframe() { time = 0, value = localScale.x } };
+            curve.localScaleCurveY.keys = new Keyframe[] { new Keyframe() { time = 0, value = localScale.y } };
+            curve.localScaleCurveZ.keys = new Keyframe[] { new Keyframe() { time = 0, value = localScale.z } };
+
+            return curve;
+        }
+
         /// <summary>
         /// Creates a single keyframe base curve that represents the rest value of the property
         /// </summary>
@@ -1067,7 +1162,7 @@ namespace Swole.API.Unity.Animation
 
         public static ITransformCurve.Frame GetPoseTransformFrame(string transformName, Pose pose)
         {
-            ITransformCurve.Frame frame = null;
+            ITransformCurve.Frame frame = null; 
 
             if (pose != null)
             {
@@ -1077,22 +1172,22 @@ namespace Swole.API.Unity.Animation
                 float value;
 
                 var localPosition = data.localPosition;
-                if (pose.TryGetValue($"{transformName}{_localPositionProperty}{_propertyX}", out value)) localPosition.x = value;
-                if (pose.TryGetValue($"{transformName}{_localPositionProperty}{_propertyY}", out value)) localPosition.y = value;
-                if (pose.TryGetValue($"{transformName}{_localPositionProperty}{_propertyZ}", out value)) localPosition.z = value;
+                if (pose.TryGetValue(TransformLocalPositionXKey(transformName), out value)) localPosition.x = value;
+                if (pose.TryGetValue(TransformLocalPositionYKey(transformName), out value)) localPosition.y = value;
+                if (pose.TryGetValue(TransformLocalPositionZKey(transformName), out value)) localPosition.z = value;
                 data.localPosition = localPosition;
 
                 var localRotation = data.localRotation.value;
-                if (pose.TryGetValue($"{transformName}{_localRotationProperty}{_propertyX}", out value)) localRotation.x = value;
-                if (pose.TryGetValue($"{transformName}{_localRotationProperty}{_propertyY}", out value)) localRotation.y = value;
-                if (pose.TryGetValue($"{transformName}{_localRotationProperty}{_propertyZ}", out value)) localRotation.z = value;
-                if (pose.TryGetValue($"{transformName}{_localRotationProperty}{_propertyW}", out value)) localRotation.w = value;
+                if (pose.TryGetValue(TransformLocalRotationXKey(transformName), out value)) localRotation.x = value;
+                if (pose.TryGetValue(TransformLocalRotationYKey(transformName), out value)) localRotation.y = value;
+                if (pose.TryGetValue(TransformLocalRotationZKey(transformName), out value)) localRotation.z = value;
+                if (pose.TryGetValue(TransformLocalRotationWKey(transformName), out value)) localRotation.w = value;
                 data.localRotation = localRotation;
 
                 var localScale = data.localPosition;
-                if (pose.TryGetValue($"{transformName}{_localScaleProperty}{_propertyX}", out value)) localScale.x = value;
-                if (pose.TryGetValue($"{transformName}{_localScaleProperty}{_propertyY}", out value)) localScale.y = value;
-                if (pose.TryGetValue($"{transformName}{_localScaleProperty}{_propertyZ}", out value)) localScale.z = value;
+                if (pose.TryGetValue(TransformLocalScaleXKey(transformName), out value)) localScale.x = value;
+                if (pose.TryGetValue(TransformLocalScaleYKey(transformName), out value)) localScale.y = value;
+                if (pose.TryGetValue(TransformLocalScaleZKey(transformName), out value)) localScale.z = value; 
                 data.localScale = localScale;
 
                 frame.data = data;

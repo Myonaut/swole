@@ -31,9 +31,9 @@ namespace Swole.API.Unity.Animation
     {
 
         public static JobHandle FinalAnimationJobHandle => ProxyBoneJobs.OutputDependency;
-        public static int FinalAnimationBehaviourPriority => ProxyTransformSingleton.ExecutionPriority;
-        public static int StartAnimationBehaviourPriority => ExecutionPriority;
-
+        public static int FinalAnimationBehaviourPriority => CharacterExpressionsJobs.ExecutionPriority;
+        public static int StartAnimationBehaviourPriority => ExecutionPriority; 
+        
         public static int ExecutionPriority => 80;
         public override int Priority => ExecutionPriority;
         public override bool DestroyOnLoad => false;
@@ -63,26 +63,32 @@ namespace Swole.API.Unity.Animation
             return instance.animators.Remove(animator);
         }
 
-        public override void OnFixedUpdate()
-        {
-        }
-
-        private readonly List<VoidParameterlessDelegate> postLateUpdateWork = new List<VoidParameterlessDelegate>();
-        public static void AddPostLateUpdateWork(VoidParameterlessDelegate work)
+        private readonly List<VoidParameterlessDelegate> postFixedUpdateWork = new List<VoidParameterlessDelegate>();
+        public static void AddPostFixedUpdateWork(VoidParameterlessDelegate work)
         {
             var instance = Instance;
             if (instance == null) return;
 
-            instance.postLateUpdateWork.Add(work);
+            instance.postFixedUpdateWork.Add(work);
         }
-        public override void OnLateUpdate()
-        {
-            float deltaTime = Time.deltaTime;
-            foreach (var animator in animators) if (animator != null && animator.isActiveAndEnabled) animator.LateUpdateStep(deltaTime);
-            animators.RemoveAll(i => i == null || i.OverrideUpdateCalls);
 
-            foreach (var work in postLateUpdateWork) work?.Invoke();
-            postLateUpdateWork.Clear();
+        public override void OnFixedUpdate() => OnFixedUpdate(Time.fixedDeltaTime);
+        public void OnFixedUpdate(float deltaTime)
+        {
+            foreach (var animator in animators)
+            {
+                if (animator != null)
+                {
+                    if (animator.disabledBySkip)
+                    {
+                        animator.skipTimeFixed += deltaTime;
+                    }
+                    else if (animator.isActiveAndEnabled) animator.FixedUpdateStep(deltaTime);
+                }
+            }
+
+            foreach (var work in postFixedUpdateWork) work?.Invoke(); 
+            postUpdateWork.Clear(); 
         }
 
         private readonly List<VoidParameterlessDelegate> postUpdateWork = new List<VoidParameterlessDelegate>();
@@ -93,15 +99,58 @@ namespace Swole.API.Unity.Animation
 
             instance.postUpdateWork.Add(work); 
         }
-        public override void OnUpdate()
+        public override void OnUpdate() => OnUpdate(Time.deltaTime);
+        public void OnUpdate(float deltaTime)
         {
-            float deltaTime = Time.deltaTime;
-            foreach (var animator in animators) if (animator != null && animator.isActiveAndEnabled) animator.UpdateStep(deltaTime);
+            foreach (var animator in animators) 
+            {
+                if (animator == null) continue;
+
+                if (animator.updateRate > 0)
+                {
+                    animator.skipTime += deltaTime;
+                    if (animator.skipTime >= animator.updateRate)
+                    {
+                        animator.skipTime -= deltaTime;
+                        if (animator.disabledBySkip) 
+                        { 
+                            animator.enabled = true;
+                            animator.disabledBySkip = false;
+                        }
+                    } 
+                    else if (animator.enabled)
+                    {
+                        animator.enabled = false;
+                        animator.disabledBySkip = true;
+                    }
+                }
+                
+                if (animator.isActiveAndEnabled) animator.UpdateStep(deltaTime);
+            }
 
             foreach (var work in postUpdateWork) work?.Invoke();
             postUpdateWork.Clear();
         }
+
+        private readonly List<VoidParameterlessDelegate> postLateUpdateWork = new List<VoidParameterlessDelegate>();
+        public static void AddPostLateUpdateWork(VoidParameterlessDelegate work)
+        {
+            var instance = Instance;
+            if (instance == null) return;
+
+            instance.postLateUpdateWork.Add(work);
+        }
+        public override void OnLateUpdate() => OnLateUpdate(Time.deltaTime);
+        public void OnLateUpdate(float deltaTime)
+        {
+            foreach (var animator in animators) if (animator != null && animator.isActiveAndEnabled) animator.LateUpdateStep(deltaTime);
+            animators.RemoveAll(i => i == null || i.OverrideUpdateCalls);
+
+            foreach (var work in postLateUpdateWork) work?.Invoke();
+            postLateUpdateWork.Clear();
+        }
     }
+
     public class CustomAnimator : MonoBehaviour, IAnimator
     {
 
@@ -137,6 +186,14 @@ namespace Swole.API.Unity.Animation
         public void AdminDestroy(float timeDelay = 0) => swole.Engine.Object_AdminDestroy(this, timeDelay);
 
         #endregion
+
+        public float updateRate;
+        [NonSerialized]
+        public float skipTime;
+        [NonSerialized]
+        public float skipTimeFixed;
+        [NonSerialized]
+        public bool disabledBySkip;
 
         public void DisableIKControllers()
         {
@@ -185,18 +242,18 @@ namespace Swole.API.Unity.Animation
 
         }
 
-        public void ApplyController(IAnimationController controller, bool usePrefix = true, bool incrementDuplicateParameters = false)
+        public void ApplyController(IAnimationController controller, bool usePrefixForLayers = true, bool incrementDuplicateParameters = false, bool usePrefixForParameters = false)
         {
             if (controller == null) return;
 
-            string prefix = usePrefix ? controller.Prefix : "";
+            string prefix = controller.Prefix; 
 
             IAnimationParameter[] parameters = controller.GetParameters(true); 
 
             if (parameters != null)
             {
 
-                if (usePrefix) for (int a = 0; a < parameters.Length; a++) if (parameters[a] != null) parameters[a].Name = prefix + parameters[a].Name;
+                if (usePrefixForParameters) for (int a = 0; a < parameters.Length; a++) if (parameters[a] != null) parameters[a].Name = prefix + parameters[a].Name;
 
                 if (incrementDuplicateParameters)
                 {
@@ -222,18 +279,18 @@ namespace Swole.API.Unity.Animation
 
                 }
 
-                AddParameters(parameters);
+                AddParameters(parameters); 
 
             }
 
             List<IAnimationLayer> instantiatedLayers = new List<IAnimationLayer>();
             if (controller is CustomAnimationController cac)
             {
-                AddLayers(cac.layers, true, prefix, instantiatedLayers, true, controller);
+                AddLayers(cac.layers, true, usePrefixForLayers ? prefix : string.Empty, instantiatedLayers, true, controller);
             }
             else
             {
-                AddLayers(controller.Layers, true, prefix, instantiatedLayers, true, controller);
+                AddLayers(controller.Layers, true, usePrefixForLayers ? prefix : string.Empty, instantiatedLayers, true, controller);
             }
 
             if (parameters != null)
@@ -280,7 +337,7 @@ namespace Swole.API.Unity.Animation
 
             if (controller == null) return;
             RemoveControllerData(controller.Prefix, disposeLayers);
-
+            RemoveLayersFromSource(controller);
         }
 
         public void RemoveControllerData(string prefix, bool disposeLayers = true)
@@ -477,6 +534,112 @@ namespace Swole.API.Unity.Animation
         public string AvatarName => avatar == null ? null : avatar.name;
         public string RemapBoneName(string boneName) => avatar == null ? boneName : avatar.Remap(boneName);
 
+        public bool finalizeAnimationsBeforePhysics;
+
+        [Serializable]
+        public enum RootMotionMode
+        {
+            Default, Physics
+        }
+
+        public bool applyRootMotion;
+        public RootMotionMode rootMotionMode;
+        public Vector3 forwardAxis = Vector3.forward;
+        public Vector3 yawAxis = Vector3.up;
+
+        protected Transform rootMotionBone;
+        protected TransformState rootMotionBoneStartState;
+        public void ReinitializeRootMotionBoneStartState() 
+        {
+            if (rootMotionBone == null) return;
+            rootMotionBoneStartState = new TransformState(rootMotionBone, false);
+
+            currentRootTranslation = Vector3.zero;
+            currentRootRotation = Quaternion.identity;
+        }
+        public Transform RootMotionBone
+        {
+            get
+            {
+                if (rootMotionBone == null)
+                {
+                    rootMotionBone = RootBoneUnity;
+                    ReinitializeRootMotionBoneStartState();
+                }
+
+                return rootMotionBone;
+            }
+            set
+            {
+                rootMotionBone = value;
+            }
+        }
+        protected Vector3 currentRootTranslation = Vector3.zero;
+        protected Quaternion currentRootRotation = Quaternion.identity;
+
+        public void GetRootMotion(out Vector3 rootTranslation, out Quaternion rootRotation) 
+        {
+            rootTranslation = currentRootTranslation;
+            rootRotation = currentRootRotation;
+        }
+        public void SetRootMotion(Vector3 rootTranslation, Quaternion rootRotation) 
+        {
+            currentRootTranslation = rootTranslation;
+            currentRootRotation = rootRotation;
+        }
+
+        public delegate void ApplyRootMotionDelegate(Transform rootTransform, Vector3 rootTranslationIn, Quaternion rootRotationIn, out Vector3 rootTranslationOut, out Quaternion rootRotationOut);
+        protected readonly List<ApplyRootMotionDelegate> rootMotionListeners = new List<ApplyRootMotionDelegate>();
+
+        public void AddRootMotionListener(ApplyRootMotionDelegate listener)
+        {
+            if (listener == null || rootMotionListeners.Contains(listener)) return;
+            rootMotionListeners.Add(listener);
+        }
+        public void RemoveRootMotionListener(ApplyRootMotionDelegate listener)
+        {
+            if (listener == null) return;
+            rootMotionListeners.Remove(listener);
+        }
+
+        protected void ResetRootMotionBone()
+        {
+            if (rootMotionBone == null) return;
+
+            rootMotionBoneStartState.ApplyLocal(rootMotionBone); // force bone back to start pose
+        }
+        protected void ApplyRootMotion()
+        {
+            var rootTranslation = currentRootTranslation;  
+            var rootRotation = currentRootRotation;
+
+            if (rootMotionBone != null && rootMotionBone.parent != null)
+            {
+                var toWorld = rootMotionBone.parent.rotation;
+
+                rootTranslation = toWorld * rootTranslation; 
+                rootRotation = (toWorld * (rootRotation * rootMotionBoneStartState.rotation)) * Quaternion.Inverse(toWorld * rootMotionBoneStartState.rotation);
+                //rootTranslation = rootRotation * toWorld * rootTranslation;
+            }
+
+            foreach(var listener in rootMotionListeners)
+            {
+                listener?.Invoke(transform, rootTranslation, rootRotation, out rootTranslation, out rootRotation); 
+            }
+
+            ApplyRootMotion(rootTranslation, rootRotation);
+
+            //Debug.DrawRay(position, rootTranslation * 100, Color.magenta, 2);
+
+            currentRootTranslation = Vector3.zero;
+            currentRootRotation = Quaternion.identity;
+        }
+        public void ApplyRootMotion(Vector3 rootTranslation, Quaternion rootRotation)
+        {
+            transform.GetPositionAndRotation(out Vector3 position, out Quaternion rotation);
+            transform.SetPositionAndRotation(position + rootTranslation, rootRotation * rotation);
+        }
+
         [Serializable]
         public class IKBone
         {
@@ -631,13 +794,36 @@ namespace Swole.API.Unity.Animation
             }
 
         }
+        public bool HasBones => Bones != null && m_bones.bones != null;
+
         public EngineInternal.ITransform RootBone => UnityEngineHook.AsSwoleTransform(RootBoneUnity); 
         public Transform RootBoneUnity
         {
             get
             {
-                if (Bones == null || m_bones.rigContainer == null) return transform; 
-                return !avatar.containerIsRoot && m_bones.rigContainer.childCount == 1 ? m_bones.rigContainer.GetChild(0) : m_bones.rigContainer; // Determine root bone, which can be different from the rigContainer. If the rigContainer has more than one child, the rigContainer is probably the root bone.
+                //if (Bones == null || m_bones.rigContainer == null) return transform; 
+                //return !avatar.containerIsRoot && m_bones.rigContainer.childCount == 1 ? m_bones.rigContainer.GetChild(0) : m_bones.rigContainer; // Determine root bone, which can be different from the rigContainer. If the rigContainer has more than one child, the rigContainer is probably the root bone.
+
+                if (avatar == null || string.IsNullOrWhiteSpace(avatar.RootBone)) return null;
+                
+                if (Bones != null && m_bones.bones != null)
+                {
+                    string rootBoneName = avatar.RootBone;
+                    if (avatar != null) rootBoneName = avatar.Remap(rootBoneName);
+                    rootBoneName = rootBoneName.AsID();
+
+                    for (int a = 0; a < m_bones.bones.Length; a++)
+                    {
+                        var bone = m_bones.bones[a];
+                        if (bone == null) continue;
+                        if (bone.name.AsID() == rootBoneName)
+                        {
+                            return bone;
+                        }
+                    }
+                }
+
+                return null;
             }
         }
 
@@ -757,6 +943,10 @@ namespace Swole.API.Unity.Animation
         public void Dispose()
         {
 
+#if UNITY_EDITOR
+            Debug.Log($"Disposing animator {name}");
+#endif
+
             if (m_animationLayers != null)
             {
                 foreach (var layer in m_animationLayers) if (layer != null) layer.IteratePlayers(CompleteAnimationPlayerJobs);
@@ -783,9 +973,21 @@ namespace Swole.API.Unity.Animation
         }
 
         public bool dontAutoInitialize;
+        public bool dontInitializeBoneStates;
         public void Initialize()
         {
             if (!ResetToPreInitializedBindPose()) ReinitializeBindPose(); 
+
+            if (!dontInitializeBoneStates) 
+            { 
+                if (HasBones)
+                {
+                    foreach(var bone in m_bones.bones) 
+                    { 
+                        if (bone != null) AddOrGetState(bone); 
+                    }
+                }
+            }
 
             ResetIKControllers();
         }
@@ -798,6 +1000,8 @@ namespace Swole.API.Unity.Animation
             {
                 ReinitializeControllers();
             }
+
+            if (rootMotionBone == null) rootMotionBone = RootMotionBone;
         }
 
         protected virtual void OnDestroy()
@@ -818,6 +1022,8 @@ namespace Swole.API.Unity.Animation
 
             public quaternion unmodifiedLocalRotation;
             public quaternion modifiedLocalRotation;
+
+            public quaternion previousRotationMod;
 
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
             public void Unmodify(TransformAccess transform)
@@ -852,6 +1058,8 @@ namespace Swole.API.Unity.Animation
 
                 var state = this;
 
+                state.previousRotationMod = quaternion.identity;
+
                 state.unmodifiedLocalPosition = transform.localPosition;
                 state.unmodifiedLocalRotation = transform.localRotation;
                 state.unmodifiedLocalScale = transform.localScale;
@@ -865,6 +1073,8 @@ namespace Swole.API.Unity.Animation
             {
 
                 var state = this;
+
+                state.previousRotationMod = quaternion.identity;
 
                 state.modifiedLocalPosition = state.unmodifiedLocalPosition;
                 state.modifiedLocalRotation = state.unmodifiedLocalRotation;
@@ -880,9 +1090,13 @@ namespace Swole.API.Unity.Animation
 
                 var state = this;
 
-                state.modifiedLocalPosition = data.localPosition;
-                state.modifiedLocalRotation = data.localRotation;
-                state.modifiedLocalScale = data.localScale;
+                //var rotMod = Maths.JobsEnsureQuaternionContinuity(state.previousRotationMod, data.localRotation);
+                //state.previousRotationMod = rotMod;
+                var rotMod = data.localRotation;
+
+                state.modifiedLocalPosition = data.localPosition; 
+                state.modifiedLocalRotation = rotMod;
+                state.modifiedLocalScale = data.localScale; 
 
                 return state;
 
@@ -894,8 +1108,12 @@ namespace Swole.API.Unity.Animation
 
                 var state = this;
 
+                //var rotMod = Maths.JobsEnsureQuaternionContinuity(state.previousRotationMod, data.localRotation);
+                //state.previousRotationMod = rotMod;
+                var rotMod = data.localRotation;
+
                 state.modifiedLocalPosition = math.lerp(state.unmodifiedLocalPosition, data.localPosition, mix);
-                state.modifiedLocalRotation = math.slerp(state.unmodifiedLocalRotation, data.localRotation, mix);
+                state.modifiedLocalRotation = math.slerp(state.unmodifiedLocalRotation, rotMod, mix);
                 state.modifiedLocalScale = math.lerp(state.unmodifiedLocalScale, data.localScale, mix);
 
                 return state;
@@ -908,8 +1126,12 @@ namespace Swole.API.Unity.Animation
 
                 var state = this;
 
+                //var rotMod = Maths.JobsEnsureQuaternionContinuity(state.previousRotationMod, data.localRotation);
+                //state.previousRotationMod = rotMod;
+                var rotMod = data.localRotation;
+
                 state.modifiedLocalPosition = state.modifiedLocalPosition + data.localPosition;
-                state.modifiedLocalRotation = math.mul(state.modifiedLocalRotation, data.localRotation);
+                state.modifiedLocalRotation = math.mul(state.modifiedLocalRotation, rotMod);
                 state.modifiedLocalScale = state.modifiedLocalScale + data.localScale; 
 
                 return state;
@@ -922,8 +1144,12 @@ namespace Swole.API.Unity.Animation
 
                 var state = this;
 
+                //var rotMod = Maths.JobsEnsureQuaternionContinuity(state.previousRotationMod, data.localRotation);
+                //state.previousRotationMod = rotMod;
+                var rotMod = data.localRotation;
+
                 state.modifiedLocalPosition = state.modifiedLocalPosition + data.localPosition * mix;  
-                state.modifiedLocalRotation = math.slerp(state.modifiedLocalRotation, math.mul(state.modifiedLocalRotation, data.localRotation), mix); 
+                state.modifiedLocalRotation = math.slerp(state.modifiedLocalRotation, math.mul(state.modifiedLocalRotation, rotMod), mix); 
                 state.modifiedLocalScale = state.modifiedLocalScale + data.localScale * mix; 
 
                 return state;
@@ -938,6 +1164,8 @@ namespace Swole.API.Unity.Animation
             {
 
                 var state = this;
+
+                //state.previousRotationMod = math.select(state.previousRotationMod.value, newState.previousRotationMod.value, validityRotation);
 
                 state.modifiedLocalPosition = math.select(state.modifiedLocalPosition, newState.modifiedLocalPosition, validityPosition);
                 state.modifiedLocalScale = math.select(state.modifiedLocalScale, newState.modifiedLocalScale, validityScale);
@@ -1104,11 +1332,73 @@ namespace Swole.API.Unity.Animation
 
         }
 
+        public struct PropertyMemberInfo
+        {
+
+            public MemberInfo info;
+            public Type type;
+            public Type elementType;
+            public bool IsElement => elementType != null;
+            public object[] elementIndex;
+            public int ElementIndex => elementIndex == null ? 0 : elementIndex.Length <= 0 ? 0 : (int)elementIndex[0];
+            public PropertyInfo indexer;
+
+            public void SetElementValue(object instance, object value)
+            {
+                if (elementType == null) return;
+
+                if (indexer == null && type.IsArray)
+                {
+                    ((Array)instance).SetValue(value, ElementIndex);
+                }
+
+                indexer.GetValue(instance, elementIndex);
+            }
+            public object GetElementValue(object instance)
+            {
+                if (elementType == null) return instance;
+
+                if (indexer == null) 
+                {
+                    return type.IsArray ? ((Array)instance).GetValue(ElementIndex) : instance;
+                }
+
+                return indexer.GetValue(instance, elementIndex);   
+            }
+
+            public PropertyMemberInfo(MemberInfo info, int elementIndex, Type elementType)
+            {
+                bool isElement = elementType != null;
+
+                this.info = info;
+                this.elementIndex = isElement ? new object[] { elementIndex } : null;
+                this.elementType = elementType;
+
+                type = info is PropertyInfo prop ? prop.PropertyType : (info is FieldInfo field ? field.FieldType : null);
+
+                if (elementType != null && !type.IsArray)
+                {
+                    indexer = (type == null ? null : type.GetProperty("Item", BindingFlags.Public | BindingFlags.Instance));
+#if UNITY_EDITOR
+                    if (indexer == null) Debug.LogError($"The type {type} does not have an indexer.");
+#endif
+                }
+                else
+                {
+                    indexer = null; 
+                }
+            }
+        }
         [Serializable]
         public class PropertyState
         {
 
-            public MemberInfo info;
+            protected string path;
+            public string Path => path;
+            public string ID => path;
+
+            protected PropertyMemberInfo[] info;
+            public bool IsDynamic => ReferenceEquals(info, null);
 
             public int index;
 
@@ -1116,10 +1406,42 @@ namespace Swole.API.Unity.Animation
 
             public float modifiedValue;
 
+
+            public PropertyState(string path)
+            {
+                this.path = path;
+                index = -1;
+            }
+            public PropertyState(string path, int index)
+            {
+                this.path = path;
+                this.index = index;
+            }
+            public PropertyState(string path, PropertyMemberInfo[] info)
+            {
+                this.path = path;
+                index = -1;
+                this.info = info;
+            }
+
+            public static float GetConvertedValue(PropertyMemberInfo[] info, float value) => info == null || info.Length <= 0 ? value : GetConvertedValue(info[info.Length - 1].info, value);
             public static float GetConvertedValue(MemberInfo info, float value)
             {
 
                 var type = info == null ? typeof(float) : (typeof(PropertyInfo).IsAssignableFrom(info.GetType()) ? (((PropertyInfo)info).PropertyType) : (((FieldInfo)info).FieldType));
+                if (type.IsArray) 
+                { 
+                    type = type.GetElementType(); 
+                } 
+                else if (type.IsGenericType && type.GetGenericTypeDefinition() == typeof(Nullable<>))
+                {
+                    type = type.GetGenericArguments()[0];
+                }
+                else if (type.IsGenericType && type.GetGenericTypeDefinition() == typeof(List<>))
+                {
+                    type = type.GetGenericArguments()[0];
+                }
+
                 if (type == typeof(float))
                 {
                     return value;
@@ -1137,50 +1459,155 @@ namespace Swole.API.Unity.Animation
 
             }
 
+            public static float GetValue(PropertyMemberInfo[] info, object instance, int index)
+            {
+                if (info == null || info.Length <= 0)
+                {
+                    if (index >= 0 && instance is DynamicAnimationProperties dap)
+                    {
+                        return dap.GetValueUnsafe(index);
+                    }
+
+                    return 0f;
+                }
+
+                int lengthM1 = info.Length - 1;
+                object finalInstance = instance;
+                for(int a = 0; a < lengthM1; a++)
+                {
+                    var member = info[a];
+                    if (member.info is PropertyInfo prop)
+                    {
+                        finalInstance = prop.GetValue(finalInstance);
+                    }
+                    else if (member.info is FieldInfo field)
+                    {
+                        finalInstance = field.GetValue(finalInstance);
+                    }
+
+                    if (member.IsElement)
+                    {
+                        finalInstance = member.GetElementValue(finalInstance);
+                    }
+                }
+
+                var finalInfo = info[lengthM1];
+                var finalMemInfo = finalInfo.info;
+                if (finalInfo.IsElement)
+                {
+                    return GetFloatValue(finalInfo.elementType, finalInfo.GetElementValue(finalInstance));
+                }
+
+                return GetValue(finalMemInfo, finalInstance, index);
+            }
             public static float GetValue(MemberInfo info, object instance, int index)
             {
 
                 if (instance is DynamicAnimationProperties dap)
                 {
-                    return dap.GetValueUnsafe(index);
+                    return index >= 0 ? dap.GetValueUnsafe(index) : 0f; 
                 }
                 else if (info is PropertyInfo prop)
                 {
-                    var type = prop.PropertyType;
-                    if (type == typeof(float))
-                    {
-                        return (float)prop.GetValue(instance);
-                    }
-                    else if (type == typeof(int))
-                    {
-                        return (int)prop.GetValue(instance);
-                    }
-                    else if (type == typeof(bool))
-                    {
-                        return (bool)prop.GetValue(instance) ? 1 : 0;
-                    }
+                    return GetFloatValue(prop.PropertyType, prop.GetValue(instance));
                 }
                 else if (info is FieldInfo field)
                 {
-
-                    var type = field.FieldType;
-                    if (type == typeof(float))
-                    {
-                        return (float)field.GetValue(instance);
-                    }
-                    else if (type == typeof(int))
-                    {
-                        return (int)field.GetValue(instance);
-                    }
-                    else if (type == typeof(bool))
-                    {
-                        return (bool)field.GetValue(instance) ? 1 : 0;
-                    }
+                    return GetFloatValue(field.FieldType, field.GetValue(instance));
                 }
 
                 return 0;
             }
+            public static float GetValueFromIndexer(MemberInfo info, object instance, object[] indices)
+            {
+                if (info is PropertyInfo prop)
+                {
+                    return GetFloatValue(prop.PropertyType, prop.GetValue(instance, indices));
+                }
 
+                return 0;
+            }
+            public static float GetFloatValue(Type type, object value)
+            {
+                if (type == typeof(float))
+                {
+                    return (float)value;
+                }
+                else if (type == typeof(int))
+                {
+                    return (int)value;
+                }
+                else if (type == typeof(bool))
+                {
+                    return (bool)value ? 1 : 0;
+                }
+
+                return 0f;
+            }
+            public static object GetTypedValue(Type type, float value)
+            {
+                if (type == typeof(float))
+                {
+                    return value;
+                }
+                else if (type == typeof(int))
+                {
+                    return (int)value;
+                }
+                else if (type == typeof(bool))
+                {
+                    return value >= boolTruthThreshold/*value >= 0.5f*/;
+                }
+
+                if (type.IsValueType)
+                {
+                    return Activator.CreateInstance(type);
+                }
+                return null;
+            }
+
+            public static void SetValue(PropertyMemberInfo[] info, object instance, float value, int index)
+            {
+                if (info == null || info.Length <= 0)
+                {
+                    if (instance is DynamicAnimationProperties dap)
+                    {
+                        dap.SetValueUnsafe(index, value);
+                    }
+
+                    return;
+                }
+
+                int lengthM1 = info.Length - 1;
+                object finalInstance = instance;
+                for (int a = 0; a < lengthM1; a++)
+                {
+                    var member = info[a];
+                    if (member.info is PropertyInfo prop)
+                    {
+                        finalInstance = prop.GetValue(finalInstance); 
+                    }
+                    else if (member.info is FieldInfo field)
+                    {
+                        finalInstance = field.GetValue(finalInstance);
+                    }
+
+                    if (member.IsElement)
+                    {
+                        finalInstance = member.GetElementValue(finalInstance);
+                    }
+                }
+
+                var finalInfo = info[lengthM1];
+                var finalMemInfo = finalInfo.info;
+                if (finalInfo.IsElement)
+                {
+                    finalInfo.SetElementValue(finalInstance, GetTypedValue(finalInfo.elementType, value)); 
+                    return;
+                }
+
+                SetValue(info[lengthM1].info, finalInstance, value, index);  
+            }
             public static void SetValue(MemberInfo info, object instance, float value, int index)
             {
                 if (instance is DynamicAnimationProperties dap)
@@ -1189,48 +1616,18 @@ namespace Swole.API.Unity.Animation
                 }
                 else if (info is PropertyInfo prop)
                 {
-                    var type = prop.PropertyType;
-                    if (type == typeof(float))
-                    {
-
-                        prop.SetValue(instance, value);
-
-                    }
-                    else if (type == typeof(int))
-                    {
-
-                        prop.SetValue(instance, (int)value);
-
-                    }
-                    else if (type == typeof(bool))
-                    {
-
-                        prop.SetValue(instance, value >= boolTruthThreshold/*value >= 0.5f*/);
-
-                    }
+                    prop.SetValue(instance, GetTypedValue(prop.PropertyType, value));
                 }
                 else if (info is FieldInfo field)
                 {
-
-                    var type = field.FieldType;
-                    if (type == typeof(float))
-                    {
-
-                        field.SetValue(instance, value);
-
-                    }
-                    else if (type == typeof(int))
-                    {
-
-                        field.SetValue(instance, (int)value);
-
-                    }
-                    else if (type == typeof(bool))
-                    {
-
-                        field.SetValue(instance, value >= boolTruthThreshold/*value >= 0.5f*/);
-
-                    }
+                    field.SetValue(instance, GetTypedValue(field.FieldType, value));
+                }
+            }
+            public static void SetValueFromIndexer(MemberInfo info, object instance, float value, object[] indices)
+            {
+                if (info is PropertyInfo prop)
+                {
+                    prop.SetValue(instance, GetTypedValue(prop.PropertyType, value), indices);
                 }
             }
 
@@ -1481,7 +1878,12 @@ namespace Swole.API.Unity.Animation
 
                 state = new TransformStateReference(this);
                 state.index = m_transformStates.Length;
-                m_transformStates.Add(new TransformAnimationState());
+                m_transformStates.Add(new TransformAnimationState()
+                {
+                    unmodifiedLocalRotation = quaternion.identity,
+                    modifiedLocalRotation = quaternion.identity,
+                    previousRotationMod = quaternion.identity
+                });
 
                 if (!m_transforms.isCreated)
                 {
@@ -1506,7 +1908,7 @@ namespace Swole.API.Unity.Animation
 
         }
 
-        public PropertyState AddOrGetState(Component component, MemberInfo info)
+        /*public PropertyState AddOrGetState(Component component, MemberInfo info) // does not work for nested properties
         {
 
             string propertyId = GetPropertyId(component, info.Name);
@@ -1527,27 +1929,27 @@ namespace Swole.API.Unity.Animation
 
             return state;
 
-        }
+        }*/
 
-        public PropertyState AddOrGetState(Component component, string memberName)
+        public PropertyState AddOrGetState(Component component, string memberPath)
         {
 
-            string propertyId = GetPropertyId(component, memberName);
+            string propertyId = GetPropertyId(component, memberPath);
 
             if (!m_propertyStates.TryGetValue(propertyId, out PropertyState state))
             {
 
                 BindComponent(propertyId, component);
 
-                state = new PropertyState();
-
                 if (component is DynamicAnimationProperties dap)
                 {
-                    state.index = dap.IndexOf(memberName);
+                    state = new PropertyState(memberPath);
+                    state.index = dap.IndexOf(memberPath);
+                    if (state.index < 0) swole.LogError($"Invalid dynamic property '{memberPath}' for component '{dap.name}'");  
                 } 
                 else
                 {
-                    state.info = GetFieldOrProperty(component, memberName);
+                    state = new PropertyState(memberPath, GetFieldOrProperty(component, memberPath));
                 }
 
 
@@ -1561,10 +1963,25 @@ namespace Swole.API.Unity.Animation
         }
 
         public void BindComponent(string propertyId, Component component) => m_propertyStateBehaviours[propertyId] = component;
-        public Component GetComponentByProperty(string propertyId)
+        public Component GetComponentByProperty(string propertyId, out string remainingId)
         {
 
-            if (m_propertyStateBehaviours.TryGetValue(propertyId, out Component component)) return component;
+            remainingId = propertyId;
+            if (m_propertyStateBehaviours.TryGetValue(propertyId, out Component component)) 
+            {
+                if (component != null)
+                {
+                    string typeName = component.GetType().Name;
+                    var typeIndex = remainingId.IndexOf(typeName);
+                    if (typeIndex >= 0)
+                    {
+                        int subIndex = typeIndex + typeName.Length + 1; // +1 for the dot after the type name
+                        remainingId = subIndex < remainingId.Length ? remainingId.Substring(subIndex) : string.Empty;  
+                    }
+                }
+
+                return component; 
+            }
 
             return null;
 
@@ -1572,7 +1989,7 @@ namespace Swole.API.Unity.Animation
 
         private static List<Type> allComponentTypes;
 
-        public static Type FindComponentTypes(string name)
+        public static Type FindComponentType(string name)
         {
 
             if (allComponentTypes == null) allComponentTypes = typeof(Component).FindDerivedTypes();
@@ -1583,56 +2000,68 @@ namespace Swole.API.Unity.Animation
 
         }
 
-        public Component FindAndBindComponent(string propertyId)
+        public Component FindAndBindComponent(string propertyId, out string remainingId)
         {
+            remainingId = string.Empty;
             if (string.IsNullOrEmpty(propertyId)) return null;
 
-            var component = GetComponentByProperty(propertyId);
+            var component = GetComponentByProperty(propertyId, out remainingId);
             if (component != null) return component;
-
+            
             string[] substrings = propertyId.Split('.');
-            if (substrings.Length < 2) return null; 
+            if (substrings.Length < 2) return null;
 
-            int i = 0;
+            string compString = propertyId;
+            //int i = 0;
             Transform objTransform = null;
             if (substrings[0] == _animatorTransformPropertyStringPrefix)
             {
                 objTransform = transform; // Default to animator transform
-                i = 1;
+                //i = 1;
+                compString = string.Join(".", substrings, 1, substrings.Length - 1);
             }
             else
             {
-                if (substrings.Length >= 4)
-                {
-                    objTransform = FindTransformInHierarchy($"{substrings[0]}.{substrings[1]}.{substrings[2]}"/*, false*/); // In case the transform name includes periods
-                    i = 3;
-                }
-                if (objTransform == null)
-                {
-                    if (substrings.Length >= 3)
-                    {
-                        objTransform = FindTransformInHierarchy($"{substrings[0]}.{substrings[1]}"/*, false*/);  // In case the transform name includes periods
-                        i = 2;
-                    }
-                    if (objTransform == null)
-                    {
-                        objTransform = FindTransformInHierarchy(substrings[0]/*, false*/); 
-                        i = 1;
-                        if (objTransform == null)
-                        {
-                            return null;
-                        }
-                    }
-                }
+                // In case the transform name includes periods, try to find the transform
+                //if (substrings.Length >= 4) // max of 4 periods allowed in transform name
+                //{
+                //    objTransform = FindTransformInHierarchy($"{substrings[0]}.{substrings[1]}.{substrings[2]}"/*, false*/); 
+                //    i = 3;
+                //}
+                //if (objTransform == null)
+                //{
+                //    if (substrings.Length >= 3)
+                //    {
+                //        objTransform = FindTransformInHierarchy($"{substrings[0]}.{substrings[1]}"/*, false*/);
+                //        i = 2;
+                //    }
+                //    if (objTransform == null)
+                //    {
+                //        objTransform = FindTransformInHierarchy(substrings[0]/*, false*/); 
+                //        i = 1;
+                //        if (objTransform == null)
+                //        {
+                //            return null;
+                //        }
+                //    }
+                //}
+
+                if (!AnimationUtils.TryExtractTransformFromPropertyString(propertyId, FindTransformInHierarchy, out objTransform, out compString)) return null;
             }
 
-            Type componentType = FindComponentTypes(substrings[i]);
+            //Type componentType = FindComponentType(substrings[i]);        
+            string compName = compString;
+            int firstDot = compName.IndexOf('.');
+            if (firstDot >= 0) compName = compName.Substring(0, firstDot); else return null;
+            Type componentType = FindComponentType(compName);
             if (componentType == null) return null;
 
             component = objTransform.GetComponent(componentType);
             if (component == null) return null;
 
-            BindComponent(propertyId, component);
+            remainingId = compString.Substring(firstDot + 1);
+
+            BindComponent(propertyId, component); 
 
             return component;
 
@@ -1679,15 +2108,21 @@ namespace Swole.API.Unity.Animation
 
         protected void ResetDefaultTransformStates()
         {
+
+            OnResetPose?.Invoke();
+
             foreach (var pair in m_transformStateReferences)
             {
                 var state = pair.Value;
                 state.Reset(pair.Key);
             }
+
         }
 
         protected void ResetTransformStates()
         {
+
+            OnResetPose?.Invoke();
 
             if (useDynamicBindPose)
             {
@@ -1717,11 +2152,12 @@ namespace Swole.API.Unity.Animation
                 }
 
             }
-
         }
 
         protected void ResetTransformStatesAsJob()
         {
+
+            OnResetPose?.Invoke();
 
             if (!m_transforms.isCreated || !m_transformStates.IsCreated) return;
 
@@ -1747,7 +2183,6 @@ namespace Swole.API.Unity.Animation
                 }.Schedule(m_transforms, m_jobHandle);
 
             }
-
         }
 
         [BurstCompile]
@@ -2019,6 +2454,10 @@ namespace Swole.API.Unity.Animation
 
             if (initialize) parameter.Initialize(this, initObject);
 
+#if UNITY_EDITOR
+            Debug.Log($"NEW PARAMETER {parameter.GetType().Name} : {idName}");
+#endif
+
         }
         public void AddParameters(ICollection<IAnimationParameter> toAdd, bool initialize = true, object initObject = null, List<IAnimationParameter> outList = null, bool onlyOutputNew = false)
         {
@@ -2080,7 +2519,7 @@ namespace Swole.API.Unity.Animation
         {
 
             parameterIndex = FindParameterIndex(name);
-            if (parameterIndex >= 0) return null;
+            if (parameterIndex < 0) return null;
 
             return GetParameter(parameterIndex);
 
@@ -2116,6 +2555,18 @@ namespace Swole.API.Unity.Animation
 
             return remapper;
 
+        }
+
+        protected void OnCreateAnimationPlayer(IAnimationPlayer player)
+        {
+            if (player is CustomAnimation.Player customPlayer)
+            {
+                var rootMotionBone = RootMotionBone;
+                if (rootMotionBone != null)
+                {
+                    customPlayer.SetupRootMotion(rootMotionBone.name, GetRootMotion, SetRootMotion);
+                }
+            }
         }
 
         [NonSerialized]
@@ -2174,6 +2625,13 @@ namespace Swole.API.Unity.Animation
                 layer.IndexInAnimator = -1;
                 RecalculateLayerIndices();
 
+            }
+
+            if (layer is CustomAnimationLayer customLayer)
+            {
+                customLayer.ClearAnimationPlayerCreationListeners();
+                customLayer.OnCreateAnimationPlayer += OnCreateAnimationPlayer;
+                customLayer.IteratePlayers(OnCreateAnimationPlayer);
             }
         }
         public void AddLayers(ICollection<IAnimationLayer> toAdd, bool instantiate = true, string prefix = "", List<IAnimationLayer> outList = null, bool onlyOutputNew = false, IAnimationController animationController = null)
@@ -2257,11 +2715,35 @@ namespace Swole.API.Unity.Animation
             if (i > 0) RecalculateLayerIndices();
 
             return i;
+        } 
+        public int RemoveLayersFromSource(IAnimationController source, bool dispose = true)
+        {
+            if (m_animationLayers == null) return 0;
+
+            foreach (var layer in m_animationLayers) if (layer != null) layer.IteratePlayers(CompleteAnimationPlayerJobs);
+
+            int i = 0;
+            if (dispose)
+            {
+                i = m_animationLayers.RemoveAll(i => i == null || i.DisposeIfIsFromSource(source));
+            }
+            else
+            {
+                i = m_animationLayers.RemoveAll(i => i == null || i.IsFromSource(source));
+            }
+
+            if (i > 0) RecalculateLayerIndices();
+
+            return i;
         }
-        public void ClearLayers()
+        public void ClearLayers(bool disposeLayers)
         {
             if (m_animationLayers == null) return;
 
+            if (disposeLayers)
+            {
+                foreach (var layer in m_animationLayers) if (layer != null) layer.Dispose();
+            }
             m_animationLayers.Clear();
         }
 
@@ -2405,13 +2887,131 @@ namespace Swole.API.Unity.Animation
 
         //
 
+        [Serializable]
+        public enum BehaviourEvent
+        {
+            OnEnable,
+            OnDisable,
+            OnPreUpdate,
+            OnPostUpdate,
+            OnPreLateUpdate,
+            OnPostLateUpdate,
+            OnResetPose
+        }
+        
+        public void AddListener(BehaviourEvent event_, UnityAction listener) 
+        {
+            switch (event_)
+            {
+                case BehaviourEvent.OnEnable:
+                    if (OnEnabled == null) OnEnabled = new UnityEvent();
+                    OnEnabled.AddListener(listener);
+                    break;
+                case BehaviourEvent.OnDisable:
+                    if (OnDisabled == null) OnDisabled = new UnityEvent();
+                    OnDisabled.AddListener(listener);
+                    break;
+                case BehaviourEvent.OnPreUpdate:
+                    if (OnPreUpdate == null) OnPreUpdate = new UnityEvent();
+                    OnPreUpdate.AddListener(listener);
+                    break;
+                case BehaviourEvent.OnPostUpdate:
+                    if (OnPostUpdate == null) OnPostUpdate = new UnityEvent();
+                    OnPostUpdate.AddListener(listener);
+                    break;
+                case BehaviourEvent.OnPreLateUpdate:
+                    if (OnPreLateUpdate == null) OnPreLateUpdate = new UnityEvent();
+                    OnPreLateUpdate.AddListener(listener);
+                    break;
+                case BehaviourEvent.OnPostLateUpdate:
+                    if (OnPostLateUpdate == null) OnPostLateUpdate = new UnityEvent();
+                    OnPostLateUpdate.AddListener(listener);
+                    break;
+                case BehaviourEvent.OnResetPose:
+                    if (OnResetPose == null) OnResetPose = new UnityEvent();
+                    OnResetPose.AddListener(listener);
+                    break;
+            }
+        }
+        public void RemoveListener(BehaviourEvent event_, UnityAction listener)
+        {
+            switch (event_)
+            {
+                case BehaviourEvent.OnEnable:
+                    if (OnEnabled != null) OnEnabled.RemoveListener(listener);
+                    break;
+                case BehaviourEvent.OnDisable:
+                    if (OnDisabled != null) OnDisabled.RemoveListener(listener);
+                    break;
+                case BehaviourEvent.OnPreUpdate:
+                    if (OnPreUpdate != null) OnPreUpdate.RemoveListener(listener);
+                    break;
+                case BehaviourEvent.OnPostUpdate:
+                    if (OnPostUpdate != null) OnPostUpdate.RemoveListener(listener);
+                    break;
+                case BehaviourEvent.OnPreLateUpdate:
+                    if (OnPreLateUpdate != null) OnPreLateUpdate.RemoveListener(listener);
+                    break;
+                case BehaviourEvent.OnPostLateUpdate:
+                    if (OnPostLateUpdate != null) OnPostLateUpdate.RemoveListener(listener);
+                    break;
+                case BehaviourEvent.OnResetPose:
+                    if (OnResetPose != null) OnResetPose.RemoveListener(listener);
+                    break;
+            }
+        }
+        public void ClearListeners()
+        {
+            if (OnEnabled != null) OnEnabled.RemoveAllListeners();
+            if (OnDisabled != null) OnDisabled.RemoveAllListeners();
+            if (OnPreUpdate != null) OnPreUpdate.RemoveAllListeners();
+            if (OnPostUpdate != null) OnPostUpdate.RemoveAllListeners();
+            if (OnPreLateUpdate != null) OnPreLateUpdate.RemoveAllListeners();
+            if (OnPostLateUpdate != null) OnPostLateUpdate.RemoveAllListeners();
+            if (OnResetPose != null) OnResetPose.RemoveAllListeners();
+        }
+
+        public UnityEvent OnEnabled;
+        public UnityEvent OnDisabled;
+
+        protected virtual void OnEnable()
+        {
+            disabledBySkip = false;
+            OnEnabled?.Invoke();
+        }
+        protected virtual void OnDisable()
+        {
+            disabledBySkip = false;
+            OnDisabled?.Invoke();
+        }
+
+        public void FinalizeAnimations() => FinalizeAnimations(applyRootMotion);
+        public void FinalizeAnimations(bool resetRootMotionBone)
+        {
+            m_jobHandle.Complete(); // Required so that code which is dependent on animation completion can run properly
+            if (resetRootMotionBone) ResetRootMotionBone(); 
+        }
+
         public UnityEvent OnPreUpdate;
         public UnityEvent OnPostUpdate;
 
-        public virtual void UpdateStep(float deltaTime)
+        public virtual void FixedUpdateStep(float fixedDeltaTime)
+        {
+            fixedDeltaTime += skipTimeFixed;
+            skipTimeFixed = 0;
+
+            if (applyRootMotion && rootMotionMode == RootMotionMode.Physics) ApplyRootMotion();
+            if (finalizeAnimationsBeforePhysics) FinalizeAnimations();            
+        }
+        public virtual void UpdateStep(float deltaTime) => UpdateStep(deltaTime, true, false, applyRootMotion);
+        public virtual void UpdateStep(float deltaTime, bool notifyListeners) => UpdateStep(deltaTime, notifyListeners, false, applyRootMotion);
+        public virtual void UpdateStep(float deltaTime, bool notifyListeners, bool ignoreSkipTime) => UpdateStep(deltaTime, notifyListeners, ignoreSkipTime, applyRootMotion);
+        public virtual void UpdateStep(float deltaTime, bool notifyListeners, bool ignoreSkipTime, bool applyRootMotion)
         {
 
-            OnPreUpdate?.Invoke();
+            if (!ignoreSkipTime) deltaTime += skipTime;
+            
+            if (notifyListeners) OnPreUpdate?.Invoke();
 
 
             if (disableMultithreading) ResetTransformStates(); else ResetTransformStatesAsJob();
@@ -2422,8 +3022,9 @@ namespace Swole.API.Unity.Animation
             if (disableMultithreading) ApplyTransformStates(); else if (forceFinalTransformUpdate) ApplyTransformStatesAsJob();
             ApplyPropertyStates();
 
+            if (applyRootMotion && (rootMotionMode == RootMotionMode.Default || !this.applyRootMotion)) ApplyRootMotion();
 
-            OnPostUpdate?.Invoke();
+            if (notifyListeners) OnPostUpdate?.Invoke();
 
         }
 
@@ -2433,11 +3034,12 @@ namespace Swole.API.Unity.Animation
         public virtual void LateUpdateStep(float deltaTime)
         {
 
+            deltaTime += skipTime;
+            skipTime = 0;
+
             OnPreLateUpdate?.Invoke();
 
-
-            m_jobHandle.Complete(); // Required so that code which is dependent on animation completion can run properly
-
+            FinalizeAnimations();
 
             OnPostLateUpdate?.Invoke();
 
@@ -2460,6 +3062,63 @@ namespace Swole.API.Unity.Animation
             LateUpdateStep(Time.deltaTime);
 
         }*/
+
+        public UnityEvent OnResetPose;
+
+        protected readonly List<SwolePuppetMaster.MuscleConfigCollectionMix> muscleConfigMixes = new List<SwolePuppetMaster.MuscleConfigCollectionMix>();
+        public List<SwolePuppetMaster.MuscleConfigCollectionMix> GetCurrentMuscleConfigMix() 
+        {
+            muscleConfigMixes.Clear();
+
+            if (m_animationLayers != null)
+            {
+                float mixTotal = 0f;
+                int minIndex = 0;
+                for (int a = 0; a < m_animationLayers.Count; a++)
+                {
+                    var layer = m_animationLayers[a];
+                    if (layer.IsActive && layer.Mix > 0f && layer.HasActiveState && layer is CustomAnimationLayer cal)
+                    {
+                        if (!layer.IsAdditive)
+                        {
+                            minIndex = a;
+                            mixTotal = 0f;
+                        }
+                        
+                        mixTotal += layer.Mix;
+                    }
+                }
+
+                if (mixTotal > 0f)
+                {
+                    for (int a = 0; a < m_animationLayers.Count; a++)
+                    {
+                        if (a < minIndex) continue;
+
+                        var layer = m_animationLayers[a];
+                        if (layer.IsActive && layer.Mix > 0 && layer.HasActiveState && layer is CustomAnimationLayer cal)
+                        {
+                            muscleConfigMixes.Add(new SwolePuppetMaster.MuscleConfigCollectionMix()
+                            {
+                                mix = (mixTotal >= 1f ? (layer.Mix / mixTotal) : layer.Mix), 
+                                collection = cal.GetCurrentMuscleConfigMix()
+                            });
+                        }
+                    }
+
+                    if (mixTotal < 1f) // If the total mix is less than 1, add a default config mix with the remaining amount
+                    {
+                        muscleConfigMixes.Add(new SwolePuppetMaster.MuscleConfigCollectionMix()
+                        {
+                            mix = 1f - mixTotal,
+                            collection = default // this will automatically get replaced with the default configuration
+                        });
+                    }
+                }
+            }
+
+            return muscleConfigMixes;
+        }
 
     }
 }

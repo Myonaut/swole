@@ -76,7 +76,7 @@ namespace Swole.Unity
 
                 if (string.IsNullOrEmpty(savePath)) savePath = "";
  
-                outputTexture = outputTexture.CreateOrReplaceAsset((savePath.StartsWith("Assets") ? "" : "Assets/") + savePath + (savePath.EndsWith("/") ? "" : "/") + $"{outputTexture.name}.asset");
+                outputTexture = outputTexture.CreateOrReplaceAsset(outputTexture.CreateUnityAssetPathString(savePath, "asset"));
                 UnityEditor.AssetDatabase.SaveAssetIfDirty(outputTexture);
 
 #endif

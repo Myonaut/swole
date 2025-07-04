@@ -80,6 +80,9 @@ namespace Swole.API.Unity.Animation
         [TextArea]
         public string note;
 
+        public int rootBoneIndex;
+        public string RootBone => rootBoneIndex < 0 || containerIsRoot ? rigContainer : bones[rootBoneIndex];
+
         public string[] bones;
 
         [Serializable]

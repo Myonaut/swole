@@ -3,9 +3,14 @@
 using System;
 using System.Collections;
 using System.Collections.Generic;
+using System.IO;
 
 using UnityEngine;
 using UnityEngine.UI;
+
+#if UNITY_EDITOR
+using UnityEditor;
+#endif
 
 namespace Swole
 {
@@ -253,6 +258,87 @@ namespace Swole
 
             return tex;
         }
+
+        public static bool IsInternalUnityObject(this UnityEngine.Object obj)
+        {
+            if (obj == null) return false;
+
+            var type = obj.GetType();
+            if (typeof(MonoBehaviour).IsAssignableFrom(type)) return false;
+            if (typeof(ScriptableObject).IsAssignableFrom(type)) return false;  
+
+            return true;
+        }
+        public static bool IsInternalUnityObject(object obj)
+        {
+            if (obj is UnityEngine.Object uObj) return IsInternalUnityObject(uObj);
+            return false; 
+        }
+
+#if UNITY_EDITOR
+        public static void CreateDirectoryFromAssetPath(string assetPath)
+        {
+            assetPath = Path.Combine(Path.GetFullPath(Path.Combine(Application.dataPath, "..")), assetPath);
+
+            string directoryPath = Path.HasExtension(assetPath) ? Path.GetDirectoryName(assetPath) : assetPath; 
+            if (Directory.Exists(directoryPath))
+                return;
+
+            Directory.CreateDirectory(directoryPath);
+            AssetDatabase.Refresh();
+        }
+
+        //This method finds the first EditorWindow that's open, and is of the given type.
+        //For example, this is how we can search for the "SceneHierarchyWindow" that's currently open (hopefully it *is* actually open).
+        public static EditorWindow FindFirst(Type editorWindowType)
+        {
+            if (editorWindowType == null)
+                throw new ArgumentNullException(nameof(editorWindowType));
+            if (!typeof(EditorWindow).IsAssignableFrom(editorWindowType))
+                throw new ArgumentException("The given type (" + editorWindowType.Name + ") does not inherit from " + nameof(EditorWindow) + ".");
+
+            UnityEngine.Object[] openWindowsOfType = Resources.FindObjectsOfTypeAll(editorWindowType);
+            if (openWindowsOfType.Length <= 0)
+                return null;
+
+            EditorWindow window = (EditorWindow)openWindowsOfType[0];
+            return window;
+        }
+
+        /// <summary>
+        /// source: https://discussions.unity.com/t/solved-duplicate-prefab-issue/765782/6
+        /// </summary>
+        public static GameObject DuplicatePrefabInstanceA(GameObject prefabInstance)
+        {
+            var previousSelection = Selection.objects;
+            Selection.activeGameObject = prefabInstance;
+            Unsupported.DuplicateGameObjectsUsingPasteboard();
+            var duplicate = Selection.activeGameObject;
+            Selection.objects = previousSelection;
+
+            return duplicate;
+        }
+        /// <summary>
+        /// source: https://discussions.unity.com/t/solved-duplicate-prefab-issue/765782/6
+        /// </summary>
+        public static GameObject DuplicatePrefabInstanceB(GameObject prefabInstance)
+        {
+            UnityEngine.Object[] previousSelection = Selection.objects;
+            Selection.objects = new UnityEngine.Object[] { prefabInstance };
+            Selection.activeGameObject = prefabInstance;
+
+            //For performance, you might want to cache this Reflection:
+            Type hierarchyViewType = Type.GetType("UnityEditor.SceneHierarchyWindow, UnityEditor");
+            EditorWindow hierarchyView = FindFirst(hierarchyViewType);
+
+            //Using the Unity Hierarchy View window, we can duplicate our selected objects!
+            hierarchyView.SendEvent(EditorGUIUtility.CommandEvent("Duplicate"));
+
+            GameObject clone = Selection.activeGameObject;
+            Selection.objects = previousSelection;
+            return clone;
+        }
+#endif
 
     }
 

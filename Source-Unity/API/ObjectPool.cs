@@ -22,8 +22,8 @@ namespace Swole.API.Unity
         public void Claim(UnityEngine.Object instance);
         public void Claim(PooledObject pooledObject);
 
-        public void Release(UnityEngine.Object instance);
-        public void Release(PooledObject pooledObject);
+        public bool Release(UnityEngine.Object instance);
+        public bool Release(PooledObject pooledObject);
 
         public void Invalidate(UnityEngine.Object instance);
         public void Invalidate(PooledObject pooledObject);
@@ -327,9 +327,9 @@ namespace Swole.API.Unity
             Claim((UnityEngine.Object)pooledObject);
         }
 
-        public void Release(UnityEngine.Object instance)
+        public bool Release(UnityEngine.Object instance)
         {
-            if (!IsValid) return;
+            if (!IsValid) return false;
 
             if (instance is T inst)
             {
@@ -339,33 +339,45 @@ namespace Swole.API.Unity
                     claimedObjects.RemoveAt(i);
                     pooledObjects.Add(inst);
                     OnRelease(inst);
-                    OnReleaseInstance?.Invoke(inst); 
+                    OnReleaseInstance?.Invoke(inst);
+                    return true;
                 }
             } 
             else if (typeof(GameObject).IsAssignableFrom(typeof(T)) && instance is Component comp)
             {
-                Release(comp.gameObject);
+                return Release(comp.gameObject);
             }
+
+            return false;
         }
-        public void Release(T instance) => Release((UnityEngine.Object)instance);
-        public void Release(PooledObject pooledObject)
+        public bool Release(T instance) => Release((UnityEngine.Object)instance);
+        public bool Release(PooledObject pooledObject)
         {
-            if (pooledObject == null) return;
+            if (pooledObject == null) return false;
 
             if (typeof(Component).IsAssignableFrom(typeof(T)))
             {
                 T inst = pooledObject.GetComponent<T>();
-                if (inst == null) return;
-                Release(inst);
-                return;
+                if (inst == null) return false;
+                return Release(inst);
             }
             else if (typeof(GameObject).IsAssignableFrom(typeof(T)))
             {
-                Release((UnityEngine.Object)pooledObject.gameObject);
-                return;
+                return Release((UnityEngine.Object)pooledObject.gameObject);
             }
 
-            Release((UnityEngine.Object)pooledObject);
+            return Release((UnityEngine.Object)pooledObject);
+        }
+        public void ReleaseAllClaims()
+        {
+            while(claimedObjects.Count > 0)
+            {
+                int count = claimedObjects.Count;
+                if (!Release(claimedObjects[0]))
+                {
+                    if (claimedObjects.Count == count) claimedObjects.RemoveAt(0); else if (claimedObjects.Count > count) break;
+                } 
+            }
         }
 
         public void Invalidate(UnityEngine.Object instance)

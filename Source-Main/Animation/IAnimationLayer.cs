@@ -12,6 +12,10 @@ namespace Swole.Animation
         public bool HasPrefix(string prefix);
         public bool DisposeIfHasPrefix(string prefix);
 
+        public IAnimationController Source { get; }
+        public bool IsFromSource(IAnimationController source);
+        public bool DisposeIfIsFromSource(IAnimationController source);
+
         public IAnimationLayer NewInstance(IAnimator animator, IAnimationController animationController = null);
 
         public IAnimator Animator { get; }
@@ -51,24 +55,38 @@ namespace Swole.Animation
 
         public void RemapParameterIndices(Dictionary<int, int> remapper, bool invalidateNonRemappedIndices = false);
 
+        public IAnimationParameter GetParameter(int index);
+
+        public int FindParameterIndex(string name);
+        public IAnimationParameter FindParameter(string name, out int parameterIndex);
+        public IAnimationParameter FindParameter(string name);
+
         public MotionControllerIdentifier[] MotionControllerIdentifiers { get; set; }
 
         public int ControllerCount { get; }
         public bool IsPrototype { get; }
         public IAnimationMotionController GetMotionController(int index);
         public IAnimationMotionController GetMotionControllerUnsafe(int index);
+        public int FindMotionControllerIndex(string id);
+        public IAnimationMotionController FindMotionController(string id, out int controllerIndex);
+        public IAnimationMotionController FindMotionController(string id);
 
         public int EntryStateIndex { get; set; }
 
-        public IAnimationStateMachine[] StateMachines { get; set; }
+        public IAnimationLayerState[] States { get; set; }
         public int StateCount { get; }
-        public IAnimationStateMachine GetStateMachine(int index);
-        public IAnimationStateMachine GetStateMachineUnsafe(int index);
-        public void SetStateMachine(int index, IAnimationStateMachine stateMachine);
-        public void SetStateMachines(IAnimationStateMachine[] stateMachines);
+        public IAnimationLayerState GetState(int index);
+        public IAnimationLayerState GetStateUnsafe(int index);
+        public void SetState(int index, IAnimationLayerState state);
+        public void SetStates(IAnimationLayerState[] states);
+        public int FindStateIndex(string id);
+        public IAnimationLayerState FindState(string id, out int stateIndex);
+        public IAnimationLayerState FindState(string id);
 
-        public int ActiveStateIndex { get; }
-        public IAnimationStateMachine ActiveState { get; }
+        public void SetActiveState(int index);
+        public void SetActiveStateUnsafe(int index);
+        public int ActiveStateIndex { get; set; }
+        public IAnimationLayerState ActiveState { get; }
         public bool HasActiveState { get; }
 
         public void IteratePlayers(IterateAnimationPlayerDelegate del);
@@ -80,6 +98,14 @@ namespace Swole.Animation
         public bool RemoveAnimationPlayer(IAnimationPlayer player);
 
         public TransformHierarchy GetActiveTransformHierarchy();
+
+        public WeightedAvatarMask AvatarMask { get; set; }
+        public bool InvertAvatarMask { get; set; }
+
+        public void SetAvatarMask(WeightedAvatarMask mask, bool invertMask = false);
+
+        public void ReinitializeController(int controllerIndex);
+        public void ReinitializeController(IAnimationMotionController controller);
 
     }
 }
