@@ -20,6 +20,8 @@ namespace Swole.Morphing
     public class CustomizableCharacterMesh : InstanceableSkinnedMeshBase
     {
 
+        public const string matProp_LOD_Level = "_LOD_Level"; 
+
         #region Skinned Mesh Sync
 
         protected List<BlendShapeSync>[] standaloneShapeSyncs;
@@ -627,7 +629,11 @@ namespace Swole.Morphing
 
         public void LoadEditorConfig(EditorCharacterCustomizationConfig config)
         {
-            if (config != null) config.Apply(this);   
+            if (config != null) 
+            {
+                UpdateInEditor();
+                config.Apply(this); 
+            }
         }
 
 #if UNITY_EDITOR
@@ -675,7 +681,7 @@ namespace Swole.Morphing
 #if UNITY_EDITOR
         [SerializeField]
 #endif
-        [Range(0f, 2f)]
+        [Range(0f, 3f)]
         private float globalMass;
 
         private float prevGlobalFlex;
@@ -1215,11 +1221,19 @@ namespace Swole.Morphing
         {
             base.CreateInstance(floatOverrides, colorOverrides, vectorOverrides);
 
+            instance.SetFloatOverride(matProp_LOD_Level, 0, false);
             instance.SetFloatOverride(CharacterMeshData.ShapesInstanceIDPropertyName, ShapesInstanceID, false);
             instance.SetFloatOverride(CharacterMeshData.RigInstanceIDPropertyName, RigInstanceID, false);
             instance.SetFloatOverride(CharacterMeshData.CharacterInstanceIDPropertyName, CharacterInstanceID, true);  
 
             InitBuffers();
+        }
+
+        protected override int OnSetLOD(int levelOfDetail)
+        {
+            levelOfDetail = 2; 
+            if (instance != null) instance.SetFloatOverride(matProp_LOD_Level, levelOfDetail, true);  
+            return base.OnSetLOD(levelOfDetail); 
         }
 
         protected Transform[] bones;
@@ -1714,7 +1728,7 @@ namespace Swole.Morphing
     [Serializable, StructLayout(LayoutKind.Sequential)]
     public struct MuscleData : IEquatable<MuscleData>
     {
-        [Range(0, 2)]
+        [Range(0, 3)]
         public float mass;
         [Range(0, 1.5f)]
         public float flex;

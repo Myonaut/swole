@@ -480,9 +480,9 @@ namespace Swole
                 foreach (var override_ in floatPropertyOverrides) override_.Value.SetCount(Count);
                 foreach (var override_ in vectorPropertyOverrides) override_.Value.SetCount(Count); // Color overrides are stored as vector4 overrides
 
-                if (instanceFloatPropertyOverrides != null) foreach (var prop in instanceFloatPropertyOverrides) GetOverrideFloat(prop.propertyName, renderParams.material.GetFloat(prop.propertyName))?.Add(prop.value);
-                if (instanceColorPropertyOverrides != null) foreach (var prop in instanceColorPropertyOverrides) GetOverrideVector(prop.propertyName, renderParams.material.GetColor(prop.propertyName).AsLinearColorVector())?.Add(prop.value.AsLinearColorVector()); // Color overrides are stored as vector4 overrides
-                if (instanceVectorPropertyOverrides != null) foreach (var prop in instanceVectorPropertyOverrides) GetOverrideVector(prop.propertyName, renderParams.material.GetVector(prop.propertyName))?.Add(prop.value);
+                if (instanceFloatPropertyOverrides != null) foreach (var prop in instanceFloatPropertyOverrides) GetOverrideFloat(prop.propertyName, renderParams.material)?.Add(prop.value);
+                if (instanceColorPropertyOverrides != null) foreach (var prop in instanceColorPropertyOverrides) GetOverrideVector(prop.propertyName, renderParams.material, true)?.Add(prop.value.AsLinearColorVector()); // Color overrides are stored as vector4 overrides
+                if (instanceVectorPropertyOverrides != null) foreach (var prop in instanceVectorPropertyOverrides) GetOverrideVector(prop.propertyName, renderParams.material)?.Add(prop.value);
                 SetDirty();
                 count++;
                 return count - 1;
@@ -492,12 +492,12 @@ namespace Swole
             {
 
                 // Resize existing overrides
-                foreach (var override_ in floatPropertyOverrides) override_.Value.SetCount(Count);
+                foreach (var override_ in floatPropertyOverrides) override_.Value.SetCount(Count); 
                 foreach (var override_ in vectorPropertyOverrides) override_.Value.SetCount(Count); // Color overrides are stored as vector4 overrides
 
-                if (instanceFloatPropertyOverrides != null) foreach (var prop in instanceFloatPropertyOverrides) GetOverrideFloat(prop.propertyName, renderParams.material.GetFloat(prop.propertyName))?.Insert(prop.value, index);
-                if (instanceColorPropertyOverrides != null) foreach (var prop in instanceColorPropertyOverrides) GetOverrideVector(prop.propertyName, renderParams.material.GetColor(prop.propertyName).AsLinearColorVector())?.Insert(prop.value.AsLinearColorVector(), index); // Color overrides are stored as vector4 overrides
-                if (instanceVectorPropertyOverrides != null) foreach (var prop in instanceVectorPropertyOverrides) GetOverrideVector(prop.propertyName, renderParams.material.GetVector(prop.propertyName))?.Insert(prop.value, index);
+                if (instanceFloatPropertyOverrides != null) foreach (var prop in instanceFloatPropertyOverrides) GetOverrideFloat(prop.propertyName, renderParams.material)?.Insert(prop.value, index);
+                if (instanceColorPropertyOverrides != null) foreach (var prop in instanceColorPropertyOverrides) GetOverrideVector(prop.propertyName, renderParams.material, true)?.Insert(prop.value.AsLinearColorVector(), index); // Color overrides are stored as vector4 overrides
+                if (instanceVectorPropertyOverrides != null) foreach (var prop in instanceVectorPropertyOverrides) GetOverrideVector(prop.propertyName, renderParams.material)?.Insert(prop.value, index);
                 SetDirty();
                 count++;
             }
@@ -508,9 +508,9 @@ namespace Swole
                 foreach (var override_ in floatPropertyOverrides) override_.Value.SetCount(Count);
                 foreach (var override_ in vectorPropertyOverrides) override_.Value.SetCount(Count); // Color overrides are stored as vector4 overrides
 
-                if (instanceFloatPropertyOverrides != null) foreach (var prop in instanceFloatPropertyOverrides) GetOverrideFloat(prop.propertyName, renderParams.material.GetFloat(prop.propertyName))?.SetValue(index, prop.value);
-                if (instanceColorPropertyOverrides != null) foreach (var prop in instanceColorPropertyOverrides) GetOverrideVector(prop.propertyName, renderParams.material.GetColor(prop.propertyName).AsLinearColorVector())?.SetValue(index, prop.value.AsLinearColorVector()); // Color overrides are stored as vector4 overrides
-                if (instanceVectorPropertyOverrides != null) foreach (var prop in instanceVectorPropertyOverrides) GetOverrideVector(prop.propertyName, renderParams.material.GetVector(prop.propertyName))?.SetValue(index, prop.value);
+                if (instanceFloatPropertyOverrides != null) foreach (var prop in instanceFloatPropertyOverrides) GetOverrideFloat(prop.propertyName, renderParams.material)?.SetValue(index, prop.value);
+                if (instanceColorPropertyOverrides != null) foreach (var prop in instanceColorPropertyOverrides) GetOverrideVector(prop.propertyName, renderParams.material, true)?.SetValue(index, prop.value.AsLinearColorVector()); // Color overrides are stored as vector4 overrides
+                if (instanceVectorPropertyOverrides != null) foreach (var prop in instanceVectorPropertyOverrides) GetOverrideVector(prop.propertyName, renderParams.material)?.SetValue(index, prop.value);
                 SetDirty();
             }
             public void ResetMaterialPropertyOverrides(int index)
@@ -603,6 +603,34 @@ namespace Swole
                 if (vectorPropertyOverrides.TryGetValue(propertyName, out MaterialPropertyOverride<Vector4> propertyOverride)) return propertyOverride;
 
                 vectorPropertyOverrides[propertyName] = propertyOverride = new MaterialPropertyOverride<Vector4>(propertyName, defaultValue);
+                propertyOverride.SetCount(Count);
+
+                return propertyOverride;
+
+            }
+
+            public MaterialPropertyOverride<float> GetOverrideFloat(string propertyName, Material material)  
+            {
+
+                if (string.IsNullOrWhiteSpace(propertyName)) return null;
+
+                if (floatPropertyOverrides.TryGetValue(propertyName, out MaterialPropertyOverride<float> propertyOverride)) return propertyOverride;
+
+                floatPropertyOverrides[propertyName] = propertyOverride = new MaterialPropertyOverride<float>(propertyName, material == null || !material.HasProperty(propertyName) ? 0f : material.GetFloat(propertyName));
+                propertyOverride.SetCount(Count);
+
+                return propertyOverride;
+
+            }
+
+            public MaterialPropertyOverride<Vector4> GetOverrideVector(string propertyName, Material material, bool isColor = false)
+            {
+
+                if (string.IsNullOrWhiteSpace(propertyName)) return null;
+
+                if (vectorPropertyOverrides.TryGetValue(propertyName, out MaterialPropertyOverride<Vector4> propertyOverride)) return propertyOverride;
+
+                vectorPropertyOverrides[propertyName] = propertyOverride = new MaterialPropertyOverride<Vector4>(propertyName, material == null || !material.HasProperty(propertyName) ? Vector4.zero : (isColor ? material.GetColor(propertyName).AsLinearColorVector() : material.GetVector(propertyName)));
                 propertyOverride.SetCount(Count);
 
                 return propertyOverride;

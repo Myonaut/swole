@@ -66,18 +66,21 @@ namespace Swole
                 var swapRenderer = renderers[renderers.Count - 1];
                 renderers[rendererIndex] = swapRenderer;
                 renderers.RemoveAt(renderers.Count - 1);
-                swapRenderer.index = rendererIndex;
-                renderer.index = -1;
+                swapRenderer.index = rendererIndex; 
+                renderer.Invalidate();
 
-                EnsureJobCompletion();
+                if (IsValid)
+                {
+                    EnsureJobCompletion();
 
-                centers.RemoveAtSwapBack(rendererIndex);
-                extents.RemoveAtSwapBack(rendererIndex);
-                lods.RemoveAtSwapBack(rendererIndex);
-                lodCounts.RemoveAtSwapBack(rendererIndex);
-                transformIndices.RemoveAtSwapBack(rendererIndex);
-                outputCullLOD.RemoveAtSwapBack(rendererIndex);
-                prevOutputCullLOD.RemoveAtSwapBack(rendererIndex);
+                    centers.RemoveAtSwapBack(rendererIndex);
+                    extents.RemoveAtSwapBack(rendererIndex);
+                    lods.RemoveAtSwapBack(rendererIndex);
+                    lodCounts.RemoveAtSwapBack(rendererIndex);
+                    transformIndices.RemoveAtSwapBack(rendererIndex);
+                    outputCullLOD.RemoveAtSwapBack(rendererIndex);
+                    prevOutputCullLOD.RemoveAtSwapBack(rendererIndex);
+                }
 
                 renderer.Dispose();
             }
@@ -145,6 +148,8 @@ namespace Swole
 
             public void UpdateCullingLODs()
             {
+                if (!IsValid) return;
+
                 RecalculateFrustrumPlanes(); 
                  
                 var cullingLODJob = new CullingLODJob()
@@ -183,11 +188,20 @@ namespace Swole
 
             public void RefreshRenderers()
             {
+                if (!IsValid) return;
+
+                EnsureJobCompletion();
                 foreach (var index in updatedIndices) renderers[index].Refresh(); 
             }
 
+            private bool isDisposed;
+            public bool IsValid => !isDisposed; 
             public void Dispose()
             {
+                isDisposed = true;
+
+                EnsureJobCompletion();
+
                 if (centers.IsCreated)
                 {
                     centers.Dispose();
@@ -244,6 +258,12 @@ namespace Swole
             private TransformTracking.TrackedTransform transformTracker;
             public int TransformIndex => transformTracker.Index;
             private PerCameraCullLOD owner;
+            public void Invalidate()
+            {
+                index = -1;
+                owner = null;
+            }
+            public bool IsValid => index >= 0 && owner != null;
 
             public RendererCullLOD(PerCameraCullLOD owner, Transform boundsRootTransform, int index)
             {
@@ -255,6 +275,8 @@ namespace Swole
 
             private void OnTransformIndexChange(int oldIndex, int newIndex)
             {
+                if (!IsValid || !owner.IsValid) return;
+
                 var indices = owner.TransformIndices;
                 indices[index] = newIndex;
             }
@@ -273,11 +295,13 @@ namespace Swole
 
             public void Refresh()
             {
+                //if (!IsValid) return; 
+
                 var cullLod = owner.OutputCullLOD[index]; 
 
                 if (prevLodLevel != cullLod.lodLevel)
                 {
-                    OnLODChange?.Invoke(prevLodLevel, cullLod.lodLevel);
+                    OnLODChange?.Invoke(prevLodLevel, cullLod.lodLevel);  
                     prevLodLevel = cullLod.lodLevel;
                 }
 
@@ -354,7 +378,6 @@ namespace Swole
         {
             foreach (var pair in perCameraCullLODs) 
             { 
-                pair.Value.OutputDependency.Complete();
                 pair.Value.RefreshRenderers();
             }
         }
@@ -432,7 +455,7 @@ namespace Swole
 
                     bool inRange = lod.minDistance < lodDist && distanceToCamera >= lod.minDistance;
                     lodDist = math.select(lodDist, lod.minDistance, inRange);
-                    clod.lodLevel = math.select(clod.lodLevel, lod.detailLevel, inRange);
+                    clod.lodLevel = math.select(clod.lodLevel, lod.detailLevel, inRange); 
                 }
 
                 output[i] = clod;

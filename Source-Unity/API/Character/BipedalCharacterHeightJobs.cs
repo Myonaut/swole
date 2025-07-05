@@ -278,7 +278,7 @@ namespace Swole.API.Unity
                     int swapIndex = owner.registered.Count - 1;
                     var swapped = owner.registered[swapIndex];
 
-                    owner.registered[index] = owner.registered[swapIndex];
+                    owner.registered[index] = swapped;
                     owner.registered.RemoveAt(swapIndex);
 
                     int transformIndex = index * TransformCount;
@@ -289,6 +289,7 @@ namespace Swole.API.Unity
                         owner.transforms.RemoveAtSwapBack(ind);
                         owner.transformData.RemoveAtSwapBack(ind);
                     }
+                    transformIndex = index * SettableTransformCount; 
                     for (int a = SettableTransformCount - 1; a >= 0; a--)
                     {
                         int ind = transformIndex + a;
@@ -510,7 +511,7 @@ namespace Swole.API.Unity
         protected void AddTransform(Transform transform, bool isSettable = true)
         {
             transforms.Add(transform);
-            transformData.Add(new TransformDataWorldLocal());
+            transformData.Add(new TransformDataWorldLocal()); 
             if (isSettable) 
             {
                 transformsToSet.Add(transform);
@@ -729,11 +730,11 @@ namespace Swole.API.Unity
             [ReadOnly]
             public NativeList<Sizes> currentSizes;
 
-            public void ChangeSpineLength(int index, float3 lengthDelta)
+            public void ChangeSpineLength(int2 index, float3 lengthDelta)
             {
-                TransformDataWorldLocal data = transformData_READ[index];
+                TransformDataWorldLocal data = transformData_READ[index.x];
                 data.localPosition = data.localPosition + lengthDelta; 
-                transformData_WRITE[index] = data; 
+                transformData_WRITE[index.y] = data; 
             }
 
             public bool CalcRiseBend(float3 bendAxis,/* quaternion parentRot,*/ quaternion startToEndRot, float height, float lengthA, float lengthB, out quaternion riseRot, out quaternion bendRot)
@@ -773,12 +774,12 @@ namespace Swole.API.Unity
                 return true;
             }
 
-            public void ChangeLimbLength(float weight, float3 extensionAxis, float3 bendAxis, int parentIndex, int startIndex, int middleIndex, int endIndex, float newLengthA, float newLengthB, float prevLengthA, float prevLengthB, float lengthChangeA, float lengthChangeB)
+            public void ChangeLimbLength(float weight, float3 extensionAxis, float3 bendAxis, int parentIndex, int2 startIndex, int2 middleIndex, int2 endIndex, float newLengthA, float newLengthB, float prevLengthA, float prevLengthB, float lengthChangeA, float lengthChangeB)
             {
                 TransformDataWorldLocal parentData = transformData_READ[parentIndex];
-                TransformDataWorldLocal startData = transformData_READ[startIndex];
-                TransformDataWorldLocal middleData = transformData_READ[middleIndex];
-                TransformDataWorldLocal endData = transformData_READ[endIndex];
+                TransformDataWorldLocal startData = transformData_READ[startIndex.x];
+                TransformDataWorldLocal middleData = transformData_READ[middleIndex.x];
+                TransformDataWorldLocal endData = transformData_READ[endIndex.x];
 
                 quaternion inverseParentRot = math.inverse(parentData.rotation);
 
@@ -806,16 +807,16 @@ namespace Swole.API.Unity
                 quaternion endOffsetRot = math.inverse(math.mul(math.mul(math.inverse(initialStartRot), startData.localRotation), math.mul(math.inverse(initialMiddleRot), middleData.localRotation)));
                 endData.localRotation = math.mul(endOffsetRot, endData.localRotation);
 
-                transformData_WRITE[startIndex] = startData;
-                transformData_WRITE[middleIndex] = middleData;
-                transformData_WRITE[endIndex] = endData;
+                transformData_WRITE[startIndex.y] = startData;
+                transformData_WRITE[middleIndex.y] = middleData;
+                transformData_WRITE[endIndex.y] = endData;
             }
-            public void ChangeLimbLengthWorld(float weight, float3 extensionAxis, float3 bendAxis, int parentIndex, int startIndex, int middleIndex, int endIndex, float newLengthA, float newLengthB, float prevLengthA, float prevLengthB, float lengthChangeA, float lengthChangeB)
+            public void ChangeLimbLengthWorld(float weight, float3 extensionAxis, float3 bendAxis, int parentIndex, int2 startIndex, int2 middleIndex, int2 endIndex, float newLengthA, float newLengthB, float prevLengthA, float prevLengthB, float lengthChangeA, float lengthChangeB)
             {
                 TransformDataWorldLocal parentData = transformData_READ[parentIndex];
-                TransformDataWorldLocal startData = transformData_READ[startIndex];
-                TransformDataWorldLocal middleData = transformData_READ[middleIndex];
-                TransformDataWorldLocal endData = transformData_READ[endIndex];
+                TransformDataWorldLocal startData = transformData_READ[startIndex.x];
+                TransformDataWorldLocal middleData = transformData_READ[middleIndex.x];
+                TransformDataWorldLocal endData = transformData_READ[endIndex.x];
 
                 quaternion inverseParentRot = math.inverse(parentData.rotation);
 
@@ -843,15 +844,15 @@ namespace Swole.API.Unity
                 quaternion endOffsetRot = math.inverse(math.mul(math.mul(math.inverse(initialStartRot), startData.localRotation), math.mul(math.inverse(initialMiddleRot), middleData.localRotation)));
                 endData.localRotation = math.mul(endOffsetRot, endData.localRotation);
 
-                transformData_WRITE[startIndex] = startData;
-                transformData_WRITE[middleIndex] = middleData;
-                transformData_WRITE[endIndex] = endData;
+                transformData_WRITE[startIndex.y] = startData;
+                transformData_WRITE[middleIndex.y] = middleData;
+                transformData_WRITE[endIndex.y] = endData;
             }
 
-            public void ChangeLegLength(TransformDataWorldLocal pelvisTransformData, TransformDataWorldLocal pelvisParentTransformData, out TransformDataWorldLocal pelvisTransformDataOffset, float kneePreservingWeight, float weight, float3 extensionAxis, float3 bendAxis, int parentIndex, int startIndex, int middleIndex, int endIndex, float newLengthA, float newLengthB, float prevLengthA, float prevLengthB, float lengthChangeA, float lengthChangeB)
+            public void ChangeLegLength(TransformDataWorldLocal pelvisTransformData, TransformDataWorldLocal pelvisParentTransformData, out TransformDataWorldLocal pelvisTransformDataOffset, float kneePreservingWeight, float weight, float3 extensionAxis, float3 bendAxis, int parentIndex, int2 startIndex, int2 middleIndex, int2 endIndex, float newLengthA, float newLengthB, float prevLengthA, float prevLengthB, float lengthChangeA, float lengthChangeB)
             {
-                TransformDataWorldLocal startData = transformData_READ[startIndex];
-                TransformDataWorldLocal middleData = transformData_READ[middleIndex];
+                TransformDataWorldLocal startData = transformData_READ[startIndex.x];
+                TransformDataWorldLocal middleData = transformData_READ[middleIndex.x];
 
                 ChangeLimbLength(weight * (1f - kneePreservingWeight), extensionAxis, bendAxis, parentIndex, startIndex, middleIndex, endIndex, newLengthA, newLengthB, prevLengthA, prevLengthB, lengthChangeA, lengthChangeB);
 
@@ -865,10 +866,10 @@ namespace Swole.API.Unity
                 pelvisTransformDataOffset = pelvisTransformData;
             }
 
-            public void ChangeLegLengthWorld(TransformDataWorldLocal pelvisTransformData, TransformDataWorldLocal pelvisParentTransformData, out TransformDataWorldLocal pelvisTransformDataOffset, float kneePreservingWeight, float weight, float3 extensionAxis, float3 bendAxis, int parentIndex, int startIndex, int middleIndex, int endIndex, float newLengthA, float newLengthB, float prevLengthA, float prevLengthB, float lengthChangeA, float lengthChangeB)
+            public void ChangeLegLengthWorld(TransformDataWorldLocal pelvisTransformData, TransformDataWorldLocal pelvisParentTransformData, out TransformDataWorldLocal pelvisTransformDataOffset, float kneePreservingWeight, float weight, float3 extensionAxis, float3 bendAxis, int parentIndex, int2 startIndex, int2 middleIndex, int2 endIndex, float newLengthA, float newLengthB, float prevLengthA, float prevLengthB, float lengthChangeA, float lengthChangeB)
             {
-                TransformDataWorldLocal startData = transformData_READ[startIndex];
-                TransformDataWorldLocal middleData = transformData_READ[middleIndex];
+                TransformDataWorldLocal startData = transformData_READ[startIndex.x];
+                TransformDataWorldLocal middleData = transformData_READ[middleIndex.x];
 
                 ChangeLimbLengthWorld(weight * (1f - kneePreservingWeight), extensionAxis, bendAxis, parentIndex, startIndex, middleIndex, endIndex, newLengthA, newLengthB, prevLengthA, prevLengthB, lengthChangeA, lengthChangeB);
 
@@ -892,22 +893,21 @@ namespace Swole.API.Unity
 
                 var prevSizes = previousSizes[index];
                 var sizes = currentSizes[index];
+                
+                int2 transformIndex = new int2(index * TransformCount, index * SettableTransformCount);
 
-                int transformIndex = index * TransformCount;
-
-                int armLeftIndex = transformIndex + ArmLeftIndex;
-                int armRightIndex = transformIndex + ArmRightIndex;
-                int legLeftIndex = transformIndex + LegLeftIndex;
-                int legRightIndex = transformIndex + LegRightIndex;
+                int2 armLeftIndex = transformIndex + ArmLeftIndex;
+                int2 armRightIndex = transformIndex + ArmRightIndex;
+                int2 legLeftIndex = transformIndex + LegLeftIndex;
+                int2 legRightIndex = transformIndex + LegRightIndex;
 
                 float4 armLengthChanges = sizes.armLengths - prevSizes.armLengths;
                 float4 legLengthChanges = sizes.legLengths - prevSizes.legLengths;
 
-                int pelvisIndex = transformIndex + PelvisIndex;
-                int pelvisParentIndex = transformIndex + ParentPelvisIndex;
-                TransformDataWorldLocal pelvisTransformData = transformData_READ[pelvisIndex];
-                TransformDataWorldLocal pelvisParentTransformData = transformData_READ[pelvisParentIndex];
-
+                int2 pelvisIndex = transformIndex + PelvisIndex;
+                int pelvisParentIndex = transformIndex.x + ParentPelvisIndex;
+                TransformDataWorldLocal pelvisTransformData = transformData_READ[pelvisIndex.x];
+                TransformDataWorldLocal pelvisParentTransformData = transformData_READ[pelvisParentIndex];             
 
                 //ChangeLimbLengthWorld(limbData_.limbPreservation.x, limbData_.leftArmExtensionAxis, limbData_.leftArmRotationAxis, transformIndex + ParentArmLeftIndex, armLeftIndex, transformIndex + ForearmLeftIndex, transformIndex + WristLeftIndex, sizes.armLengths.x, sizes.armLengths.y, prevSizes.armLengths.x, prevSizes.armLengths.y, armLengthChanges.x, armLengthChanges.y); // left arm
                 //ChangeLimbLengthWorld(limbData_.limbPreservation.y, limbData_.rightArmExtensionAxis, limbData_.rightArmRotationAxis, transformIndex + ParentArmRightIndex, armRightIndex, transformIndex + ForearmRightIndex, transformIndex + WristRightIndex, sizes.armLengths.z, sizes.armLengths.w, prevSizes.armLengths.z, prevSizes.armLengths.w, armLengthChanges.z, armLengthChanges.w); // right arm
@@ -919,7 +919,7 @@ namespace Swole.API.Unity
                 ChangeSpineLength(transformIndex + ForearmRightIndex, limbData_.rightArmExtensionAxis * armLengthChanges.z);
                 ChangeSpineLength(transformIndex + WristLeftIndex, limbData_.leftArmExtensionAxis * armLengthChanges.y);
                 ChangeSpineLength(transformIndex + WristRightIndex, limbData_.rightArmExtensionAxis * armLengthChanges.w);
-
+                
                 // Legs blend weights between moving pelvis and rotating legs
                 /*TransformDataWorldLocal pelvisTransformDataA, pelvisTransformDataB;
                 ChangeLegLengthWorld(pelvisTransformData, pelvisParentTransformData, out pelvisTransformDataA, limbData_.kneePreservation.x, limbData_.limbPreservation.z, limbData_.leftLegExtensionAxis, limbData_.leftLegRotationAxis, transformIndex + ParentLegLeftIndex, legLeftIndex, transformIndex + CalfLeftIndex, transformIndex + FootLeftIndex, sizes.legLengths.x, sizes.legLengths.y, prevSizes.legLengths.x, prevSizes.legLengths.y, legLengthChanges.x, legLengthChanges.y); // left leg
@@ -934,10 +934,10 @@ namespace Swole.API.Unity
                 ChangeSpineLength(transformIndex + CalfLeftIndex, limbData_.leftLegExtensionAxis * legLengthChanges.x);
                 ChangeSpineLength(transformIndex + CalfRightIndex, limbData_.rightLegExtensionAxis * legLengthChanges.z);
                 ChangeSpineLength(transformIndex + FootLeftIndex, limbData_.leftLegExtensionAxis * legLengthChanges.y); 
-                ChangeSpineLength(transformIndex + FootRightIndex, limbData_.rightLegExtensionAxis * legLengthChanges.w);  
-
-                transformData_WRITE[pelvisIndex] = pelvisTransformData;
-
+                ChangeSpineLength(transformIndex + FootRightIndex, limbData_.rightLegExtensionAxis * legLengthChanges.w);
+                
+                transformData_WRITE[pelvisIndex.y] = pelvisTransformData;
+                
                 float3 spineLengthDelta = limbData_.spineExtensionAxis * (sizes.spineLength - prevSizes.spineLength); 
                 ChangeSpineLength(transformIndex + Spine1Index, spineLengthDelta);
                 ChangeSpineLength(transformIndex + Spine2Index, spineLengthDelta);
@@ -954,7 +954,7 @@ namespace Swole.API.Unity
                 ChangeSpineLength(transformIndex + ShoulderLeftIndex, limbData_.leftShoulderExtensionAxis * widthsDeltaAlt.x);
                 ChangeSpineLength(transformIndex + ShoulderRightIndex, limbData_.rightShoulderExtensionAxis * widthsDeltaAlt.y);  
                 ChangeSpineLength(transformIndex + HipLeftIndex, limbData_.leftHipExtensionAxis * widthsDeltaAlt.z);
-                ChangeSpineLength(transformIndex + HipRightIndex, limbData_.rightHipExtensionAxis * widthsDeltaAlt.w); 
+                ChangeSpineLength(transformIndex + HipRightIndex, limbData_.rightHipExtensionAxis * widthsDeltaAlt.w);  
 
                 ChangeSpineLength(armLeftIndex, limbData_.leftArmWidthExtensionAxis * widthsDelta.x);
                 ChangeSpineLength(armRightIndex, limbData_.rightArmWidthExtensionAxis * widthsDelta.y);

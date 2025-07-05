@@ -40,10 +40,79 @@ namespace Swole.API.Unity
         public void Apply(CustomizableCharacterMesh ccm)
         {
             ccm.bustSizeEditor = bustSizeEditor;
-            ccm.shapeWeightsEditor = shapeWeightsEditor;
-            ccm.muscleWeightsEditor = muscleWeightsEditor;
-            ccm.fatWeightsEditor = fatWeightsEditor;
-            ccm.variationWeightsEditor = variationWeightsEditor;
+            //ccm.shapeWeightsEditor = shapeWeightsEditor;
+            //ccm.muscleWeightsEditor = muscleWeightsEditor;
+            //ccm.fatWeightsEditor = fatWeightsEditor;
+            //ccm.variationWeightsEditor = variationWeightsEditor;
+
+            if (shapeWeightsEditor != null && ccm.shapeWeightsEditor != null)
+            {
+                for(int a = 0; a < shapeWeightsEditor.Length; a++)
+                {
+                    var weight = shapeWeightsEditor[a];
+                    for(int b = 0; b < ccm.shapeWeightsEditor.Length; b++)
+                    {
+                        var weight2 = ccm.shapeWeightsEditor[b];
+                        if (weight2.name == weight.name)
+                        {
+                            weight2.value = weight.value;
+                            ccm.shapeWeightsEditor[b] = weight2; 
+                            break;
+                        }
+                    }
+                }
+            }
+            if (muscleWeightsEditor != null && ccm.muscleWeightsEditor != null)
+            {
+                for (int a = 0; a < muscleWeightsEditor.Length; a++)
+                {
+                    var weight = muscleWeightsEditor[a];
+                    for (int b = 0; b < ccm.muscleWeightsEditor.Length; b++)
+                    {
+                        var weight2 = ccm.muscleWeightsEditor[b];
+                        if (weight2.name == weight.name)
+                        {
+                            weight2.value = weight.value;
+                            ccm.muscleWeightsEditor[b] = weight2;
+                            break;
+                        }
+                    }
+                }
+            }
+            if (fatWeightsEditor != null && ccm.fatWeightsEditor != null)
+            {
+                for (int a = 0; a < fatWeightsEditor.Length; a++)
+                {
+                    var weight = fatWeightsEditor[a];
+                    for (int b = 0; b < ccm.fatWeightsEditor.Length; b++)
+                    {
+                        var weight2 = ccm.fatWeightsEditor[b];
+                        if (weight2.name == weight.name)
+                        {
+                            weight2.value = weight.value;
+                            ccm.fatWeightsEditor[b] = weight2;
+                            break;
+                        }
+                    }
+                }
+            }
+            if (variationWeightsEditor != null && ccm.variationWeightsEditor != null)
+            {
+                for (int a = 0; a < variationWeightsEditor.Length; a++)
+                {
+                    var weight = variationWeightsEditor[a];
+                    for (int b = 0; b < ccm.variationWeightsEditor.Length; b++)
+                    {
+                        var weight2 = ccm.variationWeightsEditor[b];
+                        if (weight2.name == weight.name)
+                        {
+                            weight2.value = weight.value;
+                            ccm.variationWeightsEditor[b] = weight2;
+                            break;
+                        }
+                    }
+                }
+            }
 
             ccm.UpdateInEditor();
         }

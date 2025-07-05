@@ -58,6 +58,12 @@ namespace Swole
                 instance.Dispose();
                 instance = null;
             }
+
+            if (cullLODs != null)
+            {
+                cullLODs.Dispose();
+                cullLODs = null; 
+            }
         }
 
         [NonSerialized]
@@ -193,6 +199,18 @@ namespace Swole
         {
         }
 
+        protected virtual int OnSetLOD(int levelOfDetail) => levelOfDetail;
+        public void SetLOD(int levelOfDetail)
+        {
+            levelOfDetail = OnSetLOD(levelOfDetail);
+            if (instance != null) instance.SetLOD2(instance.CurrentLOD, levelOfDetail); 
+        }
+        protected void SetLOD2(int prevLevelOfDetail, int levelOfDetail)
+        {
+            levelOfDetail = OnSetLOD(levelOfDetail);
+            if (instance != null) instance.SetLOD2(prevLevelOfDetail, levelOfDetail); 
+        }
+
         [NonSerialized]
         protected CullingLODs.RendererCullLOD cullLODs;
 
@@ -209,7 +227,7 @@ namespace Swole
 
             instance = MeshGroup.NewInstance(subMeshIndex, transform, floatOverrides, colorOverrides, vectorOverrides);
             cullLODs = CullingLODs.GetCameraCullLOD(Camera.main).AddRenderer(BoundsRootTransform, MeshData.boundsCenter, MeshData.boundsExtents, MeshData.LODs); 
-            cullLODs.OnLODChange += instance.SetLOD2;
+            cullLODs.OnLODChange += SetLOD2;
             cullLODs.OnVisibilityChange += SetInViewOfCamera; 
 
             OnCreateInstance?.Invoke(instance);
@@ -1024,6 +1042,7 @@ namespace Swole
         internal InstancedMeshGroup group;
         protected int subMesh;
         protected int LOD;
+        public int CurrentLOD => LOD;
 
         /// <summary>
         /// The instance slot id for this mesh in its group
@@ -1037,7 +1056,7 @@ namespace Swole
 
             StopRendering();
             LOD = detailLevel;
-            if (isVisible) StartRendering();
+            if (isVisible) StartRendering(); 
             
             Debug.Log("SET LOD " + detailLevel);  
         }
@@ -1565,6 +1584,8 @@ namespace Swole
         public Mesh GetMeshUnsafe(int lod) => meshLODs[lod].mesh;
         public MeshLOD GetLOD(int lod) => meshLODs == null ? default : GetLODUnsafe(Mathf.Clamp(lod, 0, meshLODs.Length - 1));
         public MeshLOD GetLODUnsafe(int lod) => meshLODs[lod];
+
+        private static int SortLODsDescending(CullingLODs.LOD a, CullingLODs.LOD b) => Math.Sign(b.minDistance - a.minDistance);
         [NonSerialized]
         protected CullingLODs.LOD[] lods;
         public CullingLODs.LOD[] LODs
@@ -1573,8 +1594,11 @@ namespace Swole
             {
                 if (lods == null)
                 {
-                    lods = new CullingLODs.LOD[LevelsOfDetail];
-                    for (int a = 0; a < lods.Length; a++) lods[a] = new CullingLODs.LOD() { detailLevel = a, minDistance = meshLODs[a].screenRelativeTransitionHeight }; 
+                    var lodsList = new List<CullingLODs.LOD>(LevelsOfDetail);
+                    for (int a = 0; a < LevelsOfDetail; a++) lodsList.Add(new CullingLODs.LOD() { detailLevel = a, minDistance = meshLODs[a].screenRelativeTransitionHeight }); 
+                    lodsList.Sort(SortLODsDescending); 
+
+                    lods = lodsList.ToArray();
                 }
 
                 return lods;
