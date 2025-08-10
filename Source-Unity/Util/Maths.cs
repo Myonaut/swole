@@ -51,6 +51,138 @@ namespace Swole
 
         #endregion
 
+        #region Camera
+
+        public static Rect GetScreenViewportRect()
+        {
+            return new Rect(0, 0, Screen.width, Screen.height);
+        }
+
+        public static Matrix4x4 GetProjectionMatrix(this Camera camera) => camera.projectionMatrix;
+
+        public static Matrix4x4 GetCameraToWorldMatrix(this Camera camera)
+        {
+            Matrix4x4 m = GetWorldToCameraMatrix(camera);
+            //m.Invert_Full();
+            m = m.inverse;
+            return m;
+        }
+
+        public static Matrix4x4 GetWorldToCameraMatrix(this Camera camera)
+        {
+            Matrix4x4 m = Matrix4x4.Scale(new Vector3(1.0F, 1.0F, -1.0F));
+            m = m * camera.transform.GetWorldToLocalMatrixNoScale();
+            return m;
+        }
+
+        public static Matrix4x4 GetWorldToClipMatrix(this Camera camera)
+        {
+            Matrix4x4 t = GetProjectionMatrix(camera) * GetWorldToCameraMatrix(camera);
+            return t;
+        }
+
+        public static Vector3 WorldToScreenPoint(this Camera camera, Vector3 v, bool canProject)
+        {
+            Rect viewport = GetScreenViewportRect();
+            canProject = CameraProject(v, GetCameraToWorldMatrix(camera), GetWorldToClipMatrix(camera), viewport, out Vector3 outP);
+            return outP;
+        }
+
+        public static bool CameraProject(Vector3 p, Matrix4x4 cameraToWorld, Matrix4x4 worldToClip, Rect viewport, out Vector3 outP)
+        {
+            outP = new Vector3(0f, 0f, 0f);
+            if (worldToClip.PerspectiveMultiplyPoint3(p, out Vector3 clipPoint))
+            {
+                Vector3 cameraPos = cameraToWorld.GetPosition();
+                Vector3 dir = p - cameraPos;
+                // The camera/projection matrices follow OpenGL convention: positive Z is towards the viewer.
+                // So negate it to get into Unity convention.
+                Vector3 forward = -cameraToWorld.GetAxisZ();
+                float dist = Vector3.Dot(dir, forward);
+
+                outP.x = viewport.x + (1.0f + clipPoint.x) * viewport.width * 0.5f;
+                outP.y = viewport.y + (1.0f + clipPoint.y) * viewport.height * 0.5f;
+                //outP.z = (1.0f + clipPoint.z) * 0.5f;
+                outP.z = dist;
+
+                return true;
+            }
+
+            return false;
+        }
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static bool PerspectiveMultiplyPoint3(this Matrix4x4 mat, Vector3 v, out Vector3 output)
+        {
+            Vector3 res;
+            float w;
+            res.x = mat[0, 0] * v.x + mat[0, 1] * v.y + mat[0, 2] * v.z + mat[0, 3];
+            res.y = mat[1, 0] * v.x + mat[1, 1] * v.y + mat[1, 2] * v.z + mat[1, 3];
+            res.z = mat[2, 0] * v.x + mat[2, 1] * v.y + mat[2, 2] * v.z + mat[2, 3];
+            w = mat[3, 0] * v.x + mat[3, 1] * v.y + mat[3, 2] * v.z + mat[3, 3];
+            if (Mathf.Abs(w) > 1.0e-7f)
+            {
+                float invW = 1.0f / w;
+                output.x = res.x * invW;
+                output.y = res.y * invW;
+                output.z = res.z * invW;
+                return true;
+            }
+            else
+            {
+                output.x = 0.0f;
+                output.y = 0.0f;
+                output.z = 0.0f;
+                return false;
+            }
+        }
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static bool PerspectiveMultiplyPoint3(this float4x4 mat, float3 v, out float3 output)
+        {
+            float3 res;
+            float w;
+            res.x = mat.c0[0] * v.x + mat.c1[0] * v.y + mat.c2[0] * v.z + mat.c3[0];
+            res.y = mat.c0[1] * v.x + mat.c1[1] * v.y + mat.c2[1] * v.z + mat.c3[1];
+            res.z = mat.c0[2]* v.x + mat.c1[2] * v.y + mat.c2[2] * v.z + mat.c3[2];
+            w = mat.c0[3] * v.x + mat.c1[3] * v.y + mat.c2[3] * v.z + mat.c3[3];
+
+            bool flag = math.abs(w) > 1.0e-7f;
+            float invW = 1.0f / w;
+            output = math.select(0f, res * invW, flag);
+            return flag;
+        }
+
+        #endregion
+
+        #region Matrices
+
+        public static Vector3 GetAxisX(this Matrix4x4 matrix) => matrix.MultiplyVector(Vector3.right);
+        public static Vector3 GetAxisY(this Matrix4x4 matrix) => matrix.MultiplyVector(Vector3.up);
+        public static Vector3 GetAxisZ(this Matrix4x4 matrix) => matrix.MultiplyVector(Vector3.forward);
+
+        public static Matrix4x4 GetTRSMatrix(this Transform transform)
+        {
+            return Matrix4x4.TRS(transform.localPosition, transform.localRotation, transform.localScale);
+        }
+        public static Matrix4x4 GetTRSMatrixNoScale(this Transform transform)
+        {
+            return Matrix4x4.TRS(transform.localPosition, transform.localRotation, new Vector3(1f, 1f, 1f));
+        }
+
+        public static Matrix4x4 GetLocalToWorldMatrixNoScale(this Transform transform)
+        {
+            var m = transform.GetTRSMatrixNoScale();
+            var parent = transform.parent;
+            while(parent != null)
+            {
+                m = m * parent.GetTRSMatrixNoScale();
+                parent = parent.parent;
+            }
+            return m;
+        }
+        public static Matrix4x4 GetWorldToLocalMatrixNoScale(this Transform transform) => GetLocalToWorldMatrixNoScale(transform).inverse;
+
+        #endregion
+
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static int countTrue(bool4 b4)
         {
@@ -240,6 +372,19 @@ namespace Swole
             }
 
             return scale;
+        }
+
+        /// <summary>
+        /// If the blend value is negative, blend towards the minimum value, otherwise blend towards the maximum value.
+        /// </summary>
+        public static float BlendRange(float startValue, float min, float max, float blend)
+        {
+            if (blend < 0f)
+            {
+                return math.lerp(startValue, min, blend / -1f);
+            }
+
+            return math.lerp(startValue, max, blend);
         }
 
         #region Source: https://gamedev.stackexchange.com/questions/23743/whats-the-most-efficient-way-to-find-barycentric-coordinates
@@ -701,6 +846,29 @@ namespace Swole
         public static quaternion Multiply(quaternion input, float scalar)
         {
             return input.value * scalar;
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static Vector3 Mirror(Vector3 v3, Vector3 axis) => Mirror((float3)v3, (float3)axis);
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static float3 Mirror(float3 v3, float3 axis)
+        {
+            float dot = math.dot(v3, axis);
+            return v3 - 2 * dot * axis;
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static Vector3 MirrorEuler(Vector3 eulerAngles, Vector3 axis) => MirrorEuler((float3)eulerAngles, (float3)axis);
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static float3 MirrorEuler(float3 eulerAngles, float3 axis) => Mirror((quaternion)Quaternion.Euler(eulerAngles), axis).ToEuler();
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static Quaternion Mirror(Quaternion rotation, Vector3 axis) => Mirror((quaternion)rotation, (float3)axis);
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static quaternion Mirror(quaternion rotation, float3 axis)
+        {
+            quaternion mirrorNormalQuat = new quaternion(axis.x, axis.y, axis.z, 0f);
+            return math.mul(mirrorNormalQuat, math.mul(rotation, mirrorNormalQuat));
         }
 
         #region Mirroring

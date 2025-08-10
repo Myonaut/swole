@@ -26,6 +26,8 @@ namespace Swole
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.BeforeSplashScreen)]
         public static void Initialize()
         {
+            deviceID = SystemInfo.deviceUniqueIdentifier;
+
             if (!(typeof(UnityEngineHook).IsAssignableFrom(swole.Engine.GetType())))
             {
                 activeHook = new UnityEngineHook();
@@ -99,7 +101,10 @@ namespace Swole
 
         }
 
-        public override string WorkingDirectory => Application.persistentDataPath;
+        private static string deviceID;
+        public override string DeviceID => deviceID;
+        public override string AppDataDirectory => Application.persistentDataPath;
+        public override string WorkingDirectory => Application.dataPath;
 
         private readonly List<string> toRemove = new List<string>();
         public override void FrameUpdateLate()

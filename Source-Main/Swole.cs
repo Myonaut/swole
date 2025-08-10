@@ -43,8 +43,22 @@ namespace Swole
         }*/
 
         #endregion
-
+        
         private readonly EngineHook engine;
+
+        public string DeviceIDLocal => engine == null ? System.Environment.UserName : engine.DeviceID;
+
+        private DirectoryInfo appDataDirectory;
+        public DirectoryInfo AppDataDirectoryLocal
+        {
+            get
+            {
+
+                if (appDataDirectory == null && engine != null && !string.IsNullOrEmpty(engine.AppDataDirectory)) appDataDirectory = Directory.CreateDirectory(engine.AppDataDirectory); // Creates or fetches the directory
+                return appDataDirectory;
+
+            }
+        }
 
         private DirectoryInfo assetDirectory;
         public DirectoryInfo AssetDirectoryLocal
@@ -52,8 +66,20 @@ namespace Swole
             get
             {
 
-                if (assetDirectory == null && engine != null && !string.IsNullOrEmpty(engine.WorkingDirectory)) assetDirectory = Directory.CreateDirectory(Path.Combine(engine.WorkingDirectory, "swole")); // Creates or fetches the directory
+                if (assetDirectory == null && engine != null && !string.IsNullOrEmpty(engine.AppDataDirectory)) assetDirectory = Directory.CreateDirectory(Path.Combine(engine.AppDataDirectory, "swole")); // Creates or fetches the directory
                 return assetDirectory;
+
+            }
+        }
+
+        private DirectoryInfo workingDirectory;
+        public DirectoryInfo WorkingDirectoryLocal
+        {
+            get
+            {
+
+                if (workingDirectory == null && engine != null && !string.IsNullOrEmpty(engine.WorkingDirectory)) workingDirectory = Directory.CreateDirectory(engine.WorkingDirectory); // Creates or fetches the directory
+                return workingDirectory;
 
             }
         }
@@ -191,7 +217,11 @@ namespace Swole
 
         public static RuntimeEnvironment DefaultEnvironment => Engine.RuntimeEnvironment;
         public static IRuntimeHost DefaultHost => Engine.DefaultHost;
+
+        public static string DeviceID => instance.DeviceIDLocal;
+        public static DirectoryInfo AppDataDirectory => instance.AppDataDirectoryLocal;
         public static DirectoryInfo AssetDirectory => instance.AssetDirectoryLocal;
+        public static DirectoryInfo WorkingDirectory => instance.WorkingDirectoryLocal;
 
         public static DirectoryInfo CreateDirectory(string localPath)
         {

@@ -379,6 +379,8 @@ namespace Swole
             foreach (var child in children) child.gameObject.layer = layer;
         }
 
+        public static Matrix4x4 CalculateViewProjectionMatrix(this Camera camera) => camera.projectionMatrix * camera.worldToCameraMatrix;
+
         public static Vector2 ScaleFactor(this Canvas canvas)
         {
 

@@ -11,6 +11,25 @@ namespace Swole.UI
     public abstract class UIElement : MonoBehaviour
     {
 
+        protected Canvas canvas;
+        public Canvas Canvas
+        {
+            get
+            {
+                if (canvas == null) canvas = GetComponentInParent<Canvas>(true);
+                return canvas;
+            }
+        }
+        protected Transform canvasTransform;
+        public Transform CanvasTransform
+        {
+            get
+            {
+                if (Canvas == null) return null;
+                return canvas.transform;
+            }
+        }
+
         protected RectTransform rectTransform;
 
         public RectTransform RectTransform => rectTransform;

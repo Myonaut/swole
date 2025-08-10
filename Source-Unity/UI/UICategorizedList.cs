@@ -132,6 +132,20 @@ namespace Swole.UI
             public Member GetMember(int memberIndex) => members == null ? null : members[memberIndex];
             public Member this[int memberIndex] => GetMember(memberIndex);
 
+            public Text text;
+            public TMP_Text textTMP;
+            public void SetDisplayName(string name)
+            {
+                if (text != null)
+                {
+                    text.text = name;
+                }
+                if (textTMP != null)
+                {
+                    textTMP.SetText(name);
+                }
+            }
+
             public void SortByIndex()
             {
                 if (members == null) return;
@@ -154,6 +168,7 @@ namespace Swole.UI
                 }
             }
 
+            public UnityEvent OnExpand = new UnityEvent();
             public void Expand()
             {
                 expanded = true;
@@ -165,7 +180,11 @@ namespace Swole.UI
                 if (exp != null) exp.gameObject.SetActive(false);
                 var ret = rectTransform.FindDeepChildLiberal("retract");
                 if (ret != null) ret.gameObject.SetActive(true);
+
+                OnExpand?.Invoke();
             }
+
+            public UnityEvent OnRetract = new UnityEvent();
             public void Retract()
             {
                 expanded = false;
@@ -181,6 +200,8 @@ namespace Swole.UI
                 if (exp != null) exp.gameObject.SetActive(true);
                 var ret = rectTransform.FindDeepChildLiberal("retract");
                 if (ret != null) ret.gameObject.SetActive(false);
+
+                OnRetract?.Invoke();
             }
             public void Toggle()
             {
@@ -239,16 +260,11 @@ namespace Swole.UI
             Category category = new Category() { gameObject=inst, name=categoryName, rectTransform=rt };
             categories.Add(category);
 
-            var text = inst.GetComponentInChildren<Text>();
-            var textTMP = inst.GetComponentInChildren<TMP_Text>();
-            if (text != null)
-            {
-                text.text = categoryName;
-            }
-            if (textTMP != null)
-            {
-                textTMP.SetText(categoryName);
-            }
+            category.text = inst.GetComponentInChildren<Text>(true);
+            category.textTMP = inst.GetComponentInChildren<TMP_Text>(true);
+
+            if (category.text != null) category.text.text = categoryName;  
+            if (category.textTMP != null) category.textTMP.SetText(categoryName);        
 
             if (categoryIcon != null)
             {

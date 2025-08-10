@@ -5,9 +5,9 @@ using System.Collections.Generic;
 
 using UnityEngine;
 using UnityEngine.UI;
+using UnityEngine.Events;
 
 using Swole.API.Unity;
-using UnityEngine.Events;
 
 namespace Swole.UI
 {
@@ -49,7 +49,17 @@ namespace Swole.UI
         protected virtual void OnDestroy()
         {
 
-            if (tooltipInstance != null) GameObject.DestroyImmediate(tooltipInstance.gameObject);
+            if (tooltipInstance != null) 
+            {
+#if UNITY_EDITOR
+                if (!UnityEditor.AssetDatabase.IsNativeAsset(tooltipInstance.gameObject))
+                {
+#endif
+                    GameObject.DestroyImmediate(tooltipInstance.gameObject);
+#if UNITY_EDITOR
+                }
+#endif
+            }
 
         }
 
@@ -146,7 +156,7 @@ namespace Swole.UI
         /// <summary>
         /// The object that the tooltip is bound to
         /// </summary>
-        public GameObject TargetObject;
+        public GameObject TargetObject => targetObject;
 
         protected int lastQueryFrame;
 
@@ -213,12 +223,19 @@ namespace Swole.UI
 
         }
 
-        public void SetText(string text)
+        public void SetTitle(string text)
         {
             var tooltip = Tooltip;
             if (tooltip == null) return;
 
-            CustomEditorUtils.SetComponentText(tooltip.gameObject, text);
+            tooltip.SetTitle(text);
+        }
+        public void SetMessage(string text)
+        {
+            var tooltip = Tooltip;
+            if (tooltip == null) return;
+
+            tooltip.SetMessage(text);
         }
 
     }

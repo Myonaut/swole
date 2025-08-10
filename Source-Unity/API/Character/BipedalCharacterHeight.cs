@@ -184,6 +184,21 @@ namespace Swole.API.Unity
         public Transform calfRight;
         public Transform footRight;
 
+        public float StandingHeightContribution
+        {
+            get
+            {
+                float contribution = 0f;
+
+                contribution += (RealSpineLength - DefaultSpineLength) * 2;
+                contribution += RealNeckLength - DefaultNeckLength;
+                contribution += RealLegLength - DefaultLegLength;
+                contribution += RealCalfLength - DefaultCalfLength;
+
+                return contribution;
+            }
+        }
+
         [SerializeField, Range(0.5f, 2f)]
         protected float spineLength = 1f;
         [SerializeField, Range(0.5f, 2f)]
@@ -218,8 +233,10 @@ namespace Swole.API.Unity
 
         [NonSerialized]
         protected float defaultSpineLength;
+        public float DefaultSpineLength => defaultSpineLength;
         [NonSerialized]
         protected float defaultNeckLength;
+        public float DefaultNeckLength => defaultNeckLength;
 
 
         [SerializeField, Range(0, 1), AnimatableProperty(true, 0f)]
@@ -344,10 +361,13 @@ namespace Swole.API.Unity
 
         [NonSerialized]
         protected float defaultShoulderWidth;
+        public float DefaultShoulderWidth => defaultShoulderWidth;
         [NonSerialized]
         protected float defaultArmLength;
+        public float DefaultArmLength => defaultArmLength;
         [NonSerialized]
         protected float defaultForearmLength;
+        public float DefaultForearmLength => defaultForearmLength;
 
         [SerializeField, Range(0, 1), AnimatableProperty(true, 0f)]
         protected float heightPreserveFootPositionLeft = 0f;
@@ -533,10 +553,13 @@ namespace Swole.API.Unity
 
         [NonSerialized]
         protected float defaultHipWidth;
+        public float DefaultHipWidth => defaultHipWidth; 
         [NonSerialized]
         protected float defaultLegLength;
+        public float DefaultLegLength => defaultLegLength;
         [NonSerialized]
         protected float defaultCalfLength;
+        public float DefaultCalfLength => defaultCalfLength;
 
         public bool flipHipAxisForMirror = true;
         public bool flipLegWidthAxisForMirror = false;

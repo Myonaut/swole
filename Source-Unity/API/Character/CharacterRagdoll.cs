@@ -381,9 +381,10 @@ namespace Swole.API.Unity.Animation
                 if (settingsInst.connectedColliders == null) settingsInst.connectedColliders = new List<UnityColliderObject>();
                 settingsInst.connectedColliders.Clear();
                 
-                CharacterRagdollUtils.FindColliders(root.transform, settingsInst.connectedColliders, rb.transform, false, true, null);
-            } 
+                CharacterRagdollUtils.FindColliders(root.transform, settingsInst.connectedColliders, rb.transform, false, true, null); 
+            }
 
+#if UNITY_EDITOR
             if (!Application.isPlaying)
             {
                 if (settingsAsset != null)
@@ -392,6 +393,7 @@ namespace Swole.API.Unity.Animation
                     AssetDatabase.SaveAssetIfDirty(settingsAsset);  
                 }
             }
+#endif
         }
 
         [Header("Parameter Overrides"), SerializeField]

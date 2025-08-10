@@ -1,5 +1,6 @@
 #if (UNITY_STANDALONE || UNITY_EDITOR)
 
+using System;
 using System.Collections;
 using System.Collections.Generic;
 
@@ -117,6 +118,7 @@ namespace Swole.API.Unity
             ccm.UpdateInEditor();
         }
 
+
         public static EditorCharacterCustomizationConfig CreateAndSave(string saveDir, string assetName, CustomizableCharacterMesh ccm)
         {
             var config = ScriptableObject.CreateInstance<EditorCharacterCustomizationConfig>();
@@ -128,10 +130,12 @@ namespace Swole.API.Unity
             config.variationWeightsEditor = ccm.variationWeightsEditor;
 
             config.name = string.IsNullOrWhiteSpace(assetName) ? ccm.name : assetName;
+#if UNITY_EDITOR
             config.CreateOrReplaceAsset(config.CreateUnityAssetPathString(saveDir));
-
+#endif
             return config;
         }
+
 
     }
 

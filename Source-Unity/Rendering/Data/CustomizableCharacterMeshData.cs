@@ -348,6 +348,16 @@ namespace Swole
             }
         }
 
+        public int IndexOfVariationGroup(string name)
+        {
+            for (int a = 0; a < VariationVertexGroupCount; a++)
+            {
+                var shape = vertexGroups[variationGroupIndices[a]];
+                if (shape.name == name) return a;
+            }
+            
+            return -1;
+        }
         public VertexGroup GetVariationVertexGroup(int index)
         {
             if (index < 0 || index >= VariationVertexGroupCount) return null;

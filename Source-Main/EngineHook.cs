@@ -38,6 +38,9 @@ namespace Swole
             }
         }
 
+        public virtual string DeviceID => System.Environment.UserName;
+
+        public virtual string AppDataDirectory => WorkingDirectory;
         public virtual string WorkingDirectory => Environment.CurrentDirectory;
 
         public virtual string ParseSource(string source) => source;

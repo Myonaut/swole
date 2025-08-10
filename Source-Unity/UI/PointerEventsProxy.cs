@@ -246,16 +246,13 @@ namespace Swole
         public bool CheckIfCursorIsInBounds()
         {
 
+            if (Canvas == null) return false;
+
             Camera camera = Camera.main;
-
-            if (canvas != null)
-            {
-
-                if (canvas.worldCamera != null) camera = canvas.worldCamera;
-
-            }
-
-            Vector3 cursor = RectTransform.InverseTransformPoint(Utils.MousePositionWorld(camera));
+            
+            if (canvas.worldCamera != null) camera = canvas.worldCamera;
+           
+            Vector3 cursor = RectTransform.InverseTransformPoint(canvas.transform.TransformPoint(canvas.ScreenToCanvasSpace(InputProxy.CursorScreenPosition))); 
 
             rectTransform.GetLocalCorners(corners);
 

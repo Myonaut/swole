@@ -1,6 +1,7 @@
 #if (UNITY_STANDALONE || UNITY_EDITOR)
 
 using System;
+using System.IO;
 using System.Collections;
 using System.Collections.Generic;
 
@@ -18,6 +19,8 @@ namespace Swole.Unity
     {
 
         public bool pack;
+        public bool packAsJpg;
+        public bool packAsPng;
 
         public string savePath;
         public string textureName;
@@ -75,9 +78,37 @@ namespace Swole.Unity
 #if UNITY_EDITOR
 
                 if (string.IsNullOrEmpty(savePath)) savePath = "";
- 
-                outputTexture = outputTexture.CreateOrReplaceAsset(outputTexture.CreateUnityAssetPathString(savePath, "asset"));
-                UnityEditor.AssetDatabase.SaveAssetIfDirty(outputTexture);
+
+                var _savePath = savePath;
+                if (packAsJpg)
+                {
+                    _savePath = Extensions.CreateUnityAssetPathString(_savePath, textureName, "jpg");
+
+                    DirectoryInfo directoryInfo = new DirectoryInfo(Application.dataPath);
+                    directoryInfo = directoryInfo.Parent;
+
+                    var bytes = outputTexture.EncodeToJPG(100);
+                    File.WriteAllBytes(Path.Join(directoryInfo.FullName, _savePath), bytes);
+
+                    UnityEditor.AssetDatabase.Refresh();
+                }
+                else if (packAsPng)
+                {
+                    _savePath = Extensions.CreateUnityAssetPathString(_savePath, textureName, "png");
+
+                    DirectoryInfo directoryInfo = new DirectoryInfo(Application.dataPath);
+                    directoryInfo = directoryInfo.Parent;
+
+                    var bytes = outputTexture.EncodeToPNG();
+                    File.WriteAllBytes(Path.Join(directoryInfo.FullName, _savePath), bytes);
+
+                    UnityEditor.AssetDatabase.Refresh();
+                }
+                else
+                {
+                    outputTexture = outputTexture.CreateOrReplaceAsset(outputTexture.CreateUnityAssetPathString(_savePath, "asset"));
+                    UnityEditor.AssetDatabase.SaveAssetIfDirty(outputTexture);
+                }
 
 #endif
             }

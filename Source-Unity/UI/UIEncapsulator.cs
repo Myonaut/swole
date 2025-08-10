@@ -269,6 +269,10 @@ namespace Swole.UI
         public void Recalculate()
         {
 
+            var canvasTransform = CanvasTransform;
+
+            Vector3 startPosition = canvasTransform.InverseTransformPoint(rectTransform.position);
+
             if (targetRectTransform.childCount != prevChildCount)
             {
 
@@ -421,6 +425,8 @@ namespace Swole.UI
                 }
 
             }
+
+            rectTransform.position = canvasTransform.TransformPoint(startPosition);
 
         }
 

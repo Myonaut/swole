@@ -78,87 +78,88 @@ namespace Swole
 
             if (includeRight && mirroredNameLower.StartsWith(leftTagLower))
             {
-                // Replace if the tag is at the start
-                mirroredName = rightTag + mirroredName.Substring(leftTag.Length);
+                mirroredName = MatchTagCaseAndReplace(mirroredName, 0, leftTag.Length, rightTag);
             }
             else if (includeLeft && mirroredNameLower.StartsWith(rightTagLower))
             {
-                // Replace if the tag is at the start
-                mirroredName = leftTag + mirroredName.Substring(rightTag.Length);
+                mirroredName = MatchTagCaseAndReplace(mirroredName, 0, rightTag.Length, leftTag);
             }
             else if (includeRight && mirroredNameLower.EndsWith(leftTagLower))
             {
-                // Replace if the tag is at the end
-                mirroredName = mirroredName.Substring(0, mirroredName.Length - leftTag.Length) + rightTag;
+                int start = mirroredName.Length - leftTag.Length;
+                mirroredName = mirroredName.Substring(0, start) + MatchTagCase(mirroredName.Substring(start, leftTag.Length), rightTag);
             }
             else if (includeLeft && mirroredNameLower.EndsWith(rightTagLower))
             {
-                // Replace if the tag is at the end
-                mirroredName = mirroredName.Substring(0, mirroredName.Length - rightTag.Length) + leftTag;
+                int start = mirroredName.Length - rightTag.Length;
+                mirroredName = mirroredName.Substring(0, start) + MatchTagCase(mirroredName.Substring(start, rightTag.Length), leftTag);
             }
-            else if (includeRight && ContainsTagWithConditions(mirroredName, leftTag))
+            else if (includeRight && ContainsTagWithConditions(mirroredName, leftTag, caseInsensitive, out int idx))
             {
-                // Replace if the tag meets the conditions
-                mirroredName = ReplaceTagWithConditions(mirroredName, leftTag, rightTag);
+                mirroredName = MatchTagCaseAndReplace(mirroredName, idx, leftTag.Length, rightTag);
             }
-            else if (includeLeft && ContainsTagWithConditions(mirroredName, rightTag))
+            else if (includeLeft && ContainsTagWithConditions(mirroredName, rightTag, caseInsensitive, out idx))
             {
-                // Replace if the tag meets the conditions
-                mirroredName = ReplaceTagWithConditions(mirroredName, rightTag, leftTag);
+                mirroredName = MatchTagCaseAndReplace(mirroredName, idx, rightTag.Length, leftTag);
             }
 
             return mirroredName;
         }
 
-        private static bool ContainsTagWithConditions(string name, string tag)
+        private static bool ContainsTagWithConditions(string name, string tag, bool caseInsensitive, out int index)
         {
+            string nameCmp = caseInsensitive ? name.ToLower() : name;
+            string tagCmp = caseInsensitive ? tag.ToLower() : tag;
             for (int i = 0; i <= name.Length - tag.Length; i++)
             {
-                if (name.Substring(i, tag.Length) == tag)
+                if (nameCmp.Substring(i, tag.Length) == tagCmp)
                 {
                     // Check if the tag starts with an uppercase letter
-                    if (char.IsUpper(tag[0]))
+                    if (char.IsUpper(name[i]))
                     {
-                        // Check if the tag is preceded by a non-alphanumeric character or is at the start
-                        bool isPrecededByNonAlpha = i == 0 || !char.IsLetterOrDigit(name[i - 1]);
-
-                        // Check if the tag is followed by an uppercase letter
-                        bool isFollowedByUppercase = i + tag.Length < name.Length && char.IsUpper(name[i + tag.Length]);
-
-                        if (isPrecededByNonAlpha && isFollowedByUppercase)
+                        bool isFollowedByUppercaseOrNonAlpha = i + tag.Length < name.Length && (char.IsUpper(name[i + tag.Length]) || !char.IsLetterOrDigit(name[i + tag.Length]));
+                        if (isFollowedByUppercaseOrNonAlpha)
                         {
+                            index = i;
+                            return true;
+                        }
+                    } 
+                    else
+                    {
+                        bool isPrecededByNonAlpha = i == 0 || !char.IsLetterOrDigit(name[i - 1]);
+                        bool isFollowedByUppercaseOrNonAlpha = i + tag.Length < name.Length && (char.IsUpper(name[i + tag.Length]) || !char.IsLetterOrDigit(name[i + tag.Length]));
+                        if (isPrecededByNonAlpha && isFollowedByUppercaseOrNonAlpha) 
+                        {
+                            index = i;
                             return true;
                         }
                     }
                 }
             }
+            index = -1;
             return false;
         }
 
-        private static string ReplaceTagWithConditions(string name, string oldTag, string newTag)
+        private static string MatchTagCaseAndReplace(string name, int start, int length, string newTag)
         {
-            for (int i = 0; i <= name.Length - oldTag.Length; i++)
+            return name.Substring(0, start) + MatchTagCase(name.Substring(start, length), newTag) + name.Substring(start + length);
+        }
+
+        private static string MatchTagCase(string oldTag, string newTag)
+        {
+            char[] result = new char[newTag.Length];
+            for (int i = 0; i < newTag.Length; i++)
             {
-                if (name.Substring(i, oldTag.Length) == oldTag)
+                if (i < oldTag.Length)
                 {
-                    // Check if the tag starts with an uppercase letter
-                    if (char.IsUpper(oldTag[0]))
-                    {
-                        // Check if the tag is preceded by a non-alphanumeric character or is at the start
-                        bool isPrecededByNonAlpha = i == 0 || !char.IsLetterOrDigit(name[i - 1]);
-
-                        // Check if the tag is followed by an uppercase letter
-                        bool isFollowedByUppercase = i + oldTag.Length < name.Length && char.IsUpper(name[i + oldTag.Length]);
-
-                        if (isPrecededByNonAlpha && isFollowedByUppercase)
-                        {
-                            // Replace the tag
-                            return name.Substring(0, i) + newTag + name.Substring(i + oldTag.Length);
-                        }
-                    }
+                    result[i] = char.IsUpper(oldTag[i]) ? char.ToUpper(newTag[i]) : char.ToLower(newTag[i]);
+                }
+                else
+                {
+                    result[i] = newTag[i];
                 }
             }
-            return name;
+            return new string(result);
         }
 
         public static string GetMirroredName(string name, bool includeLeft = true, bool includeRight = true)

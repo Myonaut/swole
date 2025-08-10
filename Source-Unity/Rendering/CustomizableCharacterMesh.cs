@@ -467,6 +467,7 @@ namespace Swole.Morphing
 
         public void UpdateInEditor()
         {
+#if UNITY_EDITOR
             if (Application.isPlaying && isActiveAndEnabled)
             {
                 if (prevBustSizeEditor != bustSizeEditor)
@@ -619,7 +620,8 @@ namespace Swole.Morphing
                     }
                 }
             }
-        }
+#endif
+        } 
 
         public string configSaveDir;
         public string configAssetName;
@@ -786,7 +788,7 @@ namespace Swole.Morphing
                 shapesInstanceReference.OnCreateInstanceID -= SetShapesInstanceID;
                 shapesInstanceReference = null;
             }
-            if (rigInstanceReference != null)
+            if (RigInstanceReferenceIsValid)
             {
                 rigInstanceReference.OnCreateInstanceID -= SetRigInstanceID;
                 rigInstanceReference = null;
@@ -794,6 +796,7 @@ namespace Swole.Morphing
             if (characterInstanceReference != null)
             {
                 characterInstanceReference.OnCreateInstanceID -= SetCharacterInstanceID;
+                characterInstanceReference.OnSetRenderingCameras -= SetRenderingCamerasInternal;
                 characterInstanceReference.RemoveChild(this);
                 characterInstanceReference = null; 
             }
@@ -809,10 +812,11 @@ namespace Swole.Morphing
             }
         }
 
-        /*protected virtual void LateUpdate()
+        protected virtual void LateUpdate()
         {
+            if (instance != null) instance.SyncWithTransform();
             //UpdateBuffers(); // removed
-        }*/
+        }
 
         protected List<CustomizableCharacterMesh> children;
         public void AddChild(CustomizableCharacterMesh child)
@@ -1059,10 +1063,24 @@ namespace Swole.Morphing
             SetAnimatablePropertiesController(animatablePropertiesController); 
 
             Animator = animator; // force subscribe listeners
+
+            if (characterInstanceReference != null)
+            {
+                SetRenderingCameras(characterInstanceReference.GetRenderingCameras(), false, false);
+                characterInstanceReference.OnSetRenderingCameras += SetRenderingCamerasInternal;  
+            }
         }
 
         protected override void OnStart()
         {
+            if (characterInstanceReference != null)
+            {
+                if (renderingCameras == null || renderingCameras.Length != characterInstanceReference.CameraCount)
+                {
+                    SetRenderingCameras(characterInstanceReference.GetRenderingCameras(), false, false); 
+                }
+            }
+
             base.OnStart();
 
             InitInstanceIDs();
@@ -1101,13 +1119,33 @@ namespace Swole.Morphing
             }
         }
 
-        public override string RigID => rigRoot.GetInstanceID().ToString();
+        [NonSerialized]
+        protected string rigID;
+        public override string RigID // => rigRoot.GetInstanceID().ToString(); // some renderers do not have the same bone/bindpose array as others, so this causes problems. Instead we'll generate a new rig id unless a rig instance reference is given.
+        {
+            get
+            {
+                if (RigInstanceReferenceIsValid) return rigInstanceReference.RigID;
+
+                if (string.IsNullOrWhiteSpace(rigID))
+                {
+                    rigID = System.Guid.NewGuid().ToString();
+                    while(Rigs.TryGetStandaloneSampler(RigID, out _))
+                    {
+                        rigID = System.Guid.NewGuid().ToString(); 
+                    }
+                }
+
+                return rigID;
+            }
+        }
 
         [SerializeField]
         protected string rigBufferId;
         public void SetRigBufferID(string id) => rigBufferId = id;
         public string LocalRigBufferID => rigBufferId;
-        public override string RigBufferID => rigInstanceReference != null ? rigInstanceReference.RigBufferID : rigBufferId;
+        public bool RigInstanceReferenceIsValid => rigInstanceReference != null && rigInstanceReference.SkinningBoneCount == SkinningBoneCount;
+        public override string RigBufferID => RigInstanceReferenceIsValid ? rigInstanceReference.RigBufferID : rigBufferId;
 
         [SerializeField]
         protected string shapeBufferId;
@@ -1135,7 +1173,7 @@ namespace Swole.Morphing
         {
             get
             {
-                if (rigInstanceReference == null && rigInstanceID <= 0) return base.RigSampler;   
+                if (!RigInstanceReferenceIsValid && rigInstanceID <= 0) return base.RigSampler;   
                 return null;
             }
         }
@@ -1201,10 +1239,16 @@ namespace Swole.Morphing
                 SetShapesInstanceID(shapesInstanceReference.InstanceSlot);
                 shapesInstanceReference.OnCreateInstanceID += SetShapesInstanceID;  
             }
-            if (rigInstanceReference != null) 
+            if (RigInstanceReferenceIsValid) 
             { 
                 SetRigInstanceID(rigInstanceReference.InstanceSlot);
-                rigInstanceReference.OnCreateInstanceID += SetRigInstanceID; 
+                rigInstanceReference.OnCreateInstanceID += SetRigInstanceID;  
+            } 
+            else if (rigInstanceReference != null)
+            {
+#if UNITY_EDITOR
+                Debug.LogWarning($"rigInstanceReference '{rigInstanceReference.name}' for '{name}' does not have identical skinning bone count ({rigInstanceReference.SkinningBoneCount}:{SkinningBoneCount}) and will be ignored");
+#endif
             }
             if (characterInstanceReference != null) 
             {
@@ -1221,6 +1265,8 @@ namespace Swole.Morphing
         {
             base.CreateInstance(floatOverrides, colorOverrides, vectorOverrides);
 
+            instance.SetBoundTransform(transform);  
+
             instance.SetFloatOverride(matProp_LOD_Level, 0, false);
             instance.SetFloatOverride(CharacterMeshData.ShapesInstanceIDPropertyName, ShapesInstanceID, false);
             instance.SetFloatOverride(CharacterMeshData.RigInstanceIDPropertyName, RigInstanceID, false);
@@ -1229,11 +1275,12 @@ namespace Swole.Morphing
             InitBuffers();
         }
 
-        protected override int OnSetLOD(int levelOfDetail)
-        {
-            levelOfDetail = 2; 
-            if (instance != null) instance.SetFloatOverride(matProp_LOD_Level, levelOfDetail, true);  
-            return base.OnSetLOD(levelOfDetail); 
+        protected override int OnSetLOD(int cameraIndex, int levelOfDetail)
+        {          
+            levelOfDetail = base.OnSetLOD(cameraIndex, levelOfDetail);
+            if (instance != null) instance.SetFloatOverride(cameraIndex, matProp_LOD_Level, levelOfDetail, true); 
+
+            return levelOfDetail;
         }
 
         protected Transform[] bones;
@@ -1262,7 +1309,7 @@ namespace Swole.Morphing
 
         public override int BoneCount => avatar == null ? 1 : avatar.bones.Length;
 
-        public override Matrix4x4[] BindPose => meshData.ManagedBindPose;
+        public override Matrix4x4[] BindPose => meshData.ManagedBindPose; 
 
 
         /*protected bool dirtyFlag_standaloneShapesControl;
@@ -1326,11 +1373,6 @@ namespace Swole.Morphing
                     else if (!meshGroup.HasRuntimeData(bufferID))
                     {
                         meshGroup.BindInstanceMaterialBuffer(matProperty, standaloneShapeControlBuffer);
-                        /*for (int a = 0; a < meshGroup.MaterialCount; a++)
-                        {
-                            var material = meshGroup.GetMaterial(a);
-                            standaloneShapeControlBuffer.BindMaterialProperty(material, matProperty);
-                        }*/
 
                         meshGroup.SetRuntimeData(bufferID, true);
                     }
@@ -1405,11 +1447,6 @@ namespace Swole.Morphing
                     else if (!meshGroup.HasRuntimeData(bufferID))
                     {
                         meshGroup.BindInstanceMaterialBuffer(matProperty, muscleGroupsControlBuffer);
-                        /*for (int a = 0; a < meshGroup.MaterialCount; a++)
-                        {
-                            var material = meshGroup.GetMaterial(a);
-                            muscleGroupsControlBuffer.BindMaterialProperty(material, matProperty);
-                        }*/
 
                         meshGroup.SetRuntimeData(bufferID, true);
                     }
@@ -1500,11 +1537,6 @@ namespace Swole.Morphing
                     else if (!meshGroup.HasRuntimeData(bufferID))
                     {
                         meshGroup.BindInstanceMaterialBuffer(matProperty, fatGroupsControlBuffer);
-                        /*for (int a = 0; a < meshGroup.MaterialCount; a++)
-                        {
-                            var material = meshGroup.GetMaterial(a);
-                            fatGroupsControlBuffer.BindMaterialProperty(material, matProperty); 
-                        }*/
 
                         meshGroup.SetRuntimeData(bufferID, true);
                     }
@@ -1601,11 +1633,6 @@ namespace Swole.Morphing
                     else if (!meshGroup.HasRuntimeData(bufferID))
                     {
                         meshGroup.BindInstanceMaterialBuffer(matProperty, variationShapesControlBuffer);
-                        /*for (int a = 0; a < meshGroup.MaterialCount; a++)
-                        {
-                            var material = meshGroup.GetMaterial(a);
-                            variationShapesControlBuffer.BindMaterialProperty(material, matProperty);
-                        }*/
 
                         meshGroup.SetRuntimeData(bufferID, true);
                     }
