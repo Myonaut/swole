@@ -22,7 +22,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 */
-using andywiecko.BurstTriangulator.LowLevel.Unsafe;
+using swolescr.andywiecko.BurstTriangulator.LowLevel.Unsafe;
 using System;
 using System.Collections.Generic;
 using System.Runtime.CompilerServices;
@@ -38,11 +38,11 @@ using UnityEngine.Rendering;
 #if UNITY_MATHEMATICS_FIXEDPOINT
 using Unity.Mathematics.FixedPoint;
 #endif
-using static andywiecko.BurstTriangulator.Utilities;
+using static swolescr.andywiecko.BurstTriangulator.Utilities;
 
-[assembly: InternalsVisibleTo("andywiecko.BurstTriangulator.Tests")]
+[assembly: InternalsVisibleTo("swolescr.andywiecko.BurstTriangulator.Tests")]
 
-namespace andywiecko.BurstTriangulator
+namespace swolescr.andywiecko.BurstTriangulator
 {
     /// <summary>
     /// An <see cref="Enum"/> representing the status of triangulation.
@@ -246,7 +246,7 @@ namespace andywiecko.BurstTriangulator
         /// If set to <see langword="true"/>, the provided <see cref="InputData{T2}"/> and <see cref="TriangulationSettings"/> 
         /// will be validated before executing the triangulation procedure. The input <see cref="InputData{T2}.Positions"/>, 
         /// <see cref="InputData{T2}.ConstraintEdges"/>, and <see cref="TriangulationSettings"/> have certain restrictions. 
-        /// For more details, see the <see href="https://andywiecko.github.io/BurstTriangulator/manual/advanced/input-validation.html">manual</see>.
+        /// For more details, see the <see href="https://swolescr.andywiecko.github.io/BurstTriangulator/manual/advanced/input-validation.html">manual</see>.
         /// If any of the validation conditions are not met, the triangulation will not be performed. 
         /// This can be detected as an error by checking the <see cref="OutputData{T2}.Status"/> value (native, and usable in jobs).
         /// Additionally, if <see cref="Verbose"/> is set to <see langword="true"/>, corresponding errors/warnings will be logged in the Console.
@@ -1567,7 +1567,7 @@ namespace andywiecko.BurstTriangulator
     }
 }
 
-namespace andywiecko.BurstTriangulator.LowLevel.Unsafe
+namespace swolescr.andywiecko.BurstTriangulator.LowLevel.Unsafe
 {
     /// <summary>
     /// <b>Obsolete:</b> use <see cref="NativeInputData{T2}"/> instead.

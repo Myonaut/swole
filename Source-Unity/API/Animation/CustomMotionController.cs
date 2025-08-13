@@ -12,7 +12,7 @@ using Unity.Collections;
 
 using Swole.Animation;
 
-using andywiecko.BurstTriangulator;
+using swolescr.andywiecko.BurstTriangulator;
 
 namespace Swole.API.Unity.Animation
 {

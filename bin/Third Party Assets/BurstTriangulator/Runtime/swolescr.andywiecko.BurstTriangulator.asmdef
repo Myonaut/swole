@@ -1,5 +1,5 @@
 {
-    "name": "andywiecko.BurstTriangulator",
+    "name": "swolescr.andywiecko.BurstTriangulator",
     "rootNamespace": "",
     "references": [
         "Unity.Burst",
