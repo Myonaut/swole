@@ -203,7 +203,7 @@ namespace Swole.API.Unity
         }
 
         public static int ExecutionPriority => ProxyTransformSingleton.ExecutionPriority + 5; // Update after animation, ik, and transform proxies
-        public override int Priority => base.Priority;
+        public override int Priority => ExecutionPriority;
         
         [Serializable]
         public struct EyeballStateData 

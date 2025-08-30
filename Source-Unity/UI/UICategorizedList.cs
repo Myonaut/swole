@@ -64,34 +64,37 @@ namespace Swole.UI
             public GameObject gameObject;
             public RectTransform buttonRT;
 
+            public bool objectIsSpecial;
+            public bool preventObjectDeletion;
+
             public Category category;
             public int Index
             {
                 get
                 {
-                    if (category == null || category.members == null) return -1;
-                    return category.members.IndexOf(this);
+                    if (category == null || category.Members == null) return -1;
+                    return category.Members.IndexOf(this);
                 }
                 set
                 {
-                    if (category == null || category.members == null) return;
+                    if (category == null || category.Members == null) return;
 
-                    int currentIndex = category.members.IndexOf(this);
+                    int currentIndex = category.Members.IndexOf(this);
                     if (currentIndex >= 0) 
                     { 
-                        category.members.RemoveAt(currentIndex); 
+                        category.Members.RemoveAt(currentIndex); 
                     }
 
                     int index = value;
-                    if (index >= category.members.Count || category.members.Count <= 0) 
+                    if (index >= category.Members.Count || category.Members.Count <= 0) 
                     {
-                        index = category.members.Count;
-                        category.members.Add(this); 
+                        index = category.Members.Count;
+                        category.Members.Add(this); 
                     } 
                     else
                     {
                         index = Mathf.Max(0, value);
-                        category.members.Insert(index, this); 
+                        category.Members.Insert(index, this); 
                     }
 
                     if (rectTransform != null && category.rectTransform != null) rectTransform.SetSiblingIndex(category.rectTransform.GetSiblingIndex() + 1 + index); // + 1 to position after category
@@ -124,9 +127,14 @@ namespace Swole.UI
             public string name;
             public RectTransform rectTransform;
             public GameObject gameObject;
+
+            public bool objectIsSpecial;
+            public bool preventObjectDeletion;
+
             public bool expanded;
             public bool IsExpanded => expanded;
-            public List<Member> members = new List<Member>();
+            protected List<Member> members = new List<Member>();
+            public List<Member> Members => members;
 
             public int MemberCount => members == null ? 0 : members.Count;
             public Member GetMember(int memberIndex) => members == null ? null : members[memberIndex];
@@ -217,26 +225,33 @@ namespace Swole.UI
             if (preserveCategoryStates) preservedCategoryStates = new Dictionary<string, bool>(); else preservedCategoryStates = null;
             foreach (var cat in categories)
             {
-                if (cat == null || cat.members == null) continue;
+                if (cat == null || cat.Members == null) continue;
 
                 if (preservedCategoryStates != null) preservedCategoryStates[cat.name] = cat.expanded; 
 
-                foreach (var mem in cat.members)
+                foreach (var mem in cat.Members)
                 {
                     if (mem == null || mem.gameObject == null) continue;
 
                     if (prefabPool == null)
                     {
-                        GameObject.Destroy(mem.gameObject);
+                        if (!mem.preventObjectDeletion) GameObject.Destroy(mem.gameObject);
                     }
                     else
                     {
-                        prefabPool.Release(mem.gameObject);
+                        if (mem.objectIsSpecial) 
+                        { 
+                            if (!mem.preventObjectDeletion)
+                            {
+                                GameObject.Destroy(mem.gameObject);
+                            }
+                        } 
+                        else prefabPool.Release(mem.gameObject);
                     }
                 }
 
-                cat.members.Clear();
-                if (includeCategories && cat.gameObject != null) GameObject.Destroy(cat.gameObject);
+                cat.Members.Clear();
+                if (includeCategories && cat.gameObject != null && !cat.preventObjectDeletion) GameObject.Destroy(cat.gameObject);
             }
             if (includeCategories) categories.Clear();
         }
@@ -247,17 +262,17 @@ namespace Swole.UI
         public Category GetCategory(int categoryIndex) => categories == null ? null : categories[categoryIndex];
         public Category this[int categoryIndex] => GetCategory(categoryIndex);
 
-        public Category AddNewCategory(string categoryName, Sprite categoryIcon=null)
+        public Category AddNewCategory(string categoryName, Sprite categoryIcon=null, GameObject specialInstance = null, bool allowDestroySpecialInstance = false)
         {
             if (!initialized) Reinitialize();
-            var inst = GameObject.Instantiate(categoryPrototype.gameObject);
+            var inst = specialInstance == null ? GameObject.Instantiate(categoryPrototype.gameObject) : specialInstance;
             inst.name = categoryName;
             inst.SetActive(true);
             var rt = inst.AddOrGetComponent<RectTransform>();
             rt.SetParent(layoutTransform, false);
             rt.SetAsLastSibling();
 
-            Category category = new Category() { gameObject=inst, name=categoryName, rectTransform=rt };
+            Category category = new Category() { gameObject=inst, name=categoryName, rectTransform=rt, objectIsSpecial = specialInstance != null, preventObjectDeletion = specialInstance != null && !allowDestroySpecialInstance };
             categories.Add(category);
 
             category.text = inst.GetComponentInChildren<Text>(true);
@@ -314,6 +329,22 @@ namespace Swole.UI
             foreach (var category in categories) if (category.name.AsID() == categoryName.AsID()) return category;
             return AddNewCategory(categoryName, categoryIcon);
         }
+        public int GetCategoryIndex(Category category)
+        {
+            if (!initialized || categories == null) return -1;
+            return categories.IndexOf(category);
+        }
+        public int GetCategoryIndex(string categoryName)
+        {
+            if (!initialized || categories == null) return -1;
+
+            for(int index = 0; index < categories.Count; index++)
+            {
+                if (categories[index].name == categoryName) return index;
+            }
+
+            return -1;
+        }
         public Category FindCategory(string categoryName)
         {
             if (!initialized) return null;
@@ -333,19 +364,29 @@ namespace Swole.UI
 
             SortCategoryListBySiblingIndex();
 
-            index = Mathf.Clamp(index, 0, categories.Count - 1);
-            var toNudge = categories[index];
-
-            int siblingIndex = toNudge.rectTransform.GetSiblingIndex(); 
-            category.rectTransform.SetSiblingIndex(siblingIndex);
-            if (category.members != null)
+            if (index >= categories.Count)
             {
-                for (int a = category.members.Count - 1; a >= 0; a--) 
-                { 
-                    var mem = categories[a];
-                    if (mem.rectTransform != null) mem.rectTransform.SetSiblingIndex(siblingIndex + 1); 
+                category.rectTransform.SetAsLastSibling(); 
+            }
+            else
+            {
+                index = Mathf.Max(index, 0);
+                var toNudge = categories[index];
+
+                int siblingIndex = toNudge.rectTransform.GetSiblingIndex();
+                category.rectTransform.SetSiblingIndex(siblingIndex);
+            }
+
+            if (category.Members != null)
+            {
+                for (int a = category.Members.Count - 1; a >= 0; a--)
+                {
+                    var mem = category.Members[a];
+                    if (mem.rectTransform != null) mem.rectTransform.SetSiblingIndex(category.rectTransform.GetSiblingIndex() + 1);
                 }
             }
+
+            SortCategoryListBySiblingIndex();
         }
 
         protected GameObject GetNewListMemberInstance(string memberName)
@@ -366,25 +407,25 @@ namespace Swole.UI
             }
             return inst;
         }
-        public Member AddNewListMember(string memberName, string category, UnityAction onClick=null, Sprite categoryIcon=null)
+        public Member AddNewListMember(string memberName, string category, UnityAction onClick=null, Sprite categoryIcon=null, GameObject specialInstance = null, bool allowDestroySpecialInstance = false)
         {
             if (!initialized) Reinitialize();
-            GameObject inst = GetNewListMemberInstance(memberName);
+            GameObject inst = specialInstance == null ? GetNewListMemberInstance(memberName) : specialInstance;
             if (inst == null) return null;
 
-            return AddNewListMember(inst, AddOrGetCategory(category, categoryIcon), onClick);
+            return AddNewListMember(inst, AddOrGetCategory(category, categoryIcon), onClick, specialInstance != null, allowDestroySpecialInstance);
         }
 
-        public Member AddNewListMember(string memberName, Category category, UnityAction onClick = null)
+        public Member AddNewListMember(string memberName, Category category, UnityAction onClick = null, GameObject specialInstance = null, bool allowDestroySpecialInstance = false)
         {
             if (!initialized) Reinitialize();
-            GameObject inst = GetNewListMemberInstance(memberName);
+            GameObject inst = specialInstance == null ? GetNewListMemberInstance(memberName) : specialInstance;
             if (inst == null) return null;
 
-            return AddNewListMember(inst, category, onClick);
+            return AddNewListMember(inst, category, onClick, specialInstance != null, allowDestroySpecialInstance);
         }
 
-        protected Member AddNewListMember(GameObject inst, Category category, UnityAction onClick = null)
+        protected Member AddNewListMember(GameObject inst, Category category, UnityAction onClick = null, bool instanceIsSpecial = false, bool allowDestroySpecialInstance = false)
         {
             RectTransform buttonRT = null;
 
@@ -413,9 +454,9 @@ namespace Swole.UI
             }
 
 
-            Member member = new Member() { category = category, gameObject = inst, name = inst.name, rectTransform = inst.GetComponent<RectTransform>(), buttonRT = buttonRT };
+            Member member = new Member() { category = category, gameObject = inst, name = inst.name, rectTransform = inst.GetComponent<RectTransform>(), buttonRT = buttonRT, objectIsSpecial = instanceIsSpecial, preventObjectDeletion = instanceIsSpecial && !allowDestroySpecialInstance };
 
-            category.members.Add(member);
+            category.Members.Add(member);  
 
             member.rectTransform.SetParent(layoutTransform, false);
             int index = category.rectTransform.GetSiblingIndex() + 1;
@@ -442,6 +483,62 @@ namespace Swole.UI
             return member;
         }
 
+        public Member AddOrGetListMember(string memberName, string category, UnityAction onClick = null, Sprite categoryIcon = null)
+        {
+            return AddOrGetListMember(memberName, AddOrGetCategory(category, categoryIcon), onClick);
+        }
+        public Member AddOrGetListMember(string memberName, Category category, UnityAction onClick = null)
+        {
+            if (!initialized) Reinitialize();
+
+            Member member = null;
+            GameObject inst = null;
+            bool exists = false;
+            if (category.Members != null)
+            {
+                foreach(var mem in category.Members)
+                {
+                    if (mem.name == memberName)
+                    {
+                        exists = true;
+                        member = mem;
+                        inst = member.gameObject;
+                    }
+                }
+            }
+
+            if (!exists)
+            {
+                member = AddNewListMember(memberName, category, onClick);
+                inst = member.gameObject;
+            }
+
+            if (onClick != null)
+            {
+                var button = inst.GetComponent<Button>();
+                var tabButton = inst.GetComponent<UITabButton>();
+
+                if (button == null && tabButton == null)
+                {
+                    button = inst.GetComponentInChildren<Button>(false);
+                    if (button == null) tabButton = inst.GetComponentInChildren<UITabButton>(false);
+                }
+
+                if (button != null)
+                {
+                    if (button.onClick == null) button.onClick = new Button.ButtonClickedEvent();
+                    button.onClick.AddListener(onClick);
+                }
+                if (tabButton != null)
+                {
+                    if (tabButton.OnClick == null) tabButton.OnClick = new UnityEvent();
+                    tabButton.OnClick.AddListener(onClick);
+                }
+            }
+
+            return member;
+        }
+
         public bool RemoveListMember(Member member)
         {
             if (!initialized) return false;
@@ -450,12 +547,19 @@ namespace Swole.UI
             bool flag = false;
             foreach(var category in categories)
             {
-                if (category == null || category.members == null) continue;
-                int removed = category.members.RemoveAll(i => i == member);
+                if (category == null || category.Members == null) continue;
+                int removed = category.Members.RemoveAll(i => i == member);
                 flag = flag || removed > 0;
             }
 
-            if (member.gameObject != null) prefabPool?.Release(member.gameObject);
+            if (member.gameObject != null) 
+            {
+                if (member.objectIsSpecial)
+                {
+                    if (!member.preventObjectDeletion) GameObject.Destroy(member.gameObject);
+                }
+                else prefabPool?.Release(member.gameObject);
+            }
 
             return flag;
         }
@@ -470,20 +574,27 @@ namespace Swole.UI
                 bool flag = false;
                 foreach(var c in categories)
                 {
-                    if (c == null || c.members == null) continue;
+                    if (c == null || c.Members == null) continue;
                     flag = true;
                     while (flag)
                     {
                         flag = false;
-                        for(int i = 0; i < c.members.Count; i++)
+                        for(int i = 0; i < c.Members.Count; i++)
                         {
-                            var mem = c.members[i];
+                            var mem = c.Members[i];
                             if (mem == null || mem.name == memberName)
                             {
                                 flag = true;
                                 removed = true;
-                                c.members.RemoveAt(i);
-                                prefabPool?.Release(mem.gameObject);
+                                c.Members.RemoveAt(i);
+                                if (mem.gameObject != null)
+                                {
+                                    if (mem.objectIsSpecial)
+                                    {
+                                        if (!mem.preventObjectDeletion) GameObject.Destroy(mem.gameObject);
+                                    }
+                                    else prefabPool?.Release(mem.gameObject);
+                                }
                             }
                         }
                     }
@@ -492,21 +603,28 @@ namespace Swole.UI
             }
 
             var cat = FindCategory(category);
-            if (cat != null && cat.members != null)
+            if (cat != null && cat.Members != null)
             {
                 bool flag = true;
                 while (flag)
                 {
                     flag = false;
-                    for (int i = 0; i < cat.members.Count; i++)
+                    for (int i = 0; i < cat.Members.Count; i++)
                     {
-                        var mem = cat.members[i];
+                        var mem = cat.Members[i];
                         if (mem == null || mem.name == memberName)
                         {
                             flag = true;
                             removed = true;
-                            cat.members.RemoveAt(i);
-                            prefabPool?.Release(mem.gameObject);
+                            cat.Members.RemoveAt(i);
+                            if (mem.gameObject != null)
+                            {
+                                if (mem.objectIsSpecial)
+                                {
+                                    if (!mem.preventObjectDeletion) GameObject.Destroy(mem.gameObject);
+                                }
+                                else prefabPool?.Release(mem.gameObject);
+                            }
                         }
                     }
                 }
@@ -551,25 +669,29 @@ namespace Swole.UI
 
                 if (category != null)
                 {
-                    if (category.members != null)
+                    if (category.Members != null)
                     {
                         if (prefabPool != null)
                         {
-                            foreach (var member in category.members)
+                            foreach (var member in category.Members)
                             {
-                                prefabPool.Release(member.gameObject);
+                                if (member.objectIsSpecial)
+                                {
+                                    if (!member.preventObjectDeletion) GameObject.Destroy(member.gameObject);
+                                }
+                                else prefabPool.Release(member.gameObject);
                             }
                         }
                         else
                         {
-                            foreach (var member in category.members)
+                            foreach (var member in category.Members)
                             {
-                                if (member.gameObject != null) GameObject.Destroy(member.gameObject);
+                                if (member.gameObject != null && !member.preventObjectDeletion) GameObject.Destroy(member.gameObject);
                             }
                         }
-                        category.members.Clear();
+                        category.Members.Clear();
                     }
-                    if (category.gameObject != null)
+                    if (category.gameObject != null && !category.preventObjectDeletion)
                     {
                         GameObject.Destroy(category.gameObject);
                     }
@@ -611,12 +733,12 @@ namespace Swole.UI
 
                 foreach (var cat in categories)
                 {
-                    if (cat.members != null)
+                    if (cat.Members != null)
                     {
                         bool expanded = cat.expanded;
                         cat.Expand();
                         bool flag = !expanded;
-                        foreach (var mem in cat.members)
+                        foreach (var mem in cat.Members)
                         {
                             if (mem.gameObject != null)
                             {

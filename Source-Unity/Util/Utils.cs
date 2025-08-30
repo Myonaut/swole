@@ -56,6 +56,8 @@ namespace Swole
         public static string GetMirroredName(string name, string delimiter, bool includeLeft = true, bool includeRight = true) => GetMirroredName(name, _leftTagInnerUnderscore.Replace(_underscoreStr, delimiter), _leftTagSuffixUnderscore.Replace(_underscoreStr, delimiter), _rightTagInnerUnderscore.Replace(_underscoreStr, delimiter), _rightTagSuffixUnderscore.Replace(_underscoreStr, delimiter), includeLeft, includeRight);     
         public static string GetMirroredName(string name, string leftTagInner, string leftTagSuffix, string rightTagInner, string rightTagSuffix, bool includeLeft = true, bool includeRight = true)
         {
+            if (string.IsNullOrWhiteSpace(name)) return name;
+
             string mirroredName = name;
 
             if (mirroredName.EndsWith(leftTagSuffix) && includeRight) mirroredName = mirroredName.Substring(0, mirroredName.Length - leftTagSuffix.Length) + rightTagSuffix;
@@ -71,6 +73,8 @@ namespace Swole
 
         public static string GetMirroredNameAdvanced(string name, string leftTag, string rightTag, bool includeLeft = true, bool includeRight = true, bool caseInsensitive = true)
         {
+            if (string.IsNullOrWhiteSpace(name)) return name;
+
             string mirroredName = name;
             string mirroredNameLower = caseInsensitive ? mirroredName.ToLower() : mirroredName;
             string leftTagLower = caseInsensitive ? leftTag.ToLower() : leftTag;
@@ -164,6 +168,8 @@ namespace Swole
 
         public static string GetMirroredName(string name, bool includeLeft = true, bool includeRight = true)
         {
+            if (string.IsNullOrWhiteSpace(name)) return name;
+
             string mirroredName = GetMirroredName(name, _underscoreStr, includeLeft, includeRight); 
             if (mirroredName == name) mirroredName = GetMirroredName(name, _periodStr, includeLeft, includeRight);
             if (mirroredName == name) mirroredName = GetMirroredName(name, _spaceStr, includeLeft, includeRight); 

@@ -101,7 +101,7 @@ namespace FCP
 
         //public settings
         [Tooltip("Color set to the color picker on Start(). If you wish to set a starting color via script please used the standard color parameter of the FCP in stead.")]
-        [SerializeField]
+        [SerializeField, ColorUsage(true, true)]
         private Color startingColor = Color.white;
         [Tooltip("Use static mode: picker images are replaced by static images in stead of adaptive Unity shaders.")]
         public bool staticMode = false;
@@ -187,18 +187,22 @@ namespace FCP
             }
             set
             {
-                if (bufferedColor == null)
-                {
-                    startingColor = value;
-                    return;
-                }
-                bufferedColor.Set(value);
-                UpdateMarkers();
-                UpdateTextures();
-                UpdateHex();
-                typeUpdate = true;
+                SetColorWithoutNotify(value);
                 onColorChange.Invoke(value);
             }
+        }
+        public void SetColorWithoutNotify(Color value)
+        {
+            if (bufferedColor == null)
+            {
+                startingColor = value;
+                return;
+            }
+            bufferedColor.Set(value);
+            UpdateMarkers();
+            UpdateTextures();
+            UpdateHex();
+            typeUpdate = true;
         }
 
         /// <summary>

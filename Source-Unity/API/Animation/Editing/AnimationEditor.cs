@@ -2185,7 +2185,7 @@ namespace Swole.API.Unity.Animation
 
                         addListMember(source.DisplayName, source.rawAnimation, cat); 
                     }
-                    if (cat.members == null || cat.members.Count <= 0) animationsList.DeleteCategory(cat); 
+                    if (cat.Members == null || cat.Members.Count <= 0) animationsList.DeleteCategory(cat); 
                 }
             });
         }
@@ -8806,7 +8806,7 @@ namespace Swole.API.Unity.Animation
 
                         addListMember(content.Name, content.Asset as CustomAnimation, cat);
                     }
-                    if (cat.members == null || cat.members.Count <= 0) animationsList.DeleteCategory(cat);
+                    if (cat.Members == null || cat.Members.Count <= 0) animationsList.DeleteCategory(cat);
                 }
                 for (int a = 0; a < ContentManager.ExternalPackageCount; a++)
                 {
@@ -8820,7 +8820,7 @@ namespace Swole.API.Unity.Animation
 
                         addListMember(content.Name, content.Asset as CustomAnimation, cat);
                     }
-                    if (cat.members == null || cat.members.Count <= 0) animationsList.DeleteCategory(cat);
+                    if (cat.Members == null || cat.Members.Count <= 0) animationsList.DeleteCategory(cat);
                 }
             });
         }
@@ -8972,10 +8972,10 @@ namespace Swole.API.Unity.Animation
                 var childT = category.rectTransform.FindDeepChildLiberal(_activeTag);
                 if (childT != null) childT.gameObject.SetActive(false); 
 
-                if (category.members == null) continue;
-                for (int b = 0; b < category.members.Count; b++)
+                if (category.Members == null) continue;
+                for (int b = 0; b < category.Members.Count; b++)
                 {
-                    var member = category.members[b];
+                    var member = category.Members[b];
                     if (member == null || member.rectTransform == null) continue;
 
                     childT = member.rectTransform.FindDeepChildLiberal(_activeTag);

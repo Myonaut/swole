@@ -14,7 +14,7 @@ namespace Swole.API.Unity
         Incremental, Multiplicative
     }
 
-    public interface IObjectPool
+    public interface IObjectPool : IDisposable
     {
 
         public bool TryGetNewInstance(out UnityEngine.Object instance);
@@ -30,14 +30,100 @@ namespace Swole.API.Unity
 
     }
 
-    public class ObjectPool<T> : MonoBehaviour, IObjectPool where T : UnityEngine.Object
+    public class ObjectPoolBehaviour<T> : MonoBehaviour, IObjectPool where T : UnityEngine.Object
     {
 
+        protected readonly ObjectPool<T> pool = new ObjectPool<T>();
+
+        public void SetDontDestroyInstances(bool dontDestroy) => pool.dontDestroyInstances = dontDestroy;
+        public bool DontDestroyInstances
+        {
+            get => pool.dontDestroyInstances;
+            set => SetDontDestroyInstances(value);
+        }
+        protected virtual void OnDestroy()
+        {
+            pool.Dispose();
+        }
+        public void Dispose()
+        {
+            DestroyImmediate(this);
+        }
+
+        public T Prototype => pool.Prototype;
+
+        public bool IsValid => pool.IsValid;
+
+        public bool IsInPool(T inst) => pool.IsInPool(inst);
+
+        public int Size => pool.Size;
+        public int Pooled => pool.Pooled;
+
+        public bool Initialized => pool.Initialized;
+
+        //private T CreateNewInstance() => pool.CreateNewInstance();
+
+        public void Initialize() => pool.Initialize();
+
+        public void Reinitialize(T prototype, PoolGrowthMethod growthMethod, int growthFactor, int initialSize, int maxSize) => pool.Reinitialize(prototype, growthMethod, growthFactor, initialSize, maxSize);
+
+        private void Awake()
+        {
+            pool.OnCreateNewInstance += OnCreateNew;
+            pool.OnClaimInstance += OnClaim;
+            pool.OnReleaseInstance += OnRelease;
+            pool.OnInvalidateInstance += OnInvalidate;
+
+            OnAwake();
+
+            Initialize(); 
+        }
+
+        private void Start()
+        {
+            OnStart();
+
+            Initialize();
+        }
+
+        protected virtual void OnAwake() { }
+        protected virtual void OnStart() { }
+        protected virtual void OnCreateNew(T inst) { }
+        protected virtual void OnClaim(T inst) { }
+        protected virtual void OnRelease(T inst) { }
+        protected virtual void OnInvalidate(T inst) { }
+
+        //private bool Grow() => pool.Grow();
+
+        public bool TryGetNewInstance(out UnityEngine.Object instance)  => pool.TryGetNewInstance(out instance);
+        public bool TryGetNewInstance(out T instance) => pool.TryGetNewInstance(out instance);
+
+        /// <summary>
+        /// Tries to get 'count' number of instances and adds them to the 'instancesList'. Returns number of instances added.
+        /// </summary>
+        public int GetNewInstances(int count, ref List<T> instancesList) => pool.GetNewInstances(count, ref instancesList);
+
+        public void Claim(UnityEngine.Object instance) => pool.Claim(instance);
+        public void Claim(T instance) => pool.Claim(instance);
+        public void Claim(PooledObject pooledObject) => pool.Claim(pooledObject);
+
+        public bool Release(UnityEngine.Object instance) => pool.Release(instance);
+        public bool Release(T instance) => pool.Release(instance);
+        public bool Release(PooledObject pooledObject) => pool.Release(pooledObject);
+        public void ReleaseAllClaims() => pool.ReleaseAllClaims();
+
+        public void Invalidate(UnityEngine.Object instance) => pool.Invalidate(instance);
+        public void Invalidate(T instance) => pool.Invalidate(instance);
+        public void Invalidate(PooledObject pooledObject) => pool.Invalidate(pooledObject);
+    }
+
+    public class ObjectPool<T> : IObjectPool where T : UnityEngine.Object
+    {
         /// <summary>
         /// Should instances be spared when the pool is destroyed?
         /// </summary>
         public bool dontDestroyInstances;
-        protected virtual void OnDestroy()
+        public virtual void Dispose()
         {
             if (pooledObjects != null)
             {
@@ -48,7 +134,7 @@ namespace Swole.API.Unity
                         try
                         {
                             if (inst == null) continue;
-                            Destroy(inst);
+                            UnityEngine.Object.Destroy(inst);
                         }
                         catch { }
                     }
@@ -66,7 +152,7 @@ namespace Swole.API.Unity
                         try
                         {
                             if (inst == null) continue;
-                            Destroy(inst);
+                            UnityEngine.Object.Destroy(inst);
                         }
                         catch { }
                     }
@@ -100,8 +186,8 @@ namespace Swole.API.Unity
         public event PooledObjectDelegate OnReleaseInstance;
         public event PooledObjectDelegate OnInvalidateInstance;
 
-        protected List<T> pooledObjects;
-        protected List<T> claimedObjects;
+        internal List<T> pooledObjects;
+        internal List<T> claimedObjects;
 
         public bool IsValid => pooledObjects != null && claimedObjects != null;
 
@@ -117,14 +203,14 @@ namespace Swole.API.Unity
         private bool initialized;
         public bool Initialized => initialized;
 
-        private T CreateNewInstance()
+        internal T CreateNewInstance()
         {
-            T instance = Instantiate(prototype);
+            T instance = UnityEngine.Object.Instantiate(prototype);
             if (instance is GameObject go)
             {
                 var pooledObj = go.AddOrGetComponent<PooledObject>();
                 pooledObj.pool = this;
-            } 
+            }
             else if (instance is Component comp)
             {
                 var pooledObj = comp.gameObject.AddOrGetComponent<PooledObject>();
@@ -152,13 +238,13 @@ namespace Swole.API.Unity
         {
             initialized = false;
 
-            if (pooledObjects != null) foreach (var obj in pooledObjects.ToArray()) if (obj != null) 
+            if (pooledObjects != null) foreach (var obj in pooledObjects) if (obj != null)
                     {
-                        if (obj is GameObject go) DestroyImmediate(go); else if (obj is Component comp) Destroy(comp.gameObject); else Destroy(obj);
+                        if (obj is GameObject go) UnityEngine.Object.DestroyImmediate(go); else if (obj is Component comp) UnityEngine.Object.Destroy(comp.gameObject); else UnityEngine.Object.Destroy(obj);
                     }
-            if (claimedObjects != null) foreach (var obj in claimedObjects.ToArray()) if (obj != null)
+            if (claimedObjects != null) foreach (var obj in claimedObjects) if (obj != null)
                     {
-                        if (obj is GameObject go) DestroyImmediate(go); else if (obj is Component comp) Destroy(comp.gameObject); else Destroy(obj);
+                        if (obj is GameObject go) UnityEngine.Object.DestroyImmediate(go); else if (obj is Component comp) UnityEngine.Object.Destroy(comp.gameObject); else UnityEngine.Object.Destroy(obj);
                     }
 
             pooledObjects?.Clear();
@@ -173,34 +259,18 @@ namespace Swole.API.Unity
             Initialize();
         }
 
-        private void Awake()
-        {
-            OnAwake();
-
-            Initialize(); 
-        }
-
-        private void Start()
-        {
-            OnStart();
-
-            Initialize();
-        }
-
-        protected virtual void OnAwake() { }
-        protected virtual void OnStart() { }
         protected virtual void OnCreateNew(T inst) { }
         protected virtual void OnClaim(T inst) { }
         protected virtual void OnRelease(T inst) { }
         protected virtual void OnInvalidate(T inst) { }
 
-        private bool Grow()
+        internal bool Grow()
         {
             if (!IsValid) return false;
 
             int prevSize = pooledObjects.Capacity;
             int size = prevSize;
-            switch(growthMethod)
+            switch (growthMethod)
             {
                 case PoolGrowthMethod.Incremental:
                     growthFactor = Mathf.Max(1, growthFactor);
@@ -219,7 +289,7 @@ namespace Swole.API.Unity
             return prevSize != size;
         }
 
-        public bool TryGetNewInstance(out UnityEngine.Object instance) 
+        public bool TryGetNewInstance(out UnityEngine.Object instance)
         {
             instance = null;
             if (TryGetNewInstance(out T instance_))
@@ -268,7 +338,7 @@ namespace Swole.API.Unity
 
             while (count > Pooled && Grow()) continue;
             int i = 0;
-            while(i < count)
+            while (i < count)
             {
                 while (pooledObjects.Count <= 0 && Grow()) continue;
                 if (pooledObjects.Count <= 0) break;
@@ -342,7 +412,7 @@ namespace Swole.API.Unity
                     OnReleaseInstance?.Invoke(inst);
                     return true;
                 }
-            } 
+            }
             else if (typeof(GameObject).IsAssignableFrom(typeof(T)) && instance is Component comp)
             {
                 return Release(comp.gameObject);
@@ -370,13 +440,13 @@ namespace Swole.API.Unity
         }
         public void ReleaseAllClaims()
         {
-            while(claimedObjects.Count > 0)
+            while (claimedObjects.Count > 0)
             {
                 int count = claimedObjects.Count;
                 if (!Release(claimedObjects[0]))
                 {
                     if (claimedObjects.Count == count) claimedObjects.RemoveAt(0); else if (claimedObjects.Count > count) break;
-                } 
+                }
             }
         }
 

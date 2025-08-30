@@ -37,12 +37,12 @@ namespace Swole
                 {
                     if (rootTransform != null)
                     {
-                        if (typeof(Component).IsAssignableFrom(field.FieldType)) 
+                        if (typeof(Component).IsAssignableFrom(field.FieldType))
                         {
-                            var val = field.GetValue(objA); 
+                            var val = field.GetValue(objA);
                             if (val is Component c && c != null)
                             {
-                                var obj = ReferenceEquals(c.transform, originalRootTransform) ? rootTransform : rootTransform.FindDeepChild(c.name); 
+                                var obj = ReferenceEquals(c.transform, originalRootTransform) ? rootTransform : rootTransform.FindDeepChild(c.name);
                                 if (obj != null)
                                 {
                                     c = obj.gameObject.GetComponent(field.FieldType);
@@ -90,7 +90,7 @@ namespace Swole
                                                 try
                                                 {
                                                     elementB = elementA != null ? Activator.CreateInstance(elementA.GetType()) : null;
-                                                } 
+                                                }
                                                 catch
                                                 {
                                                     elementB = null;
@@ -105,7 +105,7 @@ namespace Swole
                                                 arrayB.SetValue(elementB, i);
                                             }
                                         }
-                                        nestedObjB = arrayB; 
+                                        nestedObjB = arrayB;
                                     }
                                     else if (typeof(IList).IsAssignableFrom(field.FieldType))
                                     {
@@ -141,7 +141,8 @@ namespace Swole
                                         try
                                         {
                                             nestedObjB = Activator.CreateInstance(field.FieldType);
-                                        } catch { }
+                                        }
+                                        catch { }
                                     }
                                 }
 
@@ -188,7 +189,7 @@ namespace Swole
         {
             Utils.CreateDirectoryFromAssetPath(path);
 
-            T existingAsset = AssetDatabase.LoadAssetAtPath<T>(path); 
+            T existingAsset = AssetDatabase.LoadAssetAtPath<T>(path);
 
             if (existingAsset == null)
             {
@@ -388,7 +389,7 @@ namespace Swole
 
         }
 
-        public static int GetChildDepth(this Transform child, Transform parent)
+        public static int GetChildDepth(this Transform child, Transform parent = null)
         {
 
             int depth = 0;
@@ -498,12 +499,12 @@ namespace Swole
         public static Transform FindActive(this Transform parent, string name)
         {
             if (!parent.gameObject.activeSelf) return null;
-            for (int a = 0; a < parent.childCount; a++) 
+            for (int a = 0; a < parent.childCount; a++)
             {
                 var child = parent.GetChild(a);
-                if (child.gameObject.activeSelf && child.name == name) return child; 
+                if (child.gameObject.activeSelf && child.name == name) return child;
             }
-            for(int a = 0; a < parent.childCount; a++)
+            for (int a = 0; a < parent.childCount; a++)
             {
                 var child = parent.GetChild(a);
                 if (!child.gameObject.activeSelf) continue;
@@ -512,7 +513,7 @@ namespace Swole
             }
             return null;
         }
-        public static Transform FindActiveDeepChild(this Transform aParent, string aName, bool includeSelf = true) 
+        public static Transform FindActiveDeepChild(this Transform aParent, string aName, bool includeSelf = true)
         {
             if (!aParent.gameObject.activeSelf) return null;
             if (includeSelf) if (aParent.name == aName) return aParent;
@@ -524,7 +525,7 @@ namespace Swole
             {
                 result = FindActiveDeepChild(child, aName, false);
                 if (result != null)
-                    return result; 
+                    return result;
             }
             return null;
         }
@@ -553,7 +554,7 @@ namespace Swole
         public static Transform FindAny(this Transform aParent, string aName, bool includeSelf = true, bool activeOnly = false)
         {
 
-            return activeOnly ? FindActiveDeepChild(aParent, aName, includeSelf) : FindDeepChild(aParent, aName, includeSelf);  
+            return activeOnly ? FindActiveDeepChild(aParent, aName, includeSelf) : FindDeepChild(aParent, aName, includeSelf);
 
         }
 
@@ -590,14 +591,14 @@ namespace Swole
 
             if (ignoreTopTransform)
             {
-                int firstSep = path.IndexOf(separator); 
+                int firstSep = path.IndexOf(separator);
                 if (firstSep < 0)
                 {
                     path = string.Empty;
-                } 
+                }
                 else
                 {
-                    path = path.Substring(firstSep + 1); 
+                    path = path.Substring(firstSep + 1);
                 }
             }
 
@@ -618,7 +619,7 @@ namespace Swole
             return root.Find(path);
         }
 
-        public static Transform GetTransformByPath(this Transform root, string path) => GetTransformByPath(path, root); 
+        public static Transform GetTransformByPath(this Transform root, string path) => GetTransformByPath(path, root);
 
         public static void ApplyRotationAroundPivot(this Transform transform, Quaternion rotation, Vector3 pivot)
         {
@@ -707,14 +708,14 @@ namespace Swole
             return list;
         }
         public static List<T> InsertRandomly<T>(this List<T> list, T element)
-        {   
+        {
             var count = list.Count;
             var r = UnityEngine.Random.Range(0, count + 1);
 
             if (r >= count)
             {
                 list.Add(element);
-            } 
+            }
             else
             {
                 list.Insert(r, element);
@@ -734,15 +735,15 @@ namespace Swole
         }
         public static T[] AsManagedArray<T>(this IEnumerable<T> obj)
         {
-            if (obj is T[] array) return array; 
-            if (obj is ICollection<T> collection) return collection.ToArray(); 
+            if (obj is T[] array) return array;
+            if (obj is ICollection<T> collection) return collection.ToArray();
 
             int count = 0;
             foreach (var _ in obj) count++;
             array = new T[count];
             count = 0;
-            foreach (var item in obj) 
-            { 
+            foreach (var item in obj)
+            {
                 array[count] = item;
                 count++;
             }
@@ -753,7 +754,7 @@ namespace Swole
         #region UI
 
         public static bool ContainsWorldPosition(this RectTransform rectTransform, Vector2 worldPosition) => rectTransform != null && rectTransform.rect.Contains(rectTransform.InverseTransformPoint(worldPosition));
-        public static bool ContainsScreenPosition(this RectTransform rectTransform, Vector2 screenPosition) 
+        public static bool ContainsScreenPosition(this RectTransform rectTransform, Vector2 screenPosition)
         {
             if (rectTransform == null) return false;
 
@@ -778,14 +779,14 @@ namespace Swole
         public static Vector2 GetNormalizedPointFromLocalPosition(this RectTransform t, Vector3 localPos) => Rect.PointToNormalized(t.rect, localPos);
 
         public static Vector3 GetWorldPositionFromNormalizedPoint(this RectTransform t, Vector2 normalizedPoint) => t.TransformPoint(GetLocalPositionFromNormalizedPoint(t, normalizedPoint));
-        public static Vector3 GetLocalPositionFromNormalizedPoint(this RectTransform t, Vector2 normalizedPoint) => Rect.NormalizedToPoint(t.rect, normalizedPoint);  
+        public static Vector3 GetLocalPositionFromNormalizedPoint(this RectTransform t, Vector2 normalizedPoint) => Rect.NormalizedToPoint(t.rect, normalizedPoint);
 
         public static void ApplyWindowState(this ResizableWindowState state, RectTransform rt, RectTransform canvasRT = null)
         {
             if (canvasRT == null)
             {
                 var canvas = rt.GetComponentInParent<Canvas>();
-                canvasRT = canvas == null ? null : canvas.GetComponent<RectTransform>(); 
+                canvasRT = canvas == null ? null : canvas.GetComponent<RectTransform>();
             }
 
             rt.SetSizeWithCurrentAnchors(RectTransform.Axis.Horizontal, state.width);
@@ -808,7 +809,7 @@ namespace Swole
         }
 
         public static void FitImageInParent(this Image imageRenderer)
-        { 
+        {
             var aspectRatio = imageRenderer.sprite == null || imageRenderer.sprite.texture == null ? 1 : (imageRenderer.sprite.texture.width / (float)imageRenderer.sprite.texture.height);
 
             var fitter = imageRenderer.GetComponent<AspectRatioFitter>();
@@ -850,8 +851,18 @@ namespace Swole
 
         #endregion
 
-    }
+        public static Color Opaque(this Color color)
+        {
+            color.a = 1;
+            return color;
+        }
+        public static Color Transparent(this Color color, float alpha)
+        {
+            color.a = alpha;
+            return color; 
+        }
 
+    }
 }
 
 #endif

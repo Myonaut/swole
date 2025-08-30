@@ -7,7 +7,7 @@ using UnityEngine;
 
 namespace Swole.API.Unity
 {
-    public class PrefabPool : ObjectPool<GameObject>
+    public class PrefabPool : ObjectPoolBehaviour<GameObject>
     {
 
         public bool dontSetNewlyCreatedInstancesToInactiveState;
@@ -22,7 +22,7 @@ namespace Swole.API.Unity
 
             if (forceParentPooled)
             {
-                foreach (var obj in pooledObjects)
+                foreach (var obj in pool.pooledObjects)
                 {
                     if (obj == null) continue;
                     obj.transform.SetParent(containerTransform, worldPositionStays);
@@ -30,7 +30,7 @@ namespace Swole.API.Unity
             }
             if (forceParentClaimed)
             {
-                foreach (var obj in claimedObjects)
+                foreach (var obj in pool.claimedObjects)
                 {
                     if (obj == null) continue;
                     obj.transform.SetParent(containerTransform, worldPositionStays);

@@ -184,6 +184,41 @@ namespace Swole.API.Unity
         public Transform calfRight;
         public Transform footRight;
 
+        public List<Transform> GetAffectedTransforms(List<Transform> list = null)
+        {
+            if (list == null) list = new List<Transform>();
+
+            list.Add(pelvis);
+
+            list.Add(spine1);
+            list.Add(spine2);
+            list.Add(spine3);
+
+            list.Add(neck);
+
+            list.Add(shoulderLeft);
+            list.Add(armLeft);
+            list.Add(forearmLeft);
+            list.Add(wristLeft);
+
+            list.Add(shoulderRight);
+            list.Add(armRight);
+            list.Add(forearmRight);
+            list.Add(wristRight);
+
+            list.Add(hipLeft);
+            list.Add(legLeft);
+            list.Add(calfLeft);
+            list.Add(footLeft);
+
+            list.Add(hipRight);
+            list.Add(legRight);
+            list.Add(calfRight);
+            list.Add(footRight);
+
+            return list;
+        }
+
         public float StandingHeightContribution
         {
             get

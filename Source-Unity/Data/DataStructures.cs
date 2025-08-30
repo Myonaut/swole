@@ -545,6 +545,30 @@ namespace Swole.DataStructures
         }
     }
     [Serializable, StructLayout(LayoutKind.Sequential)]
+    public struct TransformDataState2
+    {
+        public float3 position;
+        public float3 localScale;
+        public quaternion rotation;
+
+        public TransformDataState2(Transform transform, bool worldSpace = false)
+        {
+            if (worldSpace)
+            {
+                transform.GetPositionAndRotation(out var position, out var rotation);
+                this.position = position;
+                this.rotation = rotation;
+            }
+            else
+            {
+                transform.GetLocalPositionAndRotation(out var position, out var rotation);
+                this.position = position;
+                this.rotation = rotation;
+            }
+            this.localScale = transform.localScale;
+        }
+    }
+    [Serializable, StructLayout(LayoutKind.Sequential)]
     public struct TransformDataStateTemporal
     {
         public float3 position;

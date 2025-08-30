@@ -37,6 +37,8 @@ namespace Swole.UI
         public bool disableChildDrag;
         public bool freeze;
 
+        public bool closeOnClickOff;
+        public MouseButtonMask clickOffButtonMask = MouseButtonMask.LeftMouseButton;
         public bool destroyOnClose;
 
         public RectTransform root;
@@ -54,6 +56,32 @@ namespace Swole.UI
         public UnityEvent OnMiddleClickRelease = new UnityEvent();
         public UnityEvent OnRightClick = new UnityEvent();
         public UnityEvent OnRightClickRelease = new UnityEvent();
+
+        private bool ClickedOff()
+        {
+            if (clickOffButtonMask.HasFlag(MouseButtonMask.LeftMouseButton) && InputProxy.CursorPrimaryButtonDown)
+            {
+            }
+            else if (clickOffButtonMask.HasFlag(MouseButtonMask.RightMouseButton) && InputProxy.CursorSecondaryButtonDown)
+            {
+            }
+            else if (clickOffButtonMask.HasFlag(MouseButtonMask.MiddleMouseButton) && InputProxy.CursorAuxiliaryButtonDown)
+            {
+            }
+            else return false;
+            
+            var objects = CursorProxy.ObjectsUnderCursor;
+            if (objects == null) return true;
+            for (int a = 0; a < objects.Count; a++)
+            {
+                var obj = objects[a];
+                if (obj == null) continue;
+                if (obj.transform.IsInHierarchy(root)) return false;
+            }
+
+            return true;
+
+        }
 
         public void Close()
         {
@@ -164,6 +192,12 @@ namespace Swole.UI
 
                 }
 
+            }
+
+            if (closeOnClickOff && ClickedOff())
+            {
+                Close();
+                return;
             }
 
         }

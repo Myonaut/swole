@@ -478,12 +478,17 @@ namespace Swole
             if (string.IsNullOrWhiteSpace(path)) return false;
 
             int separator = path.LastIndexOf(Path.DirectorySeparatorChar);
-            if (separator < 0) separator = path.LastIndexOf(Path.DirectorySeparatorChar);
+            if (separator < 0) separator = path.LastIndexOf(Path.AltDirectorySeparatorChar);
 
             if (separator >= 0)
             {
-                packageStr = packageStr.Substring(0, separator);
-                if (separator + 1 < contentName.Length) contentName = packageStr.Substring(separator + 1); 
+                packageStr = path.Substring(0, separator);
+                if (separator + 1 < path.Length) 
+                {
+                    contentName = path.Substring(separator + 1); 
+                    return true;
+                } 
+                else contentName = string.Empty;
             }
 
             return false;

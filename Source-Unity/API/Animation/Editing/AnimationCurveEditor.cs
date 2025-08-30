@@ -1550,7 +1550,7 @@ namespace Swole.API.Unity.Animation
             } 
             else if (gridValuePool != null)
             {
-                gridValuePool.dontDestroyInstances = false;
+                gridValuePool.DontDestroyInstances = false;
                 Destroy(gridValuePool.gameObject);
             }
         }
