@@ -13,6 +13,7 @@ namespace Swole
         public int AttributeCount { get; }
         public string GetAttribute(int index);
         public bool HasAttribute(string attribute);
+        public bool HasPrefixAttribute(string attributePrefix);
 
         public int TagCount { get; }
         public string GetTag(int index);

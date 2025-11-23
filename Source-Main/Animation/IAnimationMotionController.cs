@@ -63,6 +63,7 @@ namespace Swole.Animation
         public int GetChildIndex(int childIndex);
         public void SetChildIndex(int childIndex, int controllerIndex);
 
+        public HashSet<int> GetActiveParameters(IAnimationLayer layer, HashSet<int> indices);
         public void GetParameterIndices(IAnimationLayer layer, List<int> indices);
 
         public void RemapParameterIndices(IAnimationLayer layer, Dictionary<int, int> remapper, bool invalidateNonRemappedIndices = false);
@@ -165,6 +166,8 @@ namespace Swole.Animation
         public TimeSyncMode SyncMode { get; set; }
         public int LocalSyncReferenceIndex { get; set; }
         public float Mix { get; set; }
+        public int MixParameterIndex { get; set; }
+        public float GetMix(IAnimationLayer layer);
     }
 
     [Serializable]
@@ -201,6 +204,19 @@ namespace Swole.Animation
             get => mix;
             set => mix = value;
         }
+        public int mixParameterIndex = -1;
+        public int MixParameterIndex
+        {
+            get => mixParameterIndex;
+            set => mixParameterIndex = value;
+        }
+        public float GetMix(IAnimationLayer layer)
+        {
+            if (mixParameterIndex < 0) return mix;
+            var param = layer.GetParameter(mixParameterIndex);
+            if (param == null) return mix;
+            return mix * param.Value;
+        }
 
         public float normalizedStartTime = 0f;
         public float NormalizedStartTime
@@ -219,6 +235,7 @@ namespace Swole.Animation
             clone.syncMode = syncMode;
             clone.localSyncReferenceIndex = localSyncReferenceIndex;
             clone.mix = mix;
+            clone.mixParameterIndex = mixParameterIndex;
             clone.normalizedStartTime = normalizedStartTime;
 
             return clone;

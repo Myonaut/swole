@@ -6,6 +6,7 @@ using System.Collections.Generic;
 using System.Reflection;
 
 using UnityEngine;
+using UnityEngine.Events;
 
 using Swole.Animation;
 
@@ -367,20 +368,42 @@ namespace Swole.API.Unity.Animation
 
         public abstract float GetDefaultValue();
 
-        public void Reset() => m_value = GetDefaultValue();
+        public void Reset() => SetValue(GetDefaultValue());
 
         public virtual float UpdateAndGetValue() => Value;
+
+        protected UnityEvent<float> onValueChanged;
+        public void AddListener(UnityAction<float> listener)
+        {
+            if (onValueChanged == null) onValueChanged = new UnityEvent<float>();
+            onValueChanged.AddListener(listener);
+        }
+        public void RemoveListener(UnityAction<float> listener)
+        {
+            if (onValueChanged == null) return;
+            onValueChanged.RemoveListener(listener);
+        }
+        public void RemoveAllListeners()
+        {
+            if (onValueChanged == null) return;
+            onValueChanged.RemoveAllListeners();
+        }
 
         public virtual void SetValue(float value)
         {
             m_value = value;
+            onValueChanged?.Invoke(m_value);
         }
 
         public abstract object Clone();
 
         public virtual void Initialize(IAnimator animator, object obj = null) { }
 
-        public virtual void Dispose() { }
+        public virtual void Dispose() 
+        {
+            RemoveAllListeners();
+            onValueChanged = null;
+        }
 
         public bool DisposeIfHasPrefix(string prefix)
         {

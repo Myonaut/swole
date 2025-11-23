@@ -21,6 +21,9 @@ namespace Swole.Unity
         public string savePath;
         public string textureName;
 
+        [TextArea]
+        public string note;
+
         public Color defaultPixel;
 
         [Serializable]

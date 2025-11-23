@@ -19250,9 +19250,10 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   loadInEditor: 0
-  inEditorResetToBindpose: 0
-  clipToLoad: {fileID: 0}
-  prefabToLoad: {fileID: 919132149155446097, guid: 09a7d74b8ca523a46a6e02aa1d4cace9,
+  inEditorResetToBindpose: 1
+  clipToLoad: {fileID: -203655887218126122, guid: b0f2bb2973add60459c57b11b0fb00a0,
+    type: 3}
+  prefabToLoad: {fileID: 919132149155446097, guid: 383dabb1c049c5846811295d613e8678,
     type: 3}
   additiveEditorScene: sc_RLD-Add
   runtimeEditor: {fileID: 0}

@@ -12,13 +12,21 @@ namespace Swole.API.Unity
 
         public bool dontSetNewlyCreatedInstancesToInactiveState;
 
+        public bool forceParentOnClaim;
+        public bool forceParentOnRelease;
+
+        public bool worldPositionStaysWhenParented;
+
         [SerializeField]
         protected Transform containerTransform;
         public void SetContainerTransform(Transform container, bool forceParentPooled = true, bool forceParentClaimed = false, bool worldPositionStays = true)
         {
             containerTransform = container;
+            worldPositionStaysWhenParented = worldPositionStays;
 
             if (!IsValid) return;
+
+            if (pool.Prototype != null) pool.Prototype.transform.SetParent(containerTransform, worldPositionStays);
 
             if (forceParentPooled)
             {
@@ -51,10 +59,12 @@ namespace Swole.API.Unity
         }
         protected override void OnClaim(GameObject obj)
         {
+            if (forceParentOnClaim) obj.transform.SetParent(containerTransform, worldPositionStaysWhenParented);
             obj.SetActive(true);
         }
         protected override void OnRelease(GameObject obj)
         {
+            if (forceParentOnRelease) obj.transform.SetParent(containerTransform, worldPositionStaysWhenParented); 
             obj.SetActive(false);
         }
     }

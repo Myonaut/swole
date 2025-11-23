@@ -52,6 +52,7 @@ namespace Swole.Animation
         public int BlendParameterIndex { get; set; }
 
         public void GetParameterIndices(List<int> indices);
+        public HashSet<int> GetActiveParameters(HashSet<int> indices);
 
         public void RemapParameterIndices(Dictionary<int, int> remapper, bool invalidateNonRemappedIndices = false);
 

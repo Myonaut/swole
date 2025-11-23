@@ -441,7 +441,6 @@ namespace Swole
                     string matricesProperty = SkinnedMeshData.SkinningMatricesPropertyName; 
                     if (!_skinningMatricesBuffers.TryGetValue(bufferID, out skinningMatricesBuffer) || skinningMatricesBuffer == null || !skinningMatricesBuffer.IsValid()) 
                     {
-                        Debug.Log($"CREATING SKINNINGMATRICESBUFFER {name} {RigBufferID} {SkinningBoneCount}");
                         meshGroup.CreateInstanceMaterialBuffer<float4x4>(matricesProperty, SkinningBoneCount, 3, out skinningMatricesBuffer); 
                         _skinningMatricesBuffers[bufferID] = skinningMatricesBuffer; 
 
@@ -1590,7 +1589,9 @@ namespace Swole
             renderInstances[cameraIndex].levelOfDetail = detailLevel; 
             if (isVisible) StartRendering(cameraIndex);
 
-            Debug.Log($"({renderingCameras[cameraIndex].name}) SET LOD " + detailLevel);    
+#if UNITY_EDITOR
+            Debug.Log($"({renderingCameras[cameraIndex].name}) SET LOD " + detailLevel);
+#endif
         }
         public virtual void SetLOD2(int cameraIndex, int prevDetailLevel, int detailLevel) => SetLOD(cameraIndex, detailLevel);
 
@@ -1990,7 +1991,9 @@ namespace Swole
             }
             if (renderInstance.instance == null)
             {
-                Debug.Log($"Started rendering {cameraIndex}"); 
+#if UNITY_EDITOR
+                Debug.Log($"Started rendering {cameraIndex}");
+#endif
                 renderInstance.instance = CreateRenderingInstance(cameraIndex, renderInstance.levelOfDetail);
                 //if (renderInFrontOfCamera) renderInstance.instance.RenderGroup.StartRenderingInFrontOfCamera();
                 if (useCameraRelativeWorldBounds) renderInstance.instance.RenderGroup.StartUsingCameraRelativeWorldBounds(cameraRelativeWorldBoundsSize); 
@@ -2005,7 +2008,9 @@ namespace Swole
                 if (renderInstance.instance != null) 
                 {
                     renderInstance.instance.Dispose(true, true);
-                    Debug.Log($"Stopped rendering {cameraIndex}"); 
+#if UNITY_EDITOR
+                    Debug.Log($"Stopped rendering {cameraIndex}");
+#endif
                 }
                 renderInstance.instance = null;
             }

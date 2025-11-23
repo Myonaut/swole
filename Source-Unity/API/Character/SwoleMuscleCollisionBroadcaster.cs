@@ -35,17 +35,29 @@ namespace Swole.API.Unity.Animation
         public UnityEvent<Collision> OnContinueColliding;
         public UnityEvent<Collision> OnStopColliding;
 
-        protected override void OnCollisionEnter(Collision collision)
+#if BULKOUT_ENV
+    protected override void OnCollisionEnter(Collision collision)
+#else
+    protected void OnCollisionEnter(Collision collision)
+#endif
         {
             base.OnCollisionEnter(collision);
             OnStartColliding?.Invoke(collision);
         }
-        protected override void OnCollisionStay(Collision collision)
+#if BULKOUT_ENV
+    protected override void OnCollisionStay(Collision collision)
+#else
+    protected void OnCollisionStay(Collision collision)
+#endif
         {
             base.OnCollisionStay(collision);
             OnContinueColliding?.Invoke(collision);
         }
-        protected override void OnCollisionExit(Collision collision)
+#if BULKOUT_ENV
+    protected override void OnCollisionExit(Collision collision)
+#else
+    protected void OnCollisionExit(Collision collision)
+#endif
         {
             base.OnCollisionExit(collision);
             OnStopColliding?.Invoke(collision); 
@@ -53,6 +65,7 @@ namespace Swole.API.Unity.Animation
 
         public virtual void EnterTriggerMode()
         {
+#if BULKOUT_ENV
             /*if (colliders == null) return;
 
             foreach(var collider in colliders)
@@ -70,9 +83,11 @@ namespace Swole.API.Unity.Animation
                 if (collider == null) continue;
                 collider.isTrigger = true;
             }
+#endif
         }
         public virtual void ExitTriggerMode()
         {
+#if BULKOUT_ENV
             /*if (colliders == null) return;
 
             foreach (var collider in colliders)
@@ -90,6 +105,7 @@ namespace Swole.API.Unity.Animation
                 if (collider == null) continue;
                 collider.isTrigger = false;
             }
+#endif
         }
 
         protected virtual void OnTriggerEnter(Collider collider)

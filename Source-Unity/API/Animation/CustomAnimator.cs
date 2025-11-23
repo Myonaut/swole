@@ -2426,6 +2426,7 @@ namespace Swole.API.Unity.Animation
 
         [SerializeField]
         protected List<IAnimationParameter> m_parameters;
+        public int ParameterCount => m_parameters == null ? 0 : m_parameters.Count;
         public IAnimationParameter GetParameter(int index)
         {
 
@@ -2866,9 +2867,10 @@ namespace Swole.API.Unity.Animation
         {
 
             int nextIndex = -1;
-            TransformHierarchy nextHierarchy = null; 
+            TransformHierarchy nextHierarchy = null;
 
             if (m_animationLayers != null)
+            {
                 for (int a = 0; a < m_animationLayers.Count; a++)
                 {
 
@@ -2882,6 +2884,7 @@ namespace Swole.API.Unity.Animation
                     m_jobHandle = cal.Progress(nextHierarchy, nextLayer == null ? true : (nextLayer.IsAdditive || nextLayer.Mix != 1 || nextLayer.Deactivate), deltaTime, disableMultithreading, false, m_jobHandle, localHierarchy);
 
                 }
+            }
 
         }
 

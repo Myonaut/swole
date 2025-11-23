@@ -132,6 +132,20 @@ namespace Swole.UI
         public AutoCloseConditions closeConditions;
 
         /// <summary>
+        /// Move to target world position
+        /// </summary>
+        public void MoveTo(Vector3 targetWorldPosition)
+        {
+            Move(targetWorldPosition - transform.position);
+        }
+        /// <summary>
+        /// Move by world translation
+        /// </summary>
+        public void Move(Vector3 translationWorld)
+        {
+            Move(rectTransform, root, canvasRect, canvas.transform.InverseTransformVector(translationWorld));
+        }
+        /// <summary>
         /// Move the localTransform with a translation, while making sure it stays inside the canvas.
         /// </summary>
         public static void Move(RectTransform localTransform, RectTransform root, RectTransform canvasRect, Vector3 translation)

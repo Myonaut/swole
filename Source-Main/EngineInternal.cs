@@ -3598,6 +3598,12 @@ namespace Swole
                 instance.ReinitializeController(controller);
             }
 
+            public HashSet<int> GetActiveParameters(HashSet<int> indices = null)
+            {
+                if (instance == null) return indices;
+                return instance.GetActiveParameters(indices);
+            }
+
             #endregion
 
         }
@@ -3986,6 +3992,12 @@ namespace Swole
                 instance.CompletedTransition(); 
             }
 
+            public HashSet<int> GetActiveParameters(IAnimationLayer layer, HashSet<int> indices = null)
+            {
+                if (instance == null) return indices;
+                return instance.GetActiveParameters(layer, indices);
+            }
+
             #endregion
 
         }
@@ -4256,6 +4268,12 @@ namespace Swole
             {
                 if (instance == null) return;
                 instance.SetChildIndex(childIndex, controllerIndex); 
+            }
+
+            public HashSet<int> GetActiveParameters(IAnimationLayer layer, HashSet<int> indices = null)
+            {
+                if (instance == null) return indices;
+                return instance.GetActiveParameters(layer, indices);
             }
 
             #endregion

@@ -62,6 +62,17 @@ namespace Swole
                 return false;
             }
 
+            public bool HasPrefixAttribute(string attributePrefix)
+            {
+                if (attributes == null) return false;
+                foreach (var attr in attributes)
+                {
+                    if (attr.StartsWith(attributePrefix)) return true;
+                }
+
+                return false;
+            }
+
             public bool HasTag(string tag)
             {
                 if (tags == null) return false;

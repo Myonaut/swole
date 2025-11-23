@@ -5,6 +5,7 @@ using System.Collections;
 using System.Collections.Generic;
 
 using UnityEngine;
+using UnityEngine.Events;
 
 using Unity.Jobs;
 
@@ -636,6 +637,16 @@ namespace Swole.API.Unity.Animation
 
         }
 
+        public HashSet<int> GetActiveParameters(HashSet<int> indices)
+        {
+            if (indices == null) indices = new HashSet<int>();
+
+            var activeState = ActiveState;
+            if (activeState != null) activeState.GetActiveParameters(this, indices);
+
+            return indices;
+        }
+
         public void RemapParameterIndices(Dictionary<int, int> remapper, bool invalidateNonRemappedIndices = false)
         {
 
@@ -1004,6 +1015,66 @@ namespace Swole.API.Unity.Animation
 
         }
 
+        protected UnityEvent<int> onTransitionStart;
+        protected UnityEvent<int> onTransitionEnd;
+        protected UnityEvent<int> onTransitionCancel;
+        protected UnityEvent<int> onTransitionUncancel;
+        protected UnityEvent<int> onActiveStateChange;
+
+        public void AddTransitionStartListener(UnityAction<int> listener)
+        {
+            if (onTransitionStart == null) onTransitionStart = new UnityEvent<int>();
+            onTransitionStart.AddListener(listener);
+        }
+        public void RemoveTransitionStartListener(UnityAction<int> listener)
+        {
+            if (onTransitionStart == null) return;
+            onTransitionStart.RemoveListener(listener);
+        }
+
+        public void AddTransitionEndListener(UnityAction<int> listener)
+        {
+            if (onTransitionEnd == null) onTransitionEnd = new UnityEvent<int>();
+            onTransitionEnd.AddListener(listener);
+        }
+        public void RemoveTransitionEndListener(UnityAction<int> listener)
+        {
+            if (onTransitionEnd == null) return;
+            onTransitionEnd.RemoveListener(listener);
+        }
+
+        public void AddTransitionCancelListener(UnityAction<int> listener)
+        {
+            if (onTransitionCancel == null) onTransitionCancel = new UnityEvent<int>();
+            onTransitionCancel.AddListener(listener);
+        }
+        public void RemoveTransitionCancelListener(UnityAction<int> listener)
+        {
+            if (onTransitionCancel == null) return;
+            onTransitionCancel.RemoveListener(listener);
+        }
+        public void AddTransitionUncancelListener(UnityAction<int> listener)
+        {
+            if (onTransitionUncancel == null) onTransitionUncancel = new UnityEvent<int>();
+            onTransitionUncancel.AddListener(listener);
+        }
+        public void RemoveTransitionUncancelListener(UnityAction<int> listener)
+        {
+            if (onTransitionUncancel == null) return;
+            onTransitionUncancel.RemoveListener(listener);
+        }
+
+        public void AddActiveStateChangeListener(UnityAction<int> listener)
+        {
+            if (onActiveStateChange == null) onActiveStateChange = new UnityEvent<int>();
+            onActiveStateChange.AddListener(listener);
+        }
+        public void RemoveActiveStateChangeListener(UnityAction<int> listener)
+        {
+            if (onActiveStateChange == null) return;
+            onActiveStateChange.RemoveListener(listener);
+        }
+
         /// <summary>
         /// Progress the animation by deltaTime
         /// </summary>
@@ -1045,13 +1116,44 @@ namespace Swole.API.Unity.Animation
                 }
             }*/
 
+            var prevActiveStateIndex = m_activeState;
             var activeState = ActiveState;
             if (activeState is CustomAnimationLayerState als)
             {
 
+                var wasTransitioning = als.IsTransitioning;
+                var transitionWasCancelled = als.TransitionCancelled;
                 m_activeState = als.Progress(nextHierarchy, nextIsAdditiveOrBlended, false, deltaTime, ref m_jobHandle, !disableMultithreading, isFinal, true, false, true, localHierarchy);
 
+                if (als.IsTransitioning)
+                {
+                    if (!wasTransitioning)
+                    {
+                        onTransitionStart?.Invoke(als.GetTransitionIndex(als.ActiveTransition));
+                    } 
+                    else if (transitionWasCancelled)
+                    {
+                        if (!als.TransitionCancelled) onTransitionUncancel?.Invoke(als.GetTransitionIndex(als.ActiveTransition));
+                    } 
+                    else
+                    {
+                        if (als.TransitionCancelled) onTransitionCancel?.Invoke(als.GetTransitionIndex(als.ActiveTransition));
+                    }
+                } 
+                else
+                {
+                    if (wasTransitioning)
+                    {
+                        onTransitionEnd?.Invoke(m_activeState);
+                    }
+                }
+
             }// else Debug.Log(name + $" has no state! {EntryStateIndex} {ActiveStateIndex}"); 
+            
+            if (m_activeState != prevActiveStateIndex)
+            {
+                onActiveStateChange?.Invoke(m_activeState);
+            }
 
             return OutputDependency;
 

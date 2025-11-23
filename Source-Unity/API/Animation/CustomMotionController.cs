@@ -159,6 +159,18 @@ namespace Swole.API.Unity.Animation
 
         }
 
+        private static readonly List<int> tempParameterIndices = new List<int>();
+        public virtual HashSet<int> GetActiveParameters(IAnimationLayer layer, HashSet<int> parameterIndices = null)
+        {
+            if (parameterIndices == null) parameterIndices = new HashSet<int>();
+
+            tempParameterIndices.Clear();
+            GetParameterIndices(layer, tempParameterIndices);
+            foreach (var index in tempParameterIndices) parameterIndices.Add(index);
+
+            return parameterIndices;
+        }
+
         public virtual AnimationLoopMode GetLoopMode(IAnimationLayer layer) => AnimationLoopMode.Loop;
 
         public virtual void ForceSetLoopMode(IAnimationLayer layer, AnimationLoopMode loopMode) { }
@@ -991,15 +1003,35 @@ namespace Swole.API.Unity.Animation
             if (motionParts != null)
             {
 
-                foreach (var part in motionParts)
+                for (int a = 0; a < motionParts.Length; a++)
                 {
+                    var part = motionParts[a];
+
+                    if (part.MixParameterIndex >= 0)
+                    {
+
+                        int origIndex = part.MixParameterIndex;
+                        if (!remapper.TryGetValue(origIndex, out part.mixParameterIndex) && invalidateNonRemappedIndices)
+                        {
+                            part.mixParameterIndex = -1;
+
+#if UNITY_EDITOR
+                            Debug.LogError($"Failed to remap mix parameter index {origIndex} for {GetType().Name} '{name}', (Part:{a})");
+#else
+                            swole.LogError($"Failed to remap mix parameter index {origIndex} for {GetType().Name} '{name}', (Part:{a})");
+#endif
+                        }
+
+                    }
+
+
 
                     var controller = layer.GetMotionController(part.controllerIndex);
                     if (controller == null) continue;
 
-                    controller.RemapParameterIndices(layer, remapper, invalidateNonRemappedIndices); 
+                    controller.RemapParameterIndices(layer, remapper, invalidateNonRemappedIndices);
 
-                } 
+                }
 
             }
 
@@ -1052,7 +1084,7 @@ namespace Swole.API.Unity.Animation
                     }
                     else
                     {
-                        motionParts[a] = new MotionPart() { speed = mf.Speed, controllerIndex = mf.ControllerIndex, syncMode = mf.SyncMode, localSyncReferenceIndex = mf.LocalSyncReferenceIndex, mix = mf.Mix };
+                        motionParts[a] = new MotionPart() { speed = mf.Speed, controllerIndex = mf.ControllerIndex, syncMode = mf.SyncMode, localSyncReferenceIndex = mf.LocalSyncReferenceIndex, mix = mf.Mix, mixParameterIndex = mf.MixParameterIndex };
                     }
                 }
             }
@@ -1572,7 +1604,7 @@ namespace Swole.API.Unity.Animation
                     continue;
                 }
 
-                cmc.SetWeight(motionPart.Mix);
+                cmc.SetWeight(motionPart.GetMix(layer));
                 cmc.SyncWeight(layer);
                 cmc.Progress(layer, deltaTime, ref jobHandle, useMultithreading, isFinal && a == FinalFieldIndex, canLoop);
             }

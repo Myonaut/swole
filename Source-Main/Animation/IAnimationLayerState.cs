@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 
 namespace Swole.Animation
 {
@@ -50,6 +51,8 @@ namespace Swole.Animation
         public void ResetTransition();
 
         public void CompletedTransition();
+
+        public HashSet<int> GetActiveParameters(IAnimationLayer layer, HashSet<int> indices);
 
     }
 
@@ -364,9 +367,9 @@ namespace Swole.Animation
 
             transitionTime = this.transitionTime;
 
-            if ((currentFrame >= lastTriggerFrame && (currentFrame - lastTriggerFrame) < cooldownFrames) || normalizedTime < minNormalizedTime || normalizedTime > maxNormalizedTime || layer == null) return false;
+            if ((currentFrame >= lastTriggerFrame && (currentFrame - lastTriggerFrame) < Math.Max(1, cooldownFrames)) || normalizedTime < minNormalizedTime || normalizedTime > maxNormalizedTime || layer == null) return false;
 
-            if (validRequirementPaths == null || validRequirementPaths.Length <= 0) return true;
+            if (validRequirementPaths == null || validRequirementPaths.Length <= 0) return true;  
 
             IAnimationMotionController bias = null;
             switch(parameterBias)
@@ -440,6 +443,73 @@ namespace Swole.Animation
 
             return false;
 
+        }
+
+        public void Start(IAnimationLayer layer, IAnimationMotionController controller, IAnimationLayerState target)
+        {
+            if (setLocalNormalizedTime)
+            {
+                if (controller != null) controller.SetNormalizedTime(layer, localNormalizedTime);
+            }
+            if (setTargetNormalizedTime)
+            {
+                target.SetNormalizedTime(GetTargetNormalizedTime(controller.GetNormalizedTime(layer)));
+                //Debug.Log($"{Name} Set Normalized Time of {target.Name}::: {controller.GetNormalizedTime(Layer)} -> {target.GetNormalizedTime()}");    
+            }
+
+            if (parameterStateChanges != null)
+            {
+                foreach (var parameterStateChange in parameterStateChanges)
+                {
+                    if (!parameterStateChange.applyAtEnd && !string.IsNullOrWhiteSpace(parameterStateChange.parameterName))
+                    {
+                        var parameter = layer.Animator.FindParameter(parameterStateChange.parameterName);
+                        if (parameter == null) continue;
+
+                        parameter.SetValue(parameterStateChange.parameterValue);
+                    }
+                }
+            }
+        }
+
+        public HashSet<int> GetActiveParameters(IAnimationLayer layer, HashSet<int> indices)
+        {
+            if (indices == null) indices = new HashSet<int>();
+
+            if (parameterStateChanges != null)
+            {
+                foreach (var parameterStateChange in parameterStateChanges)
+                {
+                    if (!string.IsNullOrWhiteSpace(parameterStateChange.parameterName))
+                    {
+                        var parameterIndex = layer.FindParameterIndex(parameterStateChange.parameterName);
+                        if (parameterIndex >= 0 && !indices.Contains(parameterIndex))
+                        {
+                            indices.Add(parameterIndex);
+                        }
+                    }
+                }
+            }
+
+            if (cancellationRequirementPaths != null)
+            {
+                foreach (var requirement in cancellationRequirementPaths)
+                {
+                    if (requirement.parameters != null)
+                    {
+                        foreach (var parameter in requirement.parameters)
+                        {
+                            var parameterIndex = layer.FindParameterIndex(parameter.parameterName);
+                            if (parameterIndex >= 0 && !indices.Contains(parameterIndex))
+                            {
+                                indices.Add(parameterIndex);
+                            }
+                        }
+                    }
+                }
+            }
+
+            return indices;
         }
 
     }

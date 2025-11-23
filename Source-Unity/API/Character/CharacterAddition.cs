@@ -13,8 +13,11 @@ namespace Swole
 {
 
     [CreateAssetMenu(fileName = "CharacterAddition", menuName = "Swole/Character/CharacterAddition", order = 1)]
-    public class CharacterAddition : ScriptableObject
+    public class CharacterAddition : ScriptableObject, ISelectableAsset
     {
+
+        [Header("UI")]
+        public Sprite icon;
 
         [Serializable]
         public enum MeshType
@@ -22,6 +25,7 @@ namespace Swole
             UnitySkinnedMesh, CustomizableCharacterMesh
         }
 
+        [Header("Settings")]
         public MeshType meshType;
 
         public Vector3 offset;
@@ -58,7 +62,8 @@ namespace Swole
             return renderer;
         }
 
-        public SkinnedMeshRenderer SpawnAsSkinnedMeshRenderer(Transform parent, string name = null)
+        private Dictionary<string, Mesh> instantiatedMeshes = new Dictionary<string, Mesh>();
+        public SkinnedMeshRenderer SpawnAsSkinnedMeshRenderer(Transform parent, string name = null, bool forceNewBindpose = false, string bindposeId = null, Matrix4x4[] bindpose = null)
         {
             var renderer = new GameObject(this.name).AddComponent<SkinnedMeshRenderer>();
             var transform = renderer.transform;
@@ -69,6 +74,16 @@ namespace Swole
 
             transform.SetLocalPositionAndRotation(offset, Quaternion.Euler(rotation));
             transform.localScale = scale;
+
+            var mesh = this.mesh;
+            if (forceNewBindpose && !string.IsNullOrWhiteSpace(bindposeId) && bindpose != null)
+            {
+                mesh = mesh.Duplicate();
+
+
+
+                instantiatedMeshes[bindposeId] = mesh;
+            }
 
             renderer.sharedMesh = mesh;
             renderer.sharedMaterials = materials;
@@ -153,6 +168,84 @@ namespace Swole
             }
 
             return ccm;
+        }
+
+        public GameObject Spawn(Transform root)
+        {
+            switch (meshType)
+            {
+                case CharacterAddition.MeshType.UnitySkinnedMesh:
+                    var smr = SpawnAsSkinnedMeshRenderer(root);
+                    if (smr != null) return smr.gameObject;
+                    break;
+
+                case CharacterAddition.MeshType.CustomizableCharacterMesh:
+                    var ccm = SpawnAsCustomizableCharacterMesh(root);
+                    if (ccm != null) return ccm.gameObject; 
+                    break;
+            }
+
+            return null;
+        }
+
+        [Header("Metadata")]
+        public string displayName;
+        public string description;
+        public string[] attributes;
+        public string[] tags;
+
+        public string Name => string.IsNullOrWhiteSpace(displayName) ? name : displayName;
+        public string ID => name;
+
+        public string Description => description;
+
+        public int AttributeCount => attributes == null ? 0 : attributes.Length;
+
+        public int TagCount => tags == null ? 0 : tags.Length;
+
+        public string GetAttribute(int index)
+        {
+            if (index < 0 || index >= attributes.Length) return string.Empty;
+            return attributes[index];
+        }
+
+        public string GetTag(int index)
+        {
+            if (index < 0 || index >= tags.Length) return string.Empty;
+            return tags[index];
+        }
+
+        public bool HasAttribute(string attribute)
+        {
+            if (attributes == null) return false;
+            foreach (var attr in attributes)
+            {
+                if (attr == attribute) return true;
+            }
+
+            return false;
+        }
+
+        public bool HasPrefixAttribute(string attributePrefix)
+        {
+            if (attributes == null) return false;
+            foreach (var attr in attributes)
+            {
+                if (attr.StartsWith(attributePrefix)) return true;
+            }
+
+            return false;
+        }
+
+        public bool HasTag(string tag)
+        {
+            if (tags == null) return false;
+            foreach (var tag_ in tags)
+            {
+                if (tag_ == tag) return true;
+            }
+
+            return false;
         }
 
     }

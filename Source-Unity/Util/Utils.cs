@@ -182,13 +182,16 @@ namespace Swole
         /// <summary>
         /// Texture will not be ready immediately so consider passing in a callback function.
         /// </summary>
-        public static Texture2D TakeScreenshot(bool hideUI = false, bool mipMaps = false, int textureWidth = 0, int textureHeight = 0) => TakeScreenshot(null, Vector2.zero, Vector2.one, hideUI, mipMaps, textureWidth, textureHeight);         
-        public static Texture2D TakeScreenshot(TextureCreationCallback callbackFunction, bool hideUI = false, bool mipMaps = false, int textureWidth = 0, int textureHeight = 0) => TakeScreenshot(callbackFunction, Vector2.zero, Vector2.one, hideUI, mipMaps, textureWidth, textureHeight);
+        public static Texture2D TakeScreenshot(bool hideUI = false, bool mipMaps = false, int textureWidth = 0, int textureHeight = 0, Camera camera = null, Color cameraBG_color = default) => TakeScreenshot(null, Vector2.zero, Vector2.one, hideUI, mipMaps, textureWidth, textureHeight, camera, cameraBG_color);         
+        public static Texture2D TakeScreenshot(TextureCreationCallback callbackFunction, bool hideUI = false, bool mipMaps = false, int textureWidth = 0, int textureHeight = 0, Camera camera = null, Color cameraBG_color = default) => TakeScreenshot(callbackFunction, Vector2.zero, Vector2.one, hideUI, mipMaps, textureWidth, textureHeight, camera, cameraBG_color);
         /// <summary>
         /// Texture will not be ready immediately so consider passing in a callback function.
         /// </summary>
-        public static Texture2D TakeScreenshot(Vector2 startCoords, Vector2 endCoords, bool hideUI = false, bool mipMaps = false, int textureWidth = 0, int textureHeight = 0) => TakeScreenshot(null, startCoords, endCoords, hideUI, mipMaps, textureWidth, textureHeight);
-        public static Texture2D TakeScreenshot(TextureCreationCallback callbackFunction, Vector2 startCoords, Vector2 endCoords, bool hideUI = false, bool mipMaps = false, int textureWidth = 0, int textureHeight = 0)
+        public static Texture2D TakeScreenshot(Vector2 startCoords, Vector2 endCoords, bool hideUI = false, bool mipMaps = false, int textureWidth = 0, int textureHeight = 0, Camera camera = null, Color cameraBG_color = default) => TakeScreenshot(null, startCoords, endCoords, hideUI, mipMaps, textureWidth, textureHeight, camera, cameraBG_color);
+        /// <summary>
+        /// For transparent backgrounds make sure camera post processing is turned off.
+        /// </summary>
+        public static Texture2D TakeScreenshot(TextureCreationCallback callbackFunction, Vector2 startCoords, Vector2 endCoords, bool hideUI = false, bool mipMaps = false, int textureWidth = 0, int textureHeight = 0, Camera camera = null, Color cameraBG_color = default)
         {
 
             float startX = Mathf.Clamp01(Mathf.Min(startCoords.x, endCoords.x));
@@ -207,8 +210,8 @@ namespace Swole
 
             if (textureWidth <= 0) textureWidth = width;
             if (textureHeight <= 0) textureHeight = height;
-            Texture2D tex = new Texture2D(width, height, TextureFormat.RGB24, mipMaps, false); 
-            Rect rect = new Rect(startX * Screen.width, startY * Screen.height, width, height);
+            Texture2D tex = new Texture2D(width, height, camera == null ? TextureFormat.RGB24 : TextureFormat.ARGB32, mipMaps, false); 
+            Rect grabRect = new Rect(startX * Screen.width, startY * Screen.height, width, height);
              
             Canvas[] canvases = null;
 #if BULKOUT_ENV
@@ -241,7 +244,31 @@ namespace Swole
 
                 try
                 {
-                    tex.ReadPixels(rect, 0, 0); 
+                    if (camera != null)
+                    {
+                        var render_texture = RenderTexture.GetTemporary(Screen.width, Screen.height, 24, RenderTextureFormat.ARGB32);
+                        var originalTarget = camera.targetTexture;
+                        camera.targetTexture = render_texture;
+
+                        var origClearFlags = camera.clearFlags;
+                        var origBGColor = camera.backgroundColor;
+
+                        camera.clearFlags = CameraClearFlags.SolidColor; 
+                        camera.backgroundColor = cameraBG_color;
+                        camera.Render();
+
+                        RenderTexture.active = render_texture; 
+
+                        tex.ReadPixels(grabRect, 0, 0);
+                        camera.targetTexture = originalTarget; 
+                        camera.clearFlags = origClearFlags;
+                        camera.backgroundColor = origBGColor;
+                    } 
+                    else
+                    {
+                        tex.ReadPixels(grabRect, 0, 0);  
+                    }
+
                     if (width != textureWidth || height != textureHeight) tex.ResizeAndApply(textureWidth, textureHeight); else tex.Apply(); 
 
                     callbackFunction?.Invoke(tex);
@@ -256,7 +283,7 @@ namespace Swole
                     for (int a = 0; a < canvases.Length; a++) if (canvases[a] != null) canvases[a].enabled = true;
 
 #if BULKOUT_ENV
-                    if (rldApp != null) rldApp.enabled = true;
+                    if (rldApp != null) rldApp.enabled = true; 
 #endif
                 }
             }

@@ -42,11 +42,46 @@ namespace Swole.API.Unity
             public string transformName;
             public bool maskChildren;
         }
+        public static void EvaluateOffsetCurve(out Vector3 endOffset, out Vector3 endRotation, AnimationCurve curve, Vector3 offset, Vector3 rotationOffset, float t, float spacing = 0f, float tStartOffset = 0f)
+        {
+            if (spacing > 0f)
+            {
+                if (curve != null && curve.length > 1)
+                {
+                    t = t - tStartOffset;
+                    float t1 = Mathf.Floor(t / spacing);
+                    float t2 = ((t1 + 1) * spacing) + tStartOffset;
+                    t1 = (t1 * spacing) + tStartOffset;
+                    t = t + tStartOffset;
+                    t = (t - t1) / spacing;
+
+                    t1 = curve.Evaluate(t1);
+                    t2 = curve.Evaluate(t2);
+                    Vector3 v1 = t1 * offset;
+                    Vector3 v2 = t2 * offset;
+                    endOffset = Vector3.LerpUnclamped(v1, v2, t);
+                    Vector3 r1 = t1 * rotationOffset;
+                    Vector3 r2 = t2 * rotationOffset;
+                    endRotation = Vector3.LerpUnclamped(r1, r2, t);
+                    return;
+                }
+            }
+
+            if (curve != null && curve.length > 1)
+            {
+                t = curve.Evaluate(t);
+            }
+
+            endOffset = t * offset;
+            endRotation = t * rotationOffset;
+        }
         [Serializable]
         public struct AdditionalOffset
         {
             public Vector3 finalOffset;
             public AnimationCurve offsetCurve;
+            public float offsetCurveSpacing;
+            public float offsetCurveStart;
 
             public bool affectsGizmos;
             public bool invertMask;
@@ -75,10 +110,10 @@ namespace Swole.API.Unity
                 return false;
             }
 
-            public Vector3 Evaluate(float t)
-            {
-                if (offsetCurve != null && offsetCurve.length > 1) t = offsetCurve.Evaluate(t);
-                return t * finalOffset;
+            public Vector3 Evaluate(float t) 
+            { 
+                EvaluateOffsetCurve(out Vector3 endOffset, out Vector3 _, offsetCurve, finalOffset, Vector3.zero, t, offsetCurveSpacing, offsetCurveStart);
+                return endOffset;
             }
         }
 
@@ -102,6 +137,8 @@ namespace Swole.API.Unity
         [NonSerialized]
 #endif
         public AnimationCurve offsetCurve;
+        public float offsetCurveSpacing = 0f;
+        public float offsetCurveStart = 0f;
 
         public bool disconnectClones;
         public void DisconnectClones()
@@ -159,12 +196,20 @@ namespace Swole.API.Unity
 
             Gizmos.color = Color.green;
             Gizmos.DrawLine(startPos, startPos + offsetDir * distance);
-            for(int a = 0; a < cloneCount; a++)
+            for (int a = 0; a < cloneCount; a++)
             {
                 float t = (a + 1f) / cloneCount;
                 if (offsetCurve != null && offsetCurve.length > 1) t = offsetCurve.Evaluate(t);
 
-                Vector3 pos = startPos + offsetDir * distance * t;
+                Vector3 pos = startPos;
+                if (offsetCurve != null && offsetCurve.length > 1)
+                {
+                    EvaluateOffsetCurve(out Vector3 endOffset, out Vector3 _, offsetCurve, offsetDir * distance, Vector3.zero, t, offsetCurveSpacing, offsetCurveStart);
+                }
+                else
+                {
+                    pos = pos + offsetDir * distance * t;
+                }
                 if (additionalOffsets != null)
                 {
                     foreach (var additionalOffset in additionalOffsets) if (additionalOffset.affectsGizmos) pos = pos + additionalOffset.Evaluate(t);
@@ -286,8 +331,20 @@ namespace Swole.API.Unity
                     clone.transform.SetParent(transform, true);
                 }
 
-                Vector3 pos = startPos + offsetDirWorld * distance * t;
-                Quaternion rot = Quaternion.Euler(offsetRotationEuler * t);
+                Vector3 pos = startPos;
+                Quaternion rot = Quaternion.identity;
+                if (offsetCurve != null && offsetCurve.length > 1)
+                {
+                    EvaluateOffsetCurve(out Vector3 endOffset, out Vector3 endRotOffset, offsetCurve, offsetDirWorld * distance, offsetRotationEuler, t, offsetCurveSpacing, offsetCurveStart);
+                    pos = pos + endOffset;
+                    rot = Quaternion.Euler(endRotOffset);
+                }
+                else
+                {
+                    pos = pos + offsetDirWorld * distance * t;
+                    rot = Quaternion.Euler(offsetRotationEuler * t); 
+                }
+
                 if (additionalOffsets != null)
                 {
                     foreach (var additionalOffset in additionalOffsets)

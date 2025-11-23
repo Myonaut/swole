@@ -853,7 +853,7 @@ namespace Swole.Morphing
                 if (hasBustSizeProperty)
                 {
                     instance.SetFloatOverride(CharacterMeshData.BustMixPropertyName, Mathf.Clamp01(value), true);
-
+                    
                     if (children != null)
                     {
                         foreach (var child in children) child.SetBustSize(value);

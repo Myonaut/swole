@@ -211,7 +211,24 @@ namespace Swole.API.Unity.Animation
             get => transitions;
             set => transitions = value;
         }
+        public int TransitionCount => transitions != null ? transitions.Length : 0;
+        public Transition GetTransition(int index)
+        {
+            if (transitions == null || index < 0 || index >= transitions.Length) return null;
+            return transitions[index];
+        }
+        public int GetTransitionIndex(Transition transition)
+        {
+            if (transitions == null || transition == null) return -1;
 
+            for (int i = 0; i < transitions.Length; i++)
+            {
+                if (ReferenceEquals(transitions[i], transition)) return i;
+            }
+
+            return -1;
+        }
+        
         [NonSerialized]
         protected Transition m_activeTransition;
         public Transition ActiveTransition => m_activeTransition;
@@ -239,6 +256,81 @@ namespace Swole.API.Unity.Animation
         public TransitionParameterStateChange[] TransitionParameterStateChanges => m_transitionParameterStateChanges;
 
         public bool IsTransitioning => m_transitionTarget > 0;
+
+        public void ForceStartTransition(int transitionIndex, int targetStateIndex, float transitionTimeLeft, bool cancelCurrentTransition = false)
+        {
+            if (transitions == null || transitionIndex < 0 || transitionIndex >= transitions.Length) return;
+            ForceStartTransition(transitions[transitionIndex], targetStateIndex, transitionTimeLeft, cancelCurrentTransition);
+        }
+        public void ForceStartTransition(Transition transition, int targetStateIndex, float transitionTimeLeft, bool cancelCurrentTransition = false)
+        {
+            if (IsTransitioning && !cancelCurrentTransition) return;
+
+            var layer = Layer;
+            if (layer == null) return;
+
+            var target = layer.GetState(targetStateIndex);
+            if (target == null || ReferenceEquals(target, this)) return;
+
+            var controller = layer.GetMotionController(MotionControllerIndex);
+
+            target.Reset();
+            transition.lastTriggerFrame = Time.frameCount;
+            m_activeTransition = transition;
+            m_transitionTarget = transition.targetStateIndex + 1;
+            m_transitionTime = transition.transitionTime;
+            m_transitionTimeLeft = transitionTimeLeft;
+            m_transitionParameterStateChanges = transition.parameterStateChanges;
+
+            transition.Start(layer, controller, target);
+        }
+        public void CancelTransition(float cancelTime, float cancelTimeLeft)
+        {
+            if (m_transitionCancelled || !IsTransitioning) return;
+
+            m_transitionCancelled = true;
+            m_transitionTime = cancelTime;
+            m_transitionTimeLeft = cancelTimeLeft;
+            m_transitionParameterStateChanges = ActiveTransition.cancellationParameterStateChanges;
+
+            if (m_transitionParameterStateChanges != null)
+            {
+                foreach (var parameterStateChange in m_transitionParameterStateChanges)
+                {
+                    if (!parameterStateChange.applyAtEnd && !string.IsNullOrWhiteSpace(parameterStateChange.parameterName))
+                    {
+                        var parameter = Layer.Animator.FindParameter(parameterStateChange.parameterName);
+                        if (parameter == null) continue;
+
+                        parameter.SetValue(parameterStateChange.parameterValue);
+                    }
+                }
+            }
+        }
+        public void UncancelTransition(float transitionTime, float transitionTimeLeft)
+        {
+            if (!m_transitionCancelled || !IsTransitioning) return;
+
+            m_transitionCancelled = false;
+            ActiveTransition.lastTriggerFrame = Time.frameCount;
+            m_transitionTimeLeft = transitionTimeLeft;
+            m_transitionTime = transitionTime;
+            m_transitionParameterStateChanges = ActiveTransition.parameterStateChanges;
+
+            if (m_transitionParameterStateChanges != null)
+            {
+                foreach (var parameterStateChange in m_transitionParameterStateChanges)
+                {
+                    if (!parameterStateChange.applyAtEnd && !string.IsNullOrWhiteSpace(parameterStateChange.parameterName))
+                    {
+                        var parameter = Layer.Animator.FindParameter(parameterStateChange.parameterName);
+                        if (parameter == null) continue;
+
+                        parameter.SetValue(parameterStateChange.parameterValue);
+                    }
+                }
+            }
+        }
 
         public void ResetTransition()
         {
@@ -345,29 +437,7 @@ namespace Swole.API.Unity.Animation
                             m_transitionTime = m_transitionTimeLeft = transitionTime;
                             m_transitionParameterStateChanges = transition.parameterStateChanges;
 
-                            if (transition.setLocalNormalizedTime)
-                            {
-                                if (controller != null) controller.SetNormalizedTime(Layer, transition.localNormalizedTime);
-                            }
-                            if (transition.setTargetNormalizedTime)
-                            {
-                                target.SetNormalizedTime(transition.GetTargetNormalizedTime(controller.GetNormalizedTime(Layer)));
-                                //Debug.Log($"{Name} Set Normalized Time of {target.Name}::: {controller.GetNormalizedTime(Layer)} -> {target.GetNormalizedTime()}");    
-                            }
-
-                            if (m_transitionParameterStateChanges != null)
-                            {
-                                foreach(var parameterStateChange in m_transitionParameterStateChanges)
-                                {
-                                    if (!parameterStateChange.applyAtEnd && !string.IsNullOrWhiteSpace(parameterStateChange.parameterName))
-                                    {
-                                        var parameter = Layer.Animator.FindParameter(parameterStateChange.parameterName);
-                                        if (parameter == null) continue;
-
-                                        parameter.SetValue(parameterStateChange.parameterValue); 
-                                    }
-                                }
-                            }
+                            transition.Start(Layer, controller, target);
                             
                             break;
 
@@ -461,25 +531,7 @@ namespace Swole.API.Unity.Animation
                                 if (ActiveTransition != null && ActiveTransition.allowCancellationRevert && ActiveTransition.HasMetRequirements(Layer, Time.frameCount, normalizedTimeNext, controller, Layer.GetMotionController(target.MotionControllerIndex), out float transitionTime))
                                 {
                                     //Debug.Log($"Re-transitioning from {Name} (NT: {normalizedTimeNext}) to {target.Name}"); 
-                                    m_transitionCancelled = false;
-                                    ActiveTransition.lastTriggerFrame = Time.frameCount;
-                                    m_transitionTimeLeft = m_transitionTime - m_transitionTimeLeft;
-                                    m_transitionTime = transitionTime;
-                                    m_transitionParameterStateChanges = ActiveTransition.parameterStateChanges; 
-
-                                    if (m_transitionParameterStateChanges != null)
-                                    {
-                                        foreach (var parameterStateChange in m_transitionParameterStateChanges)
-                                        {
-                                            if (!parameterStateChange.applyAtEnd && !string.IsNullOrWhiteSpace(parameterStateChange.parameterName))
-                                            {
-                                                var parameter = Layer.Animator.FindParameter(parameterStateChange.parameterName); 
-                                                if (parameter == null) continue;
-
-                                                parameter.SetValue(parameterStateChange.parameterValue); 
-                                            }
-                                        }
-                                    }
+                                    UncancelTransition(transitionTime, m_transitionTime - m_transitionTimeLeft);
                                 }
                             } 
                             else
@@ -487,23 +539,8 @@ namespace Swole.API.Unity.Animation
                                 if (ActiveTransition != null && ActiveTransition.CanCancel(Layer, normalizedTimeNext, controller, Layer.GetMotionController(target.MotionControllerIndex), out float cancellationTimeMultiplier))
                                 {
                                     //Debug.Log($"Initiating cancellation of transition from {Name} (NT: {normalizedTimeNext}) to {target.Name}");
-                                    m_transitionCancelled = true;
-                                    m_transitionTime = m_transitionTimeLeft = (m_transitionTime - m_transitionTimeLeft) * cancellationTimeMultiplier;
-                                    m_transitionParameterStateChanges = ActiveTransition.cancellationParameterStateChanges;
-
-                                    if (m_transitionParameterStateChanges != null)
-                                    {
-                                        foreach (var parameterStateChange in m_transitionParameterStateChanges)
-                                        {
-                                            if (!parameterStateChange.applyAtEnd && !string.IsNullOrWhiteSpace(parameterStateChange.parameterName))
-                                            {
-                                                var parameter = Layer.Animator.FindParameter(parameterStateChange.parameterName);
-                                                if (parameter == null) continue;
-
-                                                parameter.SetValue(parameterStateChange.parameterValue);
-                                            }
-                                        }
-                                    }
+                                    float cancelTime = (m_transitionTime - m_transitionTimeLeft) * cancellationTimeMultiplier;
+                                    CancelTransition(cancelTime, cancelTime);
                                 }
                             }
 
@@ -567,6 +604,78 @@ namespace Swole.API.Unity.Animation
 
             return nextIndex;
 
+        }
+
+        public HashSet<int> GetActiveParameters(HashSet<int> parameterIndices = null) => GetActiveParameters(Layer, parameterIndices);
+        public HashSet<int> GetActiveParameters(IAnimationLayer layer, HashSet<int> parameterIndices = null)
+        {
+            if (parameterIndices == null) parameterIndices = new HashSet<int>();
+
+            if (layer == null) return parameterIndices;
+
+            var controller = layer.GetMotionController(MotionControllerIndex);
+            if (controller == null) return parameterIndices;
+
+            controller.GetActiveParameters(Layer, parameterIndices);
+
+            if (IsTransitioning)
+            {
+                var targetState = layer.GetState(TransitionTarget);
+                if (targetState != null)
+                {
+                    var targetController = layer.GetMotionController(targetState.MotionControllerIndex);
+                    if (targetController != null)
+                    {
+                        targetController.GetActiveParameters(Layer, parameterIndices);
+                    }
+
+                    var transition = ActiveTransition;
+                    if (transition != null)
+                    {
+                        transition.GetActiveParameters(Layer, parameterIndices);
+                    }
+                }
+            }
+            else
+            {
+                if (transitions != null)
+                {
+                    foreach (var transition in transitions)
+                    {
+                        if (transition == null) continue;
+
+                        if (transition.validRequirementPaths != null)
+                        {
+                            foreach(var path in transition.validRequirementPaths)
+                            {
+                                if (path.parameters != null)
+                                {
+                                    foreach(var p in path.parameters)
+                                    {
+                                        if (string.IsNullOrWhiteSpace(p.parameterName)) continue;
+
+                                        var parameter = layer.Animator.FindParameterIndex(p.parameterName);
+                                        if (parameter >= 0) parameterIndices.Add(parameter);
+                                    }
+                                }
+                            }
+                        }
+
+                        if (transition.cancellationParameterStateChanges != null)
+                        {
+                            foreach (var parameterStateChange in transition.cancellationParameterStateChanges)
+                            {
+                                if (string.IsNullOrWhiteSpace(parameterStateChange.parameterName)) continue;
+
+                                var parameter = layer.Animator.FindParameterIndex(parameterStateChange.parameterName);
+                                if (parameter >= 0) parameterIndices.Add(parameter);
+                            }
+                        }
+                    }
+                }
+            }
+
+            return parameterIndices;
         }
 
     }

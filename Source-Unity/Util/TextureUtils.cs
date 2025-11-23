@@ -96,8 +96,8 @@ namespace Swole
                 {
                     // Calculate the fraction of the way across the image
                     // that this pixel positon corresponds to.
-                    float xFrac = x * 1.0f / (newWidth - 1);
-                    float yFrac = y * 1.0f / (newHeight - 1);
+                    float xFrac = x * 1.0f / (newWidth /*- 1f*/);
+                    float yFrac = y * 1.0f / (newHeight /*- 1f*/);
 
                     // Get the non-integer pixel positions using GetPixelBilinear.
                     pixels[y * newWidth + x] = tex.GetPixelBilinear(xFrac, yFrac);
@@ -110,7 +110,7 @@ namespace Swole
         {
             var pixels = GetScaledPixels(tex, newWidth, newHeight);
 
-            tex.Reinitialize(newWidth, newHeight);
+            tex.Reinitialize(newWidth, newHeight, tex.format, tex.mipmapCount > 0); 
             tex.SetPixels(pixels);
             tex.Apply();
         }
