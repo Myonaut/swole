@@ -640,7 +640,7 @@ namespace Swole.API.Unity
 
         [SerializeField]
         protected CustomizableCharacterMesh characterMesh;
-        public CustomizableCharacterMesh CharacterMesh
+        public CustomizableCharacterMesh CharacterMeshV1
         {
             set => characterMesh = value;
             get
@@ -649,6 +649,20 @@ namespace Swole.API.Unity
                 return characterMesh;
             }
         }
+
+        [SerializeField]
+        protected CustomizableCharacterMeshV2 characterMeshV2;
+        public CustomizableCharacterMeshV2 CharacterMeshV2
+        {
+            set => characterMeshV2 = value;
+            get
+            {
+                if (characterMeshV2 == null) characterMeshV2 = gameObject.GetComponent<CustomizableCharacterMeshV2>();
+                return characterMeshV2;
+            }
+        }
+
+        public ICustomizableCharacter CharacterMesh => CharacterMeshV2 != null ? characterMeshV2 : CharacterMeshV1;
 
         [Serializable]
         public class WidthContributingMuscle
@@ -675,9 +689,9 @@ namespace Swole.API.Unity
 
             public WidthContributingMuscle[] muscles;
 
-            public void Initialize(CustomizableCharacterMesh characterMesh)
+            public void Initialize(ICustomizableCharacter characterMesh)
             {
-                if (characterMesh == null || characterMesh.CharacterMeshData == null) return;
+                if (characterMesh == null) return;
 
                 if (muscles != null)
                 {
@@ -686,12 +700,12 @@ namespace Swole.API.Unity
                         var muscle = muscles[a];
                         if (muscle == null) continue;
 
-                        muscle.cachedIndex = characterMesh.CharacterMeshData.IndexOfMuscleGroup(muscle.name) + 1;
+                        muscle.cachedIndex = characterMesh.IndexOfMuscleGroup(muscle.name) + 1;
 #if UNITY_EDITOR
-                        if (muscle.cachedIndex < 0)
+                        if (muscle.cachedIndex <= 0)
                         {
                             Debug.LogWarning($"Muscle '{muscle.name}' not found in character mesh. Please check the name or add it to the mesh." +
-                                             $" This will cause issues with width contributions.", characterMesh.gameObject);
+                                             $" This will cause issues with width contributions.", characterMesh.GameObject);
                         }
 #endif
                     }
@@ -700,9 +714,9 @@ namespace Swole.API.Unity
 
             [NonSerialized]
             public float4 currentContribution; 
-            public float4 GetWidthContributions(CustomizableCharacterMesh characterMesh)
+            public float4 GetWidthContributions(ICustomizableCharacter characterMesh)
             {
-                if (characterMesh == null || characterMesh.CharacterMeshData == null) return 0f;
+                if (characterMesh == null) return 0f;
 
                 currentContribution = 0f;
                 if (muscles != null)
@@ -766,7 +780,7 @@ namespace Swole.API.Unity
                 {
                     foreach (var group in widthContributionGroups)
                     {
-                        group.Initialize(characterMesh);
+                        group.Initialize(CharacterMesh);
 
                         if (group.muscles != null)
                         {
@@ -788,7 +802,7 @@ namespace Swole.API.Unity
                     }
                 }
 
-                characterMesh.AddListener(CustomizableCharacterMesh.ListenableEvent.OnMuscleDataChanged, OnMuscleDataChange); 
+                CharacterMesh.AddListener(ICustomizableCharacter.ListenableEvent.OnMuscleDataChanged, OnMuscleDataChange); 
             }
         }
         private float4 widthContributions;
@@ -799,7 +813,7 @@ namespace Swole.API.Unity
             widthContributions = 0f;
             foreach (var group in widthContributionGroups)
             {
-                widthContributions += group.GetWidthContributions(CharacterMesh);
+                widthContributions += group.GetWidthContributions(CharacterMeshV1);
             }
 
             return widthContributions;
@@ -811,7 +825,7 @@ namespace Swole.API.Unity
                 foreach (var group in groups)
                 {
                     widthContributions -= group.currentContribution;
-                    widthContributions += group.GetWidthContributions(CharacterMesh); 
+                    widthContributions += group.GetWidthContributions(CharacterMeshV1); 
                 }
 
                 SetShoulderWidth(shoulderWidth);
@@ -1388,9 +1402,9 @@ namespace Swole.API.Unity
                 animator.RemoveListener(CustomAnimator.BehaviourEvent.OnDisable, Disable); 
             }
 
-            if (characterMesh != null)
+            if (CharacterMesh != null)
             {
-                characterMesh.RemoveListener(CustomizableCharacterMesh.ListenableEvent.OnMuscleDataChanged, OnMuscleDataChange); 
+                CharacterMesh.RemoveListener(ICustomizableCharacter.ListenableEvent.OnMuscleDataChanged, OnMuscleDataChange); 
             }
         }
     }

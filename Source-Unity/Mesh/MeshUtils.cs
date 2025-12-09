@@ -1,5 +1,6 @@
 #if (UNITY_STANDALONE || UNITYEDITOR)
 
+using System;
 using System.Collections;
 using System.Collections.Generic;
 
@@ -18,7 +19,7 @@ namespace Swole
         public static Mesh DuplicateMesh(this Mesh inputMesh)
         {
 
-            Mesh mesh = Object.Instantiate(inputMesh);
+            Mesh mesh = UnityEngine.Object.Instantiate(inputMesh);
 
             return mesh;
 
@@ -285,6 +286,13 @@ namespace Swole
 
         }
 
+    }
+
+    [Serializable]
+    public struct MeshLOD
+    {
+        public Mesh mesh;
+        public float screenRelativeTransitionHeight;
     }
 
 }

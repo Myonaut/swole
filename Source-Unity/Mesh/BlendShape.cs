@@ -26,6 +26,17 @@ namespace Swole
 
         public Frame[] frames = new Frame[0];
 
+        public void RemapFrameWeights(float finalTargetWeight)
+        {
+            if (frames == null || frames.Length <= 0) return;
+
+            float originalMaxWeight = 0f;
+            for (int a = 0; a < frames.Length; a++) if (frames[a].weight > originalMaxWeight) originalMaxWeight = frames[a].weight;
+            if (originalMaxWeight == 0) return;
+
+            for (int a = 0; a < frames.Length; a++) frames[a].weight = (frames[a].weight / originalMaxWeight) * finalTargetWeight; 
+        }
+
         public BlendShape() { }
         public BlendShape(string name)
         {

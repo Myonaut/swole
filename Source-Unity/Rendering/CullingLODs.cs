@@ -27,6 +27,9 @@ namespace Swole
         public static int ExecutionPriority => Rigs.ExecutionPriority + 1;
         public override int Priority => ExecutionPriority;
 
+        public static int SortLODsDescending(MeshLOD a, MeshLOD b) => Math.Sign(b.screenRelativeTransitionHeight - a.screenRelativeTransitionHeight);
+        public static int SortLODsDescending(CullingLODs.LOD a, CullingLODs.LOD b) => Math.Sign(b.screenRelativeTransitionHeight - a.screenRelativeTransitionHeight);
+
         public class PerCameraCullLOD : IDisposable
         {
             private Camera camera;

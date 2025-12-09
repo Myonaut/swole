@@ -84,7 +84,7 @@ namespace SplineMesh {
         /// <param name="spline">The <see cref="SplineMesh"/> to bend the source mesh along.</param>
         /// <param name="intervalStart">Distance from the spline start to place the mesh minimum X.<param>
         /// <param name="intervalEnd">Distance from the spline start to stop deforming the source mesh.</param>
-        public void SetInterval(Spline spline, float intervalStart, float intervalEnd = 0) {
+        public void SetInterval(Spline spline, float intervalStart, float intervalEnd = 0f) {
             if (this.spline == spline && this.intervalStart == intervalStart && this.intervalEnd == intervalEnd) return;
             if (spline == null) throw new ArgumentNullException("spline");
             if (intervalStart < 0 || intervalStart >= spline.Length) {
@@ -107,7 +107,26 @@ namespace SplineMesh {
             useSpline = true;
             SetDirty();
         }
-        public void SetIntervalNormalized(Spline spline, float normalizedIntervalStart, float normalizedIntervalEnd = 0)
+        public void SetInterval(Spline spline, float intervalStart, float intervalEnd, AnimationCurve resampleCurve)
+        {
+            if (spline == null) throw new ArgumentNullException("spline");
+            if (resampleCurve != null && resampleCurve.length > 0)
+            {
+                float splineLength = spline.Length;
+
+                if (splineLength > 0f)
+                {
+                    intervalStart = intervalStart / splineLength;
+                    intervalEnd = intervalEnd / splineLength;
+
+                    intervalStart = Mathf.Clamp01(resampleCurve.Evaluate(intervalStart)) * splineLength;
+                    intervalEnd = Mathf.Clamp01(resampleCurve.Evaluate(intervalEnd)) * splineLength;
+                }
+            }
+
+            SetInterval(spline, intervalStart, intervalEnd);
+        }
+        public void SetIntervalNormalized(Spline spline, float normalizedIntervalStart, float normalizedIntervalEnd = 0f)
         {
             if (spline == null) throw new ArgumentNullException("spline");
 
@@ -116,6 +135,17 @@ namespace SplineMesh {
             float intervalEnd = length * normalizedIntervalEnd;
 
             SetInterval(spline, intervalStart, intervalEnd);
+        }
+        public void SetIntervalNormalized(Spline spline, float normalizedIntervalStart, float normalizedIntervalEnd, AnimationCurve resampleCurve)
+        {
+            if (resampleCurve != null && resampleCurve.length > 0)
+            {
+                intervalStart = Mathf.Clamp01(resampleCurve.Evaluate(intervalStart));
+                intervalEnd = Mathf.Clamp01(resampleCurve.Evaluate(intervalEnd));
+
+            }
+
+            SetIntervalNormalized(spline, intervalStart, intervalEnd);
         }
 
         private void OnEnable() {

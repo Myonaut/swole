@@ -209,7 +209,7 @@ namespace Swole
         public static string CreateUnityAssetPathString(string savePath, string assetName, string assetExtension)
         {
             if (assetExtension.StartsWith(".")) assetExtension = assetExtension.Substring(1);
-            return (savePath.StartsWith("Assets") ? "" : $"Assets{System.IO.Path.DirectorySeparatorChar}") + savePath + (savePath.EndsWith($"{System.IO.Path.DirectorySeparatorChar}") ? "" : $"{System.IO.Path.DirectorySeparatorChar}") + $"{assetName}.{assetExtension}";
+            return (savePath.StartsWith("Assets") ? "" : $"Assets{System.IO.Path.DirectorySeparatorChar}") + savePath + (savePath.EndsWith($"{System.IO.Path.DirectorySeparatorChar}") ? "" : $"{System.IO.Path.DirectorySeparatorChar}") + (string.IsNullOrWhiteSpace(assetExtension) ? assetName : $"{assetName}.{assetExtension}");
         }
         public static string CreateUnityAssetPathString(this UnityEngine.Object obj, string saveDir, string assetExtension = null)
         {

@@ -32,6 +32,7 @@ namespace Swole
             if (output == null) output = new List<string>();
             output.Clear();
 
+            if (smr == null && root == null) smr = gameObject.GetComponent<SkinnedMeshRenderer>();
             if (smr != null)
             {
                 FromSkinnedMeshRenderer(smr, output);

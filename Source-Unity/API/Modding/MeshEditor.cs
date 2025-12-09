@@ -1024,15 +1024,15 @@ namespace Swole.Modding
             skinnedVertices = MeshEditing.GetSkinnedVertex8DataAsList(meshViewerSkinnedRenderer, verticesArray, BoneWeights.AsArray(), BonesPerVertex.AsArray(), perVertexSkinningMatricesArray, skinnedVertices);
         }
         
-        protected MeshDataTools.MergedVertex[] mergedVerticesArray;
-        public MeshDataTools.MergedVertex[] MergedVerticesArray
+        protected MeshDataTools.WeldedVertex[] mergedVerticesArray;
+        public MeshDataTools.WeldedVertex[] MergedVerticesArray
         {
             get
             {
                 if (mergedVerticesArray == null)
                 {
                     if (editedMesh == null) return null;
-                    mergedVerticesArray = MeshDataTools.MergeVertices(VerticesArray);
+                    mergedVerticesArray = MeshDataTools.WeldVertices(VerticesArray);
                 }
                 
                 return mergedVerticesArray;
@@ -1897,8 +1897,8 @@ namespace Swole.Modding
             public VertexInfluence influence;
         }
         private static readonly List<ScoredVertex> scoredData = new List<ScoredVertex>();
-        public static List<VertexInfluence2> CalculateVertexInfluence2(ICollection<SkinnedVertex> clothingWorldVertices, ICollection<SkinnedVertex> referenceWorldVertices, ICollection<MeshDataTools.MergedVertex> referenceMergedVertices, List<VertexInfluence2> outputList = null, float maxDistance = 1) => CalculateVertexInfluence2(clothingWorldVertices, new ICollection<SkinnedVertex>[] { referenceWorldVertices }, new ICollection<MeshDataTools.MergedVertex>[] { referenceMergedVertices }, outputList, maxDistance);
-        public static List<VertexInfluence2> CalculateVertexInfluence2(ICollection<SkinnedVertex> clothingWorldVertices, ICollection<ICollection<SkinnedVertex>> referenceWorldVertices, ICollection<ICollection<MeshDataTools.MergedVertex>> referenceMergedVertices, List<VertexInfluence2> outputList = null, float maxDistance = 1, float distanceBindingWeight = 0.2f)
+        public static List<VertexInfluence2> CalculateVertexInfluence2(ICollection<SkinnedVertex> clothingWorldVertices, ICollection<SkinnedVertex> referenceWorldVertices, ICollection<MeshDataTools.WeldedVertex> referenceMergedVertices, List<VertexInfluence2> outputList = null, float maxDistance = 1) => CalculateVertexInfluence2(clothingWorldVertices, new ICollection<SkinnedVertex>[] { referenceWorldVertices }, new ICollection<MeshDataTools.WeldedVertex>[] { referenceMergedVertices }, outputList, maxDistance);
+        public static List<VertexInfluence2> CalculateVertexInfluence2(ICollection<SkinnedVertex> clothingWorldVertices, ICollection<ICollection<SkinnedVertex>> referenceWorldVertices, ICollection<ICollection<MeshDataTools.WeldedVertex>> referenceMergedVertices, List<VertexInfluence2> outputList = null, float maxDistance = 1, float distanceBindingWeight = 0.2f)
         {
             if (outputList == null) outputList = new List<VertexInfluence2>();
 

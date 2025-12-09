@@ -11,12 +11,7 @@ using UnityEngine;
 #endif
 
 namespace SplineMesh {
-    /// <summary>
-    /// Deform a mesh and place it along a spline, given various parameters.
-    /// 
-    /// This class intend to cover the most common situations of mesh bending. It can be used as-is in your project,
-    /// or can serve as a source of inspiration to write your own procedural generator.
-    /// </summary>
+
     [ExecuteInEditMode]
     [SelectionBase]
     [DisallowMultipleComponent]
@@ -24,7 +19,6 @@ namespace SplineMesh {
 
         private static int SortLODs(LOD a, LOD b)
         {
-            Debug.Log(a.screenRelativeTransitionHeight + " vs " + b.screenRelativeTransitionHeight);
             if (a.screenRelativeTransitionHeight < b.screenRelativeTransitionHeight) return 1;
             if (a.screenRelativeTransitionHeight > b.screenRelativeTransitionHeight) return -1;
             return 0;
@@ -33,6 +27,9 @@ namespace SplineMesh {
         public bool regenerate;
 
         public bool combineMeshes = true;
+
+        public bool useResampleCurve;
+        public AnimationCurve resampleCurve;
 
         private GameObject generated;
         private Spline spline = null;
@@ -259,7 +256,7 @@ namespace SplineMesh {
                     var benders = go_.GetComponentsInChildren<MeshBender>();
                     foreach (var bender in benders)
                     {
-                        bender.SetInterval(spline, startLength + spawnMesh.finalOffset, nextLength + spawnMesh.finalOffset);
+                        bender.SetInterval(spline, startLength + spawnMesh.finalOffset, nextLength + spawnMesh.finalOffset, useResampleCurve ? resampleCurve : null);
                         if (combineMeshes)
                         {
                             bender.SetDirty();
@@ -296,7 +293,7 @@ namespace SplineMesh {
                         var benders = go_.GetComponentsInChildren<MeshBender>();
                         foreach (var bender in benders)
                         {
-                            bender.SetInterval(spline, nextLength + spawnMesh.finalOffset, endLength + spawnMesh.finalOffset);
+                            bender.SetInterval(spline, nextLength + spawnMesh.finalOffset, endLength + spawnMesh.finalOffset, useResampleCurve ? resampleCurve : null);
                             if (combineMeshes)
                             {
                                 bender.SetDirty();
@@ -339,7 +336,7 @@ namespace SplineMesh {
                             var benders = go_.GetComponentsInChildren<MeshBender>();
                             foreach (var bender in benders)
                             {
-                                bender.SetInterval(spline, startLength + spawnMesh.finalOffset, nextLength + spawnMesh.finalOffset);
+                                bender.SetInterval(spline, startLength + spawnMesh.finalOffset, nextLength + spawnMesh.finalOffset, useResampleCurve ? resampleCurve : null);
                                 if (combineMeshes)
                                 {
                                     bender.SetDirty();

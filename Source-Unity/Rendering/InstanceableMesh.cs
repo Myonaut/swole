@@ -97,8 +97,8 @@ namespace Swole
         [NonSerialized]
         protected InstancedMesh instance;
         public InstancedMesh Instance => instance;
-        public int InstanceSlot => instance == null ? -1 : instance.Slot;
-        public bool HasInstance => instance != null && instance.Slot >= 0;
+        public virtual int InstanceSlot => instance == null ? -1 : instance.Slot;
+        public virtual bool HasInstance => instance != null && instance.Slot >= 0;
         public virtual bool IsInitialized => HasInstance;
 
         protected bool visible;
@@ -194,7 +194,7 @@ namespace Swole
 
         public bool IsInViewOfCamera(int cameraIndex) => renderingCameras[cameraIndex].canSee;       
 
-        public bool IsRendering(int cameraIndex)
+        public virtual bool IsRendering(int cameraIndex)
         {
             if (instance == null) return false;
             return instance.IsRendering(cameraIndex);
@@ -220,14 +220,14 @@ namespace Swole
             }
         }
 
-        public void StartRenderingInstance()
+        public virtual void StartRenderingInstance()
         {
             if (instance != null)
             {
                 for (int a = 0; a < renderingCameras.Length; a++) if (IsInViewOfCamera(a)) instance.StartRendering(a); 
             }
         }
-        public void StopRenderingInstance()
+        public virtual void StopRenderingInstance()
         {
             if (instance != null) instance.StopRendering();
         }
@@ -403,6 +403,266 @@ namespace Swole
 
         protected abstract void SetupSkinnedMeshSyncs();
 
+        protected void SyncStandaloneShape(IList<BlendShapeSync>[] syncs, int index, float weight)
+        {
+            var list = syncs[index];
+            if (list != null && list.Count > 0)
+            {
+                foreach (var sync in list)
+                {
+                    var mesh = syncedSkinnedMeshes[sync.listenerIndex];
+                    if (mesh != null) mesh.SetBlendShapeWeight(sync.listenerShapeIndex, weight);
+                }
+            }
+        }
+
+        protected void SyncPartialShapeData(IList<BlendShapeSync>[] syncs, int groupIndex, float weight, int count, float[] frameWeights)
+        {
+            int indexY = groupIndex * count;
+
+            if (count == 1)
+            {
+                float frameWeight = frameWeights == null ? 1 : frameWeights[0];
+
+                var list = syncs[indexY];
+                if (list != null && list.Count > 0)
+                {
+                    foreach (var sync in list)
+                    {
+                        var mesh = syncedSkinnedMeshes[sync.listenerIndex];
+                        if (mesh != null)
+                        {
+                            mesh.SetBlendShapeWeight(sync.listenerShapeIndex, weight / frameWeight);
+                        }
+                    }
+                }
+            }
+            else if (count > 1)
+            {
+
+                int countM1 = count - 1;
+                float countM1f = countM1;
+                for (int a = 0; a < countM1; a++)
+                {
+                    float frameWeightA = frameWeights == null ? (a / countM1f) : frameWeights[a];
+
+                    int b = a + 1;
+                    float frameWeightB = frameWeights == null ? (b / countM1f) : frameWeights[b];
+
+                    float weightRange = frameWeightB - frameWeightA;
+
+                    float weightA = 0;
+                    float weightB = (weight - frameWeightA) / weightRange;
+                    if (weightB < 0)
+                    {
+                        if (a == 0)
+                        {
+                            if (frameWeightA != 0)
+                            {
+                                weightA = weight / frameWeightA;
+                                weightB = 0;
+                            }
+                            else
+                            {
+                                weightA = 1 + Mathf.Abs(weight / weightRange);
+                                weightB = 0;
+                            }
+                        }
+                        else
+                        {
+                            weightA = Mathf.Abs(weightB);
+                            weightB = 0;
+                        }
+                    }
+                    else
+                    {
+                        weightA = 1 - weightB;
+                        if (weightA < 0 && b < countM1)
+                        {
+                            weightA = 0;
+                            weightB = 0;
+                        }
+                        else
+                        {
+                            weightA = Mathf.Max(0, weightA);
+                        }
+                    }
+
+                    var list = syncs[indexY + a];
+                    if (list != null && list.Count > 0)
+                    {
+                        foreach (var sync in list)
+                        {
+                            var mesh = syncedSkinnedMeshes[sync.listenerIndex];
+                            if (mesh != null)
+                            {
+                                mesh.SetBlendShapeWeight(sync.listenerShapeIndex, weightA);
+                            }
+                        }
+                    }
+
+                    if (a == countM1 - 1)
+                    {
+                        list = syncs[indexY + b];
+                        if (list != null && list.Count > 0)
+                        {
+                            foreach (var sync in list)
+                            {
+                                var mesh = syncedSkinnedMeshes[sync.listenerIndex];
+                                if (mesh != null)
+                                {
+                                    mesh.SetBlendShapeWeight(sync.listenerShapeIndex, weightB);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        protected void SyncPartialShapeData(IList<BlendShapeSyncLR>[] syncs, int groupIndex, float weightL, float weightR, int count, float[] frameWeights)
+        {
+            int indexY = groupIndex * count;
+
+            if (count == 1)
+            {
+                float frameWeight = frameWeights == null ? 1 : frameWeights[0];
+
+                var list = syncs[indexY];
+                if (list != null && list.Count > 0)
+                {
+                    foreach (var sync in list)
+                    {
+                        var mesh = syncedSkinnedMeshes[sync.listenerIndex];
+                        if (mesh != null)
+                        {
+                            if (sync.listenerShapeIndexLeft >= 0) mesh.SetBlendShapeWeight(sync.listenerShapeIndexLeft, weightL / frameWeight);
+                            if (sync.listenerShapeIndexRight >= 0) mesh.SetBlendShapeWeight(sync.listenerShapeIndexRight, weightR / frameWeight);
+                        }
+                    }
+                }
+            }
+            else if (count > 1)
+            {
+
+                int countM1 = count - 1;
+                float countM1f = countM1;
+                for (int a = 0; a < countM1; a++)
+                {
+                    float frameWeightA = frameWeights == null ? (a / countM1f) : frameWeights[a];
+
+                    int b = a + 1;
+                    float frameWeightB = frameWeights == null ? (b / countM1f) : frameWeights[b];
+
+                    float weightRange = frameWeightB - frameWeightA;
+
+                    float weightA_L = 0;
+                    float weightB_L = (weightL - frameWeightA) / weightRange;
+                    if (weightB_L < 0)
+                    {
+                        if (a == 0)
+                        {
+                            if (frameWeightA != 0)
+                            {
+                                weightA_L = weightL / frameWeightA;
+                                weightB_L = 0;
+                            }
+                            else
+                            {
+                                weightA_L = 1 + Mathf.Abs(weightL / weightRange);
+                                weightB_L = 0;
+                            }
+                        }
+                        else
+                        {
+                            weightA_L = Mathf.Abs(weightB_L);
+                            weightB_L = 0;
+                        }
+                    }
+                    else
+                    {
+                        weightA_L = 1 - weightB_L;
+                        if (weightA_L < 0 && b < countM1)
+                        {
+                            weightA_L = 0;
+                            weightB_L = 0;
+                        }
+                        else
+                        {
+                            weightA_L = Mathf.Max(0, weightA_L);
+                        }
+                    }
+
+                    float weightA_R = 0;
+                    float weightB_R = (weightR - frameWeightA) / weightRange;
+                    if (weightB_R < 0)
+                    {
+                        if (a == 0)
+                        {
+                            if (frameWeightA != 0)
+                            {
+                                weightA_R = weightR / frameWeightA;
+                                weightB_R = 0;
+                            }
+                            else
+                            {
+                                weightA_R = 1 + Mathf.Abs(weightR / weightRange);
+                                weightB_R = 0;
+                            }
+                        }
+                        else
+                        {
+                            weightA_R = Mathf.Abs(weightB_R);
+                            weightB_R = 0;
+                        }
+                    }
+                    else
+                    {
+                        weightA_R = 1 - weightB_R;
+                        if (weightA_R < 0 && b < countM1)
+                        {
+                            weightA_R = 0;
+                            weightB_R = 0;
+                        }
+                        else
+                        {
+                            weightA_R = Mathf.Max(0, weightA_R);
+                        }
+                    }
+
+                    var list = syncs[indexY + a];
+                    if (list != null && list.Count > 0)
+                    {
+                        foreach (var sync in list)
+                        {
+                            var mesh = syncedSkinnedMeshes[sync.listenerIndex];
+                            if (mesh != null)
+                            {
+                                if (sync.listenerShapeIndexLeft >= 0) mesh.SetBlendShapeWeight(sync.listenerShapeIndexLeft, weightA_L);
+                                if (sync.listenerShapeIndexRight >= 0) mesh.SetBlendShapeWeight(sync.listenerShapeIndexRight, weightA_R);
+                            }
+                        }
+                    }
+
+                    if (a == countM1 - 1)
+                    {
+                        list = syncs[indexY + b];
+                        if (list != null && list.Count > 0)
+                        {
+                            foreach (var sync in list)
+                            {
+                                var mesh = syncedSkinnedMeshes[sync.listenerIndex];
+                                if (mesh != null)
+                                {
+                                    if (sync.listenerShapeIndexLeft >= 0) mesh.SetBlendShapeWeight(sync.listenerShapeIndexLeft, weightB_L);
+                                    if (sync.listenerShapeIndexRight >= 0) mesh.SetBlendShapeWeight(sync.listenerShapeIndexRight, weightB_R);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
         public void SyncSkinnedMesh(SkinnedMeshRenderer skinnedMesh, bool reinitialize = true)
         {
             if (skinnedMesh == null) return;
@@ -430,7 +690,7 @@ namespace Swole
         internal readonly static Dictionary<string, InstanceBuffer<float4x4>> _skinningMatricesBuffers = new Dictionary<string, InstanceBuffer<float4x4>>();
 
         protected InstanceBuffer<float4x4> skinningMatricesBuffer;  
-        public InstanceBuffer<float4x4> SkinningMatricesBuffer
+        public virtual InstanceBuffer<float4x4> SkinningMatricesBuffer
         {
             get
             {
@@ -505,7 +765,7 @@ namespace Swole
                     if (!Rigs.TryGetStandaloneSampler(RigID, out rigSampler))
                     {
                         var bindPose = BindPose;
-                        var bones = Bones;
+                        var bones = SkinnedBones;
                         if (bones.Length > bindPose.Length)
                         {
 #if UNITY_EDITOR
@@ -546,6 +806,7 @@ namespace Swole
         public abstract string RigBufferID { get; }
         public virtual int RigInstanceID => InstanceSlot;
         public abstract Transform[] Bones { get; }
+        public abstract Transform[] SkinnedBones { get; }
         public virtual int BoneCount => SkinningBoneCount;
         public abstract Matrix4x4[] BindPose { get; }
         public virtual int SkinningBoneCount => BindPose.Length; 
@@ -1389,6 +1650,8 @@ namespace Swole
     }
     public interface IInstanceBuffer : IDisposable
     {
+        public string Name { get; }
+
         public void BindMaterialProperty(Material material, string propertyName);
         public void UnbindMaterialProperty(Material material, string propertyName);
         public void Grow(float multiplier = 2, int updateActiveBufferFrameDelay = 0);
@@ -1455,6 +1718,8 @@ namespace Swole
 
         protected int elementsPerInstance;
         public int ElementsPerInstance => elementsPerInstance;
+
+        public string Name => bufferPool == null ? "null" : bufferPool.Name;
 
         protected DynamicComputeBufferPool<T> bufferPool;
         public T this[int index]
@@ -2031,7 +2296,7 @@ namespace Swole
             }
         }
 
-        public bool IsRendering(int cameraIndex)
+        public virtual bool IsRendering(int cameraIndex)
         {
             var renderInstance = renderInstances[cameraIndex];
             return renderInstance != null && renderInstance.instance != null && renderInstance.instance.Valid;
@@ -2231,12 +2496,6 @@ namespace Swole
         }
     }
 
-    [Serializable]
-    public struct MeshLOD
-    {
-        public Mesh mesh;
-        public float screenRelativeTransitionHeight;
-    }
     public abstract class InstanceableMeshDataBase : ScriptableObject, IDisposable
     {
 
@@ -2396,7 +2655,6 @@ namespace Swole
         public MeshLOD GetLOD(int lod) => meshLODs == null ? default : GetLODUnsafe(Mathf.Clamp(lod, 0, meshLODs.Length - 1));
         public MeshLOD GetLODUnsafe(int lod) => meshLODs[lod];
 
-        private static int SortLODsDescending(CullingLODs.LOD a, CullingLODs.LOD b) => Math.Sign(b.screenRelativeTransitionHeight - a.screenRelativeTransitionHeight);
         [NonSerialized]
         protected CullingLODs.LOD[] lods;
         public CullingLODs.LOD[] LODs
@@ -2407,7 +2665,7 @@ namespace Swole
                 {
                     var lodsList = new List<CullingLODs.LOD>(LevelsOfDetail);
                     for (int a = 0; a < LevelsOfDetail; a++) lodsList.Add(new CullingLODs.LOD() { detailLevel = a, screenRelativeTransitionHeight = meshLODs[a].screenRelativeTransitionHeight }); 
-                    lodsList.Sort(SortLODsDescending); 
+                    lodsList.Sort(CullingLODs.SortLODsDescending); 
 
                     lods = lodsList.ToArray();
                 }
@@ -2506,6 +2764,47 @@ namespace Swole
             }
         }
 
+        public virtual List<BoneWeight8Float> GetConvertedBoneWeightData(List<BoneWeight8Float> outputList = null)
+        {
+            if (outputList == null) outputList = new List<BoneWeight8Float>();
+
+            var mesh = Mesh;
+            if (mesh != null)
+            {
+                Initialize();
+
+                using (var boneWeights = mesh.GetAllBoneWeights())
+                {
+                    using (var boneCounts = mesh.GetBonesPerVertex())
+                    {
+                        int boneWeightIndex = 0;
+                        for (int a = 0; a < boneCounts.Length; a++)
+                        {
+                            var data = new BoneWeight8Float();
+
+                            float totalWeight = 0;
+                            var boneCount = boneCounts[a];
+                            for (int b = 0; b < Mathf.Min(8, boneCount); b++)
+                            {
+                                var boneWeight = boneWeights[boneWeightIndex + b];
+                                totalWeight = totalWeight + boneWeight.weight;
+                                data = data.Modify(b, boneWeight.boneIndex, boneWeight.weight);
+                            }
+                            if (totalWeight > 0)
+                            {
+                                data.weightsA = data.weightsA / totalWeight;
+                                data.weightsB = data.weightsB / totalWeight;
+                            }
+
+                            outputList.Add(data);
+                            boneWeightIndex += boneCount;
+                        }
+                    }
+                }
+            }
+
+            return outputList;
+        }
         protected static readonly List<BoneWeight8Float> tempBoneWeights = new List<BoneWeight8Float>();
         [NonSerialized]
         protected ComputeBuffer boneWeightsBuffer;
@@ -2517,47 +2816,11 @@ namespace Swole
                 {
                     tempBoneWeights.Clear();
 
-                    var mesh = Mesh;
-                    if (mesh != null)
-                    {
-                        Initialize();
+                    GetConvertedBoneWeightData(tempBoneWeights);
 
-                        using (var boneWeights = mesh.GetAllBoneWeights())
-                        {
-                            using (var boneCounts = mesh.GetBonesPerVertex())
-                            {
-                                int boneWeightIndex = 0;
-                                for (int a = 0; a < boneCounts.Length; a++)
-                                {
-                                    var data = new BoneWeight8Float();
+                    boneWeightsBuffer = new ComputeBuffer(tempBoneWeights.Count, UnsafeUtility.SizeOf(typeof(BoneWeight8Float)), ComputeBufferType.Structured, ComputeBufferMode.Immutable);
+                    if (tempBoneWeights.Count > 0) boneWeightsBuffer.SetData(tempBoneWeights);
 
-                                    float totalWeight = 0; 
-                                    var boneCount = boneCounts[a];
-                                    for (int b = 0; b < Mathf.Min(8, boneCount); b++) 
-                                    {
-                                        var boneWeight = boneWeights[boneWeightIndex + b];
-                                        totalWeight = totalWeight + boneWeight.weight;
-                                        data = data.Modify(b, boneWeight.boneIndex, boneWeight.weight); 
-                                    }
-                                    if (totalWeight > 0)
-                                    {
-                                        data.weightsA = data.weightsA / totalWeight;
-                                        data.weightsB = data.weightsB / totalWeight;
-                                    }
-                                     
-                                    tempBoneWeights.Add(data); 
-                                    boneWeightIndex += boneCount;
-                                }
-                            }
-                        }
-
-                        boneWeightsBuffer = new ComputeBuffer(tempBoneWeights.Count, UnsafeUtility.SizeOf(typeof(BoneWeight8Float)), ComputeBufferType.Structured, ComputeBufferMode.Immutable);
-                        boneWeightsBuffer.SetData(tempBoneWeights);
-                    }
-                    else
-                    {
-                        boneWeightsBuffer = new ComputeBuffer(0, UnsafeUtility.SizeOf(typeof(BoneWeight8Float)), ComputeBufferType.Structured, ComputeBufferMode.Immutable);
-                    }
                     tempBoneWeights.Clear();
 
                     TrackDisposables();
@@ -2582,7 +2845,7 @@ namespace Swole
         public void ApplyBoneWeightsBufferToMaterials(string propertyName, ICollection<int> materialSlots) => ApplyBufferToMaterials(propertyName, materialSlots, BoneWeightsBuffer);
         public void ApplyBoneWeightsBufferToMaterials(string propertyName) => ApplyBoneWeightsBufferToMaterials(propertyName, null);
 
-        public void ApplyBufferToMaterials(string propertyName, ICollection<int> materialSlots, ComputeBuffer buffer)
+        public virtual void ApplyBufferToMaterials(string propertyName, ICollection<int> materialSlots, ComputeBuffer buffer)
         {
             if (meshGroups != null)
             {
@@ -2607,7 +2870,7 @@ namespace Swole
         }
         public void ApplyBufferToMaterials(string propertyName, ComputeBuffer buffer) => ApplyBufferToMaterials(propertyName, null, buffer);
 
-        public void ApplyFloatToMaterials(string propertyName, ICollection<int> materialSlots, float value)
+        public virtual void ApplyFloatToMaterials(string propertyName, ICollection<int> materialSlots, float value)
         {
             if (meshGroups != null)
             {
@@ -2632,7 +2895,7 @@ namespace Swole
         }
         public void ApplyFloatToMaterials(string propertyName, float value) => ApplyFloatToMaterials(propertyName, null, value);
 
-        public void ApplyIntegerToMaterials(string propertyName, ICollection<int> materialSlots, int value)
+        public virtual void ApplyIntegerToMaterials(string propertyName, ICollection<int> materialSlots, int value)
         {
             if (meshGroups != null)
             {
@@ -2657,7 +2920,7 @@ namespace Swole
         }
         public void ApplyIntegerToMaterials(string propertyName, int value) => ApplyIntegerToMaterials(propertyName, null, value);
 
-        public void ApplyVectorToMaterials(string propertyName, ICollection<int> materialSlots, Vector4 value)
+        public virtual void ApplyVectorToMaterials(string propertyName, ICollection<int> materialSlots, Vector4 value)
         {
             if (meshGroups != null)
             {
@@ -2685,7 +2948,7 @@ namespace Swole
         }
         public void ApplyVectorToMaterials(string propertyName, Vector4 value) => ApplyVectorToMaterials(propertyName, null, value);
 
-        public void ApplyColorToMaterials(string propertyName, ICollection<int> materialSlots, Color value)
+        public virtual void ApplyColorToMaterials(string propertyName, ICollection<int> materialSlots, Color value)
         {
             if (meshGroups != null)
             {

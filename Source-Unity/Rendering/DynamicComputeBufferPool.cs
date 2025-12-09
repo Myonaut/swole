@@ -14,6 +14,12 @@ namespace Swole
 
     public interface IComputeBufferPool : IDisposable
     {
+        public string Name { get; }
+
+#if UNITY_EDITOR
+        public string Stacktrace { get; }
+#endif
+
         public void ListenForBufferSwap(SwapBufferDelegate listener);
         public void StopListeningForBufferSwap(SwapBufferDelegate listener);
         public void SetActiveBuffer(int bufferIndex);
@@ -231,7 +237,7 @@ namespace Swole
         public void Write(NativeArray<T> data, int srcIndex, int dstIndex, int count)
         {
             TrySetWriteIndices(dstIndex, count);
-
+            Debug.Log($"{count} -> {internalData.Length}");
             NativeArray<T>.Copy(data, srcIndex, internalData.AsArray(), dstIndex, count);
             RequestUpload();
         }
@@ -246,9 +252,17 @@ namespace Swole
         public int Size => internalData.Length;
 
         public string name;
+        public string Name => string.IsNullOrWhiteSpace(name) ? GetHashCode().ToString() : name;
+
+#if UNITY_EDITOR
+        private string stacktrace;
+        public string Stacktrace => stacktrace;
+#endif
 
         public DynamicComputeBufferPool(string name, int initialSize, int bufferPoolSize, ComputeBufferType bufferType, ComputeBufferMode bufferMode)
         {
+            this.name = name;
+
             stride = UnsafeUtility.SizeOf(typeof(T));
             this.bufferType = bufferType;
             this.bufferMode = bufferMode;
@@ -258,6 +272,12 @@ namespace Swole
             SetSize(initialSize);
 
             framesToWaitBeforeSwap = 0;
+
+#if UNITY_EDITOR
+            System.Diagnostics.StackTrace stackTrace = new System.Diagnostics.StackTrace(true);
+            stacktrace = stackTrace.ToString();
+            ComputeBufferPoolUploader.Register(this);
+#endif
         }
 
         public void Upload()
@@ -302,6 +322,10 @@ namespace Swole
         public void Dispose()
         {
             invalid = true;
+
+#if UNITY_EDITOR
+            ComputeBufferPoolUploader.Unregister(this);
+#endif
 
             swapBufferListeners.Clear();
 
@@ -365,15 +389,34 @@ namespace Swole
         }
     }
 
+    [DefaultExecutionOrder(999999)]
     public class ComputeBufferPoolUploader : SingletonBehaviour<ComputeBufferPoolUploader>
     {
 
         public override bool DestroyOnLoad => false;
 
-        public override int Priority => 999999999;
+        public static int ExecutionPriority => 999999999;
+        public override int Priority => ExecutionPriority;
 
         [NonSerialized]
         protected readonly HashSet<IComputeBufferPool> bufferQueue = new HashSet<IComputeBufferPool>();
+
+#if UNITY_EDITOR
+        [NonSerialized]
+        protected readonly HashSet<IComputeBufferPool> registeredBuffers = new HashSet<IComputeBufferPool>();
+        public static void Register(IComputeBufferPool buffer)
+        {
+            var instance = Instance;
+            if (instance == null || buffer == null) return;
+            instance.registeredBuffers.Add(buffer);
+        }
+        public static void Unregister(IComputeBufferPool buffer)
+        {
+            var instance = InstanceOrNull;
+            if (instance == null || buffer == null) return;
+            instance.registeredBuffers.Remove(buffer);
+        }
+#endif
 
         public void QueueLocal(IComputeBufferPool buffer)
         {
@@ -414,5 +457,18 @@ namespace Swole
         public override void OnUpdate()
         {
         }
+
+#if UNITY_EDITOR
+        protected void OnApplicationQuit()
+        {
+            foreach(var buffer in registeredBuffers)
+            {
+                if (buffer == null || !buffer.IsValid()) continue;
+
+                Debug.LogWarning($"ComputeBufferPool '{buffer.Name}' may not have been disposed! {buffer.Stacktrace}");
+            }
+        }
+#endif
+
     }
 }

@@ -371,7 +371,7 @@ namespace Swole.API.Unity
                     mesh = MeshDataTools.Duplicate(inputMesh);
 
                     triangles = mesh.triangles;
-                    var openEdgeData = MeshDataTools.GetOpenEdgeData(mesh.vertexCount, triangles, MeshDataTools.MergeVertices(mesh.vertices));
+                    var openEdgeData = MeshDataTools.GetOpenEdgeData(mesh.vertexCount, triangles, MeshDataTools.WeldVertices(mesh.vertices));
                     if (boundaryIndices == null) boundaryIndices = new List<int>();
                     boundaryIndices.Clear();
                     foreach(var edgeData in openEdgeData) if (edgeData.IsOpenEdge())

@@ -374,7 +374,7 @@ namespace Swole
         #region Vertex Merging
 
         [Serializable]
-        public struct MergedVertex
+        public struct WeldedVertex
         {
             public int firstIndex;
 
@@ -383,7 +383,7 @@ namespace Swole
             /// </summary>
             public List<int> indices;
 
-            public MergedVertex(int firstIndex, List<int> indices)
+            public WeldedVertex(int firstIndex, List<int> indices)
             {
                 this.firstIndex = firstIndex;
                 this.indices = indices;
@@ -474,10 +474,11 @@ namespace Swole
             }
         }
 
-        public static MergedVertex[] MergeVertices(IEnumerable<Vector3> vertices, float mergeThreshold = 0.00001f)
+        public static WeldedVertex[] MergeVertices(IEnumerable<Vector3> vertices, float mergeThreshold = 0.00001f) => WeldVertices(vertices, mergeThreshold);
+        public static WeldedVertex[] WeldVertices(IEnumerable<Vector3> vertices, float mergeThreshold = 0.00001f)
         {
 
-            Dictionary<float, Dictionary<float, Dictionary<float, MergedVertex>>> sibling_stack = new Dictionary<float, Dictionary<float, Dictionary<float, MergedVertex>>>();
+            Dictionary<float, Dictionary<float, Dictionary<float, WeldedVertex>>> sibling_stack = new Dictionary<float, Dictionary<float, Dictionary<float, WeldedVertex>>>();
 
             int count = 0;
             if (vertices is ICollection<Vector3> collection)
@@ -489,7 +490,7 @@ namespace Swole
                 foreach (var _ in vertices) count++;
             }
 
-            MergedVertex[] clones = new MergedVertex[count];
+            WeldedVertex[] clones = new WeldedVertex[count];
 
             int index = 0;
             double merge = 1D / mergeThreshold;
@@ -500,25 +501,25 @@ namespace Swole
                 float py = (float)(System.Math.Truncate((double)vert.y * merge) / merge);
                 float pz = (float)(System.Math.Truncate((double)vert.z * merge) / merge);
 
-                Dictionary<float, Dictionary<float, MergedVertex>> layer1;
+                Dictionary<float, Dictionary<float, WeldedVertex>> layer1;
 
                 if (!sibling_stack.TryGetValue(px, out layer1))
                 {
-                    layer1 = new Dictionary<float, Dictionary<float, MergedVertex>>();
+                    layer1 = new Dictionary<float, Dictionary<float, WeldedVertex>>();
                     sibling_stack[px] = layer1;
                 }
 
-                Dictionary<float, MergedVertex> layer2;
+                Dictionary<float, WeldedVertex> layer2;
 
                 if (!layer1.TryGetValue(py, out layer2))
                 {
-                    layer2 = new Dictionary<float, MergedVertex>();
+                    layer2 = new Dictionary<float, WeldedVertex>();
                     layer1[py] = layer2;
                 }
 
-                if (!layer2.TryGetValue(pz, out MergedVertex mergedVertex))
+                if (!layer2.TryGetValue(pz, out WeldedVertex mergedVertex))
                 {
-                    mergedVertex = new MergedVertex(index, new List<int>());
+                    mergedVertex = new WeldedVertex(index, new List<int>());
                     layer2[pz] = mergedVertex;
                 }
 
@@ -534,6 +535,7 @@ namespace Swole
 
         }
 
+        public static List<Vector3> WeldPositions3D(IEnumerable<Vector3> positions, float weldDistance, List<Vector3> weldedPositionsOutput = null) => MergePositions3D(positions, weldDistance, weldedPositionsOutput);
         /// <summary>
         /// Sorts a collection of positions into groups based on mergeDistance and outputs a list of averaged positions per merge group.
         /// </summary>
@@ -598,7 +600,7 @@ namespace Swole
 
         #region Vertex Connections
 
-        public static int[][] GetVertexConnections(int vertexCount, int[] triangles, MergedVertex[] mergedVertices = null)
+        public static int[][] GetVertexConnections(int vertexCount, int[] triangles, WeldedVertex[] mergedVertices = null)
         {
             int[][] outputArray = new int[vertexCount][];
             void AddConnectedVertex(int rootVertex, int connectedVertex)
@@ -618,7 +620,7 @@ namespace Swole
 
                 array[array.Length - 1] = connectedVertex;
             }
-            void AddConnectedMergedVertex(MergedVertex rootVertex, MergedVertex connectedVertex)
+            void AddConnectedMergedVertex(WeldedVertex rootVertex, WeldedVertex connectedVertex)
             {
                 if (rootVertex.indices != null && connectedVertex.indices != null)
                 {
@@ -681,7 +683,7 @@ namespace Swole
         }
 
         private static readonly List<int> _closedList = new List<int>();
-        public static WeightedVertexConnection[][] GetDistanceWeightedVertexConnections(int[] triangles, Vector3[] vertices, MergedVertex[] mergedVertices = null)
+        public static WeightedVertexConnection[][] GetDistanceWeightedVertexConnections(int[] triangles, Vector3[] vertices, WeldedVertex[] mergedVertices = null)
         {
             int vertexCount = vertices.Length;
 
@@ -704,7 +706,7 @@ namespace Swole
                 array[array.Length - 1] = new WeightedVertexConnection() { index = connectedVertex, weight = distance < 0 ? Vector3.Distance(vertices[rootVertex], vertices[connectedVertex]) : distance };
                 outputArray[rootVertex] = array;
             }
-            void AddConnectedMergedVertex(MergedVertex rootVertex, MergedVertex connectedVertex)
+            void AddConnectedMergedVertex(WeldedVertex rootVertex, WeldedVertex connectedVertex)
             {
                 float distance = Vector3.Distance(vertices[rootVertex.firstIndex], vertices[connectedVertex.firstIndex]);
                 AddConnectedVertex(rootVertex.firstIndex, connectedVertex.firstIndex, distance);              
@@ -836,7 +838,7 @@ namespace Swole
             }
         }
 
-        public static Triangle[][] GetTriangleReferencesPerVertex(int vertexCount, int[] triangles, MergedVertex[] mergedVertices = null)
+        public static Triangle[][] GetTriangleReferencesPerVertex(int vertexCount, int[] triangles, WeldedVertex[] mergedVertices = null)
         {
             Triangle[][] outputArray = new Triangle[vertexCount][];
             void AddTriangle(int rootVertex, int triangleIndex0, int triangleIndex1, int triangleIndex2)
@@ -1028,7 +1030,7 @@ namespace Swole
         /// Average all Vertex Groups weights using the combined weight at each index between all groups.
         /// </summary>
         /// <param name="normalizeAsPoolAfter">Should the vertex groups be normalized using a global maximum after the per vertex pass?</param>
-        public static void AverageVertexGroupWeightsPerVertex(IEnumerable<VertexGroup> vertexGroups, bool normalizeAsPoolAfter = true, float minWeightThreshold = 0.0001f)
+        public static void AverageVertexGroupWeightsPerVertex(IEnumerable<VertexGroup> vertexGroups, bool normalizeAsPoolAfter = true, float minWeightThreshold = 0.00001f, float maxAverageWeight = 1f, float maxWeightNormalize = 0f)
         {
 
             if (vertexGroups == null) return;
@@ -1064,13 +1066,19 @@ namespace Swole
 
                     int i = vg.GetEntryIndex(a);
 
-                    float2 total = weights[i];
-
-                    if (total.x <= minWeightThreshold) continue; 
+                    if (!weights.TryGetValue(i, out float2 total)) continue;
 
                     indices.Add(i);
-                    weightValues.Add(vg.GetEntryWeight(a) / (total.y >= 1.99f ? total.x : 1f)); // only divide by total if there was more than one contributor to the weight at this index
-
+                    if (maxAverageWeight != 0f)
+                    {
+                        //weightValues.Add((total.x > maxAverageWeight ? ((vg.GetEntryWeight(a) / total.x) * maxAverageWeight) : vg.GetEntryWeight(a)));
+                        weightValues.Add((total.x > 0f ? ((vg.GetEntryWeight(a) / total.x) * maxAverageWeight) : vg.GetEntryWeight(a)));
+                    } 
+                    else
+                    {
+                        //weightValues.Add(vg.GetEntryWeight(a) / (total.y >= 1.99f ? total.x : 1f)); // only divide by total if there was more than one contributor to the weight at this index
+                        weightValues.Add(total.y >= 1.99f ? (vg.GetEntryWeight(a) / total.x): vg.GetEntryWeight(a)); // only divide by total if there was more than one contributor to the weight at this index
+                    }
                 }
 
                 vg.Clear();
@@ -1079,33 +1087,36 @@ namespace Swole
                 vg.SetWeights(indices, weightValues);
             }
 
-            if (normalizeAsPoolAfter) NormalizeVertexGroupsAsPool(vertexGroups);
+            if (normalizeAsPoolAfter) NormalizeVertexGroupsAsPool(vertexGroups, maxWeightNormalize);
         }
 
         /// <summary>
         /// Normalize all Vertex Groups weights using the maximum weight obtained from checking every index in every group.
         /// </summary>
-        public static void NormalizeVertexGroupsAsPool(IEnumerable<VertexGroup> vertexGroups)
+        public static void NormalizeVertexGroupsAsPool(IEnumerable<VertexGroup> vertexGroups, float maxWeight = 0f)
         {
 
             if (vertexGroups == null) return;
 
-            float maxWeight = 0;
+            bool useProvidedMaxWeight = maxWeight != 0f;
 
-            foreach (VertexGroup vg in vertexGroups)
+            if (!useProvidedMaxWeight)
             {
-                for (int a = 0; a < vg.EntryCount; a++)
+                foreach (VertexGroup vg in vertexGroups)
                 {
-                    float weight = vg.GetEntryWeight(a);
-                    if (Mathf.Abs(weight) > maxWeight) maxWeight = weight;
+                    for (int a = 0; a < vg.EntryCount; a++)
+                    {
+                        float weight = vg.GetEntryWeight(a);
+                        if (Mathf.Abs(weight) > maxWeight) maxWeight = weight;
+                    }
                 }
             }
 
-            if (maxWeight == 0) return;
+            if (maxWeight == 0f) return;
 
             foreach (VertexGroup vg in vertexGroups)
             {
-                for (int a = 0; a < vg.EntryCount; a++) vg.SetEntryWeight(a, vg.GetEntryWeight(a) / maxWeight); 
+                for (int a = 0; a < vg.EntryCount; a++) vg.SetEntryWeight(a, vg.GetEntryWeight(a) / maxWeight);
             }
         }
 
@@ -1137,7 +1148,7 @@ namespace Swole
             /// </summary>
             public void NormalizeVertexGroupsAsPool() => MeshDataTools.NormalizeVertexGroupsAsPool(vertexGroups);
 
-            public VertexGroup ConvertToVertexGroup(BlendShape shape, bool normalize = true, string keyword = "", float threshold = 0.0001f)
+            public VertexGroup ConvertToVertexGroup(BlendShape shape, bool normalize = true, string keyword = "", float threshold = 0.00001f)
             {
                 VertexGroup vg = VertexGroup.ConvertToVertexGroup(shape, normalize, keyword, threshold);
                 if (vg.EntryCount > 0) AddVertexGroup(vg);
@@ -1145,7 +1156,7 @@ namespace Swole
                 return vg;
             }
 
-            public void ExtractVertexGroups(SkinnedMeshRenderer renderer, bool removeFromMesh = true, bool normalize = true, bool normalizeToMesh = false, string keyword = "_VGROUP", float threshold = 0.0001f)
+            public void ExtractVertexGroups(SkinnedMeshRenderer renderer, bool removeFromMesh = true, bool normalize = true, bool normalizeToMesh = false, string keyword = "_VGROUP", float threshold = 0.00001f)
             {
                 if (renderer == null) return;
 
@@ -1160,7 +1171,7 @@ namespace Swole
             /// <summary>
             /// Converts vertex group data stored in blendshapes into useable vertex groups.
             /// </summary>
-            public void ExtractVertexGroups(Mesh mesh, bool removeFromMesh = true, bool normalize = true, bool averagePerVertex = false, string keyword = "_VGROUP", float threshold = 0.0001f)
+            public void ExtractVertexGroups(Mesh mesh, bool removeFromMesh = true, bool normalize = true, bool averagePerVertex = false, string keyword = "_VGROUP", float threshold = 0.00001f)
             {
                 if (mesh == null) return;
 
@@ -1310,12 +1321,12 @@ namespace Swole
         [Obsolete("Extremely slow")]
         public static List<MeshIsland> CalculateMeshIslands_old(Mesh mesh, List<MeshIsland> meshIslands = null, bool weldVertices = true, bool includeTriangles = false) => CalculateMeshIslands(mesh, meshIslands, weldVertices, out _, includeTriangles);
         [Obsolete("Extremely slow")]
-        public static List<MeshIsland> CalculateMeshIslands_old(Mesh mesh, List<MeshIsland> meshIslands, bool weldVertices, out MergedVertex[] weldedVertices, bool includeTriangles = false) => CalculateMeshIslands(mesh, mesh.triangles, meshIslands, weldVertices, out weldedVertices, includeTriangles);
+        public static List<MeshIsland> CalculateMeshIslands_old(Mesh mesh, List<MeshIsland> meshIslands, bool weldVertices, out WeldedVertex[] weldedVertices, bool includeTriangles = false) => CalculateMeshIslands(mesh, mesh.triangles, meshIslands, weldVertices, out weldedVertices, includeTriangles);
 
         [Obsolete("Extremely slow")]
         public static List<MeshIsland> CalculateMeshIslands_old(Mesh mesh, int[] triangles, List<MeshIsland> meshIslands = null, bool weldVertices = true, bool includeTriangles = false) => CalculateMeshIslands(mesh, triangles, meshIslands, weldVertices, out _, includeTriangles);
         [Obsolete("Extremely slow")]
-        public static List<MeshIsland> CalculateMeshIslands_old(Mesh mesh, int[] triangles, List<MeshIsland> meshIslands, bool weldVertices, out MergedVertex[] weldedVertices, bool includeTriangles = false)
+        public static List<MeshIsland> CalculateMeshIslands_old(Mesh mesh, int[] triangles, List<MeshIsland> meshIslands, bool weldVertices, out WeldedVertex[] weldedVertices, bool includeTriangles = false)
         {
             if (meshIslands == null) meshIslands = new List<MeshIsland>();
 
@@ -1332,7 +1343,7 @@ namespace Swole
                 currentIslandTris.Clear();
             }
             bool[] closedVertices = new bool[mesh.vertexCount]; // flags used to determine if a vertex has already been added to a mesh island
-            weldedVertices = weldVertices ? MeshDataTools.MergeVertices(mesh.vertices) : null;
+            weldedVertices = weldVertices ? MeshDataTools.WeldVertices(mesh.vertices) : null;
             var weldedVertices_ = weldedVertices;
 
             int GetWeldedIndex(int originalVertexIndex)
@@ -1505,17 +1516,17 @@ namespace Swole
 
 
         public static List<MeshIsland> CalculateMeshIslands(Mesh mesh, List<MeshIsland> meshIslands = null, bool weldVertices = true, bool includeTriangles = false) => CalculateMeshIslands(mesh, meshIslands, weldVertices, out _, includeTriangles);
-        public static List<MeshIsland> CalculateMeshIslands(Mesh mesh, List<MeshIsland> meshIslands, bool weldVertices, out MergedVertex[] weldedVertices, bool includeTriangles = false) => CalculateMeshIslands(mesh, mesh.triangles, meshIslands, weldVertices, out weldedVertices, includeTriangles);
+        public static List<MeshIsland> CalculateMeshIslands(Mesh mesh, List<MeshIsland> meshIslands, bool weldVertices, out WeldedVertex[] weldedVertices, bool includeTriangles = false) => CalculateMeshIslands(mesh, mesh.triangles, meshIslands, weldVertices, out weldedVertices, includeTriangles);
 
         public static List<MeshIsland> CalculateMeshIslands(Mesh mesh, int[] triangles, List<MeshIsland> meshIslands = null, bool weldVertices = true, bool includeTriangles = false) => CalculateMeshIslands(mesh, triangles, meshIslands, weldVertices, out _, includeTriangles);
-        public static List<MeshIsland> CalculateMeshIslands(Mesh mesh, int[] triangles, List<MeshIsland> meshIslands, bool weldVertices, out MergedVertex[] weldedVertices, bool includeTriangles = false)
+        public static List<MeshIsland> CalculateMeshIslands(Mesh mesh, int[] triangles, List<MeshIsland> meshIslands, bool weldVertices, out WeldedVertex[] weldedVertices, bool includeTriangles = false)
         {
             if (triangles == null) triangles = mesh.triangles;
-            weldedVertices = weldVertices ? MeshDataTools.MergeVertices(mesh.vertices) : null;
+            weldedVertices = weldVertices ? MeshDataTools.WeldVertices(mesh.vertices) : null;
 
             return CalculateMeshIslands(mesh.vertexCount, triangles, meshIslands, weldedVertices, includeTriangles); 
         }
-        public static List<MeshIsland> CalculateMeshIslands(int vertexCount, int[] triangles, List<MeshIsland> meshIslands = null, MergedVertex[] weldedVertices = null, bool includeTriangles = false)
+        public static List<MeshIsland> CalculateMeshIslands(int vertexCount, int[] triangles, List<MeshIsland> meshIslands = null, WeldedVertex[] weldedVertices = null, bool includeTriangles = false)
         {
             if (meshIslands == null) meshIslands = new List<MeshIsland>();
 
@@ -2806,7 +2817,7 @@ namespace Swole
             int[] allTriangles = inputMesh.triangles;
 
             var editMesh = new EditedMesh(outputMesh);
-            var weldedVertices = MergeVertices(editMesh.VertexList);
+            var weldedVertices = WeldVertices(editMesh.VertexList);
             
             List<int>[] vertexTris = new List<int>[weldedVertices.Length]; 
             void AddTriReferenceToVertex(int vertexIndex, int triIndex)
@@ -4028,7 +4039,7 @@ namespace Swole
             public int edgeCount1;
             public int edgeCount2;
 
-            public void IncrementEdgeCount(int tri2_i0, int tri2_i1, int tri2_i2, MergedVertex[] mergedVertices = null)
+            public void IncrementEdgeCount(int tri2_i0, int tri2_i1, int tri2_i2, WeldedVertex[] mergedVertices = null)
             {
                 int MergedIndex(int vertexIndex)
                 {
@@ -4090,7 +4101,7 @@ namespace Swole
                 return existing;
             }
         }
-        public static OpenEdgeData[] GetOpenEdgeData(int vertexCount, ICollection<int> triangles, MergedVertex[] mergedVertices = null)
+        public static OpenEdgeData[] GetOpenEdgeData(int vertexCount, ICollection<int> triangles, WeldedVertex[] mergedVertices = null)
         {
             OpenEdgeData[] edgeStates = new OpenEdgeData[vertexCount];
 

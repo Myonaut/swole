@@ -140,6 +140,29 @@ namespace Swole
                 return bones;
             }
         }
+        protected Transform[] skinnedBones;
+        public override Transform[] SkinnedBones
+        {
+            get
+            {
+                if (skinnedBones == null)
+                {
+                    var rig_root = RigRoot;
+
+                    if (avatar == null)
+                    {
+                        skinnedBones = new Transform[] { rig_root };
+                    }
+                    else
+                    {
+                        skinnedBones = new Transform[avatar.SkinnedBonesCount];
+                        for (int a = 0; a < skinnedBones.Length; a++) skinnedBones[a] = rig_root.FindDeepChildLiberal(avatar.bones[a]);
+                    }
+                }
+
+                return skinnedBones;
+            }
+        }
 
         public override int BoneCount => avatar == null ? 1 : avatar.bones.Length;
 

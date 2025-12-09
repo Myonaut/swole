@@ -83,7 +83,22 @@ namespace Swole.API.Unity.Animation
         public int rootBoneIndex;
         public string RootBone => rootBoneIndex < 0 || containerIsRoot ? rigContainer : bones[rootBoneIndex];
 
+        public int skinnedBonesCount;
+        public int SkinnedBonesCount => skinnedBonesCount <= 0f ? (bones == null ? 0 : bones.Length) : skinnedBonesCount;
         public string[] bones;
+
+        public int GetBoneIndex(string boneName)
+        {
+            if (bones != null)
+            {
+                for(int a = 0; a < bones.Length; a++)
+                {
+                    if (bones[a] == boneName) return a;
+                }
+            }
+
+            return -1;
+        }
 
         [Serializable]
         public enum IKBoneType

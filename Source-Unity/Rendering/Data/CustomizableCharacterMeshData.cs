@@ -9,6 +9,10 @@ using UnityEngine;
 using Unity.Collections.LowLevel.Unsafe;
 using Unity.Mathematics;
 
+using Swole.Morphing;
+
+using static Swole.ICustomizableCharacter.Defaults;
+
 namespace Swole
 {
     [CreateAssetMenu(fileName = "CustomizableCharacterMeshData", menuName = "Swole/InstancedMeshData/CustomizableCharacterMeshData", order = 3)]
@@ -116,7 +120,6 @@ namespace Swole
         }
 
 
-        public const string _frameWeightsMuscleShapesDefaultPropertyName = "_FrameWeightsMuscleShapes";
         public string frameWeightsMuscleShapesPropertyNameOverride;
         public string FrameWeightsMuscleShapesPropertyName => string.IsNullOrWhiteSpace(frameWeightsMuscleShapesPropertyNameOverride) ? _frameWeightsMuscleShapesDefaultPropertyName : frameWeightsMuscleShapesPropertyNameOverride;
         public float[] frameWeightsMuscleShapes;
@@ -141,7 +144,6 @@ namespace Swole
             }
         }
 
-        public const string _frameWeightsFlexShapesDefaultPropertyName = "_FrameWeightsFlexShapes";
         public string frameWeightsFlexShapesPropertyNameOverride;
         public string FrameWeightsFlexShapesPropertyName => string.IsNullOrWhiteSpace(frameWeightsFlexShapesPropertyNameOverride) ? _frameWeightsFlexShapesDefaultPropertyName : frameWeightsFlexShapesPropertyNameOverride;
         public float[] frameWeightsFlexShapes;
@@ -166,7 +168,6 @@ namespace Swole
             }
         }
 
-        public const string _frameWeightsFatShapesDefaultPropertyName = "_FrameWeightsFatShapes";
         public string frameWeightsFatShapesPropertyNameOverride;
         public string FrameWeightsFatShapesPropertyName => string.IsNullOrWhiteSpace(frameWeightsFatShapesPropertyNameOverride) ? _frameWeightsFatShapesDefaultPropertyName : frameWeightsFatShapesPropertyNameOverride;
         public float[] frameWeightsFatShapes;
@@ -192,7 +193,6 @@ namespace Swole
         }
 
 
-        public const string _vertexGroupsBufferRangeDefaultPropertyName = "_RangeVertexGroups";
         public string vertexGroupsBufferRangePropertyNameOverride;
         public string VertexGroupsBufferRangePropertyName => string.IsNullOrWhiteSpace(vertexGroupsBufferRangePropertyNameOverride) ? _vertexGroupsBufferRangeDefaultPropertyName : vertexGroupsBufferRangePropertyNameOverride;
         public Vector2Int vertexGroupsBufferRange;
@@ -213,7 +213,6 @@ namespace Swole
             return vertexGroups[vertexGroupsBufferRange.x + index];
         }
 
-        public const string _muscleVertexGroupsBufferRangeDefaultPropertyName = "_RangeMuscleGroups"; 
         public string muscleVertexGroupsBufferRangePropertyNameOverride;
         public string MuscleVertexGroupsBufferRangePropertyName => string.IsNullOrWhiteSpace(muscleVertexGroupsBufferRangePropertyNameOverride) ? _muscleVertexGroupsBufferRangeDefaultPropertyName : muscleVertexGroupsBufferRangePropertyNameOverride;
         public Vector2Int muscleVertexGroupsBufferRange;
@@ -234,7 +233,6 @@ namespace Swole
             return vertexGroups[muscleVertexGroupsBufferRange.x + index];
         }
 
-        public const string _fatVertexGroupsBufferRangeDefaultPropertyName = "_RangeFatGroups";
         public string fatVertexGroupsBufferRangePropertyNameOverride;
         public string FatVertexGroupsBufferRangePropertyName => string.IsNullOrWhiteSpace(fatVertexGroupsBufferRangePropertyNameOverride) ? _fatVertexGroupsBufferRangeDefaultPropertyName : fatVertexGroupsBufferRangePropertyNameOverride;
         public Vector2Int fatVertexGroupsBufferRange;
@@ -255,74 +253,60 @@ namespace Swole
             if (index < 0 || index >= FatVertexGroupCount) return null;
             return vertexGroups[fatVertexGroupsBufferRange.x + index];
         }
-        public static float2 DefaultFatGroupModifier => new float2(1, 0);
         /// <summary>
         /// modifier.x is how much to nerf muscle mass by based on fat level
         public float2 GetFatGroupModifier(int index) 
         {
-            if (index < 0 || fatGroupModifiers == null || index >= fatGroupModifiers.Length) return DefaultFatGroupModifier;
+            if (index < 0 || fatGroupModifiers == null || index >= fatGroupModifiers.Length) return _defaultFatGroupModifier;
             return fatGroupModifiers[index];
         }
 
-        public const string _midlineVertexGroupIndexDefaultPropertyName = "_MidlineVertexGroupIndex";
         public string midlineVertexGroupIndexPropertyNameOverride;
         public string MidlineVertexGroupIndexPropertyName => string.IsNullOrWhiteSpace(midlineVertexGroupIndexPropertyNameOverride) ? _midlineVertexGroupIndexDefaultPropertyName : midlineVertexGroupIndexPropertyNameOverride;
         public int midlineVertexGroupIndex;
 
-        public const string _bustMixDefaultPropertyName = "_BustMix";
         public string bustMixPropertyNameOverride;
         public string BustMixPropertyName => string.IsNullOrWhiteSpace(bustMixPropertyNameOverride) ? _bustMixDefaultPropertyName : bustMixPropertyNameOverride;
 
-        public const string _hideNipplesDefaultPropertyName = "_HideNipples";
         public string hideNipplesPropertyNameOverride;
         public string HideNipplesPropertyName => string.IsNullOrWhiteSpace(hideNipplesPropertyNameOverride) ? _hideNipplesDefaultPropertyName : hideNipplesPropertyNameOverride;
 
-        public const string _hideGenitalsDefaultPropertyName = "_HideGenitals";
         public string hideGenitalsPropertyNameOverride;
         public string HideGenitalsPropertyName => string.IsNullOrWhiteSpace(hideGenitalsPropertyNameOverride) ? _hideGenitalsDefaultPropertyName : hideGenitalsPropertyNameOverride;
 
-        public const string _bustVertexGroupIndexDefaultPropertyName = "_BustVertexGroupIndex";
         public string bustVertexGroupIndexPropertyNameOverride;
         public string BustVertexGroupIndexPropertyName => string.IsNullOrWhiteSpace(bustVertexGroupIndexPropertyNameOverride) ? _bustVertexGroupIndexDefaultPropertyName : bustVertexGroupIndexPropertyNameOverride;
         public int bustVertexGroupIndex;
         public int bustSizeShapeIndex;
 
-        public const string _bustNerfVertexGroupIndexDefaultPropertyName = "_BustNerfVertexGroupIndex";
         public string bustNerfVertexGroupIndexPropertyNameOverride;
         public string BustNerfVertexGroupIndexPropertyName => string.IsNullOrWhiteSpace(bustNerfVertexGroupIndexPropertyNameOverride) ? _bustNerfVertexGroupIndexDefaultPropertyName : bustNerfVertexGroupIndexPropertyNameOverride;
         public int bustNerfVertexGroupIndex;
 
-        public const string _nippleMaskVertexGroupIndexDefaultPropertyName = "_NippleMaskVertexGroupIndex";
         public string nippleMaskVertexGroupIndexPropertyNameOverride;
         public string NippleMaskVertexGroupIndexPropertyName => string.IsNullOrWhiteSpace(nippleMaskVertexGroupIndexPropertyNameOverride) ? _nippleMaskVertexGroupIndexDefaultPropertyName : nippleMaskVertexGroupIndexPropertyNameOverride;
         public int nippleMaskVertexGroupIndex;
 
-        public const string _genitalMaskVertexGroupIndexDefaultPropertyName = "_GenitalMaskVertexGroupIndex";
         public string genitalMaskVertexGroupIndexPropertyNameOverride;
         public string GenitalMaskVertexGroupIndexPropertyName => string.IsNullOrWhiteSpace(genitalMaskVertexGroupIndexPropertyNameOverride) ? _genitalMaskVertexGroupIndexDefaultPropertyName : genitalMaskVertexGroupIndexPropertyNameOverride;
         public int genitalMaskVertexGroupIndex;
 
-        public const string _fatMuscleBlendShapeIndexDefaultPropertyName = "_FatMuscleBlendShapeIndex";
         public string fatMuscleBlendShapeIndexPropertyNameOverride;
         public string FatMuscleBlendShapeIndexPropertyName => string.IsNullOrWhiteSpace(fatMuscleBlendShapeIndexPropertyNameOverride) ? _fatMuscleBlendShapeIndexDefaultPropertyName : fatMuscleBlendShapeIndexPropertyNameOverride;
         public int fatMuscleBlendShapeIndex;
 
-        public const string _fatMuscleBlendWeightRangeDefaultPropertyName = "_FatMuscleBlendWeightRange";
         public string fatMuscleBlendWeightRangePropertyNameOverride;
         public string FatMuscleBlendWeightRangePropertyName => string.IsNullOrWhiteSpace(fatMuscleBlendWeightRangePropertyNameOverride) ? _fatMuscleBlendWeightRangeDefaultPropertyName : fatMuscleBlendWeightRangePropertyNameOverride;
         public Vector2 fatMuscleBlendWeightRange;
 
-        public const string _defaultShapeMuscleWeightDefaultPropertyName = "_DefaultShapeMuscleWeight";
         public string defaultShapeMuscleWeightPropertyNameOverride;
         public string DefaultShapeMuscleWeightPropertyName => string.IsNullOrWhiteSpace(defaultShapeMuscleWeightPropertyNameOverride) ? _defaultShapeMuscleWeightDefaultPropertyName : defaultShapeMuscleWeightPropertyNameOverride;
         public float defaultShapeMuscleWeight;
         
 
-        public const string _variationGroupCountDefaultPropertyName = "_VariationGroupCount";
         public string variationGroupCountPropertyNameOverride;
         public string VariationGroupCountPropertyName => string.IsNullOrWhiteSpace(variationGroupCountPropertyNameOverride) ? _variationGroupCountDefaultPropertyName : variationGroupCountPropertyNameOverride;
 
-        public const string _variationGroupIndicesDefaultPropertyName = "_VariationGroups";
         public string variationGroupIndicesPropertyNameOverride;
         public string VariationGroupIndicesPropertyName => string.IsNullOrWhiteSpace(variationGroupIndicesPropertyNameOverride) ? _variationGroupIndicesDefaultPropertyName : variationGroupIndicesPropertyNameOverride;
         public int[] variationGroupIndices;
@@ -365,7 +349,6 @@ namespace Swole
         }
 
 
-        public const string _standaloneShapesBufferRangeDefaultPropertyName = "_RangeStandaloneShapes";
         public string standaloneShapesBufferRangePropertyNameOverride;
         public string StandaloneShapesBufferRangePropertyName => string.IsNullOrWhiteSpace(standaloneShapesBufferRangePropertyNameOverride) ? _standaloneShapesBufferRangeDefaultPropertyName : standaloneShapesBufferRangePropertyNameOverride;
         public Vector2Int standaloneShapesBufferRange;
@@ -386,7 +369,6 @@ namespace Swole
             return morphShapes[standaloneShapesBufferRange.x + index];
         }
 
-        public const string _muscleShapesBufferRangeDefaultPropertyName = "_RangeMuscleShapes";
         public string muscleShapesBufferRangePropertyNameOverride;
         public string MuscleShapesBufferRangePropertyName => string.IsNullOrWhiteSpace(muscleShapesBufferRangePropertyNameOverride) ? _muscleShapesBufferRangeDefaultPropertyName : muscleShapesBufferRangePropertyNameOverride;
         public Vector2Int muscleShapesBufferRange;
@@ -407,7 +389,6 @@ namespace Swole
             return morphShapes[muscleShapesBufferRange.x + index];
         }
 
-        public const string _flexShapesBufferRangeDefaultPropertyName = "_RangeFlexShapes";
         public string flexShapesBufferRangePropertyNameOverride;
         public string FlexShapesBufferRangePropertyName => string.IsNullOrWhiteSpace(flexShapesBufferRangePropertyNameOverride) ? _flexShapesBufferRangeDefaultPropertyName : flexShapesBufferRangePropertyNameOverride;
         public Vector2Int flexShapesBufferRange;
@@ -428,7 +409,6 @@ namespace Swole
             return morphShapes[flexShapesBufferRange.x + index];
         }
 
-        public const string _fatShapesBufferRangeDefaultPropertyName = "_RangeFatShapes";
         public string fatShapesBufferRangePropertyNameOverride;
         public string FatShapesBufferRangePropertyName => string.IsNullOrWhiteSpace(fatShapesBufferRangePropertyNameOverride) ? _fatShapesBufferRangeDefaultPropertyName : fatShapesBufferRangePropertyNameOverride;
         public Vector2Int fatShapesBufferRange;
@@ -449,7 +429,6 @@ namespace Swole
             return morphShapes[fatShapesBufferRange.x + index];
         }
 
-        public const string _variationShapesBufferRangeDefaultPropertyName = "_RangeVariationShapes";
         public string variationShapesBufferRangePropertyNameOverride; 
         public string VariationShapesBufferRangePropertyName => string.IsNullOrWhiteSpace(variationShapesBufferRangePropertyNameOverride) ? _variationShapesBufferRangeDefaultPropertyName : variationShapesBufferRangePropertyNameOverride;
         public Vector2Int variationShapesBufferRange;
@@ -470,31 +449,25 @@ namespace Swole
             return morphShapes[variationShapesBufferRange.x + index];
         }
 
-        public const string _standaloneShapesControlDefaultPropertyName = "_ControlStandaloneShapes";
         public string standaloneShapesControlPropertyNameOverride;
         public string StandaloneShapesControlPropertyName => string.IsNullOrWhiteSpace(standaloneShapesControlPropertyNameOverride) ? _standaloneShapesControlDefaultPropertyName : standaloneShapesControlPropertyNameOverride;
 
-        public const string _muscleGroupsControlDefaultPropertyName = "_ControlMuscleGroups";
         public string muscleGroupsControlPropertyNameOverride;
         public string MuscleGroupsControlPropertyName => string.IsNullOrWhiteSpace(muscleGroupsControlPropertyNameOverride) ? _muscleGroupsControlDefaultPropertyName : muscleGroupsControlPropertyNameOverride; 
 
-        public const string _fatGroupsControlDefaultPropertyName = "_ControlFatGroups";
         public string fatGroupsControlPropertyNameOverride;
         public string FatGroupsControlPropertyName => string.IsNullOrWhiteSpace(fatGroupsControlPropertyNameOverride) ? _fatGroupsControlDefaultPropertyName : fatGroupsControlPropertyNameOverride; 
 
-        public const string _variationShapesControlDefaultPropertyName = "_ControlVariationShapes"; 
         public string variationShapesControlPropertyNameOverride;
         public string VariationShapesControlPropertyName => string.IsNullOrWhiteSpace(variationShapesControlPropertyNameOverride) ? _variationShapesControlDefaultPropertyName : variationShapesControlPropertyNameOverride;
 
 
-        public const string _shapesInstanceIDPropertyName = "_ShapesInstanceID";
         public string shapesInstanceIDPropertyNameOverride;
         public string ShapesInstanceIDPropertyName => string.IsNullOrWhiteSpace(shapesInstanceIDPropertyNameOverride) ? _shapesInstanceIDPropertyName : shapesInstanceIDPropertyNameOverride;
 
         public string rigInstanceIDPropertyNameOverride;
         public string RigInstanceIDPropertyName => string.IsNullOrWhiteSpace(rigInstanceIDPropertyNameOverride) ? InstancedSkinnedMeshData._rigInstanceIDPropertyName : rigInstanceIDPropertyNameOverride;
 
-        public const string _characterInstanceIDPropertyName = "_CharacterInstanceID";
         public string characterInstanceIDPropertyNameOverride;
         public string CharacterInstanceIDPropertyName => string.IsNullOrWhiteSpace(characterInstanceIDPropertyNameOverride) ? _characterInstanceIDPropertyName : characterInstanceIDPropertyNameOverride;
 

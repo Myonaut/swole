@@ -474,6 +474,9 @@ namespace Swole.API.Unity.Animation
         }
         public int TrackLocal(Transform transform, Matrix4x4 bindPose)
         {
+#if UNITY_EDITOR
+            if (transform == null) Debug.LogError("Tried to track null transform!");
+#endif
             if (transform == null || !globalTrackedTransforms.isCreated) return -1;
 
             OutputDependency.Complete();

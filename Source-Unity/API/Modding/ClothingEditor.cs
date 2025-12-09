@@ -250,7 +250,7 @@ namespace Swole.Modding
         private NativeList<int> indices_clothing;
         private NativeList<int>[] indices_character;
 
-        private MeshDataTools.MergedVertex[] mergeData_clothing;
+        private MeshDataTools.WeldedVertex[] mergeData_clothing;
 
         private NativeList<VertexInfluence2> influenceData;
 
@@ -649,7 +649,7 @@ namespace Swole.Modding
             {
                 baseMask_clothing = new NativeList<float>(0, Allocator.Persistent);
                 inputData_clothing = new NativeList<SkinnedVertex8Reference>(0, Allocator.Persistent);
-                mergeData_clothing = new MeshDataTools.MergedVertex[0];
+                mergeData_clothing = new MeshDataTools.WeldedVertex[0];
                 indices_clothing = new NativeList<int>(0, Allocator.Persistent);
             }
             else
@@ -669,7 +669,7 @@ namespace Swole.Modding
                 }
 
                 inputData_clothing = MeshEditing.GetSkinnedVertex8DataAsList(clothingRenderer);
-                mergeData_clothing = MeshDataTools.MergeVertices(clothingRenderer.sharedMesh.vertices);
+                mergeData_clothing = MeshDataTools.WeldVertices(clothingRenderer.sharedMesh.vertices);
                 indices_clothing = new NativeList<int>(inputData_clothing.Length, Allocator.Persistent);
                 for (int a = 0; a < inputData_clothing.Length; a++) indices_clothing.Add(a);
 

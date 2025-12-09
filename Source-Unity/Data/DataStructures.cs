@@ -96,6 +96,17 @@ namespace Swole.DataStructures
     public struct BoneWeight8
     {
 
+        public static implicit operator BoneWeight8Float(BoneWeight8 bw)
+        {
+            return new BoneWeight8Float()
+            {
+                indicesA = new float4(bw.boneIndex0, bw.boneIndex1, bw.boneIndex2, bw.boneIndex3),
+                indicesB = new float4(bw.boneIndex4, bw.boneIndex5, bw.boneIndex6, bw.boneIndex7),
+
+                weightsA = new float4(bw.boneWeight0, bw.boneWeight1, bw.boneWeight2, bw.boneWeight3),
+                weightsB = new float4(bw.boneWeight4, bw.boneWeight5, bw.boneWeight6, bw.boneWeight7)
+            };
+        }
 
         public BoneWeight8(int boneIndex0,
         int boneIndex1,
@@ -152,6 +163,112 @@ namespace Swole.DataStructures
         public float boneWeight5;
         public float boneWeight6;
         public float boneWeight7;
+
+        public BoneWeight8 Modify(int componentIndex, int boneIndex, float boneWeight)
+        {
+
+            BoneWeight8 weights = this;
+
+            switch (componentIndex)
+            {
+                default:
+                    break;
+
+                case 0:
+                    weights.boneIndex0 = boneIndex;
+                    weights.boneWeight0 = boneWeight;
+                    break;
+
+                case 1:
+                    weights.boneIndex1 = boneIndex;
+                    weights.boneWeight1 = boneWeight;
+                    break;
+
+                case 2:
+                    weights.boneIndex2 = boneIndex;
+                    weights.boneWeight2 = boneWeight;
+                    break;
+
+                case 3:
+                    weights.boneIndex3 = boneIndex;
+                    weights.boneWeight3 = boneWeight;
+                    break;
+
+                case 4:
+                    weights.boneIndex4 = boneIndex;
+                    weights.boneWeight4 = boneWeight;
+                    break;
+
+                case 5:
+                    weights.boneIndex5 = boneIndex;
+                    weights.boneWeight5 = boneWeight;
+                    break;
+
+                case 6:
+                    weights.boneIndex6 = boneIndex;
+                    weights.boneWeight6 = boneWeight;
+                    break;
+
+                case 7:
+                    weights.boneIndex7 = boneIndex;
+                    weights.boneWeight7 = boneWeight;
+                    break;
+
+            }
+
+            return weights;
+
+        }
+
+        public int GetBoneIndex(int componentIndex)
+        {
+            switch (componentIndex)
+            {
+                default:
+                    return -1;
+                case 0:
+                    return boneIndex0;
+                case 1:
+                    return boneIndex1;
+                case 2:
+                    return boneIndex2;
+                case 3:
+                    return boneIndex3;
+                case 4:
+                    return boneIndex4;
+                case 5:
+                    return boneIndex5;
+                case 6:
+                    return boneIndex6;
+                case 7:
+                    return boneIndex7;
+            }
+        }
+
+        public float GetBoneWeight(int componentIndex)
+        {
+            switch (componentIndex)
+            {
+                default:
+                    return 0f;
+                case 0:
+                    return boneWeight0;
+                case 1:
+                    return boneWeight1;
+                case 2:
+                    return boneWeight2;
+                case 3:
+                    return boneWeight3;
+                case 4:
+                    return boneWeight4;
+                case 5:
+                    return boneWeight5;
+                case 6:
+                    return boneWeight6;
+                case 7:
+                    return boneWeight7;
+            }
+        }
 
     }
 
@@ -290,6 +407,32 @@ namespace Swole.DataStructures
 
             return weights;
 
+        }
+
+        public int GetBoneIndex(int componentIndex)
+        {
+            if (componentIndex == 0) return (int)indicesA.x;
+            else if (componentIndex == 1) return (int)indicesA.y;
+            else if (componentIndex == 2) return (int)indicesA.z;
+            else if (componentIndex == 3) return (int)indicesA.w;
+            else if (componentIndex == 4) return (int)indicesB.x;
+            else if (componentIndex == 5) return (int)indicesB.y;
+            else if (componentIndex == 6) return (int)indicesB.z;
+            else if (componentIndex == 7) return (int)indicesB.w;
+            else return -1;
+        }
+
+        public float GetBoneWeight(int componentIndex)
+        {
+            if (componentIndex == 0) return weightsA.x;
+            else if (componentIndex == 1) return weightsA.y;
+            else if (componentIndex == 2) return weightsA.z;
+            else if (componentIndex == 3) return weightsA.w;
+            else if (componentIndex == 4) return weightsB.x;
+            else if (componentIndex == 5) return weightsB.y;
+            else if (componentIndex == 6) return weightsB.z;
+            else if (componentIndex == 7) return weightsB.w;
+            else return 0f;
         }
 
     }

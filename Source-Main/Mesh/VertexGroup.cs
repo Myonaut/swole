@@ -2,7 +2,8 @@ using System;
 using System.Collections.Generic;
 
 #if (UNITY_STANDALONE || UNITY_EDITOR)
-using UnityEngine; 
+using UnityEngine;
+using Unity.Collections;
 #endif
 
 namespace Swole
@@ -21,7 +22,7 @@ namespace Swole
         /// <param name="threshold">The minimum magnitude of a delta vertex required to have a weight greater than zero.</param>
         /// <param name="normalizationSetMaxWeight">If set to a value above zero, it will be used as the maximum weight in the group during normalization.</param>
         /// <returns></returns>
-        public static VertexGroup ConvertToVertexGroup(BlendShape shape, bool normalize = true, string keyword = "", float threshold = 0.0001f, float normalizationSetMaxWeight = 0, bool clampWeights = true)
+        public static VertexGroup ConvertToVertexGroup(BlendShape shape, bool normalize = true, string keyword = "", float threshold = 0.0001f, float normalizationSetMaxWeight = 0f, bool clampWeights = true)
         {
 
             float maxWeight = normalizationSetMaxWeight; 
@@ -46,7 +47,7 @@ namespace Swole
 
                             float cw = w + mag;
 
-                            if (normalizationSetMaxWeight <= 0 && cw > maxWeight) maxWeight = cw;
+                            if (normalizationSetMaxWeight <= 0f && cw > maxWeight) maxWeight = cw;
 
                             weightDic[c] = cw;
 
@@ -59,7 +60,7 @@ namespace Swole
                 List<int> indices = new List<int>();
                 List<float> weights = new List<float>();
 
-                if (normalize && maxWeight > 0)
+                if (normalize && maxWeight > 0f)
                 {
                     foreach (var weight in weightDic)
                     {
@@ -114,7 +115,7 @@ namespace Swole
         public bool flag;
 
 #if (UNITY_STANDALONE || UNITY_EDITOR)
-        [SerializeField/*, HideInInspector*/]
+        [SerializeField, HideInInspector]
 #endif
         protected List<int> indices;
 
@@ -125,14 +126,14 @@ namespace Swole
         }
 
 #if (UNITY_STANDALONE || UNITY_EDITOR)
-        [SerializeField/*, HideInInspector*/]
+        [SerializeField, HideInInspector]
 #endif
         protected List<float> weights;
 
-        public void Normalize(float maxWeight = 0)
+        public void Normalize(float maxWeight = 0f)
         {
-            if (maxWeight == 0) for (int a = 0; a < weights.Count; a++) maxWeight = Mathf.Max(maxWeight, weights[a]);          
-            if (maxWeight != 0) for (int a = 0; a < weights.Count; a++) weights[a] = weights[a] / maxWeight;
+            if (maxWeight == 0f) for (int a = 0; a < weights.Count; a++) maxWeight = Mathf.Max(maxWeight, weights[a]);          
+            if (maxWeight != 0f) for (int a = 0; a < weights.Count; a++) weights[a] = weights[a] / maxWeight;
         }
         public void Add(VertexGroup group, bool limitMaxWeight = false, float maxWeight = 1, float multiplier = 1)
         {
@@ -194,6 +195,15 @@ namespace Swole
         public int EntryCount => indices == null ? 0 : indices.Count;
         public int GetEntryIndex(int entryIndex) => indices[entryIndex];
         public float GetEntryWeight(int entryIndex) => weights[entryIndex];
+        public void GetEntry(int entryIndex, out int vertexIndex, out float weight)
+        {
+            vertexIndex = -1;
+            weight = 0f;
+            if (entryIndex < 0 || entryIndex >= indices.Count) return;
+
+            vertexIndex = indices[entryIndex];
+            weight = weights[entryIndex];
+        }
 
         public void SetEntryIndex(int entryIndex, int vertexIndex) => indices[entryIndex] = vertexIndex;
         public void SetEntryWeight(int entryIndex, float weight) => weights[entryIndex] = weight;
@@ -289,7 +299,7 @@ namespace Swole
         {
             if (outputList == null) outputList = new List<float>(vertexCount);
             int indexOffset = outputList.Count;
-            for (int a = 0; a < vertexCount; a++) outputList.Add(0); 
+            for (int a = 0; a < vertexCount; a++) outputList.Add(0f); 
             for (int a = 0; a < indices.Count; a++)
             {
                 int index = indices[a];
@@ -300,12 +310,12 @@ namespace Swole
 
             return weights;
         }
-        public float[] AsLinearWeightArray(float[] array, bool clearArray = true)
+        public float[] AsLinearWeightArray(float[] array, bool clearArray = true, int indexOffset = 0)
         {
             if (clearArray) for (int a = 0; a < array.Length; a++) array[a] = 0; // clear the array first to avoid leftover data if reusing the array
             for (int a = 0; a < indices.Count; a++)
             {
-                int index = indices[a];
+                int index = indices[a] + indexOffset;
                 if (index < 0 || index >= array.Length) continue;
 
                 array[index] = this.weights[a]; 
@@ -313,6 +323,19 @@ namespace Swole
 
             return array;
         }
+
+        #if (UNITY_STANDALONE || UNITY_EDITOR)
+        public void InsertIntoNativeArray(NativeArray<float> array, int startIndex)
+        {
+            for (int a = 0; a < indices.Count; a++)
+            {
+                int index = indices[a] + startIndex;
+                if (index < 0 || index >= array.Length) continue;
+
+                array[index] = this.weights[a];
+            }
+        }
+        #endif
 
     }
 

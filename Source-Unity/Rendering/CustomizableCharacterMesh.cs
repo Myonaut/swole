@@ -14,13 +14,13 @@ using Unity.Collections;
 using Swole.API.Unity;
 using Swole.API.Unity.Animation;
 
+using static Swole.ICustomizableCharacter.Defaults;
+
 namespace Swole.Morphing
 {
 
-    public class CustomizableCharacterMesh : InstanceableSkinnedMeshBase
+    public class CustomizableCharacterMesh : InstanceableSkinnedMeshBase, ICustomizableCharacter
     {
-
-        public const string matProp_LOD_Level = "_LOD_Level"; 
 
         #region Skinned Mesh Sync
 
@@ -29,16 +29,6 @@ namespace Swole.Morphing
         protected List<BlendShapeSyncLR>[] muscleFlexShapeSyncs;
         protected List<BlendShapeSync>[] fatShapeSyncs;
         protected List<BlendShapeSyncLR>[] variationShapeSyncs;
-
-        public static string GetMuscleMassShapeSyncNameLeft(int groupIndex, int shapeIndex) => $"MASS_LEFT:{groupIndex}:{shapeIndex}";
-        public static string GetMuscleMassShapeSyncNameRight(int groupIndex, int shapeIndex) => $"MASS_RIGHT:{groupIndex}:{shapeIndex}";
-        public static string GetMuscleFlexShapeSyncNameLeft(int groupIndex, int shapeIndex) => $"FLEX_LEFT:{groupIndex}:{shapeIndex}";
-        public static string GetMuscleFlexShapeSyncNameRight(int groupIndex, int shapeIndex) => $"FLEX_RIGHT:{groupIndex}:{shapeIndex}";
-
-        public static string GetFatShapeSyncName(int groupIndex, int shapeIndex) => $"FAT:{groupIndex}:{shapeIndex}";
-
-        public static string GetVariationShapeSyncNameLeft(int groupIndex, int shapeIndex) => $"VARIATION_LEFT:{groupIndex}:{shapeIndex}";
-        public static string GetVariationShapeSyncNameRight(int groupIndex, int shapeIndex) => $"VARIATION_RIGHT:{groupIndex}:{shapeIndex}";
 
         protected override void SetupSkinnedMeshSyncs()
         {
@@ -108,11 +98,11 @@ namespace Swole.Morphing
 
                 for(int b = 0; b < charData.MuscleVertexGroupCount; b++)
                 {
-                    var group = charData.GetMuscleVertexGroup(b);
+                    //var group = charData.GetMuscleVertexGroup(b);
 
                     for (int c = 0; c < charData.MuscleShapesCount; c++)
                     {
-                        var shape = charData.GetMuscleShape(c);
+                        //var shape = charData.GetMuscleShape(c);
                         
                         int shapeIndexL = mesh.sharedMesh.GetBlendShapeIndex(GetMuscleMassShapeSyncNameLeft(b, c));
                         int shapeIndexR = mesh.sharedMesh.GetBlendShapeIndex(GetMuscleMassShapeSyncNameRight(b, c));
@@ -122,7 +112,7 @@ namespace Swole.Morphing
 
                     for (int c = 0; c < charData.FlexShapesCount; c++)
                     {
-                        var shape = charData.GetFlexShape(c);
+                        //var shape = charData.GetFlexShape(c);
 
                         int shapeIndexL = mesh.sharedMesh.GetBlendShapeIndex(GetMuscleFlexShapeSyncNameLeft(b, c));
                         int shapeIndexR = mesh.sharedMesh.GetBlendShapeIndex(GetMuscleFlexShapeSyncNameRight(b, c));
@@ -133,11 +123,11 @@ namespace Swole.Morphing
 
                 for (int b = 0; b < charData.FatVertexGroupCount; b++)
                 {
-                    var group = charData.GetFatVertexGroup(b);
+                    //var group = charData.GetFatVertexGroup(b);
 
                     for (int c = 0; c < charData.FatShapesCount; c++)
                     {
-                        var shape = charData.GetFatShape(c);
+                        //var shape = charData.GetFatShape(c);
 
                         int shapeIndex = mesh.sharedMesh.GetBlendShapeIndex(GetFatShapeSyncName(b, c));
 
@@ -147,276 +137,16 @@ namespace Swole.Morphing
 
                 for (int b = 0; b < charData.VariationVertexGroupCount; b++)
                 {
-                    var group = charData.GetVariationVertexGroup(b);
+                    //var group = charData.GetVariationVertexGroup(b);
 
                     for (int c = 0; c < charData.VariationShapesCount; c++)
                     {
-                        var shape = charData.GetVariationShape(c);
+                        //var shape = charData.GetVariationShape(c);
 
                         int shapeIndexL = mesh.sharedMesh.GetBlendShapeIndex(GetVariationShapeSyncNameLeft(b, c));
                         int shapeIndexR = mesh.sharedMesh.GetBlendShapeIndex(GetVariationShapeSyncNameRight(b, c));
 
                         if (shapeIndexL >= 0 || shapeIndexR >= 0) variationShapeSyncs[(b * charData.VariationShapesCount) + c].Add(new BlendShapeSyncLR() { listenerIndex = a, listenerShapeIndexLeft = shapeIndexL, listenerShapeIndexRight = shapeIndexR });
-                    }
-                }
-            }
-        }
-
-        protected void SyncStandaloneShape(int index, float weight)
-        {
-            var list = standaloneShapeSyncs[index];
-            if (list != null && list.Count > 0)
-            {
-                foreach(var sync in list)
-                {
-                    var mesh = syncedSkinnedMeshes[sync.listenerIndex];
-                    if (mesh != null) mesh.SetBlendShapeWeight(sync.listenerShapeIndex, weight);
-                }
-            }
-        }
-
-        protected void SyncPartialShapeData(List<BlendShapeSync>[] syncs, int groupIndex, float weight, int count, float[] frameWeights)
-        {
-            int indexY = groupIndex * count;
-
-            if (count == 1)
-            {
-                float frameWeight = frameWeights == null ? 1 : frameWeights[0];
-
-                var list = syncs[indexY];
-                if (list != null && list.Count > 0)
-                {
-                    foreach (var sync in list)
-                    {
-                        var mesh = syncedSkinnedMeshes[sync.listenerIndex];
-                        if (mesh != null)
-                        {
-                            mesh.SetBlendShapeWeight(sync.listenerShapeIndex, weight / frameWeight);
-                        }
-                    }
-                }
-            }
-            else if (count > 1)
-            {
-
-                int countM1 = count - 1;
-                float countM1f = countM1;
-                for (int a = 0; a < countM1; a++)
-                {
-                    float frameWeightA = frameWeights == null ? (a / countM1f) : frameWeights[a];
-
-                    int b = a + 1;
-                    float frameWeightB = frameWeights == null ? (b / countM1f) : frameWeights[b];
-
-                    float weightRange = frameWeightB - frameWeightA;
-
-                    float weightA = 0;
-                    float weightB = (weight - frameWeightA) / weightRange;
-                    if (weightB < 0)
-                    {
-                        if (a == 0)
-                        {
-                            if (frameWeightA != 0)
-                            {
-                                weightA = weight / frameWeightA;
-                                weightB = 0;
-                            }
-                            else
-                            {
-                                weightA = 1 + Mathf.Abs(weight / weightRange);
-                                weightB = 0;
-                            }
-                        }
-                        else
-                        {
-                            weightA = Mathf.Abs(weightB);
-                            weightB = 0;
-                        }
-                    }
-                    else
-                    {
-                        weightA = 1 - weightB;
-                        if (weightA < 0 && b < countM1)
-                        {
-                            weightA = 0;
-                            weightB = 0;
-                        }
-                        else
-                        {
-                            weightA = Mathf.Max(0, weightA);
-                        }
-                    }
-
-                    var list = syncs[indexY + a];
-                    if (list != null && list.Count > 0)
-                    {
-                        foreach (var sync in list)
-                        {
-                            var mesh = syncedSkinnedMeshes[sync.listenerIndex];
-                            if (mesh != null)
-                            {
-                                mesh.SetBlendShapeWeight(sync.listenerShapeIndex, weightA);
-                            }
-                        }
-                    }
-
-                    if (a == countM1 - 1)
-                    {
-                        list = syncs[indexY + b];
-                        if (list != null && list.Count > 0)
-                        {
-                            foreach (var sync in list)
-                            {
-                                var mesh = syncedSkinnedMeshes[sync.listenerIndex];
-                                if (mesh != null)
-                                {
-                                    mesh.SetBlendShapeWeight(sync.listenerShapeIndex, weightB);
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
-        protected void SyncPartialShapeData(List<BlendShapeSyncLR>[] syncs, int groupIndex, float weightL, float weightR, int count, float[] frameWeights)
-        {
-            int indexY = groupIndex * count; 
-
-            if (count == 1)
-            {
-                float frameWeight = frameWeights == null ? 1 : frameWeights[0];
-
-                var list = syncs[indexY];
-                if (list != null && list.Count > 0)
-                {
-                    foreach (var sync in list)
-                    {
-                        var mesh = syncedSkinnedMeshes[sync.listenerIndex];
-                        if (mesh != null) 
-                        { 
-                            if (sync.listenerShapeIndexLeft >= 0) mesh.SetBlendShapeWeight(sync.listenerShapeIndexLeft, weightL / frameWeight);
-                            if (sync.listenerShapeIndexRight >= 0) mesh.SetBlendShapeWeight(sync.listenerShapeIndexRight, weightR / frameWeight);
-                        }
-                    }
-                }
-            }
-            else if (count > 1)
-            {
-
-                int countM1 = count - 1;
-                float countM1f = countM1;
-                for (int a = 0; a < countM1; a++)
-                {
-                    float frameWeightA = frameWeights == null ? (a / countM1f) : frameWeights[a];
-
-                    int b = a + 1;
-                    float frameWeightB = frameWeights == null ? (b / countM1f) : frameWeights[b];
-
-                    float weightRange = frameWeightB - frameWeightA;
-
-                    float weightA_L = 0;
-                    float weightB_L = (weightL - frameWeightA) / weightRange;
-                    if (weightB_L < 0)
-                    {
-                        if (a == 0)
-                        {
-                            if (frameWeightA != 0)
-                            {
-                                weightA_L = weightL / frameWeightA;
-                                weightB_L = 0;
-                            }
-                            else
-                            {
-                                weightA_L = 1 + Mathf.Abs(weightL / weightRange);
-                                weightB_L = 0;
-                            }
-                        }
-                        else
-                        {
-                            weightA_L = Mathf.Abs(weightB_L);
-                            weightB_L = 0;
-                        }
-                    }
-                    else
-                    {
-                        weightA_L = 1 - weightB_L;
-                        if (weightA_L < 0 && b < countM1)
-                        {
-                            weightA_L = 0;
-                            weightB_L = 0;
-                        }
-                        else
-                        {
-                            weightA_L = Mathf.Max(0, weightA_L);
-                        }
-                    }
-
-                    float weightA_R = 0;
-                    float weightB_R = (weightR - frameWeightA) / weightRange;
-                    if (weightB_R < 0)
-                    {
-                        if (a == 0)
-                        {
-                            if (frameWeightA != 0)
-                            {
-                                weightA_R = weightR / frameWeightA;
-                                weightB_R = 0;
-                            }
-                            else
-                            {
-                                weightA_R = 1 + Mathf.Abs(weightR / weightRange);
-                                weightB_R = 0;
-                            }
-                        }
-                        else
-                        {
-                            weightA_R = Mathf.Abs(weightB_R);
-                            weightB_R = 0;
-                        }
-                    }
-                    else
-                    {
-                        weightA_R = 1 - weightB_R;
-                        if (weightA_R < 0 && b < countM1)
-                        {
-                            weightA_R = 0;
-                            weightB_R = 0;
-                        }
-                        else
-                        {
-                            weightA_R = Mathf.Max(0, weightA_R);
-                        }
-                    }
-
-                    var list = syncs[indexY + a];
-                    if (list != null && list.Count > 0)
-                    {
-                        foreach (var sync in list)
-                        {
-                            var mesh = syncedSkinnedMeshes[sync.listenerIndex];
-                            if (mesh != null) 
-                            {
-                                if (sync.listenerShapeIndexLeft >= 0) mesh.SetBlendShapeWeight(sync.listenerShapeIndexLeft, weightA_L);
-                                if (sync.listenerShapeIndexRight >= 0) mesh.SetBlendShapeWeight(sync.listenerShapeIndexRight, weightA_R);
-                            }
-                        }
-                    }
-
-                    if (a == countM1 - 1)
-                    {
-                        list = syncs[indexY + b];
-                        if (list != null && list.Count > 0)
-                        {
-                            foreach (var sync in list)
-                            {
-                                var mesh = syncedSkinnedMeshes[sync.listenerIndex];
-                                if (mesh != null)
-                                {
-                                    if (sync.listenerShapeIndexLeft >= 0) mesh.SetBlendShapeWeight(sync.listenerShapeIndexLeft, weightB_L);
-                                    if (sync.listenerShapeIndexRight >= 0) mesh.SetBlendShapeWeight(sync.listenerShapeIndexRight, weightB_R);
-                                }
-                            }
-                        }
                     }
                 }
             }
@@ -812,6 +542,8 @@ namespace Swole.Morphing
             }
         }
 
+        public GameObject GameObject => gameObject;
+
         protected virtual void LateUpdate()
         {
             if (instance != null) instance.SyncWithTransform();
@@ -933,7 +665,7 @@ namespace Swole.Morphing
                         rigRoot = (transform.parent == null ? transform : transform.parent).FindDeepChildLiberal(avatar.rigContainer);
                     }
 
-                    if (rigRoot == null) rigRoot = transform;
+                    if (rigRoot == null) rigRoot = transform.parent == null ? transform : transform.parent;
                 }
 
                 return rigRoot;
@@ -1267,10 +999,10 @@ namespace Swole.Morphing
 
             instance.SetBoundTransform(transform);  
 
-            instance.SetFloatOverride(matProp_LOD_Level, 0, false);
+            instance.SetFloatOverride(_lodLevelDefaultPropertyName, 0, false);
             instance.SetFloatOverride(CharacterMeshData.ShapesInstanceIDPropertyName, ShapesInstanceID, false);
             instance.SetFloatOverride(CharacterMeshData.RigInstanceIDPropertyName, RigInstanceID, false);
-            instance.SetFloatOverride(CharacterMeshData.CharacterInstanceIDPropertyName, CharacterInstanceID, true);  
+            instance.SetFloatOverride(CharacterMeshData.CharacterInstanceIDPropertyName, CharacterInstanceID, true);   
 
             InitBuffers();
         }
@@ -1278,7 +1010,7 @@ namespace Swole.Morphing
         protected override int OnSetLOD(int cameraIndex, int levelOfDetail)
         {          
             levelOfDetail = base.OnSetLOD(cameraIndex, levelOfDetail);
-            if (instance != null) instance.SetFloatOverride(cameraIndex, matProp_LOD_Level, levelOfDetail, true); 
+            if (instance != null) instance.SetFloatOverride(cameraIndex, _lodLevelDefaultPropertyName, levelOfDetail, true); 
 
             return levelOfDetail;
         }
@@ -1304,6 +1036,29 @@ namespace Swole.Morphing
                 }
 
                 return bones;
+            }
+        }
+        protected Transform[] skinnedBones;
+        public override Transform[] SkinnedBones
+        {
+            get
+            {
+                if (skinnedBones == null) 
+                {
+                    var rig_root = RigRoot;
+
+                    if (avatar == null)
+                    {
+                        skinnedBones = new Transform[] { rig_root };
+                    }
+                    else
+                    {
+                        skinnedBones = new Transform[avatar.SkinnedBonesCount];
+                        for (int a = 0; a < skinnedBones.Length; a++) bones[a] = rig_root.FindDeepChildLiberal(avatar.bones[a]);
+                    }
+                }
+
+                return skinnedBones;
             }
         }
 
@@ -1343,7 +1098,7 @@ namespace Swole.Morphing
             if (shapesInstanceReference != null) return;
             StandaloneShapeControlBuffer[FirstStandaloneShapesControlIndex + shapeIndex] = weight;  
 
-            SyncStandaloneShape(shapeIndex, weight);
+            SyncStandaloneShape(standaloneShapeSyncs, shapeIndex, weight);
 
             //dirtyFlag_standaloneShapesControl = true;
         }
@@ -1426,6 +1181,7 @@ namespace Swole.Morphing
             if (instance == null || groupIndex < 0 || groupIndex >= CharacterMeshData.MuscleVertexGroupCount) return;
             SetMuscleDataUnsafe(groupIndex, data);
         }
+        public int IndexOfMuscleGroup(string groupName) => CharacterMeshData == null ? -1 : CharacterMeshData.IndexOfMuscleGroup(groupName);
         internal readonly static Dictionary<string, InstanceBuffer<MuscleDataLR>> _muscleGroupsControlBuffers = new Dictionary<string, InstanceBuffer<MuscleDataLR>>();
         protected InstanceBuffer<MuscleDataLR> muscleGroupsControlBuffer;
         public InstanceBuffer<MuscleDataLR> MuscleGroupsControlBuffer
@@ -1516,6 +1272,7 @@ namespace Swole.Morphing
             if (instance == null || groupIndex < 0 || groupIndex >= CharacterMeshData.FatVertexGroupCount) return;
             SetFatLevelUnsafe(groupIndex, level); 
         }
+        public int IndexOfFatGroup(string groupName) => CharacterMeshData == null ? -1 : CharacterMeshData.IndexOfFatGroup(groupName);
         internal readonly static Dictionary<string, InstanceBuffer<float3>> _fatGroupsControlBuffers = new Dictionary<string, InstanceBuffer<float3>>();
         protected InstanceBuffer<float3> fatGroupsControlBuffer;
         public InstanceBuffer<float3> FatGroupsControlBuffer
@@ -1664,7 +1421,7 @@ namespace Swole.Morphing
                         int indexStart = FirstFatGroupsControlIndex;
                         if (CharacterMeshData.fatGroupModifiers == null)
                         {
-                            for (int a = 0; a < CharacterMeshData.FatVertexGroupCount; a++) fatGroupsControlBuffer.WriteToBufferFast(indexStart + a, new float3(0, CustomizableCharacterMeshData.DefaultFatGroupModifier.x, CustomizableCharacterMeshData.DefaultFatGroupModifier.y));
+                            for (int a = 0; a < CharacterMeshData.FatVertexGroupCount; a++) fatGroupsControlBuffer.WriteToBufferFast(indexStart + a, new float3(0, _defaultFatGroupModifier.x, _defaultFatGroupModifier.y));
                         }
                         else
                         {
@@ -1710,35 +1467,28 @@ namespace Swole.Morphing
 
         #region Events
 
-        [Serializable]
-        public enum ListenableEvent
-        {
-            OnMuscleDataChanged,
-            OnFatDataChanged
-        }
-
-        public void AddListener(ListenableEvent event_, UnityAction<int> listener)
+        public void AddListener(ICustomizableCharacter.ListenableEvent event_, UnityAction<int> listener)
         {
             switch (event_)
             {
-                case ListenableEvent.OnMuscleDataChanged:
+                case ICustomizableCharacter.ListenableEvent.OnMuscleDataChanged:
                     if (OnMuscleDataChanged == null) OnMuscleDataChanged = new UnityEvent<int>(); 
                     OnMuscleDataChanged.AddListener(listener);
                     break;
-                case ListenableEvent.OnFatDataChanged:
+                case ICustomizableCharacter.ListenableEvent.OnFatDataChanged:
                     if (OnFatDataChanged == null) OnFatDataChanged = new UnityEvent<int>();
                     OnFatDataChanged.AddListener(listener);
                     break;
             }
         }
-        public void RemoveListener(ListenableEvent event_, UnityAction<int> listener)
+        public void RemoveListener(ICustomizableCharacter.ListenableEvent event_, UnityAction<int> listener)
         {
             switch (event_)
             {
-                case ListenableEvent.OnMuscleDataChanged:
+                case ICustomizableCharacter.ListenableEvent.OnMuscleDataChanged:
                     if (OnMuscleDataChanged != null) OnMuscleDataChanged.RemoveListener(listener);
                     break;
-                case ListenableEvent.OnFatDataChanged:
+                case ICustomizableCharacter.ListenableEvent.OnFatDataChanged:
                     if (OnFatDataChanged != null) OnFatDataChanged.RemoveListener(listener);
                     break;
             }
@@ -1750,57 +1500,6 @@ namespace Swole.Morphing
         }
 
         #endregion
-    }
-
-    [Serializable, StructLayout(LayoutKind.Sequential)]
-    public struct MuscleData : IEquatable<MuscleData>
-    {
-        [Range(0, 3)]
-        public float mass;
-        [Range(0, 1.5f)]
-        public float flex;
-        [Range(0, 1)]
-        public float pump;
-
-        public static implicit operator MuscleData(float3 data) => new MuscleData() { mass = data.x, flex = data.y, pump = data.z };
-        public static implicit operator float3(MuscleData data) => new float3(data.mass, data.flex, data.pump);
-
-        public override bool Equals(object obj)
-        {
-            if (obj is MuscleData dat) return dat.mass == mass && dat.flex == flex && dat.pump == pump;
-            return false;
-        }
-        public bool Equals(MuscleData dat) => dat.mass == mass && dat.flex == flex && dat.pump == pump;
-
-        public override int GetHashCode()
-        {
-            return base.GetHashCode();
-        }
-
-        public static bool operator ==(MuscleData dat1, MuscleData dat2) => dat1.Equals(dat2);
-        public static bool operator !=(MuscleData dat1, MuscleData dat2) => !dat1.Equals(dat2);
-    }
-
-    [Serializable, StructLayout(LayoutKind.Sequential)]
-    public struct MuscleDataLR : IEquatable<MuscleDataLR>
-    {
-        public MuscleData valuesLeft;
-        public MuscleData valuesRight;
-
-        public override bool Equals(object obj)
-        {
-            if (obj is MuscleDataLR dat) return dat.valuesLeft == valuesLeft && dat.valuesRight == valuesRight;
-            return false;
-        }
-        public bool Equals(MuscleDataLR dat) => dat.valuesLeft == valuesLeft && dat.valuesRight == valuesRight;
-
-        public override int GetHashCode()
-        {
-            return base.GetHashCode();
-        }
-
-        public static bool operator ==(MuscleDataLR dat1, MuscleDataLR dat2) => dat1.Equals(dat2);
-        public static bool operator !=(MuscleDataLR dat1, MuscleDataLR dat2) => !dat1.Equals(dat2);
     }
 
 }
