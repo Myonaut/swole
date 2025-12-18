@@ -85,6 +85,30 @@ namespace Swole
 
         }
 
+        /// <summary>
+        /// For UV channels that have no data, a null reference will be stored at that index in the output list
+        /// </summary>
+        public static List<Vector4[]> GetAllUVs(this Mesh mesh, int count = 4, List<Vector4[]> outputList = null, bool clearList = true)
+        {
+            if (outputList == null) outputList = new List<Vector4[]>();
+            if (clearList) outputList.Clear();
+
+            if (count > 8) count = 8;
+            for (int a = 0; a < count; a++)
+            {
+                if (!clearList && a < outputList.Count)
+                {
+                    outputList[a] = mesh.HasVertexAttribute((UnityEngine.Rendering.VertexAttribute)(4 + a)) ? mesh.GetUVsByChannelV4(a) : null;
+                }
+                else
+                {
+                    outputList.Add(mesh.HasVertexAttribute((UnityEngine.Rendering.VertexAttribute)(4 + a)) ? mesh.GetUVsByChannelV4(a) : null);
+                }
+            }
+
+            return outputList;
+        }
+
         public static VertexClone[] CalculateClones(NativeArray<Vector3> vertices, float mergeThreshold = 0.00001f)
         {
 
@@ -286,7 +310,28 @@ namespace Swole
 
         }
 
+        public static int[] GetBoneWeightStartIndices(NativeArray<byte> bonesPerVertex, int[] array = null)
+        {
+            if (bonesPerVertex.IsCreated)
+            {
+                int vertexCount = bonesPerVertex.Length;
+                if (array == null) array = new int[vertexCount];
+
+                int i = 0;
+                for (int c = 0; c < vertexCount; c++)
+                {
+                    int count = bonesPerVertex[c];
+                    array[c] = i;
+                    i += count;
+                }
+            }
+
+            return array;
+        }
+
     }
+
+
 
     [Serializable]
     public struct MeshLOD

@@ -303,11 +303,11 @@ namespace Swole.API.Unity
         }
 
         [SerializeField, Range(0.5f, 10f)]
-        protected float shoulderWidth = 1;
+        protected float shoulderWidth = 1f;
         [SerializeField, Range(0.5f, 2f)]
-        protected float armLength = 1;
+        protected float armLength = 1f;
         [SerializeField, Range(0.5f, 2f)]
-        protected float forearmLength = 1;
+        protected float forearmLength = 1f;
 
         public float RealShoulderWidth => shoulderWidth * defaultShoulderWidth;
         public float RealArmLength => armLength * defaultArmLength;
@@ -323,7 +323,7 @@ namespace Swole.API.Unity
                 var widths = jobReference.GetWidths();
                 widths.x = widthA;
                 widths.y = widthA;
-                jobReference.SetWidths(widths + new float4(widthContributions.xy, 0f, 0f)); 
+                jobReference.SetWidths(widths + new float4(widthContributions.xy, 0f, 0f));
             }
 
             ApplyShoulderComponentEdits();
@@ -810,10 +810,12 @@ namespace Swole.API.Unity
         {
             if (widthContributionGroups == null) return 0f;
 
+            var characterMesh = CharacterMesh;
+
             widthContributions = 0f;
             foreach (var group in widthContributionGroups)
             {
-                widthContributions += group.GetWidthContributions(CharacterMeshV1);
+                widthContributions += group.GetWidthContributions(characterMesh);
             }
 
             return widthContributions;
@@ -822,14 +824,24 @@ namespace Swole.API.Unity
         {
             if (widthContributionGroupsByMuscleIndices.TryGetValue(muscleIndex, out var groups))
             {
+                var characterMesh = CharacterMesh;
+
+                var prevContributions = widthContributions;
                 foreach (var group in groups)
                 {
                     widthContributions -= group.currentContribution;
-                    widthContributions += group.GetWidthContributions(CharacterMeshV1); 
+                    widthContributions += group.GetWidthContributions(characterMesh); 
                 }
 
-                SetShoulderWidth(shoulderWidth);
-                SetHipWidth(hipWidth); 
+                var flags = prevContributions != widthContributions;
+                if (math.any(flags.xy))
+                {
+                    SetShoulderWidth(shoulderWidth);
+                }
+                if (math.any(flags.zw))
+                {
+                    SetHipWidth(hipWidth);
+                }
             }
         }
 

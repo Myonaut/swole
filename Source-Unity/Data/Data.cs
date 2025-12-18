@@ -55,7 +55,7 @@ namespace Swole
         public static float GetChannel(this Color color, RGBAChannel channel, bool average = true)
         {
 
-            float val = 0;
+            float val = 0f;
 
             int i = 0;
 

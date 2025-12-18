@@ -323,8 +323,9 @@ namespace Swole
 
             return array;
         }
+        public void InsertIntoArray(float[] array, int startIndex) => AsLinearWeightArray(array, false, startIndex);
 
-        #if (UNITY_STANDALONE || UNITY_EDITOR)
+#if (UNITY_STANDALONE || UNITY_EDITOR)
         public void InsertIntoNativeArray(NativeArray<float> array, int startIndex)
         {
             for (int a = 0; a < indices.Count; a++)

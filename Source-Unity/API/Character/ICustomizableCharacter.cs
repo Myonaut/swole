@@ -18,6 +18,13 @@ namespace Swole
     public interface ICustomizableCharacter
     {
 
+        public bool IsInitialized { get; }
+
+        public string Name
+        {
+            get;
+        }
+
         public GameObject GameObject
         {
             get;
@@ -110,6 +117,12 @@ namespace Swole
         public Matrix4x4[] BindPose { get; }
 
 
+        public int IndexOfVertexGroup(string groupName, bool caseSensitive = false);
+        public VertexGroup GetVertexGroup(int index);
+        public int IndexOfStandaloneVertexGroup(string groupName, bool caseSensitive = false);
+        public VertexGroup GetStandaloneVertexGroup(int index);
+
+
         public int FirstStandaloneShapesControlIndex { get; }
         public float GetStandaloneShapeWeightUnsafe(int shapeIndex);
         public float GetStandaloneShapeWeight(int shapeIndex);
@@ -119,6 +132,7 @@ namespace Swole
         {
             get;
         }
+        public int IndexOfStandaloneShape(string shapeName, bool caseSensitive = false);
 
         public int FirstMuscleGroupsControlIndex { get; }
         public MuscleDataLR GetMuscleDataUnsafe(int groupIndex);
@@ -129,7 +143,7 @@ namespace Swole
         {
             get;
         }
-        public int IndexOfMuscleGroup(string groupName);
+        public int IndexOfMuscleGroup(string groupName, bool caseSensitive = false);
 
         public int FirstFatGroupsControlIndex { get; }
         public float GetFatLevelUnsafe(int groupIndex);
@@ -140,7 +154,7 @@ namespace Swole
         {
             get;
         }
-        public int IndexOfFatGroup(string groupName);
+        public int IndexOfFatGroup(string groupName, bool caseSensitive = false);
 
         public int VariationShapesControlDataSize { get; }
         public int FirstVariationShapesControlIndex { get; }
@@ -161,6 +175,13 @@ namespace Swole
         {
             get;
         }
+        public int IndexOfVariationGroup(string groupName, bool caseSensitive = false);
+        public int IndexOfVariationShape(string shapeName, bool caseSensitive = false);
+
+        public void SetFloatOverride(string propertyName, float value, bool updateMaterials = true);
+        public void SetIntegerOverride(string property, int value, bool updateMaterials = true);
+        public void SetVectorOverride(string propertyName, Vector4 vector, bool updateMaterials = true);
+        public void SetColorOverride(string propertyName, Color color, bool updateMaterials = true);
 
         [Serializable]
         public enum ListenableEvent
@@ -261,6 +282,7 @@ namespace Swole
 
             public const string _variationShapesControlDefaultPropertyName = "_ControlVariationShapes";
 
+            public const string _localInstanceIDPropertyName = "_InstanceID";
 
             public const string _shapesInstanceIDPropertyName = "_ShapesInstanceID";
 

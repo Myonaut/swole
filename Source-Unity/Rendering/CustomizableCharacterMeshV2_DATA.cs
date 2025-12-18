@@ -33,6 +33,15 @@ namespace Swole.Morphing
         }
 #endif
 
+        public void Precache()
+        {
+            if (serializedData != null) serializedData.Precache();
+#if UNITY_EDITOR
+            UnityEditor.EditorUtility.SetDirty(this);
+            UnityEditor.AssetDatabase.SaveAssetIfDirty(this);
+#endif
+        }
+
         public int MeshShapeCount => serializedData.MeshShapeCount;
         public MeshShape GetShape(int index) => serializedData.GetShape(index);
         public MeshShape GetShapeUnsafe(int index) => serializedData.GetShapeUnsafe(index);
@@ -48,7 +57,7 @@ namespace Swole.Morphing
 
         public string StandaloneShapesBufferRangePropertyName => serializedData.StandaloneShapesBufferRangePropertyName;
         public int StandaloneShapesCount => serializedData.StandaloneGroupsCount;
-        public int IndexOfStandaloneShape(string name) => serializedData.IndexOfStandaloneShape(name);
+        public int IndexOfStandaloneShape(string name, bool caseSensitive = false) => serializedData.IndexOfStandaloneShape(name, caseSensitive);
         public MeshShape GetStandaloneShape(int index) => serializedData.GetStandaloneShape(index);
 
         public MeshShape MassShape => serializedData.MassShape;
@@ -66,6 +75,9 @@ namespace Swole.Morphing
         public MeshShape BustSizeShape => serializedData.BustSizeShape;
         public int BustSizeShapeFrameCount => serializedData.BustSizeShapeFrameCount;
 
+        public MeshShape BustSizeMuscleShape => serializedData.BustSizeMuscleShape;
+        public int BustSizeMuscleShapeFrameCount => serializedData.BustSizeMuscleShapeFrameCount;
+
 
         public string VariationShapesBufferRangePropertyName => serializedData.VariationShapesBufferRangePropertyName;
         public int VariationShapesCount => serializedData.VariationShapesCount;
@@ -75,6 +87,8 @@ namespace Swole.Morphing
         public int VariationVertexGroupCount => serializedData.VariationVertexGroupCount;
         public int IndexOfVariationGroup(string name) => serializedData.IndexOfVariationGroup(name);
         public VertexGroup GetVariationVertexGroup(int index) => serializedData.GetVariationVertexGroup(index);
+
+        public int VariationShapesControlDataSize => serializedData.VariationShapesControlDataSize;
 
         public int StandaloneGroupsCount => serializedData.StandaloneGroupsCount;
 

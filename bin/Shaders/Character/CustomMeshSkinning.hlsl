@@ -216,7 +216,7 @@ void ApplyStandaloneShapes_float(int instanceID, int vertexIndex, int vertexCoun
 
 		float shapeWeight = _ControlStandaloneShapes[a + indexOffset];
 
-		ApplyMultiShape_float(shapeIndex, shapeWeight, 1, vertexIndex, vertexCount, inPosition, inNormal, inTangent, outPosition, outNormal, outTangent);
+		ApplyMultiShape_float(shapeIndex, shapeWeight, 1, vertexIndex, vertexCount, outPosition, outNormal, outTangent, outPosition, outNormal, outTangent);
 	}
 }
 

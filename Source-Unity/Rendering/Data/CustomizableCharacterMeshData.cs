@@ -197,12 +197,26 @@ namespace Swole
         public string VertexGroupsBufferRangePropertyName => string.IsNullOrWhiteSpace(vertexGroupsBufferRangePropertyNameOverride) ? _vertexGroupsBufferRangeDefaultPropertyName : vertexGroupsBufferRangePropertyNameOverride;
         public Vector2Int vertexGroupsBufferRange;
         public int StandaloneVertexGroupCount => Mathf.Max(0, (vertexGroupsBufferRange.y - vertexGroupsBufferRange.x) + 1);
-        public int IndexOfStandaloneVertexGroup(string name)
+        public int IndexOfStandaloneVertexGroup(string name, bool caseSensitive = false)
         {
+            if (vertexGroups == null) return -1;
+
             for (int a = 0; a < StandaloneVertexGroupCount; a++)
             {
-                var shape = vertexGroups[a + vertexGroupsBufferRange.x];
-                if (shape.name == name) return a;
+                var vg = vertexGroups[a + vertexGroupsBufferRange.x];
+                if (vg == null) continue;
+
+                if (vg.name == name) return a;
+            }
+            if (caseSensitive) return -1;
+
+            name = name.ToLower().Trim();
+            for (int a = 0; a < StandaloneVertexGroupCount; a++)
+            {
+                var vg = vertexGroups[a + vertexGroupsBufferRange.x];
+                if (vg == null) continue;
+
+                if (!string.IsNullOrWhiteSpace(vg.name) && vg.name.ToLower().Trim() == name) return a;
             }
 
             return -1;
@@ -217,12 +231,26 @@ namespace Swole
         public string MuscleVertexGroupsBufferRangePropertyName => string.IsNullOrWhiteSpace(muscleVertexGroupsBufferRangePropertyNameOverride) ? _muscleVertexGroupsBufferRangeDefaultPropertyName : muscleVertexGroupsBufferRangePropertyNameOverride;
         public Vector2Int muscleVertexGroupsBufferRange;
         public int MuscleVertexGroupCount => Mathf.Max(0, (muscleVertexGroupsBufferRange.y - muscleVertexGroupsBufferRange.x) + 1);
-        public int IndexOfMuscleGroup(string name)
+        public int IndexOfMuscleGroup(string name, bool caseSensitive = false)
         {
+            if (vertexGroups == null) return -1;
+
             for (int a = 0; a < MuscleVertexGroupCount; a++)
             {
-                var shape = vertexGroups[a + muscleVertexGroupsBufferRange.x];
-                if (shape.name == name) return a;
+                var vg = vertexGroups[a + muscleVertexGroupsBufferRange.x];
+                if (vg == null) continue;
+
+                if (vg.name == name) return a;
+            }
+            if (caseSensitive) return -1;
+
+            name = name.ToLower().Trim();
+            for (int a = 0; a < MuscleVertexGroupCount; a++)
+            {
+                var vg = vertexGroups[a + muscleVertexGroupsBufferRange.x];
+                if (vg == null) continue;
+
+                if (!string.IsNullOrWhiteSpace(vg.name) && vg.name.ToLower().Trim() == name) return a;
             }
 
             return -1;
@@ -238,12 +266,26 @@ namespace Swole
         public Vector2Int fatVertexGroupsBufferRange;
         public float2[] fatGroupModifiers;
         public int FatVertexGroupCount => Mathf.Max(0, (fatVertexGroupsBufferRange.y - fatVertexGroupsBufferRange.x) + 1);
-        public int IndexOfFatGroup(string name)
+        public int IndexOfFatGroup(string name, bool caseSensitive = false)
         {
+            if (vertexGroups == null) return -1;
+
             for (int a = 0; a < FatVertexGroupCount; a++)
             {
-                var shape = vertexGroups[a + fatVertexGroupsBufferRange.x]; 
-                if (shape.name == name) return a;
+                var vg = vertexGroups[a + fatVertexGroupsBufferRange.x];
+                if (vg == null) continue;
+
+                if (vg.name == name) return a;
+            }
+            if (caseSensitive) return -1;
+
+            name = name.ToLower().Trim();
+            for (int a = 0; a < FatVertexGroupCount; a++)
+            {
+                var vg = vertexGroups[a + fatVertexGroupsBufferRange.x];
+                if (vg == null) continue;
+
+                if (!string.IsNullOrWhiteSpace(vg.name) && vg.name.ToLower().Trim() == name) return a;
             }
 
             return -1;
@@ -332,14 +374,28 @@ namespace Swole
             }
         }
 
-        public int IndexOfVariationGroup(string name)
+        public int IndexOfVariationGroup(string name, bool caseSensitive = false)
         {
+            if (vertexGroups == null) return -1;
+
             for (int a = 0; a < VariationVertexGroupCount; a++)
             {
-                var shape = vertexGroups[variationGroupIndices[a]];
-                if (shape.name == name) return a;
+                var vg = vertexGroups[variationGroupIndices[a]];
+                if (vg == null) continue;
+
+                if (vg.name == name) return a;
             }
-            
+            if (caseSensitive) return -1;
+
+            name = name.ToLower().Trim();
+            for (int a = 0; a < VariationVertexGroupCount; a++)
+            {
+                var vg = vertexGroups[variationGroupIndices[a]];
+                if (vg == null) continue;
+
+                if (!string.IsNullOrWhiteSpace(vg.name) && vg.name.ToLower().Trim() == name) return a;
+            }
+
             return -1;
         }
         public VertexGroup GetVariationVertexGroup(int index)
@@ -353,12 +409,26 @@ namespace Swole
         public string StandaloneShapesBufferRangePropertyName => string.IsNullOrWhiteSpace(standaloneShapesBufferRangePropertyNameOverride) ? _standaloneShapesBufferRangeDefaultPropertyName : standaloneShapesBufferRangePropertyNameOverride;
         public Vector2Int standaloneShapesBufferRange;
         public int StandaloneShapesCount => Mathf.Max(0, (standaloneShapesBufferRange.y - standaloneShapesBufferRange.x) + 1);
-        public int IndexOfStandaloneShape(string name)
+        public int IndexOfStandaloneShape(string name, bool caseSensitive = false)
         {
+            if (morphShapes == null) return -1;
+
             for (int a = 0; a < StandaloneShapesCount; a++)
             {
                 var shape = morphShapes[a + standaloneShapesBufferRange.x];
+                if (shape == null) continue;
+
                 if (shape.name == name) return a;
+            }
+            if (caseSensitive) return -1;
+
+            name = name.ToLower().Trim();
+            for (int a = 0; a < StandaloneShapesCount; a++)
+            {
+                var shape = morphShapes[a + standaloneShapesBufferRange.x];
+                if (shape == null) continue;
+
+                if (!string.IsNullOrWhiteSpace(shape.name) && shape.name.ToLower().Trim() == name) return a;
             }
 
             return -1;
@@ -433,12 +503,26 @@ namespace Swole
         public string VariationShapesBufferRangePropertyName => string.IsNullOrWhiteSpace(variationShapesBufferRangePropertyNameOverride) ? _variationShapesBufferRangeDefaultPropertyName : variationShapesBufferRangePropertyNameOverride;
         public Vector2Int variationShapesBufferRange;
         public int VariationShapesCount => Mathf.Max(0, (variationShapesBufferRange.y - variationShapesBufferRange.x) + 1);
-        public int IndexOfVariationShape(string name)
+        public int IndexOfVariationShape(string name, bool caseSensitive = false)
         {
+            if (morphShapes == null) return -1;
+
             for (int a = 0; a < VariationShapesCount; a++)
             {
-                var shape = morphShapes[a + variationShapesBufferRange.x]; 
+                var shape = morphShapes[a + variationShapesBufferRange.x];
+                if (shape == null) continue;
+
                 if (shape.name == name) return a;
+            }
+            if (caseSensitive) return -1;
+
+            name = name.ToLower().Trim();
+            for (int a = 0; a < VariationShapesCount; a++)
+            {
+                var shape = morphShapes[a + variationShapesBufferRange.x];
+                if (shape == null) continue;
+
+                if (!string.IsNullOrWhiteSpace(shape.name) && shape.name.ToLower().Trim() == name) return a;
             }
 
             return -1;

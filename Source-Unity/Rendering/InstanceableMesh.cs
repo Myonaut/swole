@@ -280,14 +280,14 @@ namespace Swole
         }
 
         private bool visibleOnEnable; 
-        protected void OnEnable()
+        protected virtual void OnEnable()
         {
             if (visibleOnEnable) StartRenderingInstance();
             visibleOnEnable = false; 
 
             OnEnabled();
         }
-        protected void OnDisable()
+        protected virtual void OnDisable()
         {
             visibleOnEnable = Visible;
             StopRenderingInstance();
@@ -521,6 +521,8 @@ namespace Swole
         }
         protected void SyncPartialShapeData(IList<BlendShapeSyncLR>[] syncs, int groupIndex, float weightL, float weightR, int count, float[] frameWeights)
         {
+            if (syncs == null) return;
+
             int indexY = groupIndex * count;
 
             if (count == 1)
@@ -1692,6 +1694,8 @@ namespace Swole
         public void BindMaterialProperty(Material material, string propertyName)
         {
             material.SetBuffer(propertyName, bufferPool.ActiveBuffer);
+            foreach (var binding in boundMaterialProperties) if (binding.material == material && binding.propertyName == propertyName) return;
+
             boundMaterialProperties.Add(new BoundMaterialProperty() { material = material, propertyName = propertyName });
         }
         public void UnbindMaterialProperty(Material material, string propertyName)
@@ -1811,6 +1815,7 @@ namespace Swole
 
         public void Dispose()
         {
+            Debug.Log($"DISPOSED INSTANCE BUFFER {name}");
             boundMaterialProperties.Clear();
 
             if (bufferPool != null && bufferPool.IsValid())

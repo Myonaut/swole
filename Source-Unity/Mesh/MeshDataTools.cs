@@ -2570,7 +2570,7 @@ namespace Swole
                                 {
                                     for (int a = 0; a < existingShape.frames.Length; a++)
                                     {
-                                        var frame = (a > shape.frames.Length ? default : shape.frames[a]);
+                                        var frame = (a >= shape.frames.Length ? default : shape.frames[a]);
                                         var meshShapeFrame = existingShape.frames[a];
                                         meshShapeFrame.expandable_deltaVertices.Add(frame.deltaVertex); 
                                         meshShapeFrame.expandable_deltaNormals.Add(frame.deltaNormal);
@@ -2624,7 +2624,7 @@ namespace Swole
 
                 if (secondMesh.HasBlendShapes)
                 {
-                    foreach(var shape in secondMesh.blendShapes)
+                    foreach (var shape in secondMesh.blendShapes)
                     {
                         if (GetBlendShapeIndex(shape.name) >= 0) continue;
 
@@ -4080,7 +4080,7 @@ namespace Swole
             }
 
             /// <summary>
-            /// A vertex is part of an open edge if it only shares a single connection to another vertex
+            /// An edge is open if it is only part of a single face.
             /// </summary>
             public bool IsOpenEdge() => edgeCount1 <= 0 || edgeCount2 <= 0; 
 

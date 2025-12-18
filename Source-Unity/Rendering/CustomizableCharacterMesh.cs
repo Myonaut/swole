@@ -542,6 +542,8 @@ namespace Swole.Morphing
             }
         }
 
+        public string Name => name;
+
         public GameObject GameObject => gameObject;
 
         protected virtual void LateUpdate()
@@ -640,12 +642,65 @@ namespace Swole.Morphing
             }
         }
 
+        #region Data
+
         [SerializeField]
         protected CustomizableCharacterMeshData meshData;
         public void SetMeshData(CustomizableCharacterMeshData data) => meshData = data;
         public override InstanceableMeshDataBase MeshData => meshData;
         public virtual CustomizableCharacterMeshData CharacterMeshData => meshData;
         public override InstancedMeshGroup MeshGroup => meshData.meshGroups[meshGroupIndex];
+
+        public int IndexOfStandaloneShape(string name, bool caseSensitive = false)
+        {
+            if (meshData == null) return -1;
+            return meshData.IndexOfStandaloneShape(name, caseSensitive);
+        }
+
+        public int IndexOfVertexGroup(string name, bool caseSensitive = false)
+        {
+            if (meshData == null) return -1;
+            return meshData.IndexOfVertexGroup(name, caseSensitive);
+        }
+        public int IndexOfStandaloneVertexGroup(string name, bool caseSensitive = false)
+        {
+            if (meshData == null) return -1;
+            return meshData.IndexOfStandaloneVertexGroup(name, caseSensitive);
+        }
+        public int IndexOfMuscleGroup(string name, bool caseSensitive = false)
+        {
+            if (meshData == null) return -1;
+            return meshData.IndexOfMuscleGroup(name, caseSensitive);
+        }
+        public int IndexOfFatGroup(string name, bool caseSensitive = false)
+        {
+            if (meshData == null) return -1;
+            return meshData.IndexOfFatGroup(name, caseSensitive);
+        }
+        public int IndexOfVariationGroup(string name, bool caseSensitive = false)
+        {
+            if (meshData == null) return -1;
+            return meshData.IndexOfVariationGroup(name, caseSensitive);
+        }
+        public int IndexOfVariationShape(string name, bool caseSensitive = false)
+        {
+            if (meshData == null) return -1;
+            return meshData.IndexOfVariationShape(name, caseSensitive);
+        }
+
+        public VertexGroup GetVertexGroup(int index)
+        {
+            if (meshData == null) return null;
+            return meshData.GetVertexGroup(index);
+        }
+
+        public VertexGroup GetStandaloneVertexGroup(int index)
+        {
+            if (meshData == null) return null;
+            return meshData.GetStandaloneVertexGroup(index);
+        }
+
+        #endregion
 
         [SerializeField]
         protected CustomAvatar avatar;
@@ -1064,8 +1119,36 @@ namespace Swole.Morphing
 
         public override int BoneCount => avatar == null ? 1 : avatar.bones.Length;
 
-        public override Matrix4x4[] BindPose => meshData.ManagedBindPose; 
+        public override Matrix4x4[] BindPose => meshData.ManagedBindPose;
 
+        public virtual void SetFloatOverride(string property, float value, bool updateMaterials = true)
+        {
+            var inst = Instance;
+            if (inst == null) return;
+
+            inst.SetFloatOverride(property, value, updateMaterials);
+        }
+        public virtual void SetIntegerOverride(string property, int value, bool updateMaterials = true)
+        {
+            var inst = Instance;
+            if (inst == null) return;
+
+            inst.SetFloatOverride(property, value, updateMaterials);
+        }
+        public virtual void SetVectorOverride(string property, Vector4 value, bool updateMaterials = true)
+        {
+            var inst = Instance;
+            if (inst == null) return;
+
+            inst.SetVectorOverride(property, value, updateMaterials);
+        }
+        public virtual void SetColorOverride(string property, Color value, bool updateMaterials = true)
+        {
+            var inst = Instance;
+            if (inst == null) return;
+
+            inst.SetColorOverride(property, value, updateMaterials);
+        }
 
         /*protected bool dirtyFlag_standaloneShapesControl;
         protected NativeArray<float> standaloneShapesControl;

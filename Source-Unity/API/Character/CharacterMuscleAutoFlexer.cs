@@ -153,8 +153,8 @@ namespace Swole.API.Unity
             [NonSerialized]
             public float gradualTransformFlexOutputRight;
 
-            public void UpdateFlexOutputs(float deltaTime, CustomizableCharacterMesh characterMesh, float2 flexOutputs) => UpdateFlexOutputs(deltaTime, characterMesh, flexOutputs.x, flexOutputs.y);
-            public void UpdateFlexOutputs(float deltaTime, CustomizableCharacterMesh characterMesh, float flexLeft, float flexRight) 
+            public void UpdateFlexOutputs(float deltaTime, ICustomizableCharacter characterMesh, float2 flexOutputs) => UpdateFlexOutputs(deltaTime, characterMesh, flexOutputs.x, flexOutputs.y);
+            public void UpdateFlexOutputs(float deltaTime, ICustomizableCharacter characterMesh, float flexLeft, float flexRight) 
             {
                 float transformFlexLeft = flexLeft;
                 float transformFlexRight = flexRight;
@@ -220,8 +220,8 @@ namespace Swole.API.Unity
                             flexScaleRightTransforms = flexScaleRightTransforms / maxScalingWeightTransforms;
                         }
 
-                        flexLeft = flexLeft * flexScaleLeft;
-                        flexRight = flexRight * flexScaleRight;
+                        flexLeft = flexLeft * math.saturate(flexScaleLeft);
+                        flexRight = flexRight * math.saturate(flexScaleRight);
 
                         transformFlexLeft = transformFlexLeft * flexScaleLeftTransforms;
                         transformFlexRight = transformFlexRight * flexScaleRightTransforms;
@@ -261,8 +261,8 @@ namespace Swole.API.Unity
                             flexScaleRight = flexScaleRight / maxScalingWeight;
                         }
 
-                        transformFlexLeft = flexLeft = flexLeft * flexScaleLeft;
-                        transformFlexRight = flexRight = flexRight * flexScaleRight;
+                        transformFlexLeft = flexLeft = flexLeft * math.saturate(flexScaleLeft);
+                        transformFlexRight = flexRight = flexRight * math.saturate(flexScaleRight);
                     }
                 } 
 
@@ -369,6 +369,8 @@ namespace Swole.API.Unity
 #endif
 
         public CustomizableCharacterMesh characterMesh;
+        public CustomizableCharacterMeshV2 characterMeshV2;
+        public ICustomizableCharacter CharacterMesh => characterMeshV2 == null ? characterMesh : characterMeshV2;
         public CustomAnimator animator;
 
         [AnimatableProperty(true, 1f), Range(0, 2f)]
@@ -389,6 +391,7 @@ namespace Swole.API.Unity
         protected void Awake()
         {
             if (characterMesh == null) characterMesh = gameObject.GetComponentInChildren<CustomizableCharacterMesh>(true);
+            if (characterMeshV2 == null) characterMeshV2 = gameObject.GetComponentInChildren<CustomizableCharacterMeshV2>(true);
             if (animator == null) animator = gameObject.GetComponentInChildren<CustomAnimator>(true); 
 
             if (autoFlexers != null)
@@ -406,6 +409,7 @@ namespace Swole.API.Unity
         }
         protected void Start()
         {
+            var characterMesh = CharacterMesh;
             if (characterMesh != null)
             {
                 if (autoFlexers != null)
@@ -420,7 +424,7 @@ namespace Swole.API.Unity
                             {
                                 var muscle = autoFlexer.muscles[localMuscleIndex];
 
-                                muscle.cachedMuscleIndex = characterMesh.CharacterMeshData.IndexOfMuscleGroup(muscle.name);
+                                muscle.cachedMuscleIndex = characterMesh.IndexOfMuscleGroup(muscle.name);
                                 if (muscle.cachedMuscleIndex >= 0)
                                 {
                                     if (!boundFlexers.TryGetValue(muscle.cachedMuscleIndex, out var list))
@@ -460,6 +464,8 @@ namespace Swole.API.Unity
         }
         public void UpdateFlexing()
         {
+            var characterMesh = CharacterMesh;
+
             bool resetValues = animator == null || !animator.isActiveAndEnabled;
 
             if (characterMesh != null && characterMesh.IsInitialized)
@@ -817,7 +823,7 @@ namespace Swole.API.Unity
 
                 foreach (var autoFlexer in flexer.autoFlexers)
                 {
-                    autoFlexer.UpdateFlexOutputs(deltaTime, flexer.characterMesh, autoFlexer.jobIndexLeft >= 0 ? autoFlexBindings[autoFlexer.jobIndexLeft].output : 0f, autoFlexer.jobIndexRight >= 0 ? autoFlexBindings[autoFlexer.jobIndexRight].output : 0f);
+                    autoFlexer.UpdateFlexOutputs(deltaTime, flexer.CharacterMesh, autoFlexer.jobIndexLeft >= 0 ? autoFlexBindings[autoFlexer.jobIndexLeft].output : 0f, autoFlexer.jobIndexRight >= 0 ? autoFlexBindings[autoFlexer.jobIndexRight].output : 0f);
                 }
 
                 flexer.UpdateFlexing();
@@ -924,7 +930,7 @@ namespace Swole.API.Unity
             public float3x4 targetAngleStartAxisVectors;
             public float4x4 targetInverseStartRotations;
         }
-        //[BurstCompile]
+        [BurstCompile]
         public struct EvaluateAutoFlexBindings : IJobParallelFor
         {
             public float deltaTime;
