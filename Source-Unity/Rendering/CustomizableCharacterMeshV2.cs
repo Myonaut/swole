@@ -35,201 +35,254 @@ namespace Swole.Morphing
             if (Application.isPlaying && isActiveAndEnabled)
             {
                 var meshData = SubData;
+                if (meshData != null)
+                {
 
-                if (prevBustSizeEditor != bustSizeEditor)
-                {
-                    prevBustSizeEditor = bustSizeEditor;
-                    SetBustSize(bustSizeEditor);
-                }
-                if (prevBustShapeEditor != bustShapeEditor)
-                {
-                    prevBustShapeEditor = bustShapeEditor;
-                    SetBustShape(bustShapeEditor);
-                }
-                if (prevShapeWeightsEditor == null || prevShapeWeightsEditor.Length == 0)
-                {
-                    prevShapeWeightsEditor = new NamedFloat[meshData.StandaloneShapesCount];
-                    for (int a = 0; a < prevShapeWeightsEditor.Length; a++) prevShapeWeightsEditor[a] = new NamedFloat() { name = meshData.GetStandaloneShape(a).name };
-                }
-                if (shapeWeightsEditor == null || shapeWeightsEditor.Length == 0)
-                {
-                    shapeWeightsEditor = new NamedFloat[meshData.StandaloneShapesCount];
-                    for (int a = 0; a < shapeWeightsEditor.Length; a++) shapeWeightsEditor[a] = new NamedFloat() { name = meshData.GetStandaloneShape(a).name };
-                }
-
-                if (prevMuscleWeightsEditor == null || prevMuscleWeightsEditor.Length == 0)
-                {
-                    prevMuscleWeightsEditor = new NamedMuscleData[meshData.MuscleVertexGroupCount];
-                    for (int a = 0; a < prevMuscleWeightsEditor.Length; a++) prevMuscleWeightsEditor[a] = new NamedMuscleData() { name = meshData.GetVertexGroup(a + meshData.muscleGroups.x).name };
-                }
-                if (muscleWeightsEditor == null || muscleWeightsEditor.Length == 0)
-                {
-                    muscleWeightsEditor = new NamedMuscleData[meshData.MuscleVertexGroupCount];
-                    for (int a = 0; a < muscleWeightsEditor.Length; a++) muscleWeightsEditor[a] = new NamedMuscleData() { name = meshData.GetVertexGroup(a + meshData.muscleGroups.x).name };
-                }
-
-                if (prevFatWeightsEditor == null || prevFatWeightsEditor.Length == 0)
-                {
-                    prevFatWeightsEditor = new NamedFloat[meshData.FatVertexGroupCount];
-                    for (int a = 0; a < prevFatWeightsEditor.Length; a++) prevFatWeightsEditor[a] = new NamedFloat() { name = meshData.GetVertexGroup(a + meshData.fatGroups.x).name };
-                }
-                if (fatWeightsEditor == null || fatWeightsEditor.Length == 0)
-                {
-                    fatWeightsEditor = new NamedFloat[meshData.FatVertexGroupCount];
-                    for (int a = 0; a < fatWeightsEditor.Length; a++) fatWeightsEditor[a] = new NamedFloat() { name = meshData.GetVertexGroup(a + meshData.fatGroups.x).name };
-                }
-
-                if (prevVariationWeightsEditor == null || prevVariationWeightsEditor.Length == 0)
-                {
-                    prevVariationWeightsEditor = new NamedFloat2[VariationShapesControlDataSize];
-                    for (int a = 0; a < prevVariationWeightsEditor.Length; a++)
+                    if (prevBustSizeEditor != bustSizeEditor)
                     {
-                        int groupIndex = a / meshData.VariationShapesCount;
-                        int shapeIndex = a % meshData.VariationShapesCount;
-                        prevVariationWeightsEditor[a] = new NamedFloat2() { name = meshData.GetVariationVertexGroup(groupIndex).name + "_" + meshData.GetVariationShape(shapeIndex).name };
+                        prevBustSizeEditor = bustSizeEditor;
+                        SetBustSize(bustSizeEditor);
                     }
-                }
-                if (variationWeightsEditor == null || variationWeightsEditor.Length == 0)
-                {
-                    variationWeightsEditor = new NamedFloat2[VariationShapesControlDataSize];
-                    for (int a = 0; a < variationWeightsEditor.Length; a++)
+                    if (prevBustShapeEditor != bustShapeEditor)
                     {
-                        int groupIndex = a / meshData.VariationShapesCount;
-                        int shapeIndex = a % meshData.VariationShapesCount;
-                        variationWeightsEditor[a] = new NamedFloat2() { name = meshData.GetVariationVertexGroup(groupIndex).name + "_" + meshData.GetVariationShape(shapeIndex).name };
+                        prevBustShapeEditor = bustShapeEditor;
+                        SetBustShape(bustShapeEditor);
                     }
-                }
-
-                for (int a = 0; a < shapeWeightsEditor.Length; a++)
-                {
-                    if (prevShapeWeightsEditor[a].value != shapeWeightsEditor[a].value)
+                    if (prevShapeWeightsEditor == null || prevShapeWeightsEditor.Length == 0)
                     {
-                        SetStandaloneShapeWeightUnsafe(a, shapeWeightsEditor[a].value);
-                        prevShapeWeightsEditor[a].value = shapeWeightsEditor[a].value;
+                        prevShapeWeightsEditor = new NamedFloat[meshData.StandaloneShapesCount];
+                        for (int a = 0; a < prevShapeWeightsEditor.Length; a++) prevShapeWeightsEditor[a] = new NamedFloat() { name = meshData.GetStandaloneShape(a).name };
                     }
-                }
+                    if (shapeWeightsEditor == null || shapeWeightsEditor.Length == 0)
+                    {
+                        shapeWeightsEditor = new NamedFloat[meshData.StandaloneShapesCount];
+                        for (int a = 0; a < shapeWeightsEditor.Length; a++) shapeWeightsEditor[a] = new NamedFloat() { name = meshData.GetStandaloneShape(a).name };
+                    }
 
-                if (prevGlobalMass != globalMass)
-                {
-                    prevGlobalMass = globalMass;
+                    if (prevMuscleWeightsEditor == null || prevMuscleWeightsEditor.Length == 0)
+                    {
+                        prevMuscleWeightsEditor = new NamedMuscleData[meshData.MuscleVertexGroupCount];
+                        for (int a = 0; a < prevMuscleWeightsEditor.Length; a++) prevMuscleWeightsEditor[a] = new NamedMuscleData() { name = meshData.GetVertexGroup(a + meshData.muscleGroups.x).name };
+                    }
+                    if (muscleWeightsEditor == null || muscleWeightsEditor.Length == 0)
+                    {
+                        muscleWeightsEditor = new NamedMuscleData[meshData.MuscleVertexGroupCount];
+                        for (int a = 0; a < muscleWeightsEditor.Length; a++) muscleWeightsEditor[a] = new NamedMuscleData() { name = meshData.GetVertexGroup(a + meshData.muscleGroups.x).name };
+                    }
+
+                    if (prevFatWeightsEditor == null || prevFatWeightsEditor.Length == 0)
+                    {
+                        prevFatWeightsEditor = new NamedFloat[meshData.FatVertexGroupCount];
+                        for (int a = 0; a < prevFatWeightsEditor.Length; a++) prevFatWeightsEditor[a] = new NamedFloat() { name = meshData.GetVertexGroup(a + meshData.fatGroups.x).name };
+                    }
+                    if (fatWeightsEditor == null || fatWeightsEditor.Length == 0)
+                    {
+                        fatWeightsEditor = new NamedFloat[meshData.FatVertexGroupCount];
+                        for (int a = 0; a < fatWeightsEditor.Length; a++) fatWeightsEditor[a] = new NamedFloat() { name = meshData.GetVertexGroup(a + meshData.fatGroups.x).name };
+                    }
+
+                    if (prevBodyHairWeightsEditor == null || prevBodyHairWeightsEditor.Length == 0)
+                    {
+                        prevBodyHairWeightsEditor = new NamedFloat2[meshData.FatVertexGroupCount];
+                        for (int a = 0; a < prevBodyHairWeightsEditor.Length; a++) prevBodyHairWeightsEditor[a] = new NamedFloat2() { name = meshData.GetVertexGroup(a + meshData.fatGroups.x).name };
+                    }
+                    if (bodyHairWeightsEditor == null || bodyHairWeightsEditor.Length == 0)
+                    {
+                        bodyHairWeightsEditor = new NamedFloat2[meshData.FatVertexGroupCount];
+                        for (int a = 0; a < bodyHairWeightsEditor.Length; a++) bodyHairWeightsEditor[a] = new NamedFloat2() { name = meshData.GetVertexGroup(a + meshData.fatGroups.x).name };
+                    }
+
+                    if (prevVariationWeightsEditor == null || prevVariationWeightsEditor.Length == 0)
+                    {
+                        prevVariationWeightsEditor = new NamedFloat2[VariationShapesControlDataSize];
+                        for (int a = 0; a < prevVariationWeightsEditor.Length; a++)
+                        {
+                            int groupIndex = a / meshData.VariationShapesCount;
+                            int shapeIndex = a % meshData.VariationShapesCount;
+                            prevVariationWeightsEditor[a] = new NamedFloat2() { name = meshData.GetVariationVertexGroup(groupIndex).name + "_" + meshData.GetVariationShape(shapeIndex).name };
+                        }
+                    }
+                    if (variationWeightsEditor == null || variationWeightsEditor.Length == 0)
+                    {
+                        variationWeightsEditor = new NamedFloat2[VariationShapesControlDataSize];
+                        for (int a = 0; a < variationWeightsEditor.Length; a++)
+                        {
+                            int groupIndex = a / meshData.VariationShapesCount;
+                            int shapeIndex = a % meshData.VariationShapesCount;
+                            variationWeightsEditor[a] = new NamedFloat2() { name = meshData.GetVariationVertexGroup(groupIndex).name + "_" + meshData.GetVariationShape(shapeIndex).name };
+                        }
+                    }
+
+                    for (int a = 0; a < shapeWeightsEditor.Length; a++)
+                    {
+                        if (prevShapeWeightsEditor[a].value != shapeWeightsEditor[a].value)
+                        {
+                            SetStandaloneShapeWeightUnsafe(a, shapeWeightsEditor[a].value);
+                            prevShapeWeightsEditor[a].value = shapeWeightsEditor[a].value;
+                        }
+                    }
+
+                    if (prevGlobalMass != globalMass)
+                    {
+                        prevGlobalMass = globalMass;
+                        for (int a = 0; a < muscleWeightsEditor.Length; a++)
+                        {
+                            var values = muscleWeightsEditor[a].value;
+                            var vl = values.valuesLeft;
+                            var vr = values.valuesRight;
+                            vl.mass = globalMass;
+                            vr.mass = globalMass;
+                            values.valuesLeft = vl;
+                            values.valuesRight = vr;
+
+                            SetMuscleDataUnsafe(a, values);
+
+                            prevMuscleWeightsEditor[a].value = muscleWeightsEditor[a].value = values;
+                        }
+                    }
+                    if (prevGlobalFlex != globalFlex)
+                    {
+                        prevGlobalFlex = globalFlex;
+                        for (int a = 0; a < muscleWeightsEditor.Length; a++)
+                        {
+                            var values = muscleWeightsEditor[a].value;
+                            var vl = values.valuesLeft;
+                            var vr = values.valuesRight;
+                            vl.flex = globalFlex;
+                            vr.flex = globalFlex;
+                            values.valuesLeft = vl;
+                            values.valuesRight = vr;
+
+                            SetMuscleDataUnsafe(a, values);
+
+                            prevMuscleWeightsEditor[a].value = muscleWeightsEditor[a].value = values;
+                        }
+                    }
+                    if (prevGlobalPump != globalPump)
+                    {
+                        prevGlobalPump = globalPump;
+                        for (int a = 0; a < muscleWeightsEditor.Length; a++)
+                        {
+                            var values = muscleWeightsEditor[a].value;
+                            var vl = values.valuesLeft;
+                            var vr = values.valuesRight;
+                            vl.pump = globalPump;
+                            vr.pump = globalPump;
+                            values.valuesLeft = vl;
+                            values.valuesRight = vr;
+
+                            SetMuscleDataUnsafe(a, values);
+
+                            prevMuscleWeightsEditor[a].value = muscleWeightsEditor[a].value = values;
+                        }
+                    }
+                    if (prevGlobalVaricose != globalVaricose)
+                    {
+                        prevGlobalVaricose = globalVaricose;
+                        for (int a = 0; a < muscleWeightsEditor.Length; a++)
+                        {
+                            var values = muscleWeightsEditor[a].value;
+                            var vl = values.valuesLeft;
+                            var vr = values.valuesRight;
+                            vl.varicose = globalVaricose;
+                            vr.varicose = globalVaricose;
+                            values.valuesLeft = vl;
+                            values.valuesRight = vr;
+
+                            SetMuscleDataUnsafe(a, values);
+
+                            prevMuscleWeightsEditor[a].value = muscleWeightsEditor[a].value = values;
+                        }
+                    }
+
+                    if (prevGlobalFat != globalFat)
+                    {
+                        prevGlobalFat = globalFat;
+                        for (int a = 0; a < fatWeightsEditor.Length; a++)
+                        {
+                            SetFatLevelUnsafe(a, globalFat);
+
+                            prevFatWeightsEditor[a].value = fatWeightsEditor[a].value = globalFat;
+                        }
+                    }
+
+                    if (prevGlobalBodyHairLevel != globalBodyHairLevel || prevGlobalBodyHairBlend != globalBodyHairBlend)
+                    {
+                        prevGlobalBodyHairLevel = globalBodyHairLevel;
+                        prevGlobalBodyHairBlend = globalBodyHairBlend;
+                        for (int a = 0; a < bodyHairWeightsEditor.Length; a++)
+                        {
+                            SetBodyHairLevelUnsafe(a, globalBodyHairLevel, globalBodyHairBlend);
+
+                            prevBodyHairWeightsEditor[a].value = bodyHairWeightsEditor[a].value = new float2(globalBodyHairLevel, globalBodyHairBlend);
+                        }
+                    }
+
+                    if (prevGlobalVariationA != globalVariationA && meshData.VariationShapesCount > 0)
+                    {
+                        prevGlobalVariationA = globalVariationA;
+                        for (int a = 0; a < variationWeightsEditor.Length; a += meshData.VariationShapesCount)
+                        {
+                            SetVariationWeightUnsafe(a, globalVariationA);
+
+                            prevVariationWeightsEditor[a].value = variationWeightsEditor[a].value = globalVariationA;
+                        }
+                    }
+                    if (prevGlobalVariationB != globalVariationB && meshData.VariationShapesCount > 1)
+                    {
+                        prevGlobalVariationB = globalVariationB;
+                        for (int a = 1; a < variationWeightsEditor.Length; a += meshData.VariationShapesCount)
+                        {
+                            SetVariationWeightUnsafe(a, globalVariationB);
+
+                            prevVariationWeightsEditor[a].value = variationWeightsEditor[a].value = globalVariationB;
+                        }
+                    }
+                    if (prevGlobalVariationC != globalVariationC && meshData.VariationShapesCount > 2)
+                    {
+                        prevGlobalVariationC = globalVariationC;
+                        for (int a = 2; a < variationWeightsEditor.Length; a += meshData.VariationShapesCount)
+                        {
+                            SetVariationWeightUnsafe(a, globalVariationC);
+
+                            prevVariationWeightsEditor[a].value = variationWeightsEditor[a].value = globalVariationC;
+                        }
+                    }
+
                     for (int a = 0; a < muscleWeightsEditor.Length; a++)
                     {
-                        var values = muscleWeightsEditor[a].value;
-                        var vl = values.valuesLeft;
-                        var vr = values.valuesRight;
-                        vl.mass = globalMass;
-                        vr.mass = globalMass;
-                        values.valuesLeft = vl;
-                        values.valuesRight = vr;
-
-                        SetMuscleDataUnsafe(a, values);
-
-                        prevMuscleWeightsEditor[a].value = muscleWeightsEditor[a].value = values;
+                        if (prevMuscleWeightsEditor[a].value != muscleWeightsEditor[a].value)
+                        {
+                            SetMuscleDataUnsafe(a, muscleWeightsEditor[a].value);
+                            prevMuscleWeightsEditor[a].value = muscleWeightsEditor[a].value;
+                        }
                     }
-                }
-                if (prevGlobalFlex != globalFlex)
-                {
-                    prevGlobalFlex = globalFlex;
-                    for (int a = 0; a < muscleWeightsEditor.Length; a++)
-                    {
-                        var values = muscleWeightsEditor[a].value;
-                        var vl = values.valuesLeft;
-                        var vr = values.valuesRight;
-                        vl.flex = globalFlex;
-                        vr.flex = globalFlex;
-                        values.valuesLeft = vl;
-                        values.valuesRight = vr;
 
-                        SetMuscleDataUnsafe(a, values);
-
-                        prevMuscleWeightsEditor[a].value = muscleWeightsEditor[a].value = values;
-                    }
-                }
-                if (prevGlobalPump != globalPump)
-                {
-                    prevGlobalPump = globalPump;
-                    for (int a = 0; a < muscleWeightsEditor.Length; a++)
-                    {
-                        var values = muscleWeightsEditor[a].value;
-                        var vl = values.valuesLeft;
-                        var vr = values.valuesRight;
-                        vl.pump = globalPump;
-                        vr.pump = globalPump;
-                        values.valuesLeft = vl;
-                        values.valuesRight = vr;
-
-                        SetMuscleDataUnsafe(a, values);
-
-                        prevMuscleWeightsEditor[a].value = muscleWeightsEditor[a].value = values;
-                    }
-                }
-
-                if (prevGlobalFat != globalFat)
-                {
-                    prevGlobalFat = globalFat;
                     for (int a = 0; a < fatWeightsEditor.Length; a++)
                     {
-                        SetFatLevelUnsafe(a, globalFat);
-
-                        prevFatWeightsEditor[a].value = fatWeightsEditor[a].value = globalFat;
+                        if (prevFatWeightsEditor[a].value != fatWeightsEditor[a].value)
+                        {
+                            SetFatLevelUnsafe(a, fatWeightsEditor[a].value);
+                            prevFatWeightsEditor[a].value = fatWeightsEditor[a].value;
+                        }
                     }
-                }
 
-                if (prevGlobalVariationA != globalVariationA && meshData.VariationShapesCount > 0)
-                {
-                    prevGlobalVariationA = globalVariationA;
-                    for (int a = 0; a < variationWeightsEditor.Length; a += meshData.VariationShapesCount)
+                    for (int a = 0; a < bodyHairWeightsEditor.Length; a++)
                     {
-                        SetVariationWeightUnsafe(a, globalVariationA);
-
-                        prevVariationWeightsEditor[a].value = variationWeightsEditor[a].value = globalVariationA;
+                        if (math.any(prevBodyHairWeightsEditor[a].value != bodyHairWeightsEditor[a].value))
+                        {
+                            SetBodyHairLevelUnsafe(a, bodyHairWeightsEditor[a].value.x, bodyHairWeightsEditor[a].value.y);
+                            prevBodyHairWeightsEditor[a].value = bodyHairWeightsEditor[a].value;
+                        }
                     }
-                }
-                if (prevGlobalVariationB != globalVariationB && meshData.VariationShapesCount > 1)
-                {
-                    prevGlobalVariationB = globalVariationB;
-                    for (int a = 1; a < variationWeightsEditor.Length; a += meshData.VariationShapesCount)
-                    {
-                        SetVariationWeightUnsafe(a, globalVariationB);
 
-                        prevVariationWeightsEditor[a].value = variationWeightsEditor[a].value = globalVariationB;
-                    }
-                }
-                if (prevGlobalVariationC != globalVariationC && meshData.VariationShapesCount > 2)
-                {
-                    prevGlobalVariationC = globalVariationC;
-                    for (int a = 2; a < variationWeightsEditor.Length; a += meshData.VariationShapesCount)
+                    for (int a = 0; a < variationWeightsEditor.Length; a++)
                     {
-                        SetVariationWeightUnsafe(a, globalVariationC);
-
-                        prevVariationWeightsEditor[a].value = variationWeightsEditor[a].value = globalVariationC;
-                    }
-                }
-
-                for (int a = 0; a < muscleWeightsEditor.Length; a++)
-                {
-                    if (prevMuscleWeightsEditor[a].value != muscleWeightsEditor[a].value)
-                    {
-                        SetMuscleDataUnsafe(a, muscleWeightsEditor[a].value);
-                        prevMuscleWeightsEditor[a].value = muscleWeightsEditor[a].value;
-                    }
-                }
-
-                for (int a = 0; a < fatWeightsEditor.Length; a++)
-                {
-                    if (prevFatWeightsEditor[a].value != fatWeightsEditor[a].value)
-                    {
-                        SetFatLevelUnsafe(a, fatWeightsEditor[a].value);
-                        prevFatWeightsEditor[a].value = fatWeightsEditor[a].value;
-                    }
-                }
-
-                for (int a = 0; a < variationWeightsEditor.Length; a++)
-                {
-                    if (math.any(prevVariationWeightsEditor[a].value != variationWeightsEditor[a].value))
-                    {
-                        SetVariationWeightUnsafe(a, variationWeightsEditor[a].value);
-                        prevVariationWeightsEditor[a].value = variationWeightsEditor[a].value;
+                        if (math.any(prevVariationWeightsEditor[a].value != variationWeightsEditor[a].value))
+                        {
+                            SetVariationWeightUnsafe(a, variationWeightsEditor[a].value);
+                            prevVariationWeightsEditor[a].value = variationWeightsEditor[a].value;
+                        }
                     }
                 }
             }
@@ -311,8 +364,15 @@ namespace Swole.Morphing
 #if UNITY_EDITOR
         [SerializeField]
 #endif
-        [Range(0f, 1f)]
-        private float globalPump; 
+        [Range(0f, 2f)]
+        private float globalPump;
+
+        private float prevGlobalVaricose;
+#if UNITY_EDITOR
+        [SerializeField]
+#endif
+        [Range(0f, 2f)]
+        private float globalVaricose;
 
         private float prevGlobalFat;
 #if UNITY_EDITOR
@@ -320,6 +380,19 @@ namespace Swole.Morphing
 #endif
         [Range(0f, 1f)]
         private float globalFat;
+
+        private float prevGlobalBodyHairLevel;
+#if UNITY_EDITOR
+        [SerializeField]
+#endif
+        [Range(0f, 1f)]
+        private float globalBodyHairLevel;
+        private float prevGlobalBodyHairBlend;
+#if UNITY_EDITOR
+        [SerializeField]
+#endif
+        [Range(0f, 1f)]
+        private float globalBodyHairBlend;
 
         private float prevGlobalVariationA;
 #if UNITY_EDITOR
@@ -380,11 +453,21 @@ namespace Swole.Morphing
         [NonSerialized]
 #endif
         [HideInInspector]
-        public NamedFloat[] prevFatWeightsEditor;
+        public NamedFloat[] prevFatWeightsEditor; 
 #if !UNITY_EDITOR
         [NonSerialized]
 #endif
         public NamedFloat[] fatWeightsEditor;
+
+#if !UNITY_EDITOR
+        [NonSerialized]
+#endif
+        [HideInInspector]
+        public NamedFloat2[] prevBodyHairWeightsEditor;
+#if !UNITY_EDITOR
+        [NonSerialized]
+#endif
+        public NamedFloat2[] bodyHairWeightsEditor;
 
 #if !UNITY_EDITOR
         [NonSerialized]
@@ -1959,7 +2042,7 @@ namespace Swole.Morphing
                             {
                                 vertexGroup.GetEntry(i, out int vertexIndex, out float vertexWeight);
 #if UNITY_EDITOR
-                                if (vertexWeight > 1f) Debug.LogWarning($"Vertex index {vertexIndex} for muscle group {vertexGroup.name} has weight of {vertexWeight}");
+                                if (vertexWeight > 1.001f) Debug.LogWarning($"Vertex index {vertexIndex} for muscle group {vertexGroup.name} has weight of {vertexWeight}");
 #endif
                                 tempGroupVertexWeights.Add(new GroupVertexControlWeight()
                                 {
@@ -2220,12 +2303,26 @@ namespace Swole.Morphing
             public float2 weight;
         }
         [Serializable, StructLayout(LayoutKind.Sequential)]
+        public struct ControlWeight4
+        {
+            public int index;
+            public float4 weight;
+        }
+        [Serializable, StructLayout(LayoutKind.Sequential)]
         public struct GroupControlWeight2
         {
             public int groupIndex;
             public int vertexSequenceStartIndex;
             public int vertexCount;
             public float2 weight;
+        }
+        [Serializable, StructLayout(LayoutKind.Sequential)]
+        public struct GroupControlWeight4
+        {
+            public int groupIndex;
+            public int vertexSequenceStartIndex;
+            public int vertexCount;
+            public float4 weight;
         }
         [Serializable, StructLayout(LayoutKind.Sequential)]
         public struct GroupVertexControlWeight
@@ -2242,6 +2339,14 @@ namespace Swole.Morphing
             public int vertexIndex;
 
             public float2 weight;
+        }
+        [Serializable, StructLayout(LayoutKind.Sequential)]
+        public struct GroupVertexControlWeight4
+        {
+            public int groupIndex;
+            public int vertexIndex;
+
+            public float4 weight;
         }
 
         #region Fat Jobs
@@ -3790,7 +3895,7 @@ namespace Swole.Morphing
                     tempWeights.Sort(CompareWeight);
                     float totalWeight = 0f;
 #if UNITY_EDITOR
-                    if (tempWeights.Count > 8) Debug.LogWarning($"Customizable Mesh vertex {vertexIndex} is affected by more than 8 muscle groups!");
+                    //if (tempWeights.Count > 8) Debug.LogWarning($"Customizable Mesh vertex {vertexIndex} is affected by more than 8 muscle groups!");
 #endif
                     for (int a = 0; a < Mathf.Min(tempWeights.Count, 8); a++)
                     {
@@ -3800,7 +3905,7 @@ namespace Swole.Morphing
                         totalWeight += weight.weight;
                     }
 #if UNITY_EDITOR
-                    if (totalWeight < 0.99f) Debug.LogWarning($"Customizable Mesh vertex {vertexIndex} muscle group influences do not total or exceed 1! (total: {totalWeight})");
+                    if (totalWeight < 0.99f && totalWeight > 0f) Debug.LogWarning($"Customizable Mesh vertex {vertexIndex} muscle group influences do not total or exceed 1! (total: {totalWeight})");
 #endif
                     if (totalWeight > 0f)
                     {
@@ -3838,7 +3943,7 @@ namespace Swole.Morphing
                     tempWeights.Sort(CompareWeight);
                     float totalWeight = 0f;
 #if UNITY_EDITOR
-                    if (tempWeights.Count > 8) Debug.LogWarning($"Customizable Mesh vertex {vertexIndex} is affected by more than 8 fat groups!");
+                    //if (tempWeights.Count > 8) Debug.LogWarning($"Customizable Mesh vertex {vertexIndex} is affected by more than 8 fat groups!");
 #endif
                     for (int a = 0; a < Mathf.Min(tempWeights.Count, 8); a++)
                     {
@@ -3978,7 +4083,7 @@ namespace Swole.Morphing
                         {
                             vertexGroup.GetEntry(i, out int vertexIndex, out float vertexWeight);
 #if UNITY_EDITOR
-                            if (vertexWeight > 1f) Debug.LogWarning($"Vertex index {vertexIndex} for muscle group {vertexGroup.name} has weight of {vertexWeight}");
+                            if (vertexWeight > 1.001f) Debug.LogWarning($"Vertex index {vertexIndex} for muscle group {vertexGroup.name} has weight of {vertexWeight}");
 #endif
                             tempGroupVertexWeights.Add(new GroupVertexControlWeight()
                             {
@@ -4105,11 +4210,13 @@ namespace Swole.Morphing
 
         protected override void SetupSkinnedMeshSyncs()
         {
-            if (standaloneShapeSyncs == null) standaloneShapeSyncs = new List<BlendShapeSync>[Data.StandaloneShapesCount];
-            if (muscleMassShapeSyncs == null) muscleMassShapeSyncs = new List<BlendShapeSyncLR>[Data.MassShapeFrameCount * Data.MuscleVertexGroupCount];
-            if (muscleFlexShapeSyncs == null) muscleFlexShapeSyncs = new List<BlendShapeSyncLR>[Data.FlexShapeFrameCount * Data.MuscleVertexGroupCount];
-            if (fatShapeSyncs == null) fatShapeSyncs = new List<BlendShapeSync>[Data.FatShapeFrameCount * Data.FatVertexGroupCount];
-            if (variationShapeSyncs == null) variationShapeSyncs = new List<BlendShapeSyncLR>[VariationShapesControlDataSize];
+            if (Data == null || syncedSkinnedMeshes == null) return;
+
+            if (standaloneShapeSyncs == null || standaloneShapeSyncs.Length != Data.StandaloneShapesCount) standaloneShapeSyncs = new List<BlendShapeSync>[Data.StandaloneShapesCount];
+            if (muscleMassShapeSyncs == null || muscleMassShapeSyncs.Length != Data.MassShapeFrameCount * Data.MuscleVertexGroupCount) muscleMassShapeSyncs = new List<BlendShapeSyncLR>[Data.MassShapeFrameCount * Data.MuscleVertexGroupCount];
+            if (muscleFlexShapeSyncs == null || muscleFlexShapeSyncs.Length != Data.FlexShapeFrameCount * Data.MuscleVertexGroupCount) muscleFlexShapeSyncs = new List<BlendShapeSyncLR>[Data.FlexShapeFrameCount * Data.MuscleVertexGroupCount];
+            if (fatShapeSyncs == null || fatShapeSyncs.Length != Data.FatShapeFrameCount * Data.FatVertexGroupCount) fatShapeSyncs = new List<BlendShapeSync>[Data.FatShapeFrameCount * Data.FatVertexGroupCount];
+            if (variationShapeSyncs == null || variationShapeSyncs.Length != VariationShapesControlDataSize) variationShapeSyncs = new List<BlendShapeSyncLR>[VariationShapesControlDataSize];
 
             for (int a = 0; a < standaloneShapeSyncs.Length; a++)
             {
@@ -4230,9 +4337,7 @@ namespace Swole.Morphing
         }
         protected void SyncVariationData(int groupIndex, int shapeIndex, float weightL, float weightR)
         {
-            var count = SubData.VariationShapesCount;
-
-            var list = variationShapeSyncs[(groupIndex * count) + shapeIndex];
+            var list = variationShapeSyncs[GetPartialVariationShapeIndexUnsafe(groupIndex, shapeIndex)];
             if (list != null && list.Count > 0)
             {
                 foreach (var sync in list)
@@ -4371,7 +4476,12 @@ namespace Swole.Morphing
         protected override void OnDestroyed()
         {
             base.OnDestroyed();
-            
+
+            if (characterInstanceReference != null)
+            {
+                characterInstanceReference.RemoveChild(this);
+            }
+
             if (children != null)
             {
                 children.Clear();
@@ -4414,31 +4524,36 @@ namespace Swole.Morphing
         protected override void OnAwake()
         {
 
+            autoCreateInstance = false;
+
             base.OnAwake();
+
+            if (data != null) SetData(data);
 
             SetAnimatablePropertiesController(animatablePropertiesController);
 
             Animator = animator; // force subscribe listeners
 
-            if (characterInstanceReference != null)
-            {
-                characterInstanceReference.AddChild(this);
-            }
-
-            autoCreateInstance = false;
+            if (characterInstanceReference != null) CharacterInstanceReference = characterInstanceReference;
 
         }
 
         protected override void OnStart()
         {
-            base.OnStart();
         }
 
         #region Data
 
         [SerializeField]
         protected CustomizableCharacterMeshV2_DATA data;
-        public void SetData(CustomizableCharacterMeshV2_DATA data) => this.data = data;
+        public void SetData(CustomizableCharacterMeshV2_DATA data) 
+        { 
+            var prevData = this.data;
+            this.data = data;
+
+            SetupSkinnedMeshSyncs();
+            if (enabled) StartRendering();
+        }
         public CustomizableCharacterMeshV2_DATA Data => data;
         public SerializedData SubData => data == null ? null : data.SerializedData;
 
@@ -4505,7 +4620,7 @@ namespace Swole.Morphing
             if (child == null) return;
 
             if (children == null) children = new List<CustomizableCharacterMeshV2>();
-            children.Add(child);
+            if (!children.Contains(child)) children.Add(child);
         }
         public void RemoveChild(CustomizableCharacterMeshV2 child)
         {
@@ -4694,14 +4809,15 @@ namespace Swole.Morphing
 
         protected DefaultRenderedMesh[] defaultRenderedMeshes;
 
-        public bool IsRendering() => lodGroup != null && defaultRenderedMeshes != null;
+        public bool RenderingIsInitialized() => lodGroup != null && defaultRenderedMeshes != null;
+        public bool IsRendering() => RenderingIsInitialized() && CanRender;
         public override bool IsRendering(int index) => IsRendering();
         public bool CanRender => instance != null && instance.IsValid;
 
         public void InitializeRendering()
         {
             
-            if (IsRendering() || !CanRender) return;
+            if (RenderingIsInitialized() || !CanRender) return;
             
             var meshData = SubData;
             var bounds = new Bounds(meshData.boundsCenter, meshData.boundsExtents * 2f);
@@ -4742,13 +4858,17 @@ namespace Swole.Morphing
             }
 
             lodGroup.SetLODs(lods);
+            lodGroup.RecalculateBounds();
+
+            InitBuffers();
         }
         protected virtual void StartRendering()
         {
+            if (Data == null) return;
+
             if (lodGroup != null) lodGroup.gameObject.SetActive(true);
 
             CreateInstance();
-            InitBuffers();
             InitializeRendering();
 
             var materialInstances = MaterialInstances;
@@ -4765,7 +4885,7 @@ namespace Swole.Morphing
             {
                 foreach(var renderedMesh in defaultRenderedMeshes)
                 {
-                    if (renderedMesh.meshRenderer != null) renderedMesh.meshRenderer.sharedMaterials = materialInstances; 
+                    if (renderedMesh.meshRenderer != null) renderedMesh.meshRenderer.sharedMaterials = materialInstances;  
                 }
             }
         }
@@ -4815,7 +4935,7 @@ namespace Swole.Morphing
 
         protected override void OnEnable()
         {
-            StartRendering();
+            StartRendering(); 
         }
         protected override void OnDisable()
         {
@@ -5021,20 +5141,15 @@ namespace Swole.Morphing
         public int IndexOfMuscleGroup(string groupName) => Data == null ? -1 : SubData.IndexOfMuscleGroup(groupName);
 
         public int FirstFatGroupsControlIndex => CharacterInstanceID * SubData.FatVertexGroupCount;
-        public float GetFatLevelUnsafe(int groupIndex) => FatGroupsControlBuffer[FirstFatGroupsControlIndex + groupIndex].x;//FatGroupsControl[groupIndex].x;
+        public float GetFatLevelUnsafe(int groupIndex) => FatGroupsControlBuffer[FirstFatGroupsControlIndex + groupIndex].x;
         public float GetFatLevel(int groupIndex)
         {
-            if (instance == null || groupIndex < 0 || groupIndex >= SubData.FatVertexGroupCount) return 0;  
+            if (instance == null || groupIndex < 0 || groupIndex >= SubData.FatVertexGroupCount) return 0f;  
             return GetFatLevelUnsafe(groupIndex);
         }
         public UnityEvent<int> OnFatDataChanged;
         public void SetFatLevelUnsafe(int groupIndex, float level)
         {
-            //var array = FatGroupsControl;
-            //var val = array[groupIndex];
-            //val.x = level;
-            //array[groupIndex] = val;
-
             if (!IsInitialized) return;
 
             if (characterInstanceReference == null)
@@ -5046,8 +5161,6 @@ namespace Swole.Morphing
             }
 
             SyncFatLevel(groupIndex, level);
-
-            //dirtyFlag_fatGroupsControl = true;
 
             if (instance != null && instance.IsValid)
             {
@@ -5070,6 +5183,37 @@ namespace Swole.Morphing
         {
             if (instance == null || groupIndex < 0 || groupIndex >= SubData.FatVertexGroupCount) return;
             SetFatLevelUnsafe(groupIndex, level);
+        }
+        public float2 GetBodyHairLevelUnsafe(int groupIndex) => FatGroupsControlBuffer[FirstFatGroupsControlIndex + groupIndex].zw;
+        public float2 GetBodyHairLevel(int groupIndex)
+        {
+            if (instance == null || groupIndex < 0 || groupIndex >= SubData.FatVertexGroupCount) return 0f;
+            return GetBodyHairLevelUnsafe(groupIndex);
+        }
+        public void SetBodyHairLevelUnsafe(int groupIndex, float level, float blend = 1f)
+        {
+            if (!IsInitialized) return;
+
+            if (characterInstanceReference == null)
+            {
+                int controlIndex = FirstFatGroupsControlIndex + groupIndex;
+                var val = FatGroupsControlBuffer[controlIndex];
+                val.z = level;
+                val.w = blend;
+                FatGroupsControlBuffer[controlIndex] = val;
+            }
+
+            OnFatDataChanged?.Invoke(groupIndex);
+
+            if (children != null)
+            {
+                foreach (var child in children) if (child != null) child.SetBodyHairLevelUnsafe(groupIndex, level, blend);
+            }
+        }
+        public void SetBodyHairLevel(int groupIndex, float level, float blend = 1f)
+        {
+            if (instance == null || groupIndex < 0 || groupIndex >= SubData.FatVertexGroupCount) return;
+            SetBodyHairLevelUnsafe(groupIndex, level, blend);
         }
         public int IndexOfFatGroup(string groupName) => Data == null ? -1 : SubData.IndexOfFatGroup(groupName);
 
@@ -5301,7 +5445,7 @@ namespace Swole.Morphing
 
         protected void OnAnimatorResetPose()
         {
-            if (!IsInitialized) return;
+            if (!IsInitialized || characterInstanceReference != null) return;
 
             for (int a = 0; a < SubData.MuscleVertexGroupCount; a++)
             {
@@ -5407,9 +5551,29 @@ namespace Swole.Morphing
         public virtual string MorphBufferID => characterInstanceReference != null ? characterInstanceReference.MorphBufferID : morphBufferId;
 
         public CustomizableCharacterMeshV2 shapesInstanceReference;
+        public ICustomizableCharacter ShapesInstanceReference
+        {
+            get => shapesInstanceReference;
+            set
+            {
+                if (value is CustomizableCharacterMeshV2 meshV2)
+                {
+                    shapesInstanceReference = meshV2;
+                }
+                else
+                {
+                    shapesInstanceReference = null;
+                }
+            }
+        }
         public int ShapesInstanceID => shapesInstanceReference == null ? InstanceSlot : shapesInstanceReference.ShapesInstanceID;
 
         public InstanceableSkinnedMeshBase rigInstanceReference;
+        public InstanceableSkinnedMeshBase RigInstanceReference
+        {
+            get => rigInstanceReference;
+            set => rigInstanceReference = value;
+        }
         public bool RigInstanceReferenceIsValid => rigInstanceReference != null && rigInstanceReference.SkinningBoneCount == SkinningBoneCount;
         public override int RigInstanceID => rigInstanceReference == null ? InstanceSlot : rigInstanceReference.RigInstanceID;
         public void SetRigBufferID(string id) { }
@@ -5426,6 +5590,24 @@ namespace Swole.Morphing
         }
 
         public CustomizableCharacterMeshV2 characterInstanceReference;
+        public ICustomizableCharacter CharacterInstanceReference
+        {
+            get => characterInstanceReference;
+            set
+            {
+                if (characterInstanceReference != null) characterInstanceReference.RemoveChild(this);
+
+                if (value is CustomizableCharacterMeshV2 meshV2)
+                {
+                    characterInstanceReference = meshV2;
+                    characterInstanceReference.AddChild(this); 
+                }
+                else
+                {
+                    characterInstanceReference = null;
+                }
+            }
+        }
         public int CharacterInstanceID => characterInstanceReference == null ? InstanceID : characterInstanceReference.CharacterInstanceID;
 
         public void SetShapesInstanceID(int id)
@@ -5522,14 +5704,14 @@ namespace Swole.Morphing
                         int indexStart = FirstFatGroupsControlIndex;
                         if (meshData.fatGroupModifiers == null)
                         {
-                            for (int a = 0; a < meshData.FatVertexGroupCount; a++) fatGroupsControlBuffer.WriteToBufferFast(indexStart + a, new float3(0, _defaultFatGroupModifier.x, _defaultFatGroupModifier.y));
+                            for (int a = 0; a < meshData.FatVertexGroupCount; a++) fatGroupsControlBuffer.WriteToBufferFast(indexStart + a, new float4(0f, _defaultFatGroupModifier.x, 0f, 0f));
                         }
                         else
                         {
                             for (int a = 0; a < meshData.FatVertexGroupCount; a++)
                             {
                                 var modifier = meshData.GetFatGroupModifier(a);
-                                fatGroupsControlBuffer.WriteToBufferFast(indexStart + a, new float3(0, modifier.x, modifier.y));
+                                fatGroupsControlBuffer.WriteToBufferFast(indexStart + a, new float4(0f, modifier.x, 0f, 0f));
                             }
                         }
 
@@ -5759,8 +5941,8 @@ namespace Swole.Morphing
             }
         }
 
-        protected InstanceBuffer<float3> fatGroupsControlBuffer;
-        public InstanceBuffer<float3> FatGroupsControlBuffer
+        protected InstanceBuffer<float4> fatGroupsControlBuffer;
+        public InstanceBuffer<float4> FatGroupsControlBuffer
         {
             get
             {
@@ -5775,9 +5957,9 @@ namespace Swole.Morphing
                         if (instance != null && instance.IsValid)
                         {
                             string matProperty = SubData.FatGroupsControlPropertyName;
-                            if (!instance.OwnerGroup.TryGetInstanceBuffer<float3>(matProperty, out fatGroupsControlBuffer))
+                            if (!instance.OwnerGroup.TryGetInstanceBuffer<float4>(matProperty, out fatGroupsControlBuffer))
                             {
-                                instance.OwnerGroup.CreateInstanceMaterialBuffer<float3>(matProperty, SubData.FatVertexGroupCount, 2, false, out fatGroupsControlBuffer);
+                                instance.OwnerGroup.CreateInstanceMaterialBuffer<float4>(matProperty, SubData.FatVertexGroupCount, 2, false, out fatGroupsControlBuffer);
                             }
 
                             if (children != null)
@@ -5793,7 +5975,7 @@ namespace Swole.Morphing
         }
         public void BindFatGroupsControlBufferToMaterials()
         {
-            BindMuscleGroupsControlBufferToMaterials(MaterialInstances);
+            BindFatGroupsControlBufferToMaterials(MaterialInstances);
         }
         public void BindFatGroupsControlBufferToMaterials(Material[] materialInstances)
         {
@@ -5862,7 +6044,7 @@ namespace Swole.Morphing
         }
         public void BindVariationGroupsControlBufferToMaterials()
         {
-            BindMuscleGroupsControlBufferToMaterials(MaterialInstances);
+            BindVariationGroupsControlBufferToMaterials(MaterialInstances);
         }
         public void BindVariationGroupsControlBufferToMaterials(Material[] materialInstances)
         {
@@ -5910,7 +6092,7 @@ namespace Swole.Morphing
                     OnMuscleDataChanged.AddListener(listener);
                     break;
                 case ICustomizableCharacter.ListenableEvent.OnFatDataChanged:
-                    if (OnFatDataChanged == null) OnFatDataChanged = new UnityEvent<int>();
+                    if (OnFatDataChanged == null) OnFatDataChanged = new UnityEvent<int>(); 
                     OnFatDataChanged.AddListener(listener);
                     break;
             }

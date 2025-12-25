@@ -4,6 +4,7 @@ using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.Runtime.CompilerServices;
+using System.Runtime.InteropServices;
 
 using Unity.Mathematics;
 using Unity.Collections;
@@ -1657,13 +1658,16 @@ namespace Swole
         }
 
 
-        public static bool GetClosestContainingTriangle(Vector3[] containingVertices, int[] containingTris, Vector3 targetPosition, out int i1, out int i2, out int i3, out float w1, out float w2, out float w3, float maxDistance = -1, float errorMargin = 0)
+        public static bool GetClosestContainingTriangle(Vector3[] containingVertices, int[] containingTris, Vector3 targetPosition, out int i1, out int i2, out int i3, out float w1, out float w2, out float w3, float maxDistance = -1, float errorMargin = 0f)
         {
             return GetClosestContainingTriangle(containingVertices, containingTris, targetPosition, out i1, out i2, out i3, out w1, out w2, out w3, out _, maxDistance, errorMargin);
         }
-        public static bool GetClosestContainingTriangle(Vector3[] containingVertices, int[] containingTris, Vector3 targetPosition, out int i1, out int i2, out int i3, out float w1, out float w2, out float w3, out float closestDistance, float maxDistance = -1, float errorMargin = 0)
+        public static bool GetClosestContainingTriangle(Vector3[] containingVertices, int[] containingTris, Vector3 targetPosition, out int i1, out int i2, out int i3, out float w1, out float w2, out float w3, out float closestDistance, float maxDistance = -1, float errorMargin = 0f)
         {
-            closestDistance = float.MaxValue; 
+            return GetClosestContainingTriangleFromJob(containingVertices, containingTris, targetPosition, out i1, out i2, out i3, out w1, out w2, out w3, out closestDistance, maxDistance, errorMargin);
+
+            /*closestDistance = float.MaxValue;
+            float maxDistanceSqr = maxDistance > 0f ? (maxDistance * maxDistance) : maxDistance;
 
             i1 = -1;
             i2 = -1;
@@ -1685,14 +1689,8 @@ namespace Swole
                 Vector3 v2 = containingVertices[i2_];
                 Vector3 v3 = containingVertices[i3_];
 
-                /*float d1 = (v1 - targetPosition).sqrMagnitude;
-                float d2 = (v2 - targetPosition).sqrMagnitude;
-                float d3 = (v3 - targetPosition).sqrMagnitude;
-
-                float distance = Mathf.Min(d1, d2, d3);*/
-
                 float distance = (((v1 + v2 + v3) / 3f) - targetPosition).sqrMagnitude; 
-                if (distance < closestDistance && (maxDistance < 0 || distance < (maxDistance * maxDistance))) 
+                if (distance < closestDistance && (maxDistanceSqr < 0 || distance < maxDistanceSqr)) 
                 {
                     var coords = Maths.BarycentricCoords(targetPosition, v1, v2, v3); 
                     if (Maths.IsInTriangle(coords, errorMargin))
@@ -1711,7 +1709,356 @@ namespace Swole
 
             }
 
-            return i1 >= 0 && i2 >= 0 && i3 >= 0;
+            return i1 >= 0 && i2 >= 0 && i3 >= 0;*/
+        }
+
+        public static bool GetClosestContainingTriangleFromJob(Vector3[] containingVertices, int[] containingTris, Vector3 targetPosition, out int i1, out int i2, out int i3, out float w1, out float w2, out float w3, out float closestDistance, float maxDistance = -1, float errorMargin = 0f)
+        {
+            using (var containingVertices_ = new NativeArray<Vector3>(containingVertices, Allocator.TempJob).Reinterpret<float3>())
+            {
+                using (var containingTris_ = new NativeArray<int>(containingTris, Allocator.TempJob))
+                {
+                    return GetClosestContainingTriangleFromJob(containingVertices_, containingTris_, targetPosition, out i1, out i2, out i3, out w1, out w2, out w3, out closestDistance, maxDistance, errorMargin);
+                }
+            }
+        }
+        public static bool GetClosestContainingTriangleFromJob(float3[] containingVertices, int[] containingTris, Vector3 targetPosition, out int i1, out int i2, out int i3, out float w1, out float w2, out float w3, out float closestDistance, float maxDistance = -1, float errorMargin = 0f)
+        {
+            using (var containingVertices_ = new NativeArray<float3>(containingVertices, Allocator.TempJob))
+            {
+                using (var containingTris_ = new NativeArray<int>(containingTris, Allocator.TempJob))
+                {
+                    return GetClosestContainingTriangleFromJob(containingVertices_, containingTris_, targetPosition, out i1, out i2, out i3, out w1, out w2, out w3, out closestDistance, maxDistance, errorMargin);
+                }
+            }
+        }
+        public static bool GetClosestContainingTriangleFromJob(NativeArray<float3> containingVertices, NativeArray<int> containingTris, Vector3 targetPosition, out int i1, out int i2, out int i3, out float w1, out float w2, out float w3, out float closestDistance, float maxDistance = -1, float errorMargin = 0f)
+        {
+            using (var initialOutputs = new NativeArray<ClosestTriangleData>(containingTris.Length / 3, Allocator.TempJob))
+            {
+                var handle = new ClosestTriangleDataJob()
+                {
+                    maxDistanceSqr = maxDistance > 0f ? (maxDistance * maxDistance) : 0f,
+                    errorMargin = errorMargin,
+
+                    targetPosition = targetPosition,
+
+                    containingVertices = containingVertices,
+                    containingTris = containingTris,
+
+                    outputs = initialOutputs
+
+                }.Schedule(initialOutputs.Length, 4, default);
+
+                using (var secondaryOutputs = new NativeQueue<ClosestTriangleData>(Allocator.TempJob))
+                {
+                    handle = new ClosestTriangleDataBatchJob()
+                    {
+                        outputs = initialOutputs,
+                        finalOutputs = secondaryOutputs.AsParallelWriter() 
+                    }.Schedule(initialOutputs.Length, 100, handle);
+
+                    using (var finalOutput = new NativeArray<ClosestTriangleData>(1, Allocator.TempJob))
+                    {
+                        handle = new ClosestTriangleDataMinJob()
+                        {
+                            finalOutput = finalOutput,
+                            outputs = secondaryOutputs
+                        }.Schedule(handle);
+
+                        handle.Complete();
+
+                        var finalData = finalOutput[0];
+
+                        closestDistance = finalData.distance;
+
+                        i1 = finalData.i1;
+                        i2 = finalData.i2;
+                        i3 = finalData.i3;
+
+                        w1 = finalData.barycentricCoords.x;
+                        w2 = finalData.barycentricCoords.y;
+                        w3 = finalData.barycentricCoords.z;
+
+                        return i1 >= 0 && i2 >= 0 && i3 >= 0;
+                    }
+                }
+            }
+        }
+
+        public static bool GetClosestContainingTriangleFromJobWithUV(Vector2[] containingUVs, float uvWeight, float positionWeight, float normalWeight, float triCoordinateWeight, Vector3[] containingVertices, Vector3[] containingNormals, int[] containingTris, Vector2 targetUV, Vector3 targetPosition, Vector3 targetNormal, out int i1, out int i2, out int i3, out float w1, out float w2, out float w3, out float closestDistance, float maxUVDistance = -1, float maxDistance = -1, float minDot = 0f, float errorMargin = 0f)
+        {
+            using (var containingUVs_ = new NativeArray<Vector2>(containingUVs, Allocator.TempJob).Reinterpret<float2>())
+            {
+                using (var containingVertices_ = new NativeArray<Vector3>(containingVertices, Allocator.TempJob).Reinterpret<float3>())
+                {
+                    using (var containingNormals_ = new NativeArray<Vector3>(containingNormals, Allocator.TempJob).Reinterpret<float3>())
+                    {
+                        using (var containingTris_ = new NativeArray<int>(containingTris, Allocator.TempJob))
+                        {
+                            return GetClosestContainingTriangleFromJobWithUV(containingUVs_, uvWeight, positionWeight, normalWeight, triCoordinateWeight, containingVertices_, containingNormals_, containingTris_, targetUV, targetPosition, targetNormal, out i1, out i2, out i3, out w1, out w2, out w3, out closestDistance, maxUVDistance, maxDistance, minDot, errorMargin);
+                        }
+                    }
+                }
+            }
+        }
+        public static bool GetClosestContainingTriangleFromJobWithUV(float2[] containingUVs, float uvWeight, float positionWeight, float normalWeight, float triCoordinateWeight, float3[] containingVertices, float3[] containingNormals, int[] containingTris, Vector2 targetUV, Vector3 targetPosition, Vector3 targetNormal, out int i1, out int i2, out int i3, out float w1, out float w2, out float w3, out float closestDistance, float maxUVDistance = -1, float maxDistance = -1, float minDot = 0f, float errorMargin = 0f)
+        {
+            using (var containingUVs_ = new NativeArray<float2>(containingUVs, Allocator.TempJob))
+            {
+                using (var containingVertices_ = new NativeArray<float3>(containingVertices, Allocator.TempJob))
+                {
+                    using (var containingNormals_ = new NativeArray<float3>(containingNormals, Allocator.TempJob))
+                    {
+                        using (var containingTris_ = new NativeArray<int>(containingTris, Allocator.TempJob))
+                        {
+                            return GetClosestContainingTriangleFromJobWithUV(containingUVs_, uvWeight, positionWeight, normalWeight, triCoordinateWeight, containingVertices_, containingNormals_, containingTris_, targetUV, targetPosition, targetNormal, out i1, out i2, out i3, out w1, out w2, out w3, out closestDistance, maxUVDistance, maxDistance, minDot, errorMargin);
+                        }
+                    }
+                }
+            }
+        }
+        public static bool GetClosestContainingTriangleFromJobWithUV(NativeArray<float2> containingUVs, float uvWeight, float positionWeight, float normalWeight, float triCoordinateWeight, NativeArray<float3> containingVertices, NativeArray<float3> containingNormals, NativeArray<int> containingTris, Vector2 targetUV, Vector3 targetPosition, Vector3 targetNormal, out int i1, out int i2, out int i3, out float w1, out float w2, out float w3, out float closestDistance, float maxUVDistance = -1, float maxDistance = -1, float minDot = 0f, float errorMargin = 0f)
+        {
+            using (var initialOutputs = new NativeArray<ClosestTriangleData>(containingTris.Length / 3, Allocator.TempJob))
+            {
+                var handle = new ClosestTriangleWithUVDataJob()
+                {
+                    maxDistancesSqr = new float3(maxUVDistance > 0f ? (maxUVDistance * maxUVDistance) : 0f, maxDistance > 0f ? (maxDistance * maxDistance) : 0f, minDot),
+                    errorMargin = errorMargin,
+
+                    uvPositionNormalWeights = new float3(uvWeight, positionWeight, normalWeight),
+                    coordinateWeight = triCoordinateWeight,
+
+                    targetUV = targetUV,
+                    targetPosition = targetPosition,
+                    targetNormal = targetNormal,
+
+                    containingUVs = containingUVs,
+                    containingVertices = containingVertices,
+                    containingNormals = containingNormals,
+                    containingTris = containingTris,
+
+                    outputs = initialOutputs
+
+                }.Schedule(initialOutputs.Length, 4, default);
+
+                using (var secondaryOutputs = new NativeQueue<ClosestTriangleData>(Allocator.TempJob))
+                {
+                    handle = new ClosestTriangleDataBatchJob()
+                    {
+                        outputs = initialOutputs,
+                        finalOutputs = secondaryOutputs.AsParallelWriter()
+                    }.Schedule(initialOutputs.Length, 100, handle);
+
+                    using (var finalOutput = new NativeArray<ClosestTriangleData>(1, Allocator.TempJob))
+                    {
+                        handle = new ClosestTriangleDataMinJob()
+                        {
+                            finalOutput = finalOutput,
+                            outputs = secondaryOutputs
+                        }.Schedule(handle);
+
+                        handle.Complete();
+
+                        var finalData = finalOutput[0];
+
+                        closestDistance = finalData.distance;
+
+                        i1 = finalData.i1;
+                        i2 = finalData.i2;
+                        i3 = finalData.i3;
+
+                        w1 = finalData.barycentricCoords.x;// math.max(0f, finalData.barycentricCoords.x);
+                        w2 = finalData.barycentricCoords.y;// math.max(0f, finalData.barycentricCoords.y);
+                        w3 = finalData.barycentricCoords.z;// math.max(0f, finalData.barycentricCoords.z);
+
+                        return i1 >= 0 && i2 >= 0 && i3 >= 0;
+                    }
+                }
+            }
+        }
+
+        [StructLayout(LayoutKind.Sequential)]
+        private struct ClosestTriangleData
+        {
+            public float distance;
+            public int i1, i2, i3;
+            public float3 barycentricCoords;
+        }
+
+        [BurstCompile]
+        private struct ClosestTriangleDataJob : IJobParallelFor
+        {
+            public float maxDistanceSqr;
+            public float errorMargin;
+
+            public float3 targetPosition;
+
+            [ReadOnly]
+            public NativeArray<int> containingTris;
+
+            [ReadOnly]
+            public NativeArray<float3> containingVertices;
+
+            [NativeDisableParallelForRestriction]
+            public NativeArray<ClosestTriangleData> outputs; 
+
+            public void Execute(int index)
+            {
+                int triIndex = index * 3;
+                int i1_ = containingTris[triIndex];
+                int i2_ = containingTris[triIndex + 1];
+                int i3_ = containingTris[triIndex + 2];
+
+                float3 v1 = containingVertices[i1_];
+                float3 v2 = containingVertices[i2_];
+                float3 v3 = containingVertices[i3_];
+
+                float distance = math.lengthsq(((v1 + v2 + v3) / 3f) - targetPosition);
+                if (maxDistanceSqr <= 0f | distance < maxDistanceSqr)
+                {
+                    var coords = Maths.BarycentricCoords(targetPosition, v1, v2, v3);
+                    if (Maths.IsInTriangle(coords, errorMargin))
+                    {
+                        var data = new ClosestTriangleData()
+                        {
+                            distance = distance,
+                            i1 = i1_,
+                            i2 = i2_,
+                            i3 = i3_,
+                            barycentricCoords = coords
+                        };
+
+                        outputs[index] = data;
+                    }
+                }
+
+            }
+        }
+
+        [BurstCompile]
+        private struct ClosestTriangleWithUVDataJob : IJobParallelFor
+        {
+            public float errorMargin;
+
+            public float coordinateWeight;
+
+            public float3 maxDistancesSqr;
+            public float3 uvPositionNormalWeights;
+
+            public float2 targetUV;
+            public float3 targetPosition;
+            public float3 targetNormal;
+
+            [ReadOnly]
+            public NativeArray<int> containingTris;
+
+            [ReadOnly]
+            public NativeArray<float3> containingVertices;
+            [ReadOnly]
+            public NativeArray<float3> containingNormals;
+
+            [ReadOnly]
+            public NativeArray<float2> containingUVs;
+
+            [NativeDisableParallelForRestriction]
+            public NativeArray<ClosestTriangleData> outputs;
+
+            public static readonly float3 _minMaxDistances = new float3(0f, 0f, -1f);
+
+            public void Execute(int index)
+            {
+                int triIndex = index * 3;
+                int i1_ = containingTris[triIndex];
+                int i2_ = containingTris[triIndex + 1];
+                int i3_ = containingTris[triIndex + 2];
+
+                float3 v1 = containingVertices[i1_];
+                float3 v2 = containingVertices[i2_];
+                float3 v3 = containingVertices[i3_];
+
+                float3 n1 = containingNormals[i1_]; 
+                float3 n2 = containingNormals[i2_];
+                float3 n3 = containingNormals[i3_];
+
+                float2 uv1 = containingUVs[i1_];
+                float2 uv2 = containingUVs[i2_];
+                float2 uv3 = containingUVs[i3_];
+
+                float3 distances = new float3(math.lengthsq(((uv1 + uv2 + uv3) / 3f) - targetUV), math.lengthsq(((v1 + v2 + v3) / 3f) - targetPosition), -math.dot(targetNormal, (n1 + n2 + n3) / 3f));
+                if (math.all(maxDistancesSqr <= _minMaxDistances | distances < maxDistancesSqr))
+                {
+                    var coords = Maths.BarycentricCoords(targetPosition, v1, v2, v3); 
+                    if (Maths.IsInTriangle(coords, errorMargin))
+                    {
+                        float z = distances.z = math.saturate((1f + distances.z) * 0.5f);
+                        distances = distances * uvPositionNormalWeights;
+
+                        var data = new ClosestTriangleData()
+                        {
+                            distance = distances.x + distances.y + distances.z + (math.max(math.lerp(0f, 1f, z), math.max(math.max(coords.x, coords.y), coords.z)) * coordinateWeight),
+                            i1 = i1_,
+                            i2 = i2_,
+                            i3 = i3_,
+                            barycentricCoords = coords
+                        };
+
+                        outputs[index] = data;
+                    }
+                }
+
+            }
+        }
+
+        [BurstCompile]
+        private struct ClosestTriangleDataBatchJob : IJobParallelForBatch
+        {
+
+            [ReadOnly]
+            public NativeArray<ClosestTriangleData> outputs;
+
+            public NativeQueue<ClosestTriangleData>.ParallelWriter finalOutputs;
+
+            public void Execute(int startIndex, int count)
+            {
+                ClosestTriangleData min = new ClosestTriangleData() { i1 = -1, i2 = -1, i3 = -1, distance = float.MaxValue };
+
+                for (var i = 0; i < count; i++)
+                {
+                    var f = outputs[i + startIndex];
+
+                    if (f.distance > 0f && f.distance < min.distance)
+                    {
+                        min = f;
+                    }
+                }
+
+                finalOutputs.Enqueue(min);
+            }
+        }
+        [BurstCompile]
+        private struct ClosestTriangleDataMinJob : IJob
+        {
+
+            public NativeQueue<ClosestTriangleData> outputs;
+
+            public NativeArray<ClosestTriangleData> finalOutput;
+
+            public void Execute()
+            {
+                ClosestTriangleData min = new ClosestTriangleData() { i1 = -1, i2 = -1, i3 = -1, distance = float.MaxValue };
+
+                while (outputs.TryDequeue(out var f))
+                {
+                    if (f.distance < min.distance)
+                    {
+                        min = f;
+                    }
+                }
+
+                finalOutput[0] = min;
+            }
         }
 
         [Serializable]

@@ -629,29 +629,6 @@
 
 {
     "m_SGVersion": 0,
-    "m_Type": "UnityEditor.ShaderGraph.Vector3MaterialSlot",
-    "m_ObjectId": "117d213d3b9b49d3aafbae0765a5e3bc",
-    "m_Id": 4,
-    "m_DisplayName": "Out_MuscleData",
-    "m_SlotType": 0,
-    "m_Hidden": false,
-    "m_ShaderOutputName": "Out_MuscleData",
-    "m_StageCapability": 3,
-    "m_Value": {
-        "x": 0.0,
-        "y": 0.0,
-        "z": 0.0
-    },
-    "m_DefaultValue": {
-        "x": 0.0,
-        "y": 0.0,
-        "z": 0.0
-    },
-    "m_Labels": []
-}
-
-{
-    "m_SGVersion": 0,
     "m_Type": "UnityEditor.ShaderGraph.Vector1MaterialSlot",
     "m_ObjectId": "121b0a9fb6124d38a8e8d0c966e10eeb",
     "m_Id": 16,
@@ -751,52 +728,6 @@
 
 {
     "m_SGVersion": 0,
-    "m_Type": "UnityEditor.ShaderGraph.Vector3MaterialSlot",
-    "m_ObjectId": "2a49f357915e418890724ba99ce21c6e",
-    "m_Id": 9,
-    "m_DisplayName": "outMuscleData",
-    "m_SlotType": 1,
-    "m_Hidden": false,
-    "m_ShaderOutputName": "outMuscleData",
-    "m_StageCapability": 3,
-    "m_Value": {
-        "x": 0.0,
-        "y": 0.0,
-        "z": 0.0
-    },
-    "m_DefaultValue": {
-        "x": 0.0,
-        "y": 0.0,
-        "z": 0.0
-    },
-    "m_Labels": []
-}
-
-{
-    "m_SGVersion": 0,
-    "m_Type": "UnityEditor.ShaderGraph.Vector3MaterialSlot",
-    "m_ObjectId": "3127fefaf2df40efb62feb41fab2e9bf",
-    "m_Id": 10,
-    "m_DisplayName": "outFatData",
-    "m_SlotType": 1,
-    "m_Hidden": false,
-    "m_ShaderOutputName": "outFatData",
-    "m_StageCapability": 3,
-    "m_Value": {
-        "x": 0.0,
-        "y": 0.0,
-        "z": 0.0
-    },
-    "m_DefaultValue": {
-        "x": 0.0,
-        "y": 0.0,
-        "z": 0.0
-    },
-    "m_Labels": []
-}
-
-{
-    "m_SGVersion": 0,
     "m_Type": "UnityEditor.ShaderGraph.Vector1MaterialSlot",
     "m_ObjectId": "31cfadbe19804716a648dfcd083323a3",
     "m_Id": 21,
@@ -836,29 +767,6 @@
         "x": 0.0,
         "y": 1.0
     }
-}
-
-{
-    "m_SGVersion": 0,
-    "m_Type": "UnityEditor.ShaderGraph.Vector3MaterialSlot",
-    "m_ObjectId": "357ed8ee4aff42898dcfa6db5710bf90",
-    "m_Id": 5,
-    "m_DisplayName": "Out_FatData",
-    "m_SlotType": 0,
-    "m_Hidden": false,
-    "m_ShaderOutputName": "Out_FatData",
-    "m_StageCapability": 3,
-    "m_Value": {
-        "x": 0.0,
-        "y": 0.0,
-        "z": 0.0
-    },
-    "m_DefaultValue": {
-        "x": 0.0,
-        "y": 0.0,
-        "z": 0.0
-    },
-    "m_Labels": []
 }
 
 {
@@ -1639,6 +1547,56 @@
 
 {
     "m_SGVersion": 0,
+    "m_Type": "UnityEditor.ShaderGraph.Vector4MaterialSlot",
+    "m_ObjectId": "85c58ea11db24a40bcd06228f8e2d1b6",
+    "m_Id": 10,
+    "m_DisplayName": "outFatData",
+    "m_SlotType": 1,
+    "m_Hidden": false,
+    "m_ShaderOutputName": "outFatData",
+    "m_StageCapability": 3,
+    "m_Value": {
+        "x": 0.0,
+        "y": 0.0,
+        "z": 0.0,
+        "w": 0.0
+    },
+    "m_DefaultValue": {
+        "x": 0.0,
+        "y": 0.0,
+        "z": 0.0,
+        "w": 0.0
+    },
+    "m_Labels": []
+}
+
+{
+    "m_SGVersion": 0,
+    "m_Type": "UnityEditor.ShaderGraph.Vector4MaterialSlot",
+    "m_ObjectId": "88c12af934944027bea7e6f00905fa51",
+    "m_Id": 4,
+    "m_DisplayName": "Out_MuscleData",
+    "m_SlotType": 0,
+    "m_Hidden": false,
+    "m_ShaderOutputName": "Out_MuscleData",
+    "m_StageCapability": 3,
+    "m_Value": {
+        "x": 0.0,
+        "y": 0.0,
+        "z": 0.0,
+        "w": 0.0
+    },
+    "m_DefaultValue": {
+        "x": 0.0,
+        "y": 0.0,
+        "z": 0.0,
+        "w": 0.0
+    },
+    "m_Labels": []
+}
+
+{
+    "m_SGVersion": 0,
     "m_Type": "UnityEditor.ShaderGraph.Vector3MaterialSlot",
     "m_ObjectId": "912f6a9294c9422282a423683ec4b2ff",
     "m_Id": 1,
@@ -1782,6 +1740,31 @@
 
 {
     "m_SGVersion": 0,
+    "m_Type": "UnityEditor.ShaderGraph.Vector4MaterialSlot",
+    "m_ObjectId": "a382ac029d5447dd9abfccbaca75bcc6",
+    "m_Id": 5,
+    "m_DisplayName": "Out_FatData",
+    "m_SlotType": 0,
+    "m_Hidden": false,
+    "m_ShaderOutputName": "Out_FatData",
+    "m_StageCapability": 3,
+    "m_Value": {
+        "x": 0.0,
+        "y": 0.0,
+        "z": 0.0,
+        "w": 0.0
+    },
+    "m_DefaultValue": {
+        "x": 0.0,
+        "y": 0.0,
+        "z": 0.0,
+        "w": 0.0
+    },
+    "m_Labels": []
+}
+
+{
+    "m_SGVersion": 0,
     "m_Type": "UnityEditor.ShaderGraph.BooleanMaterialSlot",
     "m_ObjectId": "a446254fef5a46e497862de475767c23",
     "m_Id": 0,
@@ -1823,10 +1806,10 @@
             "m_Id": "dc8d14ffd2bb4d8bae75dd1617884fc4"
         },
         {
-            "m_Id": "117d213d3b9b49d3aafbae0765a5e3bc"
+            "m_Id": "88c12af934944027bea7e6f00905fa51"
         },
         {
-            "m_Id": "357ed8ee4aff42898dcfa6db5710bf90"
+            "m_Id": "a382ac029d5447dd9abfccbaca75bcc6"
         },
         {
             "m_Id": "83b6ef3ddaad4be1a1e014f5b9719b57"
@@ -2508,6 +2491,31 @@
 
 {
     "m_SGVersion": 0,
+    "m_Type": "UnityEditor.ShaderGraph.Vector4MaterialSlot",
+    "m_ObjectId": "de86ba9bd8424919bce18bb1ed55c1a1",
+    "m_Id": 9,
+    "m_DisplayName": "outMuscleData",
+    "m_SlotType": 1,
+    "m_Hidden": false,
+    "m_ShaderOutputName": "outMuscleData",
+    "m_StageCapability": 3,
+    "m_Value": {
+        "x": 0.0,
+        "y": 0.0,
+        "z": 0.0,
+        "w": 0.0
+    },
+    "m_DefaultValue": {
+        "x": 0.0,
+        "y": 0.0,
+        "z": 0.0,
+        "w": 0.0
+    },
+    "m_Labels": []
+}
+
+{
+    "m_SGVersion": 0,
     "m_Type": "UnityEditor.ShaderGraph.Vector3MaterialSlot",
     "m_ObjectId": "e9028c93695c485681686bc2228ef7d4",
     "m_Id": 0,
@@ -2722,33 +2730,6 @@
     },
     "m_Slots": [
         {
-            "m_Id": "93ad92cf2706415baba1cc80544c8cbb"
-        },
-        {
-            "m_Id": "5bbcf4583290497fb569f279898ac1de"
-        },
-        {
-            "m_Id": "b9038fef5f464382af92ab05398aa3cb"
-        },
-        {
-            "m_Id": "2a49f357915e418890724ba99ce21c6e"
-        },
-        {
-            "m_Id": "3127fefaf2df40efb62feb41fab2e9bf"
-        },
-        {
-            "m_Id": "f13d968f75d34ee88e94f3e7512bace6"
-        },
-        {
-            "m_Id": "65e820551b454b40809371f7539cfddb"
-        },
-        {
-            "m_Id": "121b0a9fb6124d38a8e8d0c966e10eeb"
-        },
-        {
-            "m_Id": "1f2a1f051afc4de0a81eda008ba417b9"
-        },
-        {
             "m_Id": "31cfadbe19804716a648dfcd083323a3"
         },
         {
@@ -2786,6 +2767,33 @@
         },
         {
             "m_Id": "e95a1b76acd24c47a1c7da3d051766a1"
+        },
+        {
+            "m_Id": "93ad92cf2706415baba1cc80544c8cbb"
+        },
+        {
+            "m_Id": "5bbcf4583290497fb569f279898ac1de"
+        },
+        {
+            "m_Id": "b9038fef5f464382af92ab05398aa3cb"
+        },
+        {
+            "m_Id": "de86ba9bd8424919bce18bb1ed55c1a1"
+        },
+        {
+            "m_Id": "85c58ea11db24a40bcd06228f8e2d1b6"
+        },
+        {
+            "m_Id": "f13d968f75d34ee88e94f3e7512bace6"
+        },
+        {
+            "m_Id": "65e820551b454b40809371f7539cfddb"
+        },
+        {
+            "m_Id": "121b0a9fb6124d38a8e8d0c966e10eeb"
+        },
+        {
+            "m_Id": "1f2a1f051afc4de0a81eda008ba417b9"
         }
     ],
     "synonyms": [

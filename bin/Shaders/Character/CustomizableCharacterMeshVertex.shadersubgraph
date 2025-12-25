@@ -520,6 +520,31 @@
 
 {
     "m_SGVersion": 0,
+    "m_Type": "UnityEditor.ShaderGraph.Vector4MaterialSlot",
+    "m_ObjectId": "0dbd190881034113a24c403b9b014102",
+    "m_Id": 9,
+    "m_DisplayName": "outMuscleData",
+    "m_SlotType": 1,
+    "m_Hidden": false,
+    "m_ShaderOutputName": "outMuscleData",
+    "m_StageCapability": 3,
+    "m_Value": {
+        "x": 0.0,
+        "y": 0.0,
+        "z": 0.0,
+        "w": 0.0
+    },
+    "m_DefaultValue": {
+        "x": 0.0,
+        "y": 0.0,
+        "z": 0.0,
+        "w": 0.0
+    },
+    "m_Labels": []
+}
+
+{
+    "m_SGVersion": 0,
     "m_Type": "UnityEditor.ShaderGraph.PropertyNode",
     "m_ObjectId": "10efd1b1f07a481c8517a124aacdcea5",
     "m_Group": {
@@ -552,29 +577,6 @@
     "m_Property": {
         "m_Id": "83773dea82fd4d05989ad0a5d5b5a325"
     }
-}
-
-{
-    "m_SGVersion": 0,
-    "m_Type": "UnityEditor.ShaderGraph.Vector3MaterialSlot",
-    "m_ObjectId": "117d213d3b9b49d3aafbae0765a5e3bc",
-    "m_Id": 4,
-    "m_DisplayName": "Out_MuscleData",
-    "m_SlotType": 0,
-    "m_Hidden": false,
-    "m_ShaderOutputName": "Out_MuscleData",
-    "m_StageCapability": 3,
-    "m_Value": {
-        "x": 0.0,
-        "y": 0.0,
-        "z": 0.0
-    },
-    "m_DefaultValue": {
-        "x": 0.0,
-        "y": 0.0,
-        "z": 0.0
-    },
-    "m_Labels": []
 }
 
 {
@@ -648,31 +650,8 @@
 
 {
     "m_SGVersion": 0,
-    "m_Type": "UnityEditor.ShaderGraph.Vector3MaterialSlot",
-    "m_ObjectId": "2a49f357915e418890724ba99ce21c6e",
-    "m_Id": 9,
-    "m_DisplayName": "outMuscleData",
-    "m_SlotType": 1,
-    "m_Hidden": false,
-    "m_ShaderOutputName": "outMuscleData",
-    "m_StageCapability": 3,
-    "m_Value": {
-        "x": 0.0,
-        "y": 0.0,
-        "z": 0.0
-    },
-    "m_DefaultValue": {
-        "x": 0.0,
-        "y": 0.0,
-        "z": 0.0
-    },
-    "m_Labels": []
-}
-
-{
-    "m_SGVersion": 0,
-    "m_Type": "UnityEditor.ShaderGraph.Vector3MaterialSlot",
-    "m_ObjectId": "3127fefaf2df40efb62feb41fab2e9bf",
+    "m_Type": "UnityEditor.ShaderGraph.Vector4MaterialSlot",
+    "m_ObjectId": "2f06653e128b4f298508a2e2866820ca",
     "m_Id": 10,
     "m_DisplayName": "outFatData",
     "m_SlotType": 1,
@@ -682,12 +661,14 @@
     "m_Value": {
         "x": 0.0,
         "y": 0.0,
-        "z": 0.0
+        "z": 0.0,
+        "w": 0.0
     },
     "m_DefaultValue": {
         "x": 0.0,
         "y": 0.0,
-        "z": 0.0
+        "z": 0.0,
+        "w": 0.0
     },
     "m_Labels": []
 }
@@ -718,29 +699,6 @@
         "x": 0.0,
         "y": 1.0
     }
-}
-
-{
-    "m_SGVersion": 0,
-    "m_Type": "UnityEditor.ShaderGraph.Vector3MaterialSlot",
-    "m_ObjectId": "357ed8ee4aff42898dcfa6db5710bf90",
-    "m_Id": 5,
-    "m_DisplayName": "Out_FatData",
-    "m_SlotType": 0,
-    "m_Hidden": false,
-    "m_ShaderOutputName": "Out_FatData",
-    "m_StageCapability": 3,
-    "m_Value": {
-        "x": 0.0,
-        "y": 0.0,
-        "z": 0.0
-    },
-    "m_DefaultValue": {
-        "x": 0.0,
-        "y": 0.0,
-        "z": 0.0
-    },
-    "m_Labels": []
 }
 
 {
@@ -1482,6 +1440,31 @@
 
 {
     "m_SGVersion": 0,
+    "m_Type": "UnityEditor.ShaderGraph.Vector4MaterialSlot",
+    "m_ObjectId": "a3aba94714244d4a88ad09342096cc85",
+    "m_Id": 4,
+    "m_DisplayName": "Out_MuscleData",
+    "m_SlotType": 0,
+    "m_Hidden": false,
+    "m_ShaderOutputName": "Out_MuscleData",
+    "m_StageCapability": 3,
+    "m_Value": {
+        "x": 0.0,
+        "y": 0.0,
+        "z": 0.0,
+        "w": 0.0
+    },
+    "m_DefaultValue": {
+        "x": 0.0,
+        "y": 0.0,
+        "z": 0.0,
+        "w": 0.0
+    },
+    "m_Labels": []
+}
+
+{
+    "m_SGVersion": 0,
     "m_Type": "UnityEditor.ShaderGraph.SubGraphOutputNode",
     "m_ObjectId": "a51b4b48336d4e459de72b4347343419",
     "m_Group": {
@@ -1509,10 +1492,10 @@
             "m_Id": "dc8d14ffd2bb4d8bae75dd1617884fc4"
         },
         {
-            "m_Id": "117d213d3b9b49d3aafbae0765a5e3bc"
+            "m_Id": "a3aba94714244d4a88ad09342096cc85"
         },
         {
-            "m_Id": "357ed8ee4aff42898dcfa6db5710bf90"
+            "m_Id": "f1384b8179b644c9b29672a2d6ee4753"
         },
         {
             "m_Id": "18967067f9ed4402a80bafad3daa817c"
@@ -2214,6 +2197,31 @@
 }
 
 {
+    "m_SGVersion": 0,
+    "m_Type": "UnityEditor.ShaderGraph.Vector4MaterialSlot",
+    "m_ObjectId": "f1384b8179b644c9b29672a2d6ee4753",
+    "m_Id": 5,
+    "m_DisplayName": "Out_FatData",
+    "m_SlotType": 0,
+    "m_Hidden": false,
+    "m_ShaderOutputName": "Out_FatData",
+    "m_StageCapability": 3,
+    "m_Value": {
+        "x": 0.0,
+        "y": 0.0,
+        "z": 0.0,
+        "w": 0.0
+    },
+    "m_DefaultValue": {
+        "x": 0.0,
+        "y": 0.0,
+        "z": 0.0,
+        "w": 0.0
+    },
+    "m_Labels": []
+}
+
+{
     "m_SGVersion": 1,
     "m_Type": "UnityEditor.ShaderGraph.Internal.Vector1ShaderProperty",
     "m_ObjectId": "f6404c35f3de44db9f00280daf04659e",
@@ -2321,27 +2329,6 @@
     },
     "m_Slots": [
         {
-            "m_Id": "93ad92cf2706415baba1cc80544c8cbb"
-        },
-        {
-            "m_Id": "5bbcf4583290497fb569f279898ac1de"
-        },
-        {
-            "m_Id": "b9038fef5f464382af92ab05398aa3cb"
-        },
-        {
-            "m_Id": "2a49f357915e418890724ba99ce21c6e"
-        },
-        {
-            "m_Id": "3127fefaf2df40efb62feb41fab2e9bf"
-        },
-        {
-            "m_Id": "121b0a9fb6124d38a8e8d0c966e10eeb"
-        },
-        {
-            "m_Id": "4e81b91a4944485b9d196031aadc4f9d"
-        },
-        {
             "m_Id": "2842ac1ec25f450f94245581126e0284"
         },
         {
@@ -2376,6 +2363,27 @@
         },
         {
             "m_Id": "e95a1b76acd24c47a1c7da3d051766a1"
+        },
+        {
+            "m_Id": "93ad92cf2706415baba1cc80544c8cbb"
+        },
+        {
+            "m_Id": "5bbcf4583290497fb569f279898ac1de"
+        },
+        {
+            "m_Id": "b9038fef5f464382af92ab05398aa3cb"
+        },
+        {
+            "m_Id": "0dbd190881034113a24c403b9b014102"
+        },
+        {
+            "m_Id": "2f06653e128b4f298508a2e2866820ca"
+        },
+        {
+            "m_Id": "121b0a9fb6124d38a8e8d0c966e10eeb"
+        },
+        {
+            "m_Id": "4e81b91a4944485b9d196031aadc4f9d"
         }
     ],
     "synonyms": [

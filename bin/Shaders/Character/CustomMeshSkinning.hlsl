@@ -21,6 +21,18 @@ void SkinAndShapes_float(int shapesID, int rigID, int vertexIndex, int vertexCou
 
 }
 
+void ApplySingleFrameShape_float(int shapeBaseIndex, float weight, int vertexIndex, int vertexCount, float3 inPosition, float3 inNormal, float3 inTangent, out float3 outPosition, out float3 outNormal, out float3 outTangent) 
+{
+	outPosition = inPosition;
+	outNormal = inNormal;
+	outTangent = inTangent;
+}
+void ApplySingleFrameShapeWithMultiplier_float(int shapeBaseIndex, float weight, float multiplier, int vertexIndex, int vertexCount, float3 inPosition, float3 inNormal, float3 inTangent, out float3 outPosition, out float3 outNormal, out float3 outTangent) 
+{
+	outPosition = inPosition;
+	outNormal = inNormal;
+	outTangent = inTangent;
+}
 
 #endif
 
@@ -195,9 +207,31 @@ void ApplyMultiShape_float(int shapeBaseIndex, float weight, float multiplier, i
 		ApplyShapeDelta_float(shapeStartIndex + vertexIndex, weight / maxWeight, outPosition, outNormal, outTangent, outPosition, outNormal, outTangent); 
 	}
 
-	//outPosition = lerp(inPosition, outPosition, multiplier);
-	//outNormal = lerp(inNormal, outNormal, multiplier);
-	//outTangent = lerp(inTangent, outTangent, multiplier);
+	outPosition = lerp(inPosition, outPosition, multiplier);
+	outNormal = lerp(inNormal, outNormal, multiplier);
+	outTangent = lerp(inTangent, outTangent, multiplier);
+}
+
+void ApplySingleFrameShape_float(int shapeBaseIndex, float weight, int vertexIndex, int vertexCount, float3 inPosition, float3 inNormal, float3 inTangent, out float3 outPosition, out float3 outNormal, out float3 outTangent) 
+{
+	int2 shapeIndices = _MeshShapeIndices[shapeBaseIndex];
+	int multiShapeStartIndex = shapeIndices.x;
+
+	outPosition = inPosition;
+	outNormal = inNormal; 
+	outTangent = inTangent;
+
+	int shapeStartIndex = multiShapeStartIndex * vertexCount;
+	float maxWeight = _MeshShapeFrameWeights[multiShapeStartIndex];
+	ApplyShapeDelta_float(shapeStartIndex + vertexIndex, weight / maxWeight, outPosition, outNormal, outTangent, outPosition, outNormal, outTangent); 
+}
+void ApplySingleFrameShapeWithMultiplier_float(int shapeBaseIndex, float weight, float multiplier, int vertexIndex, int vertexCount, float3 inPosition, float3 inNormal, float3 inTangent, out float3 outPosition, out float3 outNormal, out float3 outTangent) 
+{
+	ApplySingleFrameShape_float(shapeBaseIndex, weight, vertexIndex, vertexCount, inPosition, inNormal, inTangent, outPosition, outNormal, outTangent);
+
+	outPosition = lerp(inPosition, outPosition, multiplier);
+	outNormal = lerp(inNormal, outNormal, multiplier);
+	outTangent = lerp(inTangent, outTangent, multiplier);
 }
 
 void ApplyStandaloneShapes_float(int instanceID, int vertexIndex, int vertexCount, float3 inPosition, float3 inNormal, float3 inTangent, out float3 outPosition, out float3 outNormal, out float3 outTangent)

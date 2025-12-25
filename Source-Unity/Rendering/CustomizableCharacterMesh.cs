@@ -950,11 +950,35 @@ namespace Swole.Morphing
         protected int shapesInstanceID;
         public int ShapesInstanceID => shapesInstanceID <= 0 ? InstanceSlot : (shapesInstanceID - 1);
         public InstanceableSkinnedMeshBase shapesInstanceReference;
+        public ICustomizableCharacter ShapesInstanceReference
+        {
+            get
+            {
+                if (shapesInstanceReference is ICustomizableCharacter cc) return cc;
+                return null;
+            }
+            set
+            {
+                if (value is InstanceableSkinnedMeshBase ism)
+                {
+                    shapesInstanceReference = ism;
+                }
+                else
+                {
+                    shapesInstanceReference = null;
+                }
+            }
+        }
 
         [NonSerialized]
         protected int rigInstanceID;
         public override int RigInstanceID => rigInstanceID <= 0 ? InstanceSlot : (rigInstanceID - 1);
         public InstanceableSkinnedMeshBase rigInstanceReference;
+        public InstanceableSkinnedMeshBase RigInstanceReference
+        {
+            get => rigInstanceReference;
+            set => rigInstanceReference = value;
+        }
 
         public override Rigs.StandaloneSampler RigSampler
         {
@@ -969,6 +993,21 @@ namespace Swole.Morphing
         protected int characterInstanceID;
         public int CharacterInstanceID => characterInstanceID <= 0 ? InstanceSlot : (characterInstanceID - 1);
         public CustomizableCharacterMesh characterInstanceReference;
+        public ICustomizableCharacter CharacterInstanceReference
+        {
+            get => characterInstanceReference;
+            set
+            {
+                if (value is CustomizableCharacterMesh ccm)
+                {
+                    characterInstanceReference = ccm;
+                }
+                else
+                {
+                    characterInstanceReference = null;
+                }
+            }
+        }
 
         public void SetShapesInstanceID(int id) 
         { 
@@ -1327,7 +1366,7 @@ namespace Swole.Morphing
         public float GetFatLevelUnsafe(int groupIndex) => FatGroupsControlBuffer[FirstFatGroupsControlIndex + groupIndex].x;//FatGroupsControl[groupIndex].x;
         public float GetFatLevel(int groupIndex)
         {
-            if (instance == null || groupIndex < 0 || groupIndex >= CharacterMeshData.FatVertexGroupCount) return 0;
+            if (instance == null || groupIndex < 0 || groupIndex >= CharacterMeshData.FatVertexGroupCount) return 0f;
             return GetFatLevelUnsafe(groupIndex);
         }
         public UnityEvent<int> OnFatDataChanged;
@@ -1355,10 +1394,31 @@ namespace Swole.Morphing
             if (instance == null || groupIndex < 0 || groupIndex >= CharacterMeshData.FatVertexGroupCount) return;
             SetFatLevelUnsafe(groupIndex, level); 
         }
+        public float2 GetBodyHairLevelUnsafe(int groupIndex) => new float2(FatGroupsControlBuffer[FirstFatGroupsControlIndex + groupIndex].z, 1f);
+        public float2 GetBodyHairLevel(int groupIndex)
+        {
+            if (instance == null || groupIndex < 0 || groupIndex >= CharacterMeshData.FatVertexGroupCount) return 0f;
+            return GetBodyHairLevelUnsafe(groupIndex);
+        }
+        public void SetBodyHairLevelUnsafe(int groupIndex, float level, float blend = 1f)
+        {
+            if (characterInstanceReference != null) return;
+            int ind = FirstFatGroupsControlIndex + groupIndex;
+            var val = FatGroupsControlBuffer[ind];
+            val.z = level;
+            FatGroupsControlBuffer[ind] = val;
+
+            OnFatDataChanged?.Invoke(groupIndex);
+        }
+        public void SetBodyHairLevel(int groupIndex, float level, float blend = 1f)
+        {
+            if (instance == null || groupIndex < 0 || groupIndex >= CharacterMeshData.FatVertexGroupCount) return;
+            SetBodyHairLevelUnsafe(groupIndex, level, blend);
+        }
         public int IndexOfFatGroup(string groupName) => CharacterMeshData == null ? -1 : CharacterMeshData.IndexOfFatGroup(groupName);
-        internal readonly static Dictionary<string, InstanceBuffer<float3>> _fatGroupsControlBuffers = new Dictionary<string, InstanceBuffer<float3>>();
-        protected InstanceBuffer<float3> fatGroupsControlBuffer;
-        public InstanceBuffer<float3> FatGroupsControlBuffer
+        internal readonly static Dictionary<string, InstanceBuffer<float4>> _fatGroupsControlBuffers = new Dictionary<string, InstanceBuffer<float4>>();
+        protected InstanceBuffer<float4> fatGroupsControlBuffer;
+        public InstanceBuffer<float4> FatGroupsControlBuffer
         {
             get
             {
@@ -1369,7 +1429,7 @@ namespace Swole.Morphing
                     string matProperty = CharacterMeshData.FatGroupsControlPropertyName;
                     if (!_fatGroupsControlBuffers.TryGetValue(bufferID, out fatGroupsControlBuffer) || fatGroupsControlBuffer == null || !fatGroupsControlBuffer.IsValid())
                     {
-                        meshGroup.CreateInstanceMaterialBuffer<float3>(matProperty, CharacterMeshData.FatVertexGroupCount, 2, out fatGroupsControlBuffer);
+                        meshGroup.CreateInstanceMaterialBuffer<float4>(matProperty, CharacterMeshData.FatVertexGroupCount, 2, out fatGroupsControlBuffer);
                         _fatGroupsControlBuffers[bufferID] = fatGroupsControlBuffer;
 
                         meshGroup.SetRuntimeData(bufferID, true);
@@ -1504,14 +1564,14 @@ namespace Swole.Morphing
                         int indexStart = FirstFatGroupsControlIndex;
                         if (CharacterMeshData.fatGroupModifiers == null)
                         {
-                            for (int a = 0; a < CharacterMeshData.FatVertexGroupCount; a++) fatGroupsControlBuffer.WriteToBufferFast(indexStart + a, new float3(0, _defaultFatGroupModifier.x, _defaultFatGroupModifier.y));
+                            for (int a = 0; a < CharacterMeshData.FatVertexGroupCount; a++) fatGroupsControlBuffer.WriteToBufferFast(indexStart + a, new float4(0f, _defaultFatGroupModifier.x, _defaultFatGroupModifier.y, 0f));
                         }
                         else
                         {
                             for (int a = 0; a < CharacterMeshData.FatVertexGroupCount; a++)
                             {
                                 var modifier = CharacterMeshData.GetFatGroupModifier(a);
-                                fatGroupsControlBuffer.WriteToBufferFast(indexStart + a, new float3(0, modifier.x, modifier.y));
+                                fatGroupsControlBuffer.WriteToBufferFast(indexStart + a, new float4(0f, modifier.x, modifier.y, 0f));
                             }
                         }
 

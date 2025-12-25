@@ -109,6 +109,7 @@ namespace Swole
 
         [Header("Customizable Character Mesh")]
         public CustomizableCharacterMeshData customizableCharacterMeshData;
+        public CustomizableCharacterMeshV2_DATA customizableCharacterMeshDataV2;
         public int meshGroupIndex;
         public int subMeshIndex;
 
@@ -120,34 +121,52 @@ namespace Swole
         public string rigInstanceReference;
         public string characterInstanceReference;
 
-        public CustomizableCharacterMesh SpawnAsCustomizableCharacterMesh(Transform parent, string name = null)
+        public ICustomizableCharacter SpawnAsCustomizableCharacterMesh(Transform parent, string name = null)
         {
-            var ccm = new GameObject(this.name).AddComponent<CustomizableCharacterMesh>();
-            var transform = ccm.transform;
+            bool isV2 = customizableCharacterMeshDataV2 != null;
+
+            ICustomizableCharacter ccm;
+            if (isV2)
+            {
+                ccm = new GameObject(this.name).AddComponent<CustomizableCharacterMeshV2>();
+            }
+            else
+            {
+                ccm = new GameObject(this.name).AddComponent<CustomizableCharacterMesh>();
+            }
+                
+            var transform = ccm.GameObject.transform;
 
             if (!string.IsNullOrWhiteSpace(name)) transform.name = name;
 
             if (parent != null) transform.SetParent(parent, false);
 
-            transform.SetLocalPositionAndRotation(offset, Quaternion.Euler(rotation)); 
+            transform.SetLocalPositionAndRotation(offset, Quaternion.Euler(rotation));
             transform.localScale = scale;
 
-            ccm.SetMeshData(customizableCharacterMeshData);
-            ccm.SetMeshGroupIndex(meshGroupIndex);
-            ccm.SetSubMeshindex(subMeshIndex);
-            
             if (avatar != null) ccm.SetAvatar(avatar);
 
-            ccm.SetRigBufferID(rigBufferId); 
+            ccm.SetRigBufferID(rigBufferId);
             ccm.SetShapeBufferID(shapeBufferId);
             ccm.SetMorphBufferID(morphBufferId);
+
+            if (ccm is CustomizableCharacterMeshV2 v2)
+            {
+                v2.SetData(customizableCharacterMeshDataV2); 
+            }
+            if (ccm is CustomizableCharacterMesh v1)
+            {
+                v1.SetMeshData(customizableCharacterMeshData);
+                v1.SetMeshGroupIndex(meshGroupIndex);
+                v1.SetSubMeshindex(subMeshIndex);
+            }
 
             if (!string.IsNullOrWhiteSpace(shapesInstanceReference))
             {
                 var child = parent.FindDeepChildLiberal(shapesInstanceReference);
                 if (child != null)
                 {
-                    ccm.shapesInstanceReference = child.GetComponent<InstanceableSkinnedMeshBase>(); 
+                    ccm.ShapesInstanceReference = child.GetComponent<ICustomizableCharacter>(); 
                 }
             }
             if (!string.IsNullOrWhiteSpace(rigInstanceReference))
@@ -155,7 +174,7 @@ namespace Swole
                 var child = parent.FindDeepChildLiberal(rigInstanceReference);
                 if (child != null)
                 {
-                    ccm.rigInstanceReference = child.GetComponent<InstanceableSkinnedMeshBase>();
+                    ccm.RigInstanceReference = child.GetComponent<InstanceableSkinnedMeshBase>();
                 }
             }
             if (!string.IsNullOrWhiteSpace(characterInstanceReference))
@@ -163,7 +182,7 @@ namespace Swole
                 var child = parent.FindDeepChildLiberal(characterInstanceReference);
                 if (child != null)
                 {
-                    ccm.characterInstanceReference = child.GetComponent<CustomizableCharacterMesh>();
+                    ccm.CharacterInstanceReference = child.GetComponent<ICustomizableCharacter>();
                 }
             }
 
@@ -181,7 +200,7 @@ namespace Swole
 
                 case CharacterAddition.MeshType.CustomizableCharacterMesh:
                     var ccm = SpawnAsCustomizableCharacterMesh(root);
-                    if (ccm != null) return ccm.gameObject; 
+                    if (ccm != null) return ccm.GameObject; 
                     break;
             }
 

@@ -684,9 +684,14 @@ namespace Swole
         protected override void OnAwake()
         {
             base.OnAwake();
-            SetupSkinnedMeshSyncs();
 
             if (animator == null) animator = gameObject.GetComponentInParent<CustomAnimator>(true); 
+        }
+        protected override void OnStart()
+        {
+            base.OnStart();
+
+            SetupSkinnedMeshSyncs();
         }
 
         internal readonly static Dictionary<string, InstanceBuffer<float4x4>> _skinningMatricesBuffers = new Dictionary<string, InstanceBuffer<float4x4>>();

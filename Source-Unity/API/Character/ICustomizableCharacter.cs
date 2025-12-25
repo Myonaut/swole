@@ -103,6 +103,10 @@ namespace Swole
         public void SetRigInstanceID(int id);
         public void SetCharacterInstanceID(int id);
 
+        public ICustomizableCharacter ShapesInstanceReference { get; set; }
+        public InstanceableSkinnedMeshBase RigInstanceReference { get; set; }
+        public ICustomizableCharacter CharacterInstanceReference { get; set; }
+
         public Transform[] Bones
         {
             get;
@@ -150,7 +154,11 @@ namespace Swole
         public float GetFatLevel(int groupIndex);
         public void SetFatLevelUnsafe(int groupIndex, float level);
         public void SetFatLevel(int groupIndex, float level);
-        public InstanceBuffer<float3> FatGroupsControlBuffer
+        public float2 GetBodyHairLevelUnsafe(int groupIndex);
+        public float2 GetBodyHairLevel(int groupIndex);
+        public void SetBodyHairLevelUnsafe(int groupIndex, float level, float blend = 1f);
+        public void SetBodyHairLevel(int groupIndex, float level, float blend = 1f);
+        public InstanceBuffer<float4> FatGroupsControlBuffer
         {
             get;
         }
@@ -301,7 +309,7 @@ namespace Swole
             public const string _meshShapeFrameWeightsDefaultPropertyName = "_MeshShapeFrameWeights";
             public const string _meshShapeIndicesDefaultPropertyName = "_MeshShapeIndices";
 
-            public static float2 _defaultFatGroupModifier => new float2(1, 0);
+            public static float2 _defaultFatGroupModifier => new float2(1f, 0f);
 
         }
 
@@ -318,16 +326,18 @@ namespace Swole
         public float flex;
         [Range(0, 1)]
         public float pump;
+        [Range(0, 1)]
+        public float varicose;
 
-        public static implicit operator MuscleData(float3 data) => new MuscleData() { mass = data.x, flex = data.y, pump = data.z };
-        public static implicit operator float3(MuscleData data) => new float3(data.mass, data.flex, data.pump);
+        public static implicit operator MuscleData(float4 data) => new MuscleData() { mass = data.x, flex = data.y, pump = data.z, varicose = data.w };
+        public static implicit operator float4(MuscleData data) => new float4(data.mass, data.flex, data.pump, data.varicose);
 
         public override bool Equals(object obj)
         {
-            if (obj is MuscleData dat) return dat.mass == mass && dat.flex == flex && dat.pump == pump;
+            if (obj is MuscleData dat) return dat.mass == mass && dat.flex == flex && dat.pump == pump && dat.varicose == varicose;
             return false;
         }
-        public bool Equals(MuscleData dat) => dat.mass == mass && dat.flex == flex && dat.pump == pump;
+        public bool Equals(MuscleData dat) => dat.mass == mass && dat.flex == flex && dat.pump == pump && dat.varicose == varicose;
 
         public override int GetHashCode()
         {

@@ -294,6 +294,21 @@ namespace Swole
 
         }
 
+        public Frame AddFrame(float weight, Vector3[] deltaVertices, Vector3[] deltaNormals, Vector4[] deltaTangents)
+        {
+            Vector3[] deltaTangents_ = new Vector3[deltaTangents.Length];
+            for (int a = 0; a < deltaTangents.Length; a++) deltaTangents_[a] = deltaTangents[a];
+            return AddFrame(weight, deltaVertices, deltaNormals, deltaTangents_, false);
+
+        }
+
+        public Frame AddFrame(float weight, Vector3[] deltaVertices, Vector3[] deltaNormals, Vector4[] deltaTangents, bool expandable)
+        {
+            Vector3[] deltaTangents_ = new Vector3[deltaTangents.Length];
+            for (int a = 0; a < deltaTangents.Length; a++) deltaTangents_[a] = deltaTangents[a];
+            return AddFrame(weight, deltaVertices, deltaNormals, deltaTangents_, expandable);
+        }
+
         public Frame AddFrame(Frame frame)
         {
 
@@ -876,7 +891,7 @@ namespace Swole
 
                             float w = (weight - frame.weight) / (frame2.weight - frame.weight);
 
-                            vertex = vertex + Vector3.Lerp(frame.deltaVertices[vertexIndex], frame2.deltaVertices[vertexIndex], w) * multiplier;
+                            vertex = vertex + Vector3.LerpUnclamped(frame.deltaVertices[vertexIndex], frame2.deltaVertices[vertexIndex], w) * multiplier;
 
                         }
 
@@ -1031,7 +1046,7 @@ namespace Swole
                             Vector3 dt = frame.deltaTangents[vertexIndex];
                             Vector3 dt2 = frame2.deltaTangents[vertexIndex];
 
-                            tangent = tangent + Vector4.Lerp(new Vector4(dt.x, dt.y, dt.z, 0), new Vector4(dt2.x, dt2.y, dt2.z, 0), w) * multiplier;
+                            tangent = tangent + Vector4.LerpUnclamped(new Vector4(dt.x, dt.y, dt.z, 0), new Vector4(dt2.x, dt2.y, dt2.z, 0), w) * multiplier;
 
                         }
 
@@ -1105,7 +1120,7 @@ namespace Swole
 
                             float w = (weight - frame.weight) / (frame2.weight - frame.weight);
 
-                            for (int b = 0; b < vertexCount; b++) vertices[b] = vertices[b] + Vector3.Lerp(frame.deltaVertices[b], frame2.deltaVertices[b], w);
+                            for (int b = 0; b < vertexCount; b++) vertices[b] = vertices[b] + Vector3.LerpUnclamped(frame.deltaVertices[b], frame2.deltaVertices[b], w);
 
                         }
 
@@ -1179,7 +1194,7 @@ namespace Swole
 
                             float w = (weight - frame.weight) / (frame2.weight - frame.weight);
 
-                            for (int b = 0; b < vertexCount; b++) normals[b] = normals[b] + Vector3.Lerp(frame.deltaNormals[b], frame2.deltaNormals[b], w);
+                            for (int b = 0; b < vertexCount; b++) normals[b] = normals[b] + Vector3.LerpUnclamped(frame.deltaNormals[b], frame2.deltaNormals[b], w);
 
                         }
 
@@ -1280,7 +1295,7 @@ namespace Swole
                                 Vector3 dt = frame.deltaNormals[b];
                                 Vector3 dt2 = frame2.deltaNormals[b];
 
-                                tangents[b] = tangents[b] + Vector4.Lerp(new Vector4(dt.x, dt.y, dt.z, 0), new Vector4(dt.x, dt.y, dt.z, 0), w);
+                                tangents[b] = tangents[b] + Vector4.LerpUnclamped(new Vector4(dt.x, dt.y, dt.z, 0), new Vector4(dt.x, dt.y, dt.z, 0), w);
 
                             }
 
@@ -1382,9 +1397,9 @@ namespace Swole
                             for (int b = 0; b < vertexCount; b++)
                             {
 
-                                vertices[b] = vertices[b] + Vector3.Lerp(frame.deltaVertices[b], frame2.deltaVertices[b], w);
+                                vertices[b] = vertices[b] + Vector3.LerpUnclamped(frame.deltaVertices[b], frame2.deltaVertices[b], w);
 
-                                normals[b] = normals[b] + Vector3.Lerp(frame.deltaNormals[b], frame2.deltaNormals[b], w);
+                                normals[b] = normals[b] + Vector3.LerpUnclamped(frame.deltaNormals[b], frame2.deltaNormals[b], w);
 
                             }
 
@@ -1504,11 +1519,11 @@ namespace Swole
                             for (int b = 0; b < vertexCount; b++)
                             {
 
-                                vertices[b] = vertices[b] + Vector3.Lerp(frame.deltaVertices[b], frame2.deltaVertices[b], w);
+                                vertices[b] = vertices[b] + Vector3.LerpUnclamped(frame.deltaVertices[b], frame2.deltaVertices[b], w);
 
-                                normals[b] = normals[b] + Vector3.Lerp(frame.deltaNormals[b], frame2.deltaNormals[b], w);
+                                normals[b] = normals[b] + Vector3.LerpUnclamped(frame.deltaNormals[b], frame2.deltaNormals[b], w);
 
-                                Vector3 deltaTangent = Vector3.Lerp(frame.deltaTangents[b], frame2.deltaTangents[b], w);
+                                Vector3 deltaTangent = Vector3.LerpUnclamped(frame.deltaTangents[b], frame2.deltaTangents[b], w);
 
                                 tangents[b] = new Vector4(
                                     tangents[b].x + deltaTangent.x,

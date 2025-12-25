@@ -73,10 +73,66 @@ namespace Swole.Morphing
         }
 
         [Serializable]
-        public struct NameFloat
+        public struct WeightedBaseMeshGroup
+        {
+            public string baseMeshGroup;
+            public float weight;
+            public NameFloat[] perShapeWeights;
+        }
+
+        [Serializable]
+        public struct WeightedExistingSetup
+        {
+            public float weight;
+            public NameFloat[] perShapeWeights;
+            public ExistingSetup setup;
+        }
+
+        [Serializable]
+        public struct WeightedMesh
+        {
+            public float weight;
+            public NameFloat[] perShapeWeights;
+            public Mesh mesh;
+            public BaseMeshData baseMeshData;
+
+            public static implicit operator MorphUtils.TransferSurfaceDataBase(WeightedMesh weightedMesh)
+            {
+                MorphUtils.TransferSurfaceDataBase output = weightedMesh.baseMeshData == null ? default : weightedMesh.baseMeshData;
+
+                output.costWeight = weightedMesh.weight;
+
+                if (weightedMesh.perShapeWeights != null && weightedMesh.perShapeWeights.Length > 0)
+                {
+                    output.shapeCostWeights = new Dictionary<string, float>();
+                    foreach (var weight in weightedMesh.perShapeWeights) output.shapeCostWeights[weight.name] = weight.value;
+                }
+
+                return output;
+            }
+        }
+
+        [Serializable]
+        public struct SnapShapeCreator
         {
             public string name;
-            public float value;
+
+            public float finalFrameWeight;
+
+            public bool recalculateSurfaceTransfer;
+
+            public bool overrideSnapSurfaceOffset;
+            public float snapSurfaceOffsetOverride;
+
+            public NameFloat[] baseShapesToApply;
+            public BlendShapeTarget[] localShapesToApply;
+        }
+
+        [Serializable]
+        public struct ExistingSetup
+        {
+            public Mesh baseMeshOverride;
+            public CustomizableCharacterMeshV2_DATA data;
         }
 
         [Serializable]
@@ -84,6 +140,8 @@ namespace Swole.Morphing
         {
 
             public string name;
+
+            public bool skip;
 
             public Material[] materials;
 
@@ -109,12 +167,26 @@ namespace Swole.Morphing
 
             public string seamShape;
             public string baseMeshGroup;
+            public WeightedBaseMeshGroup[] additionalBaseMeshGroups;
+            public bool HasAdditionalBaseMeshGroups => additionalBaseMeshGroups != null && additionalBaseMeshGroups.Length > 0;
+
+            public bool useUVsForBaseDataTransfers;
+            public UVChannelURP baseUV_transferChannel;
+            public UVChannelURP localUV_transferChannel;
+            public float uvDistanceWeightForTransfers;
+            public float positionDistanceWeightForTransfers;
+            public float normalDotWeightForTransfers;
+            public float triCoordinatesWeightForTransfers;
+            public float maxPositionDistanceForTransfers;
+            public float maxUV_DistanceForTransfers;
+
             public SeamMergeMethod seamMergeMethod;
             public bool mergeSeamTangents;
             public bool mergeSeamUVs;
 
             public bool snapToBaseSurface;
             public float snapSurfaceOffset;
+            public List<SnapShapeCreator> snapShapesToCreate;
             public List<NameFloat> snapSurfaceOffsetShapeOverrides;
             public float GetSnapSurfaceOffsetForShape(string shapeName)
             {
@@ -133,7 +205,9 @@ namespace Swole.Morphing
             public List<string> vertexGroupsToPreserve;
             public bool copyMeshShapeDataFromExistingSetup;
             public List<string> meshShapesToPreserve;
-            public CustomizableCharacterMeshV2_DATA existingSetup;
+            public ExistingSetup existingSetup;
+            public WeightedExistingSetup[] additionalExistingSetups;
+            public bool HasAdditionalExistingSetups => additionalExistingSetups != null && additionalExistingSetups.Length > 0;
             public bool createTransferDebugObject;
             public bool treatAsMeshIslands;
 
@@ -420,645 +494,1021 @@ namespace Swole.Morphing
 
                     string dataName = $"DATA_{objectSetup.name}";
                     CustomizableCharacterMeshV2_DATA outputData = null;
+                    bool canSkip = false;
 #if UNITY_EDITOR
                     string savePath = Extensions.CreateUnityAssetPathString(dataSavePath, dataName, string.Empty);
                     outputData = AssetDatabase.LoadAssetAtPath<CustomizableCharacterMeshV2_DATA>(savePath);
-                    if (outputData == null) outputData = ScriptableObject.CreateInstance<CustomizableCharacterMeshV2_DATA>();
+                    if (outputData == null) outputData = ScriptableObject.CreateInstance<CustomizableCharacterMeshV2_DATA>(); else canSkip = true;
 #endif
-                    outputData.name = dataName;
+                        outputData.name = dataName;
 
                     #endregion
 
-                    var mainMesh = objectSetup.mainMesh;
-                    Mesh[] lodMeshes = objectSetup.lods == null ? null : new Mesh[objectSetup.lods.Length];
-                    if (lodMeshes != null) for (int b = 0; b < objectSetup.lods.Length; b++) lodMeshes[b] = objectSetup.lods[b].mesh;
-
-                    CustomizableCharacterMeshV2 meshObject = null;
-                    CustomizableCharacterMeshV2.SerializedData serializedData = new CustomizableCharacterMeshV2.SerializedData();
-
-                    finalMeshShapes.Clear();
-                    finalVertexGroups.Clear();
-
-                    PreMeshObjectSetup(objectIndex, objectSetup, meshObject, ref mainMesh, lodMeshes);
-
-                    #region Combine Specified Meshes
-
-                    if (objectSetup.meshesToCombine != null)
+                    if (!(objectSetup.skip && canSkip)) 
                     {
-                        var baseMeshData = new BaseMeshData();
 
-                        baseMeshData.UpdateBaseMeshData(mainMesh);
+                        var mainMesh = objectSetup.mainMesh;
+                        Mesh[] lodMeshes = objectSetup.lods == null ? null : new Mesh[objectSetup.lods.Length];
+                        if (lodMeshes != null) for (int b = 0; b < objectSetup.lods.Length; b++) lodMeshes[b] = objectSetup.lods[b].mesh;
 
-                        foreach (var merger in objectSetup.meshesToCombine)
+                        CustomizableCharacterMeshV2 meshObject = null;
+                        CustomizableCharacterMeshV2.SerializedData serializedData = new CustomizableCharacterMeshV2.SerializedData();
+
+                        finalMeshShapes.Clear();
+                        finalVertexGroups.Clear();
+
+                        PreMeshObjectSetup(objectIndex, objectSetup, meshObject, ref mainMesh, lodMeshes);
+
+                        #region Combine Specified Meshes
+
+                        if (objectSetup.meshesToCombine != null)
                         {
-                            void CombineWithMeshLOD(int lodSlot)
+                            var baseMeshData = new BaseMeshData();
+
+                            baseMeshData.UpdateBaseMeshData(mainMesh);
+
+                            foreach (var merger in objectSetup.meshesToCombine)
                             {
-                                var meshToCombine = merger.mesh;
-                                meshToCombine = MeshUtils.DuplicateMesh(meshToCombine);
-                                meshToCombine.name = merger.mesh.name;
-
-                                #region Recalculate Normals/Tangents
-
-                                if (merger.recalculateNormals || merger.recalculateTangents) // recalculate normals/tangents of mesh and its shapes if specified
+                                void CombineWithMeshLOD(int lodSlot)
                                 {
-                                    var vertices = meshToCombine.vertices;
+                                    var meshToCombine = merger.mesh;
+                                    meshToCombine = MeshUtils.DuplicateMesh(meshToCombine);
+                                    meshToCombine.name = merger.mesh.name;
 
-                                    Mesh tempMesh = GameObject.Instantiate(meshToCombine);
+                                    #region Recalculate Normals/Tangents
 
-                                    if (merger.recalculateNormals) tempMesh.RecalculateNormals();
-                                    if (merger.recalculateTangents) tempMesh.RecalculateTangents();
-
-                                    var normals = tempMesh.normals;
-                                    var tangents = tempMesh.tangents;
-
-                                    MeshDataTools.WeldedVertex[] mergedVertices = null;
-
-                                    var shapes = tempMesh.GetBlendShapes();
-                                    foreach (var shape in shapes)
+                                    if (merger.recalculateNormals || merger.recalculateTangents) // recalculate normals/tangents of mesh and its shapes if specified
                                     {
-                                        for (int b = 0; b < shape.frames.Length; b++)
+                                        var vertices = meshToCombine.vertices;
+
+                                        Mesh tempMesh = GameObject.Instantiate(meshToCombine);
+
+                                        if (merger.recalculateNormals) tempMesh.RecalculateNormals();
+                                        if (merger.recalculateTangents) tempMesh.RecalculateTangents();
+
+                                        var normals = tempMesh.normals;
+                                        var tangents = tempMesh.tangents;
+
+                                        MeshDataTools.WeldedVertex[] mergedVertices = null;
+
+                                        var shapes = tempMesh.GetBlendShapes();
+                                        foreach (var shape in shapes)
                                         {
-                                            var frame = shape.frames[b];
-
-                                            var tempVertices = meshToCombine.vertices;
-                                            for (int c = 0; c < tempVertices.Length; c++)
+                                            for (int b = 0; b < shape.frames.Length; b++)
                                             {
-                                                tempVertices[c] = vertices[c] + frame.deltaVertices[c];
-                                            }
+                                                var frame = shape.frames[b];
 
-                                            tempMesh.vertices = tempVertices;
-
-                                            if (merger.recalculateNormals)
-                                            {
-                                                tempMesh.RecalculateNormals();
-                                                var tempNormals = tempMesh.normals;
-
-                                                if (mergedVertices == null) mergedVertices = MeshDataTools.WeldVertices(vertices);
-                                                for (int d = 0; d < mergedVertices.Length; d++)
+                                                var tempVertices = meshToCombine.vertices;
+                                                for (int c = 0; c < tempVertices.Length; c++)
                                                 {
-                                                    var mv = mergedVertices[d];
-                                                    if (d != mv.firstIndex) continue;
-
-                                                    var normal = Vector3.zero;
-                                                    for (int e = 0; e < mv.indices.Count; e++) normal = normal + tempNormals[mv.indices[e]];
-
-                                                    normal = normal.normalized;
-                                                    for (int e = 0; e < mv.indices.Count; e++) tempNormals[mv.indices[e]] = normal;
+                                                    tempVertices[c] = vertices[c] + frame.deltaVertices[c];
                                                 }
 
-                                                for (int c = 0; c < tempVertices.Length; c++) frame.deltaNormals[c] = tempNormals[c] - normals[c];
-                                            }
+                                                tempMesh.vertices = tempVertices;
 
-                                            if (merger.recalculateTangents)
-                                            {
-                                                tempMesh.RecalculateTangents();
-                                                var tempTangents = tempMesh.tangents;
+                                                if (merger.recalculateNormals)
+                                                {
+                                                    tempMesh.RecalculateNormals();
+                                                    var tempNormals = tempMesh.normals;
 
-                                                for (int c = 0; c < tempVertices.Length; c++) frame.deltaTangents[c] = tempTangents[c] - tangents[c];
+                                                    if (mergedVertices == null) mergedVertices = MeshDataTools.WeldVertices(vertices);
+                                                    for (int d = 0; d < mergedVertices.Length; d++)
+                                                    {
+                                                        var mv = mergedVertices[d];
+                                                        if (d != mv.firstIndex) continue;
+
+                                                        var normal = Vector3.zero;
+                                                        for (int e = 0; e < mv.indices.Count; e++) normal = normal + tempNormals[mv.indices[e]];
+
+                                                        normal = normal.normalized;
+                                                        for (int e = 0; e < mv.indices.Count; e++) tempNormals[mv.indices[e]] = normal;
+                                                    }
+
+                                                    for (int c = 0; c < tempVertices.Length; c++) frame.deltaNormals[c] = tempNormals[c] - normals[c];
+                                                }
+
+                                                if (merger.recalculateTangents)
+                                                {
+                                                    tempMesh.RecalculateTangents();
+                                                    var tempTangents = tempMesh.tangents;
+
+                                                    for (int c = 0; c < tempVertices.Length; c++) frame.deltaTangents[c] = tempTangents[c] - tangents[c];
+                                                }
                                             }
+                                        }
+
+                                        if (merger.recalculateNormals) meshToCombine.normals = normals;
+                                        if (merger.recalculateTangents) meshToCombine.tangents = tangents;
+
+                                        meshToCombine.ClearBlendShapes();
+                                        foreach (var shape in shapes) 
+                                        { 
+                                            shape.AddToMesh(meshToCombine);
                                         }
                                     }
 
-                                    if (merger.recalculateNormals) meshToCombine.normals = normals;
-                                    if (merger.recalculateTangents) meshToCombine.tangents = tangents;
+                                    #endregion
 
-                                    meshToCombine.ClearBlendShapes();
-                                    foreach (var shape in shapes) 
-                                    { 
-                                        shape.AddToMesh(meshToCombine);
+                                    #region Transfer Surface Data
+
+                                    if (merger.allowSurfaceDataTransfer)
+                                    {
+
+                                        var settings = new MorphUtils.TransferSurfaceDataSettings()
+                                        {
+                                            baseDataMain = baseMeshData,
+
+                                            treatAsMeshIslands = merger.treatAsMeshIslands,
+
+                                            transferNormals = merger.transferNormals,
+                                            transferNormalsWeight = merger.transferNormalsWeight,
+
+                                            transferVertexColors = merger.transferVertexColors,
+
+                                            transferBoneWeights = merger.transferBoneWeights,
+
+                                            transferUVs = merger.transferUVs,
+                                            preserveExistingUVData = merger.preserveExistingUVData,
+                                            uvTransferRange = merger.uvTransferRange,
+                                            uvChannelIndexTransferOffset = merger.uvTransferOffset,
+
+                                            transferBlendShapes = merger.transferBlendShapes,
+                                            preserveExistingBlendShapeData = merger.preserveExistingBlendShapeData
+                                        };
+                                    
+                                        meshToCombine = MorphUtils.TransferSurfaceData(meshToCombine, false, settings);
+
+                                    }
+
+                                    #endregion
+
+                                    if (lodSlot == 0)
+                                    {
+                                        int origVertexCount = mainMesh.vertexCount;
+                                        string meshName = mainMesh.name;
+                                        var mergeMesh = merger.mergeSeam ? MergeMeshSeam(meshToCombine, mainMesh, merger.seamShape, merger.seamMergeMethod, out _, true, true, merger.mergeSeamTangents, merger.mergeSeamUVs, nonSeamMergableBlendShapes) : meshToCombine;
+                                        mainMesh = MeshDataTools.CombineMeshes(mainMesh, new Mesh[] { mergeMesh });
+                                        mainMesh.name = meshName;
+
+                                        if (merger.updateBaseMeshData)
+                                        {
+                                            baseMeshData.UpdateBaseMeshData(mainMesh);
+                                        }
+                                    }
+                                    else if (lodMeshes != null && lodSlot - 1 >= 0 && lodSlot - 1 < lodMeshes.Length)
+                                    {
+                                        int slot = lodSlot - 1;
+
+                                        string meshName = lodMeshes[slot].name;
+                                        var mergeMesh = merger.mergeSeam ? MergeMeshSeam(meshToCombine, lodMeshes[slot], merger.seamShape, merger.seamMergeMethod, out _, true, true, merger.mergeSeamTangents, merger.mergeSeamUVs, nonSeamMergableBlendShapes) : meshToCombine;
+                                        lodMeshes[slot] = MeshDataTools.CombineMeshes(lodMeshes[slot], new Mesh[] { mergeMesh });
+                                        lodMeshes[slot].name = meshName;
                                     }
                                 }
 
-                                #endregion
+                                if (merger.lodSlot >= 0) CombineWithMeshLOD(merger.lodSlot);
 
-                                #region Transfer Surface Data
-
-                                if (merger.allowSurfaceDataTransfer)
+                                if (merger.additionalLodSlots != null)
                                 {
+                                    for(int l = 0; l < merger.additionalLodSlots.Length; l++) CombineWithMeshLOD(merger.additionalLodSlots[l]);
+                                }
+                            }
+
+                            baseMeshData.Dispose();
+                        }
+
+                        #endregion
+
+                        var mainVertices = mainMesh.vertices;
+                        var mainNormals = mainMesh.normals;
+                        var mainTangents = mainMesh.tangents;
+
+                        MeshDataTools.WeldedVertex[] mainWeld = null;
+
+                        #region Create Prep Shapes
+
+                        if (objectSetup.prepShapes != null && objectSetup.prepShapes.Length > 0)
+                        {
+                            if (mainWeld == null) mainWeld = MeshDataTools.WeldVertices(mainVertices);
+
+                            var prepMesh = MeshUtils.DuplicateMesh(mainMesh);
+                            prepMesh.name = mainMesh.name;
+
+                            foreach(var prepTarget in objectSetup.prepShapes)
+                            {
+                                if (prepTarget.TryGetBlendShape(objectSetup.name, mainMesh, out var blendShape, mainVertices, mainNormals, mainTangents, mainWeld))
+                                {
+                                    blendShape.AddToMesh(prepMesh);
+                                }
+                            }
+
+                            mainMesh = prepMesh;
+                        }
+
+                        #endregion
+
+                        var rendererBoundsCenter = objectSetup.boundsCenter;
+                        var rendererBoundsExtents = objectSetup.boundsExtents;
+                        var boundsCenter = rendererBoundsCenter;
+                        var boundsExtents = rendererBoundsExtents;
+                    
+                        #region Apply Initial Offsets
+
+                        if (objectSetup.applyInitialOffset)
+                        {
+                            Quaternion offsetRot = Quaternion.Euler(objectSetup.initialRotationOffset);
+                            Mesh ApplyInitialOffsetToMesh(Mesh mesh)
+                            {
+                                if (mesh == null) return null;
+
+                                var meshOut = MeshUtils.DuplicateMesh(mesh);
+                                meshOut.name = mesh.name;
+
+                                var verts = meshOut.vertices;
+                                var norms = meshOut.normals;
+                                var tans = meshOut.tangents;
+                                var shaps = meshOut.GetBlendShapes();
+
+                                for (int i = 0; i < meshOut.vertexCount; i++)
+                                {
+                                    verts[i] = (offsetRot * verts[i]) + objectSetup.initialOffset;
+                                    if (i < norms.Length) norms[i] = offsetRot * norms[i];
+                                    if (i < tans.Length) tans[i] = new float4(math.rotate(offsetRot, new float3(tans[i].x, tans[i].y, tans[i].z)), tans[i].w);
+
+                                    for (int j = 0; j < shaps.Count; j++)
+                                    {
+                                        var shape = shaps[j];
+                                        if (shape == null || shape.frames == null) continue;
+
+                                        for (int k = 0; k < shape.frames.Length; k++)
+                                        {
+                                            var frame = shape.frames[k];
+
+                                            frame.deltaVertices[i] = offsetRot * frame.deltaVertices[i];
+                                            frame.deltaNormals[i] = offsetRot * frame.deltaNormals[i];
+                                            frame.deltaTangents[i] = offsetRot * frame.deltaTangents[i];
+                                        }
+                                    }
+                                }
+
+                                meshOut.vertices = verts;
+                                meshOut.normals = norms;
+                                meshOut.tangents = tans;
+
+                                meshOut.ClearBlendShapes();
+                                foreach (var shape in shaps) shape.AddToMesh(meshOut);
+
+                                meshOut.RecalculateBounds();
+                                return meshOut;
+                            }
+
+                            mainMesh = ApplyInitialOffsetToMesh(mainMesh);
+                            if (lodMeshes != null)
+                            {
+                                for (int l = 0; l < lodMeshes.Length; l++) lodMeshes[l] = ApplyInitialOffsetToMesh(lodMeshes[l]);
+                            }
+
+                            boundsCenter = (offsetRot * boundsCenter) + objectSetup.initialOffset;
+                            boundsExtents = offsetRot * boundsExtents;
+                        }
+
+                        #endregion
+
+                        Mesh surfaceTransferredMesh = null;
+                        Mesh surfaceTransferredMeshIslands = null;
+                        SurfaceDataTransferVertex[] surfaceDataTransferVertexData = null;
+                        Dictionary<string, SurfaceDataTransferVertex[]> perShapeSurfaceDataTransferVertexData = null;
+
+                        #region Transfer Surface Data
+
+                        List<WeightedMesh> surfaceTransferBaseMeshes = new List<WeightedMesh>();
+                        void AddSurfaceTransferBaseMesh(CustomizableCharacterMeshV2_DATA existingSetup, int baseMeshIndex, float transferWeight, NameFloat[] perShapeTransferWeights, Mesh baseMeshOverride)
+                        {
+                            Mesh surfaceTransferBaseMesh = baseMeshOverride != null ? baseMeshOverride : (existingSetup != null ? existingSetup.SerializedData.Mesh : (baseMeshIndex >= 0 ? meshObjects[baseMeshIndex].mainMesh : null));
+                            if (surfaceTransferBaseMesh != null)
+                            {
+                                surfaceTransferBaseMeshes.Add(new WeightedMesh()
+                                {
+                                    mesh = surfaceTransferBaseMesh,
+                                    baseMeshData = new BaseMeshData(surfaceTransferBaseMesh),
+                                    weight = transferWeight,
+                                    perShapeWeights = perShapeTransferWeights
+                                });
+                            }
+                        }
+                        if (objectSetup.surfaceTransferFromExistingSetup)
+                        {
+                            AddSurfaceTransferBaseMesh(objectSetup.existingSetup.data, IndexOfMeshObject(objectSetup.baseMeshGroup), 1f, null, objectSetup.existingSetup.baseMeshOverride);
+                            if (objectSetup.additionalExistingSetups != null)
+                            {
+                                foreach (var existingSetup_ in objectSetup.additionalExistingSetups)
+                                {
+                                    AddSurfaceTransferBaseMesh(existingSetup_.setup.data, -1, existingSetup_.weight, existingSetup_.perShapeWeights, existingSetup_.setup.baseMeshOverride); 
+                                }
+                            }
+                        } 
+                        else
+                        {
+                            AddSurfaceTransferBaseMesh(null, IndexOfMeshObject(objectSetup.baseMeshGroup), 1f, null, null);
+                        }
+
+                        if (objectSetup.additionalBaseMeshGroups != null)
+                        {
+                            foreach (var additionalBaseMeshGroup in objectSetup.additionalBaseMeshGroups)
+                            {
+                                AddSurfaceTransferBaseMesh(null, IndexOfMeshObject(additionalBaseMeshGroup.baseMeshGroup), additionalBaseMeshGroup.weight, additionalBaseMeshGroup.perShapeWeights, null);
+                            }
+                        }               
+                    
+                        if (surfaceTransferBaseMeshes != null && surfaceTransferBaseMeshes.Count > 0)
+                        {
+                            MorphUtils.TransferSurfaceDataBase defaultBaseData = surfaceTransferBaseMeshes[0];
+                            MorphUtils.TransferSurfaceDataBase[] additionalBaseDatas = surfaceTransferBaseMeshes.Count > 1 ? new TransferSurfaceDataBase[surfaceTransferBaseMeshes.Count - 1] : null;
+                            if (additionalBaseDatas != null) 
+                            { 
+                                for (int i = 1; i < surfaceTransferBaseMeshes.Count; i++) additionalBaseDatas[i - 1] = surfaceTransferBaseMeshes[i]; 
+                            }
+
+                            if (objectSetup.snapToBaseSurface)
+                            {
+                                Mesh SnapMeshToSurface(Mesh origMesh, bool createSnapShapes)
+                                {
+                                    var triangles = origMesh.triangles;
+                                    var vertices = origMesh.vertices;
+                                    var normals = origMesh.normals;
+                                    var tangents = origMesh.tangents;
+                                    if (tangents == null || tangents.Length <= 0) tangents = new Vector4[origMesh.vertexCount];
+                                    var blendShapes = objectSetup.snapBlendShapes ? origMesh.GetBlendShapes() : null;
+                                    var weld = MeshDataTools.WeldVertices(vertices);
+                                    var openEdgeData = objectSetup.onlySnapOpenEdges ? MeshDataTools.GetOpenEdgeData(origMesh.vertexCount, triangles, weld) : null;
 
                                     var settings = new MorphUtils.TransferSurfaceDataSettings()
                                     {
-                                        baseMeshTriangles = baseMeshData.baseMeshTriangles,
-                                        baseMeshVertices = baseMeshData.baseMeshVertices,
-                                        baseMeshNormals = baseMeshData.baseMeshNormals,
-                                        baseMeshUVs = baseMeshData.baseMeshUVs,
-                                        baseMeshBlendShapes = baseMeshData.baseMeshBlendShapes,
-                                        baseMeshBoneWeights = baseMeshData.baseMeshBoneWeights,
-                                        baseMeshBonesPerVertex = baseMeshData.baseMeshBonesPerVertex,
-                                        baseMeshBoneWeightStartIndices = baseMeshData.baseMeshBoneWeightStartIndices,
+                                        baseDataMain = defaultBaseData,
+                                        baseDatas = additionalBaseDatas,
 
-                                        treatAsMeshIslands = merger.treatAsMeshIslands,
+                                        treatAsMeshIslands = false,
 
-                                        transferNormals = merger.transferNormals,
-                                        transferNormalsWeight = merger.transferNormalsWeight,
-
-                                        transferVertexColors = merger.transferVertexColors,
-
-                                        transferBoneWeights = merger.transferBoneWeights,
-
-                                        transferUVs = merger.transferUVs,
-                                        preserveExistingUVData = merger.preserveExistingUVData,
-                                        uvTransferRange = merger.uvTransferRange,
-                                        uvChannelIndexTransferOffset = merger.uvTransferOffset,
-
-                                        transferBlendShapes = merger.transferBlendShapes,
-                                        preserveExistingBlendShapeData = merger.preserveExistingBlendShapeData,
-
-                                        alignmentOffset = merger.alignmentOffset,
-                                        alignmentRotationOffsetEuler = merger.alignmentRotationOffset
+                                        useUVsForBaseDataTransfers = objectSetup.useUVsForBaseDataTransfers,
+                                        baseUV_transferChannel = objectSetup.baseUV_transferChannel,
+                                        localUV_transferChannel = objectSetup.localUV_transferChannel,
+                                        uvDistanceWeight = objectSetup.uvDistanceWeightForTransfers,
+                                        positionDistanceWeight = objectSetup.positionDistanceWeightForTransfers,
+                                        normalDotWeight = objectSetup.normalDotWeightForTransfers,
+                                        triCoordinatesWeight = objectSetup.triCoordinatesWeightForTransfers,
+                                        maxDistancePosition = objectSetup.maxPositionDistanceForTransfers,
+                                        maxDistanceUV = objectSetup.maxUV_DistanceForTransfers
                                     };
-                                    
-                                    meshToCombine = MorphUtils.TransferSurfaceData(meshToCombine, false, settings);
+                                
+                                    var newVertices = origMesh.vertices;
+                                    var newNormals = origMesh.normals;
+                                    var newTangents = origMesh.tangents;
 
-                                }
-
-                                #endregion
-
-                                if (lodSlot == 0)
-                                {
-                                    int origVertexCount = mainMesh.vertexCount;
-                                    string meshName = mainMesh.name;
-                                    var mergeMesh = merger.mergeSeam ? MergeMeshSeam(meshToCombine, mainMesh, merger.seamShape, merger.seamMergeMethod, out _, true, true, merger.mergeSeamTangents, merger.mergeSeamUVs, nonSeamMergableBlendShapes) : meshToCombine;
-                                    mainMesh = MeshDataTools.CombineMeshes(mainMesh, new Mesh[] { mergeMesh });
-                                    mainMesh.name = meshName;
-
-                                    if (merger.updateBaseMeshData)
+                                    var tempSurfaceDataTransferVertexData = new SurfaceDataTransferVertex[origMesh.vertexCount];
+                                    if (perShapeSurfaceDataTransferVertexData == null) perShapeSurfaceDataTransferVertexData = new Dictionary<string, SurfaceDataTransferVertex[]>();
+                                    perShapeSurfaceDataTransferVertexData.Clear();
+                                    var surfaceTransferredMesh = MorphUtils.TransferSurfaceData(origMesh, true, settings, tempSurfaceDataTransferVertexData, perShapeSurfaceDataTransferVertexData);
+                                    for(int i = 0; i < vertices.Length; i++)
                                     {
-                                        baseMeshData.UpdateBaseMeshData(mainMesh);
+                                        var vertexWeld = weld[i];
+                                        if ((objectSetup.onlySnapOpenEdges && !openEdgeData[i].IsOpenEdge()) || vertexWeld.firstIndex != i) continue;
+
+                                        var transferData = tempSurfaceDataTransferVertexData[i];
+                                        var baseData = settings.GetBaseData(transferData.closestMesh);
+
+                                        Vector3 originalNormal = normals[i];
+                                        Vector3 newNormal = (baseData.baseMeshNormals[transferData.closestIndex0] * transferData.closestWeight0)
+                                            + (baseData.baseMeshNormals[transferData.closestIndex1] * transferData.closestWeight1)
+                                            + (baseData.baseMeshNormals[transferData.closestIndex2] * transferData.closestWeight2);
+
+                                        Vector3 originalPosition = vertices[i];
+                                        Vector3 newPosition = (baseData.baseMeshVertices[transferData.closestIndex0] * transferData.closestWeight0) 
+                                            + (baseData.baseMeshVertices[transferData.closestIndex1] * transferData.closestWeight1) 
+                                            + (baseData.baseMeshVertices[transferData.closestIndex2] * transferData.closestWeight2);
+
+                                        newPosition = newPosition - newNormal.normalized * objectSetup.snapSurfaceOffset;
+                                        newVertices[i] = newPosition;
+
+                                        newNormals[i] = Vector3.LerpUnclamped(originalNormal, newNormal, objectSetup.snapNormalsTransferWeight).normalized;
+
+                                        foreach(var sibling in vertexWeld.indices)
+                                        {
+                                            newVertices[sibling] = newVertices[vertexWeld.firstIndex];
+                                            newNormals[sibling] = newNormals[vertexWeld.firstIndex];
+                                        }
                                     }
-                                }
-                                else if (lodMeshes != null && lodSlot - 1 >= 0 && lodSlot - 1 < lodMeshes.Length)
-                                {
-                                    int slot = lodSlot - 1;
 
-                                    string meshName = lodMeshes[slot].name;
-                                    var mergeMesh = merger.mergeSeam ? MergeMeshSeam(meshToCombine, lodMeshes[slot], merger.seamShape, merger.seamMergeMethod, out _, true, true, merger.mergeSeamTangents, merger.mergeSeamUVs, nonSeamMergableBlendShapes) : meshToCombine;
-                                    lodMeshes[slot] = MeshDataTools.CombineMeshes(lodMeshes[slot], new Mesh[] { mergeMesh });
-                                    lodMeshes[slot].name = meshName;
-                                }
-                            }
+                                    createSnapShapes = createSnapShapes && objectSetup.snapShapesToCreate != null && objectSetup.snapShapesToCreate.Count > 0;
+                                    var mainSurfaceDataTransferVertexData = createSnapShapes ? ((SurfaceDataTransferVertex[])tempSurfaceDataTransferVertexData.Clone()) : null;
+                                    //var mainPerShapeSurfaceDataTransferVertexData = new Dictionary<string, SurfaceDataTransferVertex[]>(perShapeSurfaceDataTransferVertexData);
 
-                            if (merger.lodSlot >= 0) CombineWithMeshLOD(merger.lodSlot);
-
-                            if (merger.additionalLodSlots != null)
-                            {
-                                for(int l = 0; l < merger.additionalLodSlots.Length; l++) CombineWithMeshLOD(merger.additionalLodSlots[l]);
-                            }
-                        }
-
-                        baseMeshData.Dispose();
-                    }
-
-                    #endregion
-
-                    var mainVertices = mainMesh.vertices;
-                    var mainNormals = mainMesh.normals;
-                    var mainTangents = mainMesh.tangents;
-
-                    MeshDataTools.WeldedVertex[] mainWeld = null;
-
-                    #region Create Prep Shapes
-
-                    if (objectSetup.prepShapes != null && objectSetup.prepShapes.Length > 0)
-                    {
-                        if (mainWeld == null) mainWeld = MeshDataTools.WeldVertices(mainVertices);
-
-                        var prepMesh = MeshUtils.DuplicateMesh(mainMesh);
-                        prepMesh.name = mainMesh.name;
-
-                        foreach(var prepTarget in objectSetup.prepShapes)
-                        {
-                            if (prepTarget.TryGetBlendShape(objectSetup.name, mainMesh, out var blendShape, mainVertices, mainNormals, mainTangents, mainWeld))
-                            {
-                                blendShape.AddToMesh(prepMesh);
-                            }
-                        }
-
-                        mainMesh = prepMesh;
-                    }
-
-                    #endregion
-
-                    var rendererBoundsCenter = objectSetup.boundsCenter;
-                    var rendererBoundsExtents = objectSetup.boundsExtents;
-                    var boundsCenter = rendererBoundsCenter;
-                    var boundsExtents = rendererBoundsExtents;
-                    
-                    #region Apply Initial Offsets
-
-                    if (objectSetup.applyInitialOffset)
-                    {
-                        Quaternion offsetRot = Quaternion.Euler(objectSetup.initialRotationOffset);
-                        Mesh ApplyInitialOffsetToMesh(Mesh mesh)
-                        {
-                            if (mesh == null) return null;
-
-                            var meshOut = MeshUtils.DuplicateMesh(mesh);
-                            meshOut.name = mesh.name;
-
-                            var verts = meshOut.vertices;
-                            var norms = meshOut.normals;
-                            var tans = meshOut.tangents;
-                            var shaps = meshOut.GetBlendShapes();
-
-                            for (int i = 0; i < meshOut.vertexCount; i++)
-                            {
-                                verts[i] = (offsetRot * verts[i]) + objectSetup.initialOffset;
-                                if (i < norms.Length) norms[i] = offsetRot * norms[i];
-                                if (i < tans.Length) tans[i] = new float4(math.rotate(offsetRot, new float3(tans[i].x, tans[i].y, tans[i].z)), tans[i].w);
-
-                                for (int j = 0; j < shaps.Count; j++)
-                                {
-                                    var shape = shaps[j];
-                                    if (shape == null || shape.frames == null) continue;
-
-                                    for (int k = 0; k < shape.frames.Length; k++)
+                                    if (blendShapes != null)
                                     {
-                                        var frame = shape.frames[k];
+                                        var shapeMesh = MeshUtils.DuplicateMesh(origMesh);
+                                        shapeMesh.ClearBlendShapes();
+                                        var tempVerts = shapeMesh.vertices;
+                                        var tempNormals = shapeMesh.normals;
+                                        foreach (var shape in blendShapes)
+                                        {
+                                            if (shape == null || shape.frames == null || (objectSetup.shapesToSnap != null && objectSetup.shapesToSnap.Count > 0 && !objectSetup.shapesToSnap.Contains(shape.name))) continue;
 
-                                        frame.deltaVertices[i] = offsetRot * frame.deltaVertices[i];
-                                        frame.deltaNormals[i] = offsetRot * frame.deltaNormals[i];
-                                        frame.deltaTangents[i] = offsetRot * frame.deltaTangents[i];
+                                            float snapSurfaceOffsetOverride = objectSetup.GetSnapSurfaceOffsetForShape(shape.name);
+                                            for (int f = 0; f < shape.frames.Length; f++)
+                                            {
+                                                var frame = shape.frames[f];
+
+                                                var shapeVerts = (Vector3[])tempVerts.Clone();
+                                                var shapeNormals = (Vector3[])tempNormals.Clone();
+
+                                                for(int v = 0; v < tempVerts.Length; v++)
+                                                {
+                                                    shapeVerts[v] = tempVerts[v] + frame.deltaVertices[v];
+                                                    shapeNormals[v] = tempNormals[v] + frame.deltaNormals[v];
+                                                }
+
+                                                shapeMesh.vertices = shapeVerts;
+                                                shapeMesh.normals = shapeNormals;
+
+                                                perShapeSurfaceDataTransferVertexData.Clear();
+                                                MorphUtils.TransferSurfaceData(shapeMesh, false, settings, tempSurfaceDataTransferVertexData, perShapeSurfaceDataTransferVertexData);
+
+                                                var tempSurfaceDataTransferVertexData_ = tempSurfaceDataTransferVertexData;
+                                                if (!perShapeSurfaceDataTransferVertexData.TryGetValue(shape.name, out tempSurfaceDataTransferVertexData_)) tempSurfaceDataTransferVertexData_ = tempSurfaceDataTransferVertexData;
+                                                for (int i = 0; i < tempVerts.Length; i++)
+                                                {
+                                                    if (objectSetup.onlySnapOpenEdges && !openEdgeData[i].IsOpenEdge()) continue;
+
+                                                    var transferData = tempSurfaceDataTransferVertexData_[i];
+                                                    var baseData = settings.GetBaseData(transferData.closestMesh);
+
+                                                    Vector3 originalNormal = shapeNormals[i];
+                                                    Vector3 newNormal = (baseData.baseMeshNormals[transferData.closestIndex0] * transferData.closestWeight0)
+                                                        + (baseData.baseMeshNormals[transferData.closestIndex1] * transferData.closestWeight1)
+                                                        + (baseData.baseMeshNormals[transferData.closestIndex2] * transferData.closestWeight2); 
+
+                                                    Vector3 originalPosition = shapeVerts[i];
+                                                    Vector3 newPosition = (baseData.baseMeshVertices[transferData.closestIndex0] * transferData.closestWeight0)
+                                                        + (baseData.baseMeshVertices[transferData.closestIndex1] * transferData.closestWeight1)
+                                                        + (baseData.baseMeshVertices[transferData.closestIndex2] * transferData.closestWeight2);
+
+                                                    newPosition = newPosition - newNormal.normalized * snapSurfaceOffsetOverride;
+                                                    shapeVerts[i] = newPosition;
+
+                                                    shapeNormals[i] = Vector3.LerpUnclamped(originalNormal, newNormal, objectSetup.snapNormalsTransferWeight).normalized;
+                                                }
+
+                                                for (int v = 0; v < tempVerts.Length; v++)
+                                                {
+                                                    var vertexWeld = weld[v];
+                                                    if (v != vertexWeld.firstIndex) continue;
+
+                                                    frame.deltaVertices[v] = shapeVerts[v] - newVertices[v];
+                                                    frame.deltaNormals[v] = shapeNormals[v] - newNormals[v];
+
+                                                    foreach(var sibling in vertexWeld.indices)
+                                                    {
+                                                        frame.deltaVertices[sibling] = frame.deltaVertices[vertexWeld.firstIndex];
+                                                        frame.deltaNormals[sibling] = frame.deltaNormals[vertexWeld.firstIndex];
+                                                    }
+                                                }
+
+                                            }
+
+                                        }
                                     }
+
+                                    if (createSnapShapes)
+                                    {
+                                        if (blendShapes == null) blendShapes = origMesh.GetBlendShapes();
+
+                                        var shapeMesh = MeshUtils.DuplicateMesh(origMesh);
+                                        shapeMesh.ClearBlendShapes();
+
+                                        foreach (var snapShapeCreator in objectSetup.snapShapesToCreate)
+                                        {
+                                            if (snapShapeCreator.localShapesToApply == null || snapShapeCreator.localShapesToApply.Length <= 0) continue;
+                                            
+                                            float snapSurfaceOffsetOverride = snapShapeCreator.overrideSnapSurfaceOffset ? snapShapeCreator.snapSurfaceOffsetOverride : objectSetup.snapSurfaceOffset;
+
+                                            var shapeVerts = (Vector3[])vertices.Clone();
+                                            var shapeNormals = (Vector3[])normals.Clone();
+                                            var shapeTangents = (Vector4[])tangents.Clone();
+
+                                            foreach (var shapeTarget in snapShapeCreator.localShapesToApply) // apply local shapes
+                                            {
+                                                if (!shapeTarget.TryGetBlendShape(objectSetup.name, origMesh, out var tempShape, vertices, normals, tangents, weld)) continue;
+
+                                                tempShape.GetTransformedData(shapeVerts, shapeNormals, shapeTangents, shapeTarget.weight, out shapeVerts, out shapeNormals, out shapeTangents, false);
+                                            }
+
+                                            var tempSurfaceDataTransferVertexData_ = mainSurfaceDataTransferVertexData;
+                                            if (snapShapeCreator.recalculateSurfaceTransfer)
+                                            {
+                                                /*var tempShapeVerts = (Vector3[])shapeVerts.Clone();
+                                                var tempShapeNormals = (Vector3[])shapeNormals.Clone();
+
+                                                for (int i = 0; i < vertices.Length; i++)
+                                                {
+                                                    var transferData = tempSurfaceDataTransferVertexData_[i];
+                                                    var baseData = settings.GetBaseData(transferData.closestMesh);
+
+                                                    Vector3 newNormal = tempShapeNormals[i];
+                                                    Vector3 newPosition = tempShapeVerts[i];
+
+                                                    foreach (var baseShapeTarget in snapShapeCreator.baseShapesToApply) // apply base shapes using initial surface transfer
+                                                    {
+                                                        if (!baseData.TryGetBlendShape(baseShapeTarget.name, out var baseBlendShape)) continue;
+
+                                                        newNormal += baseBlendShape.GetTransformedNormal(Vector3.zero, transferData.closestIndex0, baseShapeTarget.value, transferData.closestWeight0);
+                                                        newNormal += baseBlendShape.GetTransformedNormal(Vector3.zero, transferData.closestIndex1, baseShapeTarget.value, transferData.closestWeight1);
+                                                        newNormal += baseBlendShape.GetTransformedNormal(Vector3.zero, transferData.closestIndex2, baseShapeTarget.value, transferData.closestWeight2);
+
+                                                        newPosition += baseBlendShape.GetTransformedVertex(Vector3.zero, transferData.closestIndex0, baseShapeTarget.value, transferData.closestWeight0);
+                                                        newPosition += baseBlendShape.GetTransformedVertex(Vector3.zero, transferData.closestIndex1, baseShapeTarget.value, transferData.closestWeight1);
+                                                        newPosition += baseBlendShape.GetTransformedVertex(Vector3.zero, transferData.closestIndex2, baseShapeTarget.value, transferData.closestWeight2);
+                                                    }
+
+                                                    tempShapeNormals[i] = newNormal;
+                                                    tempShapeVerts[i] = newPosition;
+                                                }
+
+                                                shapeMesh.vertices = tempShapeVerts;
+                                                shapeMesh.normals = tempShapeNormals;
+
+                                                var settingsCopy = settings.ApplyBlendShapesToBaseData(snapShapeCreator.baseShapesToApply); // apply base shapes to base datas
+                                                for (int e = 0; e < settingsCopy.BaseDataCount; e++)
+                                                {
+                                                    var baseData = settingsCopy.GetBaseData(e);
+                                                    baseData.shapeCostWeights = null;
+                                                }*/
+
+                                                shapeMesh.vertices = shapeVerts;
+                                                shapeMesh.normals = shapeNormals;
+                                                var settingsCopy = settings;
+
+                                                MorphUtils.TransferSurfaceData(shapeMesh, false, settingsCopy, tempSurfaceDataTransferVertexData, null);  
+
+                                                tempSurfaceDataTransferVertexData_ = tempSurfaceDataTransferVertexData; 
+                                            }
+
+                                            for (int i = 0; i < vertices.Length; i++)
+                                            {
+                                                var transferData = tempSurfaceDataTransferVertexData_[i];
+                                                var baseData = settings.GetBaseData(transferData.closestMesh);
+
+                                                if (!objectSetup.onlySnapOpenEdges || openEdgeData[i].IsOpenEdge())
+                                                {
+                                                    Vector3 originalNormal = shapeNormals[i];
+                                                    Vector3 newNormal = (baseData.baseMeshNormals[transferData.closestIndex0] * transferData.closestWeight0)
+                                                        + (baseData.baseMeshNormals[transferData.closestIndex1] * transferData.closestWeight1)
+                                                        + (baseData.baseMeshNormals[transferData.closestIndex2] * transferData.closestWeight2);
+
+                                                    Vector3 newPosition = (baseData.baseMeshVertices[transferData.closestIndex0] * transferData.closestWeight0)
+                                                        + (baseData.baseMeshVertices[transferData.closestIndex1] * transferData.closestWeight1)
+                                                        + (baseData.baseMeshVertices[transferData.closestIndex2] * transferData.closestWeight2);
+
+                                                    Vector4 newTangent = shapeTangents[i];
+
+                                                    foreach (var baseShapeTarget in snapShapeCreator.baseShapesToApply)
+                                                    {
+                                                        if (!baseData.TryGetBlendShape(baseShapeTarget.name, out var baseBlendShape)) continue;
+
+                                                        newNormal += baseBlendShape.GetTransformedNormal(Vector3.zero, transferData.closestIndex0, baseShapeTarget.value, transferData.closestWeight0);
+                                                        newNormal += baseBlendShape.GetTransformedNormal(Vector3.zero, transferData.closestIndex1, baseShapeTarget.value, transferData.closestWeight1);
+                                                        newNormal += baseBlendShape.GetTransformedNormal(Vector3.zero, transferData.closestIndex2, baseShapeTarget.value, transferData.closestWeight2);
+
+                                                        newPosition += baseBlendShape.GetTransformedVertex(Vector3.zero, transferData.closestIndex0, baseShapeTarget.value, transferData.closestWeight0);
+                                                        newPosition += baseBlendShape.GetTransformedVertex(Vector3.zero, transferData.closestIndex1, baseShapeTarget.value, transferData.closestWeight1);
+                                                        newPosition += baseBlendShape.GetTransformedVertex(Vector3.zero, transferData.closestIndex2, baseShapeTarget.value, transferData.closestWeight2);
+
+                                                        newTangent += baseBlendShape.GetTransformedTangent(Vector4.zero, transferData.closestIndex0, baseShapeTarget.value, transferData.closestWeight0);
+                                                        newTangent += baseBlendShape.GetTransformedTangent(Vector4.zero, transferData.closestIndex1, baseShapeTarget.value, transferData.closestWeight1);
+                                                        newTangent += baseBlendShape.GetTransformedTangent(Vector4.zero, transferData.closestIndex2, baseShapeTarget.value, transferData.closestWeight2);
+                                                    }
+
+                                                    newPosition = newPosition - newNormal.normalized * snapSurfaceOffsetOverride;
+                                                    shapeVerts[i] = newPosition;
+
+                                                    shapeNormals[i] = Vector3.LerpUnclamped(originalNormal, newNormal, objectSetup.snapNormalsTransferWeight).normalized;
+
+                                                    shapeTangents[i] = newTangent;
+                                                }
+                                                else
+                                                {
+                                                    Vector3 newNormal = shapeNormals[i];
+                                                    Vector3 newPosition = shapeVerts[i];
+                                                    Vector4 newTangent = shapeTangents[i];
+
+                                                    foreach (var baseShapeTarget in snapShapeCreator.baseShapesToApply)
+                                                    {
+                                                        if (!baseData.TryGetBlendShape(baseShapeTarget.name, out var baseBlendShape)) continue;
+
+                                                        newNormal += baseBlendShape.GetTransformedNormal(Vector3.zero, transferData.closestIndex0, baseShapeTarget.value, transferData.closestWeight0);
+                                                        newNormal += baseBlendShape.GetTransformedNormal(Vector3.zero, transferData.closestIndex1, baseShapeTarget.value, transferData.closestWeight1);
+                                                        newNormal += baseBlendShape.GetTransformedNormal(Vector3.zero, transferData.closestIndex2, baseShapeTarget.value, transferData.closestWeight2);
+
+                                                        newPosition += baseBlendShape.GetTransformedVertex(Vector3.zero, transferData.closestIndex0, baseShapeTarget.value, transferData.closestWeight0);
+                                                        newPosition += baseBlendShape.GetTransformedVertex(Vector3.zero, transferData.closestIndex1, baseShapeTarget.value, transferData.closestWeight1);
+                                                        newPosition += baseBlendShape.GetTransformedVertex(Vector3.zero, transferData.closestIndex2, baseShapeTarget.value, transferData.closestWeight2);
+
+                                                        newTangent += baseBlendShape.GetTransformedTangent(Vector4.zero, transferData.closestIndex0, baseShapeTarget.value, transferData.closestWeight0);
+                                                        newTangent += baseBlendShape.GetTransformedTangent(Vector4.zero, transferData.closestIndex1, baseShapeTarget.value, transferData.closestWeight1);
+                                                        newTangent += baseBlendShape.GetTransformedTangent(Vector4.zero, transferData.closestIndex2, baseShapeTarget.value, transferData.closestWeight2);
+                                                    }
+
+                                                    shapeNormals[i] = newNormal;
+                                                    shapeVerts[i] = newPosition;
+                                                    shapeTangents[i] = newTangent;
+                                                }
+                                            }
+
+                                            for (int v = 0; v < vertices.Length; v++)
+                                            {
+                                                shapeTangents[v] = shapeTangents[v] - newTangents[v];
+
+                                                var vertexWeld = weld[v];
+                                                if (v != vertexWeld.firstIndex) continue;
+
+                                                shapeVerts[v] = shapeVerts[v] - newVertices[v];
+                                                shapeNormals[v] = shapeNormals[v] - newNormals[v];
+
+                                                foreach (var sibling in vertexWeld.indices)
+                                                {
+                                                    shapeVerts[sibling] = shapeVerts[vertexWeld.firstIndex];
+                                                    shapeNormals[sibling] = shapeNormals[vertexWeld.firstIndex];
+                                                }
+                                            }
+
+                                            var newBlendShape = new BlendShape(snapShapeCreator.name);
+                                            newBlendShape.AddFrame(snapShapeCreator.finalFrameWeight <= 0f ? 1f : snapShapeCreator.finalFrameWeight, shapeVerts, shapeNormals, shapeTangents);
+                                            blendShapes.Add(newBlendShape);
+                                        }
+                                    }
+
+                                    var newMesh = MeshUtils.DuplicateMesh(origMesh);
+                                    newMesh.name = origMesh.name;
+
+                                    newMesh.vertices = newVertices;
+                                    newMesh.normals = newNormals;
+                                    if (blendShapes != null)
+                                    {
+                                        newMesh.ClearBlendShapes();
+                                        foreach(var shape in blendShapes) shape.AddToMesh(newMesh);
+                                    }
+
+                                    return newMesh;
+                                }
+
+                                mainMesh = SnapMeshToSurface(mainMesh, true);
+                                if (lodMeshes != null)
+                                {
+                                    for(int i = 0; i < lodMeshes.Length; i++) lodMeshes[i] = SnapMeshToSurface(lodMeshes[i], false);
                                 }
                             }
-
-                            meshOut.vertices = verts;
-                            meshOut.normals = norms;
-                            meshOut.tangents = tans;
-
-                            meshOut.ClearBlendShapes();
-                            foreach (var shape in shaps) shape.AddToMesh(meshOut);
-
-                            meshOut.RecalculateBounds();
-                            return meshOut;
-                        }
-
-                        mainMesh = ApplyInitialOffsetToMesh(mainMesh);
-                        if (lodMeshes != null)
-                        {
-                            for (int l = 0; l < lodMeshes.Length; l++) lodMeshes[l] = ApplyInitialOffsetToMesh(lodMeshes[l]);
-                        }
-
-                        boundsCenter = (offsetRot * boundsCenter) + objectSetup.initialOffset;
-                        boundsExtents = offsetRot * boundsExtents;
-                    }
-
-                    #endregion
-
-                    Mesh surfaceTransferredMesh = null;
-                    Mesh surfaceTransferredMeshIslands = null;
-                    SurfaceDataTransferVertex[] surfaceDataTransferVertexData = null;
-
-                    #region Transfer Surface Data
-
-                    Mesh surfaceTransferBaseMesh = objectSetup.surfaceTransferFromExistingSetup && objectSetup.existingSetup != null ? objectSetup.existingSetup.SerializedData.Mesh : (baseMeshIndex >= 0 ? meshObjects[baseMeshIndex].mainMesh : null);
-                    if (surfaceTransferBaseMesh != null && surfaceTransferBaseMesh != objectSetup.mainMesh)
-                    {
-                        var baseMeshData = new BaseMeshData();
-
-                        baseMeshData.UpdateBaseMeshData(surfaceTransferBaseMesh);
-
-                        if (objectSetup.snapToBaseSurface)
-                        {
-                            Mesh SnapMeshToSurface(Mesh origMesh)
+                        
+                            if (objectSetup.allowSurfaceDataTransfer)
                             {
-                                var triangles = origMesh.triangles;
-                                var vertices = origMesh.vertices;
-                                var normals = origMesh.normals;
-                                var blendShapes = objectSetup.snapBlendShapes ? origMesh.GetBlendShapes() : null;
-                                var weld = MeshDataTools.WeldVertices(vertices);
-                                var openEdgeData = objectSetup.onlySnapOpenEdges ? MeshDataTools.GetOpenEdgeData(origMesh.vertexCount, triangles, weld) : null;
+                                surfaceDataTransferVertexData = new SurfaceDataTransferVertex[mainMesh.vertexCount];
+                                if (perShapeSurfaceDataTransferVertexData == null) perShapeSurfaceDataTransferVertexData = new Dictionary<string, SurfaceDataTransferVertex[]>();
+                                perShapeSurfaceDataTransferVertexData.Clear();
 
                                 var settings = new MorphUtils.TransferSurfaceDataSettings()
                                 {
-                                    baseMeshTriangles = baseMeshData.baseMeshTriangles,
-                                    baseMeshVertices = baseMeshData.baseMeshVertices,
-                                    baseMeshNormals = baseMeshData.baseMeshNormals,
-                                    baseMeshUVs = baseMeshData.baseMeshUVs,
-                                    baseMeshBlendShapes = baseMeshData.baseMeshBlendShapes,
-                                    baseMeshBoneWeights = baseMeshData.baseMeshBoneWeights,
-                                    baseMeshBonesPerVertex = baseMeshData.baseMeshBonesPerVertex,
-                                    baseMeshBoneWeightStartIndices = baseMeshData.baseMeshBoneWeightStartIndices,
+                                    baseDataMain = defaultBaseData,
+                                    baseDatas = additionalBaseDatas,
 
-                                    treatAsMeshIslands = false,
+                                    treatAsMeshIslands = objectSetup.treatAsMeshIslands,
 
-                                    alignmentOffset = objectSetup.transferOffset,
-                                    alignmentRotationOffsetEuler = objectSetup.transferRotationOffset
+                                    transferNormals = objectSetup.transferNormals,
+                                    transferNormalsWeight = objectSetup.transferNormalsWeight,
+
+                                    transferVertexColors = objectSetup.transferVertexColors,
+
+                                    transferBoneWeights = objectSetup.transferBoneWeights,
+
+                                    transferUVs = objectSetup.transferUVs,
+                                    preserveExistingUVData = objectSetup.preserveExistingUVData,
+                                    uvTransferRange = objectSetup.uvTransferRange,
+                                    uvChannelIndexTransferOffset = objectSetup.uvTransferOffset,
+
+                                    transferBlendShapes = objectSetup.transferBlendShapes,
+                                    preserveExistingBlendShapeData = objectSetup.preserveExistingBlendShapeData,
+
+                                    useUVsForBaseDataTransfers = objectSetup.useUVsForBaseDataTransfers,
+                                    baseUV_transferChannel = objectSetup.baseUV_transferChannel,
+                                    localUV_transferChannel = objectSetup.localUV_transferChannel,
+                                    uvDistanceWeight = objectSetup.uvDistanceWeightForTransfers,
+                                    positionDistanceWeight = objectSetup.positionDistanceWeightForTransfers,
+                                    normalDotWeight = objectSetup.normalDotWeightForTransfers,
+                                    triCoordinatesWeight = objectSetup.triCoordinatesWeightForTransfers,
+                                    maxDistancePosition = objectSetup.maxPositionDistanceForTransfers,
+                                    maxDistanceUV = objectSetup.maxUV_DistanceForTransfers
                                 };
 
-                                var newVertices = origMesh.vertices;
-                                var newNormals = origMesh.normals;
-
-                                var tempSurfaceDataTransferVertexData = new SurfaceDataTransferVertex[origMesh.vertexCount];
-                                var surfaceTransferredMesh = MorphUtils.TransferSurfaceData(origMesh, true, settings, tempSurfaceDataTransferVertexData);
-                                for(int i = 0; i < vertices.Length; i++)
+                                if (objectSetup.treatAsMeshIslands)
                                 {
-                                    if (objectSetup.onlySnapOpenEdges && !openEdgeData[i].IsOpenEdge()) continue;
-
-                                    var transferData = tempSurfaceDataTransferVertexData[i];
-
-                                    Vector3 originalNormal = normals[i];
-                                    Vector3 newNormal = (settings.baseMeshNormals[transferData.closestIndex0] * transferData.closestWeight0)
-                                        + (settings.baseMeshNormals[transferData.closestIndex1] * transferData.closestWeight1)
-                                        + (settings.baseMeshNormals[transferData.closestIndex2] * transferData.closestWeight2);
-
-                                    Vector3 originalPosition = vertices[i];
-                                    Vector3 newPosition = (settings.baseMeshVertices[transferData.closestIndex0] * transferData.closestWeight0) 
-                                        + (settings.baseMeshVertices[transferData.closestIndex1] * transferData.closestWeight1) 
-                                        + (settings.baseMeshVertices[transferData.closestIndex2] * transferData.closestWeight2);
-
-                                    newPosition = newPosition - newNormal * objectSetup.snapSurfaceOffset;
-                                    newVertices[i] = newPosition;
-
-                                    newNormals[i] = Vector3.LerpUnclamped(originalNormal, newNormal, objectSetup.snapNormalsTransferWeight).normalized;
+                                    mainMesh = surfaceTransferredMeshIslands = MorphUtils.TransferSurfaceData(mainMesh, true, settings, surfaceDataTransferVertexData, perShapeSurfaceDataTransferVertexData); 
+                                }
+                                else
+                                {
+                                    mainMesh = surfaceTransferredMesh = MorphUtils.TransferSurfaceData(mainMesh, true, settings, surfaceDataTransferVertexData, perShapeSurfaceDataTransferVertexData);
                                 }
 
-                                if (blendShapes != null)
-                                {
-                                    var shapeMesh = MeshUtils.DuplicateMesh(origMesh);
-                                    shapeMesh.ClearBlendShapes();
-                                    var tempVerts = shapeMesh.vertices;
-                                    var tempNormals = shapeMesh.normals;
-                                    foreach (var shape in blendShapes)
-                                    {
-                                        if (shape == null || shape.frames == null || (objectSetup.shapesToSnap != null && objectSetup.shapesToSnap.Count > 0 && !objectSetup.shapesToSnap.Contains(shape.name))) continue;
-
-                                        float snapSurfaceOffsetOverride = objectSetup.GetSnapSurfaceOffsetForShape(shape.name);
-                                        for (int f = 0; f < shape.frames.Length; f++)
-                                        {
-                                            var frame = shape.frames[f];
-
-                                            var shapeVerts = (Vector3[])tempVerts.Clone();
-                                            var shapeNormals = (Vector3[])tempNormals.Clone();
-
-                                            for(int v = 0; v < tempVerts.Length; v++)
-                                            {
-                                                shapeVerts[v] = tempVerts[v] + frame.deltaVertices[v];
-                                                shapeNormals[v] = tempNormals[v] + frame.deltaNormals[v];
-                                            }
-
-                                            shapeMesh.vertices = shapeVerts;
-                                            shapeMesh.normals = shapeNormals;
-
-                                            MorphUtils.TransferSurfaceData(shapeMesh, false, settings, tempSurfaceDataTransferVertexData);
-
-                                            for (int i = 0; i < tempVerts.Length; i++)
-                                            {
-                                                if (objectSetup.onlySnapOpenEdges && !openEdgeData[i].IsOpenEdge()) continue;
-
-                                                var transferData = tempSurfaceDataTransferVertexData[i];
-
-                                                Vector3 originalNormal = shapeNormals[i];
-                                                Vector3 newNormal = (settings.baseMeshNormals[transferData.closestIndex0] * transferData.closestWeight0)
-                                                    + (settings.baseMeshNormals[transferData.closestIndex1] * transferData.closestWeight1)
-                                                    + (settings.baseMeshNormals[transferData.closestIndex2] * transferData.closestWeight2); 
-
-                                                Vector3 originalPosition = shapeVerts[i];
-                                                Vector3 newPosition = (settings.baseMeshVertices[transferData.closestIndex0] * transferData.closestWeight0)
-                                                    + (settings.baseMeshVertices[transferData.closestIndex1] * transferData.closestWeight1)
-                                                    + (settings.baseMeshVertices[transferData.closestIndex2] * transferData.closestWeight2);
-
-                                                newPosition = newPosition - newNormal * snapSurfaceOffsetOverride;
-                                                shapeVerts[i] = newPosition;
-
-                                                shapeNormals[i] = Vector3.LerpUnclamped(originalNormal, newNormal, objectSetup.snapNormalsTransferWeight).normalized;
-                                            }
-
-                                            for (int v = 0; v < tempVerts.Length; v++)
-                                            {
-                                                frame.deltaVertices[v] = shapeVerts[v] - newVertices[v];
-                                                frame.deltaNormals[v] = shapeNormals[v] - newNormals[v];
-                                            }
-
-                                        }
-
-                                    }
-                                }
-
-                                var newMesh = MeshUtils.DuplicateMesh(origMesh);
-                                newMesh.name = origMesh.name;
-
-                                newMesh.vertices = newVertices;
-                                newMesh.normals = newNormals;
-                                if (objectSetup.snapBlendShapes)
-                                {
-                                    newMesh.ClearBlendShapes();
-                                    foreach(var shape in blendShapes) shape.AddToMesh(newMesh);
-                                }
-
-                                return newMesh;
-                            }
-
-                            mainMesh = SnapMeshToSurface(mainMesh);
-                            if (lodMeshes != null)
-                            {
-                                for(int i = 0; i < lodMeshes.Length; i++) lodMeshes[i] = SnapMeshToSurface(lodMeshes[i]);
                             }
                         }
-                        
-                        if (objectSetup.allowSurfaceDataTransfer)
+
+                        #endregion
+
+                        if (objectSetup.createTransferDebugObject && objectSetup.skinnedRendererReference != null) 
                         {
-                            surfaceDataTransferVertexData = new SurfaceDataTransferVertex[mainMesh.vertexCount];
-
-                            var settings = new MorphUtils.TransferSurfaceDataSettings()
-                            {
-                                baseMeshTriangles = baseMeshData.baseMeshTriangles,
-                                baseMeshVertices = baseMeshData.baseMeshVertices,
-                                baseMeshNormals = baseMeshData.baseMeshNormals,
-                                baseMeshUVs = baseMeshData.baseMeshUVs,
-                                baseMeshBlendShapes = baseMeshData.baseMeshBlendShapes,
-                                baseMeshBoneWeights = baseMeshData.baseMeshBoneWeights,
-                                baseMeshBonesPerVertex = baseMeshData.baseMeshBonesPerVertex,
-                                baseMeshBoneWeightStartIndices = baseMeshData.baseMeshBoneWeightStartIndices,
-
-                                treatAsMeshIslands = objectSetup.treatAsMeshIslands,
-
-                                transferNormals = objectSetup.transferNormals,
-                                transferNormalsWeight = objectSetup.transferNormalsWeight,
-
-                                transferVertexColors = objectSetup.transferVertexColors,
-
-                                transferBoneWeights = objectSetup.transferBoneWeights,
-
-                                transferUVs = objectSetup.transferUVs,
-                                preserveExistingUVData = objectSetup.preserveExistingUVData,
-                                uvTransferRange = objectSetup.uvTransferRange,
-                                uvChannelIndexTransferOffset = objectSetup.uvTransferOffset,
-
-                                transferBlendShapes = objectSetup.transferBlendShapes,
-                                preserveExistingBlendShapeData = objectSetup.preserveExistingBlendShapeData,
-
-                                alignmentOffset = objectSetup.transferOffset,
-                                alignmentRotationOffsetEuler = objectSetup.transferRotationOffset
-                            };
-
-                            if (objectSetup.treatAsMeshIslands)
-                            {
-                                surfaceTransferredMeshIslands = MorphUtils.TransferSurfaceData(mainMesh, true, settings, surfaceDataTransferVertexData);
-                            }
-                            else
-                            {
-                                surfaceTransferredMesh = MorphUtils.TransferSurfaceData(mainMesh, true, settings, surfaceDataTransferVertexData);
-                            }
-
-                            if (objectSetup.allowSurfaceDataTransfer) mainMesh = surfaceTransferredMesh;
-
+                            var debugRenderer = GameObject.Instantiate(objectSetup.skinnedRendererReference);
+                            debugRenderer.sharedMesh = MeshUtils.DuplicateMesh(mainMesh);
                         }
 
-                        baseMeshData.Dispose();
-                    }
+                        #region Merge Seams
 
-                    #endregion
-
-                    if (objectSetup.createTransferDebugObject && objectSetup.skinnedRendererReference != null)
-                    {
-                        var debugRenderer = GameObject.Instantiate(objectSetup.skinnedRendererReference);
-                        debugRenderer.sharedMesh = surfaceTransferredMesh;
-                    }
-
-                    #region Merge Seams
-
-                    if (baseMeshIndex >= 0)
-                    {
-
-                        seamShapes.Clear();
-                        if (!string.IsNullOrWhiteSpace(objectSetup.seamShape))
+                        if (baseMeshIndex >= 0)
                         {
-                            mainMesh = MergeMeshSeam(mainMesh, meshObjects[baseMeshIndex].mainMesh, objectSetup.seamShape, objectSetup.seamMergeMethod, out var seamShape, true, true, objectSetup.mergeSeamTangents, objectSetup.mergeSeamUVs, nonSeamMergableBlendShapes);
-                            seamShapes.Add(seamShape);
 
-                            for (int b = 0; b < lodMeshes.Length; b++)
+                            seamShapes.Clear();
+                            if (!string.IsNullOrWhiteSpace(objectSetup.seamShape))
                             {
-                                if (b >= meshObjects[baseMeshIndex].lods.Length) continue; // base mesh doesn't have the same amount of lods
-
-                                lodMeshes[b] = MergeMeshSeam(lodMeshes[b], meshObjects[baseMeshIndex].lods[b].mesh, objectSetup.seamShape, objectSetup.seamMergeMethod, out seamShape, true, true, objectSetup.mergeSeamTangents, objectSetup.mergeSeamUVs, nonSeamMergableBlendShapes);
+                                mainMesh = MergeMeshSeam(mainMesh, meshObjects[baseMeshIndex].mainMesh, objectSetup.seamShape, objectSetup.seamMergeMethod, out var seamShape, true, true, objectSetup.mergeSeamTangents, objectSetup.mergeSeamUVs, nonSeamMergableBlendShapes);
                                 seamShapes.Add(seamShape);
-                            }
-                        }
 
-                    }
+                                for (int b = 0; b < lodMeshes.Length; b++)
+                                {
+                                    if (b >= meshObjects[baseMeshIndex].lods.Length) continue; // base mesh doesn't have the same amount of lods
+
+                                    lodMeshes[b] = MergeMeshSeam(lodMeshes[b], meshObjects[baseMeshIndex].lods[b].mesh, objectSetup.seamShape, objectSetup.seamMergeMethod, out seamShape, true, true, objectSetup.mergeSeamTangents, objectSetup.mergeSeamUVs, nonSeamMergableBlendShapes);
+                                    seamShapes.Add(seamShape);
+                                }
+                            }
+
+                        }
                     
-                    #endregion
+                        #endregion
 
-                    #region Solidify
+                        #region Solidify
 
-                    if (objectSetup.solidifyThickness > 0.00001f)
-                    {
-                        var solidifiedMesh = MeshDataTools.Solidify(mainMesh, objectSetup.solidifyThickness, 0f, true, true);
-                        solidifiedMesh.name = mainMesh.name;
-                        mainMesh = solidifiedMesh;
-                        Debug.Log($"SOLIDIFIED: {objectSetup.name} : {objectSetup.solidifyThickness} : {solidifiedMesh.name} :: {solidifiedMesh.GetType().FullName}");
-                    }
-
-                    #endregion
-
-                    mainVertices = mainMesh.vertices;
-                    mainNormals = mainMesh.normals;
-                    mainTangents = mainMesh.tangents;
-
-                    mainWeld = MeshDataTools.WeldVertices(mainVertices);
-
-                    var emptyVertices = new Vector3[mainMesh.vertexCount];
-                    var emptyNormals = new Vector3[mainMesh.vertexCount];
-                    var emptyTangents = new Vector3[mainMesh.vertexCount];
-
-                    Transform[] bones = null;
-                    if (objectSetup.skinnedRendererReference != null)
-                    {
-                        bones = objectSetup.skinnedRendererReference.bones;
-                    }
-
-                    #region Bindpose
-
-                    if (objectSetup.avatar != null)
-                    {
-                        if (bones != null)
+                        if (objectSetup.solidifyThickness > 0.00001f)
                         {
-                            for(int originalBoneIndex = 0; originalBoneIndex < bones.Length; originalBoneIndex++)
+                            var solidifiedMesh = MeshDataTools.Solidify(mainMesh, objectSetup.solidifyThickness, 0f, true, true);
+                            solidifiedMesh.name = mainMesh.name;
+                            mainMesh = solidifiedMesh;
+                            Debug.Log($"SOLIDIFIED: {objectSetup.name} : {objectSetup.solidifyThickness} : {solidifiedMesh.name} :: {solidifiedMesh.GetType().FullName}");
+                        }
+
+                        #endregion
+
+                        mainVertices = mainMesh.vertices;
+                        mainNormals = mainMesh.normals;
+                        mainTangents = mainMesh.tangents;
+
+                        mainWeld = MeshDataTools.WeldVertices(mainVertices);
+
+                        var emptyVertices = new Vector3[mainMesh.vertexCount];
+                        var emptyNormals = new Vector3[mainMesh.vertexCount];
+                        var emptyTangents = new Vector3[mainMesh.vertexCount];
+
+                        Transform[] bones = null;
+                        if (objectSetup.skinnedRendererReference != null)
+                        {
+                            bones = objectSetup.skinnedRendererReference.bones;
+                        }
+
+                        #region Bindpose
+
+                        if (objectSetup.avatar != null)
+                        {
+                            if (bones != null)
                             {
-                                var bone = bones[originalBoneIndex];
-                                var boneIndex = objectSetup.avatar.GetBoneIndex(bone.name);
-                                if (boneIndex >= 0) tempIndexRemapper[originalBoneIndex] = boneIndex;
+                                for(int originalBoneIndex = 0; originalBoneIndex < bones.Length; originalBoneIndex++)
+                                {
+                                    var bone = bones[originalBoneIndex];
+                                    var boneIndex = objectSetup.avatar.GetBoneIndex(bone.name);
+                                    if (boneIndex >= 0) tempIndexRemapper[originalBoneIndex] = boneIndex;
+                                }
                             }
                         }
-                    }
 
-                    tempMatrices.Clear();
-                    var origBindPose = mainMesh.bindposes;
-                    if ((origBindPose == null || origBindPose.Length <= 0) && surfaceTransferBaseMesh != null) origBindPose = surfaceTransferBaseMesh.bindposes;
-                    if ((origBindPose == null || origBindPose.Length <= 0) && (objectSetup.skinnedRendererReference != null && objectSetup.skinnedRendererReference.sharedMesh != null)) origBindPose = objectSetup.skinnedRendererReference.sharedMesh.bindposes;
-                    if (objectSetup.skinnedRendererReference == null || objectSetup.avatar == null)
-                    {
-                        tempMatrices.AddRange(origBindPose);
-                    }
-                    else
-                    {
-                        for (int i = 0; i < objectSetup.avatar.SkinnedBonesCount; i++) tempMatrices.Add(Matrix4x4.identity);
-
-                        var originalBindPoses = origBindPose;
-                        foreach(var entry in tempIndexRemapper)
+                        tempMatrices.Clear();
+                        var origBindPose = mainMesh.bindposes;
+                        if ((origBindPose == null || origBindPose.Length <= 0) && surfaceTransferBaseMeshes != null)
                         {
-                            if (entry.Value >= tempMatrices.Count || entry.Key >= originalBindPoses.Length) continue;
-                            tempMatrices[entry.Value] = originalBindPoses[entry.Key];
-                        }
-                    }
-
-                    #endregion
-
-                    #region Extract Bone Weights
-
-                    var mainBoneWeights = new BoneWeight8[mainVertices.Length];
-
-                    using (var tempBoneWeights = new NativeArray<BoneWeight1>(mainMesh.GetAllBoneWeights(), Allocator.Persistent))
-                    {
-                        using (var tempBoneCounts = new NativeArray<byte>(mainMesh.GetBonesPerVertex(), Allocator.Persistent))
-                        {
-
-                            int boneWeightIndex = 0;
-                            for (int b = 0; b < mainBoneWeights.Length; b++)
+                            foreach(var baseMesh in surfaceTransferBaseMeshes)
                             {
-                                var count = tempBoneCounts[b];
-                                BoneWeight8 bw = new BoneWeight8();
-                                for (int i = 0; i < count; i++)
+                                if (baseMesh.mesh == null) continue;
+
+                                origBindPose = baseMesh.mesh.bindposes;
+                                if (origBindPose != null && origBindPose.Length > 0) break;
+                            }
+                        }
+                        if ((origBindPose == null || origBindPose.Length <= 0) && (objectSetup.skinnedRendererReference != null && objectSetup.skinnedRendererReference.sharedMesh != null)) origBindPose = objectSetup.skinnedRendererReference.sharedMesh.bindposes;
+                        if (objectSetup.skinnedRendererReference == null || objectSetup.avatar == null)
+                        {
+                            tempMatrices.AddRange(origBindPose);
+                        }
+                        else
+                        {
+                            for (int i = 0; i < objectSetup.avatar.SkinnedBonesCount; i++) tempMatrices.Add(Matrix4x4.identity);
+
+                            var originalBindPoses = origBindPose;
+                            foreach(var entry in tempIndexRemapper)
+                            {
+                                if (entry.Value >= tempMatrices.Count || entry.Key >= originalBindPoses.Length) continue;
+                                tempMatrices[entry.Value] = originalBindPoses[entry.Key];
+                            }
+                        }
+
+                        #endregion
+
+                        #region Extract Bone Weights
+
+                        var mainBoneWeights = new BoneWeight8[mainVertices.Length];
+
+                        try
+                        {
+                            using (var tempBoneWeights = new NativeArray<BoneWeight1>(mainMesh.GetAllBoneWeights(), Allocator.Persistent))
+                            {
+                                using (var tempBoneCounts = new NativeArray<byte>(mainMesh.GetBonesPerVertex(), Allocator.Persistent))
                                 {
-                                    if (i < 8)
+
+                                    if (tempBoneCounts.Length >= mainBoneWeights.Length)
                                     {
-                                        var sourceBW = tempBoneWeights[boneWeightIndex];
-                                        if (tempIndexRemapper.Count > 0)
+                                        int boneWeightIndex = 0;
+                                        for (int b = 0; b < mainBoneWeights.Length; b++)
                                         {
-                                            if (tempIndexRemapper.TryGetValue(sourceBW.boneIndex, out int newBoneIndex))
+                                            var count = tempBoneCounts[b];
+                                            BoneWeight8 bw = new BoneWeight8();
+                                            for (int i = 0; i < count; i++)
                                             {
-                                                sourceBW.boneIndex = newBoneIndex;
-                                            } 
-                                            else
-                                            {
-                                                sourceBW.boneIndex = 0;
+                                                if (i < 8)
+                                                {
+                                                    var sourceBW = tempBoneWeights[boneWeightIndex];
+                                                    if (tempIndexRemapper.Count > 0)
+                                                    {
+                                                        if (tempIndexRemapper.TryGetValue(sourceBW.boneIndex, out int newBoneIndex))
+                                                        {
+                                                            sourceBW.boneIndex = newBoneIndex;
+                                                        }
+                                                        else
+                                                        {
+                                                            sourceBW.boneIndex = 0;
+                                                        }
+                                                    }
+                                                    bw = bw.Modify(i, sourceBW.boneIndex, sourceBW.weight);
+                                                }
+
+                                                boneWeightIndex++;
                                             }
+
+                                            mainBoneWeights[b] = bw;
                                         }
-                                        bw = bw.Modify(i, sourceBW.boneIndex, sourceBW.weight);
                                     }
+                                    else
+                                    {
+                                        Debug.LogWarning($"Bone count array length did not match vertex count for {objectSetup.name}");
+                                        for (int b = 0; b < mainBoneWeights.Length; b++)
+                                        {
+                                            BoneWeight8 bw = new BoneWeight8();
+                                            bw.boneWeight0 = 1f;
+                                            mainBoneWeights[b] = bw;
+                                        }
+                                    }
+                                }
+                            }
+                        } 
+                        catch(Exception ex)
+                        {
+                            Debug.LogException(ex);
+                        }
 
-                                    boneWeightIndex++;
+                        #endregion
+
+                        #region Create Mesh Shapes
+
+                        if (auxiliaryShapes != null)
+                        {
+                            foreach (var auxiliaryShape in auxiliaryShapes)
+                            {
+                                if (auxiliaryShape.targets == null || auxiliaryShape.targets.Length <= 0) continue;
+
+                                tempBlendShapeTargets.Clear();
+                                tempBlendShapeTargets.AddRange(auxiliaryShape.targets);
+                                tempBlendShapeTargets.Sort(MorphUtils.CompareBlendShapeTargetsByWeight);
+
+                                bool isEmpty = true;
+                                tempBlendShapes.Clear();
+                                foreach (var shape in tempBlendShapeTargets)
+                                {
+                                    if (shape.TryGetBlendShape(objectSetup.name, mainMesh, out var blendShape, finalMeshShapes, mainVertices, mainNormals, mainTangents, mainWeld))
+                                    {
+                                        if (shape.weight > 0f) blendShape.RemapFrameWeights(shape.weight);
+                                        tempBlendShapes.Add(blendShape);
+                                        isEmpty = false;
+                                    }
+                                    else
+                                    {
+                                        blendShape = new BlendShape(shape.targetName);
+                                        blendShape.AddFrame(shape.weight, emptyVertices, emptyNormals, emptyTangents);
+                                        tempBlendShapes.Add(blendShape);
+                                    }
                                 }
 
-                                mainBoneWeights[b] = bw;
+                                if (!isEmpty)
+                                {
+                                    var finalShape = MeshShape.CreateFromBlendShapes(auxiliaryShape.name, tempBlendShapes, true);
+                                    finalMeshShapes.Add(finalShape);
+                                } 
+                                else
+                                {
+                                    Debug.LogWarning($"Skipped adding empty auxiliary shape {auxiliaryShape.name} to {objectSetup.name}");
+                                }
                             }
                         }
-                    }
 
-                    #endregion
-
-                    #region Create Mesh Shapes
-
-                    if (auxiliaryShapes != null)
-                    {
-                        foreach (var auxiliaryShape in auxiliaryShapes)
+                        serializedData.standaloneShapes = indicesDefault;
+                        if (standaloneShapes != null)
                         {
-                            if (auxiliaryShape.targets == null || auxiliaryShape.targets.Length <= 0) continue;
+                            int rangeStartIndex = finalMeshShapes.Count;
+                            foreach (var standaloneShape in standaloneShapes)
+                            {
+                                if (standaloneShape.targets == null || standaloneShape.targets.Length <= 0) continue;
 
+                                tempBlendShapeTargets.Clear();
+                                tempBlendShapeTargets.AddRange(standaloneShape.targets);
+                                tempBlendShapeTargets.Sort(MorphUtils.CompareBlendShapeTargetsByWeight);
+
+                                bool isEmpty = true;
+                                tempBlendShapes.Clear();
+                                foreach (var shape in tempBlendShapeTargets)
+                                {
+                                    Debug.Log($"Processing standalone shape '{shape.targetName}' for mesh '{objectSetup.name}'...");
+                                    if (shape.TryGetBlendShape(objectSetup.name, mainMesh, out var blendShape, finalMeshShapes, mainVertices, mainNormals, mainTangents, mainWeld))
+                                    {
+                                        Debug.Log($" - Successfully extracted blend shape '{blendShape.name}' for standalone shape.");
+                                        if (shape.weight > 0f) blendShape.RemapFrameWeights(shape.weight);
+                                        tempBlendShapes.Add(blendShape);
+                                        isEmpty = false;
+                                    }
+                                    else
+                                    {
+                                        Debug.Log($" - Created empty blend shape '{shape.targetName}' for standalone shape."); 
+                                        blendShape = new BlendShape(shape.targetName);
+                                        blendShape.AddFrame(shape.weight, emptyVertices, emptyNormals, emptyTangents);
+                                        tempBlendShapes.Add(blendShape);
+                                    }
+                                }
+
+                                if (!isEmpty)
+                                {
+                                    var finalShape = MeshShape.CreateFromBlendShapes(standaloneShape.name, tempBlendShapes, true);
+                                    finalShape.animatable = standaloneShape.animatable;
+                                    finalMeshShapes.Add(finalShape);
+                                }
+                                else
+                                {
+                                    Debug.LogWarning($"Skipped adding empty standalone shape {standaloneShape.name} to {objectSetup.name}");
+                                }
+                            }
+
+                            serializedData.standaloneShapes = new Vector2Int(rangeStartIndex, finalMeshShapes.Count - 1);
+                        }
+
+                        if (massShapes != null)
+                        {
                             tempBlendShapeTargets.Clear();
-                            tempBlendShapeTargets.AddRange(auxiliaryShape.targets);
+                            tempBlendShapeTargets.AddRange(massShapes);
+                            tempBlendShapeTargets.Sort(MorphUtils.CompareBlendShapeTargetsByWeight);
+
+                            tempBlendShapes.Clear();
+                            foreach (var shape in tempBlendShapeTargets)
+                            {
+                                Debug.Log($"Processing mass shape '{shape.targetName}' for mesh '{objectSetup.name}'...");
+                                if (shape.TryGetBlendShape(objectSetup.name, mainMesh, out var blendShape, finalMeshShapes, mainVertices, mainNormals, mainTangents, mainWeld))
+                                {
+                                    Debug.Log($" - Successfully extracted blend shape '{blendShape.name}' for mass shape.");
+                                    if (shape.weight > 0f) blendShape.RemapFrameWeights(shape.weight);
+                                    tempBlendShapes.Add(blendShape);
+                                } 
+                                else
+                                {
+                                    Debug.Log($" - Created empty blend shape '{shape.targetName}' for mass shape.");  
+                                    blendShape = new BlendShape(shape.targetName);
+                                    blendShape.AddFrame(shape.weight, emptyVertices, emptyNormals, emptyTangents);
+                                    tempBlendShapes.Add(blendShape);
+                                }
+                            }
+
+                            var massShape = MeshShape.CreateFromBlendShapes(massShapeName, tempBlendShapes, true);
+                            serializedData.massShape = finalMeshShapes.Count;
+                            finalMeshShapes.Add(massShape);
+                        }
+                        if (flexShapes != null)
+                        {
+                            tempBlendShapeTargets.Clear();
+                            tempBlendShapeTargets.AddRange(flexShapes);
                             tempBlendShapeTargets.Sort(MorphUtils.CompareBlendShapeTargetsByWeight);
 
                             tempBlendShapes.Clear();
@@ -1071,767 +1521,694 @@ namespace Swole.Morphing
                                 }
                                 else
                                 {
-                                    blendShape = new BlendShape(shape.targetName);
-                                    blendShape.AddFrame(shape.weight, emptyVertices, emptyNormals, emptyTangents);
-                                    tempBlendShapes.Add(blendShape);
+                                    Debug.LogWarning($"Skipped adding empty flex shape {shape.targetName} to {objectSetup.name}");
                                 }
                             }
 
-                            var finalShape = MeshShape.CreateFromBlendShapes(auxiliaryShape.name, tempBlendShapes, true);
-                            finalMeshShapes.Add(finalShape);
+                            var flexShape = MeshShape.CreateFromBlendShapes(flexShapeName, tempBlendShapes, true);
+                            serializedData.flexShape = finalMeshShapes.Count;
+                            finalMeshShapes.Add(flexShape);
                         }
-                    }
-
-                    serializedData.standaloneShapes = indicesDefault;
-                    if (standaloneShapes != null)
-                    {
-                        int rangeStartIndex = finalMeshShapes.Count;
-                        foreach (var standaloneShape in standaloneShapes)
+                        if (fatShapes != null)
                         {
-                            if (standaloneShape.targets == null || standaloneShape.targets.Length <= 0) continue;
-
                             tempBlendShapeTargets.Clear();
-                            tempBlendShapeTargets.AddRange(standaloneShape.targets);
+                            tempBlendShapeTargets.AddRange(fatShapes);
                             tempBlendShapeTargets.Sort(MorphUtils.CompareBlendShapeTargetsByWeight);
 
                             tempBlendShapes.Clear();
                             foreach (var shape in tempBlendShapeTargets)
                             {
-                                Debug.Log($"Processing standalone shape '{shape.targetName}' for mesh '{objectSetup.name}'...");
                                 if (shape.TryGetBlendShape(objectSetup.name, mainMesh, out var blendShape, finalMeshShapes, mainVertices, mainNormals, mainTangents, mainWeld))
                                 {
-                                    Debug.Log($" - Successfully extracted blend shape '{blendShape.name}' for standalone shape.");
                                     if (shape.weight > 0f) blendShape.RemapFrameWeights(shape.weight);
                                     tempBlendShapes.Add(blendShape);
                                 }
                                 else
                                 {
-                                    Debug.Log($" - Created empty blend shape '{shape.targetName}' for standalone shape."); 
-                                    blendShape = new BlendShape(shape.targetName);
-                                    blendShape.AddFrame(shape.weight, emptyVertices, emptyNormals, emptyTangents);
-                                    tempBlendShapes.Add(blendShape);
+                                    Debug.LogWarning($"Skipped adding empty fat shape {shape.targetName} to {objectSetup.name}");
                                 }
                             }
 
-                            var finalShape = MeshShape.CreateFromBlendShapes(standaloneShape.name, tempBlendShapes, true);
-                            finalShape.animatable = standaloneShape.animatable;
-                            finalMeshShapes.Add(finalShape);
+                            var fatShape = MeshShape.CreateFromBlendShapes(fatShapeName, tempBlendShapes, true);
+                            serializedData.fatShape = finalMeshShapes.Count;
+                            finalMeshShapes.Add(fatShape);
                         }
-
-                        serializedData.standaloneShapes = new Vector2Int(rangeStartIndex, finalMeshShapes.Count - 1);
-                    }
-
-                    if (massShapes != null)
-                    {
-                        tempBlendShapeTargets.Clear();
-                        tempBlendShapeTargets.AddRange(massShapes);
-                        tempBlendShapeTargets.Sort(MorphUtils.CompareBlendShapeTargetsByWeight);
-
-                        tempBlendShapes.Clear();
-                        foreach (var shape in tempBlendShapeTargets)
+                        if (fatMuscleBlendShapes != null)
                         {
-                            Debug.Log($"Processing mass shape '{shape.targetName}' for mesh '{objectSetup.name}'...");
-                            if (shape.TryGetBlendShape(objectSetup.name, mainMesh, out var blendShape, finalMeshShapes, mainVertices, mainNormals, mainTangents, mainWeld))
+                            tempBlendShapeTargets.Clear();
+                            tempBlendShapeTargets.AddRange(fatMuscleBlendShapes);
+                            tempBlendShapeTargets.Sort(MorphUtils.CompareBlendShapeTargetsByWeight);
+
+                            tempBlendShapes.Clear();
+                            foreach (var shape in tempBlendShapeTargets)
                             {
-                                Debug.Log($" - Successfully extracted blend shape '{blendShape.name}' for mass shape.");
-                                if (shape.weight > 0f) blendShape.RemapFrameWeights(shape.weight);
-                                tempBlendShapes.Add(blendShape);
-                            } 
-                            else
-                            {
-                                Debug.Log($" - Created empty blend shape '{shape.targetName}' for mass shape.");  
-                                blendShape = new BlendShape(shape.targetName);
-                                blendShape.AddFrame(shape.weight, emptyVertices, emptyNormals, emptyTangents);
-                                tempBlendShapes.Add(blendShape);
+                                if (shape.TryGetBlendShape(objectSetup.name, mainMesh, out var blendShape, finalMeshShapes, mainVertices, mainNormals, mainTangents, mainWeld))
+                                {
+                                    if (shape.weight > 0f) blendShape.RemapFrameWeights(shape.weight);
+                                    tempBlendShapes.Add(blendShape);
+                                }
+                                else
+                                {
+                                    Debug.LogWarning($"Skipped adding empty fat muscle shape {shape.targetName} to {objectSetup.name}");
+                                }
                             }
+
+                            var fatMuscleBlendShape = MeshShape.CreateFromBlendShapes(fatMuscleBlendShapeName, tempBlendShapes, true);
+                            serializedData.fatMuscleBlendShape = finalMeshShapes.Count;
+                            finalMeshShapes.Add(fatMuscleBlendShape);
                         }
 
-                        var massShape = MeshShape.CreateFromBlendShapes(massShapeName, tempBlendShapes, true);
-                        serializedData.massShape = finalMeshShapes.Count;
-                        finalMeshShapes.Add(massShape);
-                    }
-                    if (flexShapes != null)
-                    {
-                        tempBlendShapeTargets.Clear();
-                        tempBlendShapeTargets.AddRange(flexShapes);
-                        tempBlendShapeTargets.Sort(MorphUtils.CompareBlendShapeTargetsByWeight);
-
-                        tempBlendShapes.Clear();
-                        foreach (var shape in tempBlendShapeTargets)
+                        if (variationShapes != null)
                         {
-                            if (shape.TryGetBlendShape(objectSetup.name, mainMesh, out var blendShape, finalMeshShapes, mainVertices, mainNormals, mainTangents, mainWeld))
+                            tempBlendShapeTargets.Clear();
+                            tempBlendShapeTargets.AddRange(variationShapes);
+                            tempBlendShapeTargets.Sort(MorphUtils.CompareBlendShapeTargetsByWeight);
+
+                            int startIndex = finalMeshShapes.Count;
+                            foreach (var shape in tempBlendShapeTargets)
                             {
-                                if (shape.weight > 0f) blendShape.RemapFrameWeights(shape.weight);
-                                tempBlendShapes.Add(blendShape);
+                                if (shape.TryGetBlendShape(objectSetup.name, mainMesh, out var blendShape, finalMeshShapes, mainVertices, mainNormals, mainTangents, mainWeld))
+                                {
+                                    var variationShape = MeshShape.CreateFromBlendShape(blendShape);
+                                    finalMeshShapes.Add(variationShape);
+                                }
+                                else
+                                {
+                                    Debug.Log($" - Created empty blend shape '{shape.targetName}' for variation shape.");
+                                    blendShape = new BlendShape(shape.targetName);
+                                    blendShape.AddFrame(shape.weight, emptyVertices, emptyNormals, emptyTangents);
+                                    var variationShape = MeshShape.CreateFromBlendShape(blendShape);
+                                    finalMeshShapes.Add(variationShape);
+                                }
                             }
+
+                            serializedData.variationShapes = new Vector2Int(startIndex, finalMeshShapes.Count - 1);
                         }
 
-                        var flexShape = MeshShape.CreateFromBlendShapes(flexShapeName, tempBlendShapes, true);
-                        serializedData.flexShape = finalMeshShapes.Count;
-                        finalMeshShapes.Add(flexShape);
-                    }
-                    if (fatShapes != null)
-                    {
-                        tempBlendShapeTargets.Clear();
-                        tempBlendShapeTargets.AddRange(fatShapes);
-                        tempBlendShapeTargets.Sort(MorphUtils.CompareBlendShapeTargetsByWeight);
+                        #endregion
 
-                        tempBlendShapes.Clear();
-                        foreach (var shape in tempBlendShapeTargets)
+                        #region Merge Mesh Shapes At Seam
+
+                        if (baseMeshIndex >= 0 && baseMeshIndex < objectIndex && seamShapes.Count > 0)
                         {
-                            if (shape.TryGetBlendShape(objectSetup.name, mainMesh, out var blendShape, finalMeshShapes, mainVertices, mainNormals, mainTangents, mainWeld))
+                            tempMeshShapes.Clear();
+                            outputDatas[baseMeshIndex].GetShapes(tempMeshShapes);
+                            MergeMeshShapesAtSeam(mainMesh, meshObjects[baseMeshIndex].mainMesh, seamShapes[0], finalMeshShapes, tempMeshShapes, nonSeamMergableBlendShapes);
+                        }
+
+                        #endregion
+
+                        #region Extract Main Vertex Groups
+
+                        if (standaloneVertexGroups != null)
+                        {
+                            MorphUtils.ExtractVertexGroups(mainMesh, standaloneVertexGroups, finalVertexGroups, objectSetup.name, normalizeVertexGroups, 0.00001f, defaultVertexGroupMaxWeight, true, mainVertices, mainNormals, mainTangents, mainWeld);
+                        }
+
+                        int standaloneIndicesEnd = finalVertexGroups.Count - 1;
+
+                        Vector2Int muscleGroupIndices = indicesDefault;
+                        muscleGroupIndices.x = finalVertexGroups.Count;
+                        if (muscleGroups != null)
+                        {
+                            tempBlendShapeTargets.Clear();
+                            foreach(var group in muscleGroups)
                             {
-                                if (shape.weight > 0f) blendShape.RemapFrameWeights(shape.weight);
-                                tempBlendShapes.Add(blendShape);
+                                if (group.isComposite) continue;
+
+                                var target = group.initialShapeTarget;
+                                if (string.IsNullOrWhiteSpace(target.newName)) target.newName = group.name;
+                                tempBlendShapeTargets.Add(target);
                             }
+
+                            MorphUtils.ExtractVertexGroups(mainMesh, tempBlendShapeTargets, finalVertexGroups, objectSetup.name, false, 0.00001f, 0f, false, mainVertices, mainNormals, mainTangents, mainWeld);
+                            muscleGroupIndices.y = finalVertexGroups.Count - 1;
                         }
 
-                        var fatShape = MeshShape.CreateFromBlendShapes(fatShapeName, tempBlendShapes, true);
-                        serializedData.fatShape = finalMeshShapes.Count;
-                        finalMeshShapes.Add(fatShape);
-                    }
-                    if (fatMuscleBlendShapes != null)
-                    {
-                        tempBlendShapeTargets.Clear();
-                        tempBlendShapeTargets.AddRange(fatMuscleBlendShapes);
-                        tempBlendShapeTargets.Sort(MorphUtils.CompareBlendShapeTargetsByWeight);
-
-                        tempBlendShapes.Clear();
-                        foreach (var shape in tempBlendShapeTargets)
+                        Vector2Int fatGroupIndices = indicesDefault;
+                        fatGroupIndices.x = finalVertexGroups.Count;
+                        if (fatGroups != null)
                         {
-                            if (shape.TryGetBlendShape(objectSetup.name, mainMesh, out var blendShape, finalMeshShapes, mainVertices, mainNormals, mainTangents, mainWeld))
+                            tempBlendShapeTargets.Clear();
+                            foreach (var group in fatGroups)
                             {
-                                if (shape.weight > 0f) blendShape.RemapFrameWeights(shape.weight);
-                                tempBlendShapes.Add(blendShape);
+                                if (group.isComposite) continue;
+
+                                var target = group.initialShapeTarget;
+                                if (string.IsNullOrWhiteSpace(target.newName)) target.newName = group.name;
+                                tempBlendShapeTargets.Add(target);
                             }
+
+                            MorphUtils.ExtractVertexGroups(mainMesh, tempBlendShapeTargets, finalVertexGroups, objectSetup.name, false, 0.00001f, 0f, false, mainVertices, mainNormals, mainTangents, mainWeld);
+                            fatGroupIndices.y = finalVertexGroups.Count - 1;
                         }
 
-                        var fatMuscleBlendShape = MeshShape.CreateFromBlendShapes(fatMuscleBlendShapeName, tempBlendShapes, true);
-                        serializedData.fatMuscleBlendShape = finalMeshShapes.Count;
-                        finalMeshShapes.Add(fatMuscleBlendShape);
-                    }
-
-                    if (variationShapes != null)
-                    {
-                        tempBlendShapeTargets.Clear();
-                        tempBlendShapeTargets.AddRange(variationShapes);
-                        tempBlendShapeTargets.Sort(MorphUtils.CompareBlendShapeTargetsByWeight);
-
-                        int startIndex = finalMeshShapes.Count;
-                        foreach (var shape in tempBlendShapeTargets)
+                        Vector2Int variationGroupIndices = indicesDefault;
+                        variationGroupIndices.x = finalVertexGroups.Count;
+                        if (variationGroups != null)
                         {
-                            if (shape.TryGetBlendShape(objectSetup.name, mainMesh, out var blendShape, finalMeshShapes, mainVertices, mainNormals, mainTangents, mainWeld))
+                            tempBlendShapeTargets.Clear();
+                            foreach (var group in variationGroups)
                             {
-                                var variationShape = MeshShape.CreateFromBlendShape(blendShape);
-                                finalMeshShapes.Add(variationShape);
+                                if (group.isComposite) continue;
+
+                                var target = group.initialShapeTarget;
+                                if (string.IsNullOrWhiteSpace(target.newName)) target.newName = group.name;
+                                tempBlendShapeTargets.Add(target);
                             }
+
+                            MorphUtils.ExtractVertexGroups(mainMesh, tempBlendShapeTargets, finalVertexGroups, objectSetup.name, false, 0.00001f, 0f, false, mainVertices, mainNormals, mainTangents, mainWeld);
+                            variationGroupIndices.y = finalVertexGroups.Count - 1;
                         }
 
-                        serializedData.variationShapes = new Vector2Int(startIndex, finalMeshShapes.Count - 1);
-                    }
+                        #endregion
 
-                    #endregion
+                        bool hasMuscleGroups = muscleGroupIndices.x <= muscleGroupIndices.y;
+                        bool hasFatGroups = fatGroupIndices.x <= fatGroupIndices.y;
+                        bool hasVariationGroups = variationGroupIndices.x <= variationGroupIndices.y;
 
-                    #region Merge Mesh Shapes At Seam
+                        #region Create And Insert Composite Vertex Groups
 
-                    if (baseMeshIndex >= 0 && baseMeshIndex < objectIndex && seamShapes.Count > 0)
-                    {
-                        tempMeshShapes.Clear();
-                        outputDatas[baseMeshIndex].GetShapes(tempMeshShapes);
-                        MergeMeshShapesAtSeam(mainMesh, meshObjects[baseMeshIndex].mainMesh, seamShapes[0], finalMeshShapes, tempMeshShapes, nonSeamMergableBlendShapes);
-                    }
-
-                    #endregion
-
-                    #region Extract Main Vertex Groups
-
-                    if (standaloneVertexGroups != null)
-                    {
-                        MorphUtils.ExtractVertexGroups(mainMesh, standaloneVertexGroups, finalVertexGroups, objectSetup.name, normalizeVertexGroups, 0.00001f, defaultVertexGroupMaxWeight, true, mainVertices, mainNormals, mainTangents, mainWeld);
-                    }
-
-                    int standaloneIndicesEnd = finalVertexGroups.Count - 1;
-
-                    Vector2Int muscleGroupIndices = indicesDefault;
-                    muscleGroupIndices.x = finalVertexGroups.Count;
-                    if (muscleGroups != null)
-                    {
-                        tempBlendShapeTargets.Clear();
-                        foreach(var group in muscleGroups)
-                        {
-                            if (group.isComposite) continue;
-
-                            var target = group.initialShapeTarget;
-                            if (string.IsNullOrWhiteSpace(target.newName)) target.newName = group.name;
-                            tempBlendShapeTargets.Add(target);
-                        }
-
-                        MorphUtils.ExtractVertexGroups(mainMesh, tempBlendShapeTargets, finalVertexGroups, objectSetup.name, false, 0.00001f, 0f, false, mainVertices, mainNormals, mainTangents, mainWeld);
-                        muscleGroupIndices.y = finalVertexGroups.Count - 1;
-                    }
-
-                    Vector2Int fatGroupIndices = indicesDefault;
-                    fatGroupIndices.x = finalVertexGroups.Count;
-                    if (fatGroups != null)
-                    {
-                        tempBlendShapeTargets.Clear();
-                        foreach (var group in fatGroups)
-                        {
-                            if (group.isComposite) continue;
-
-                            var target = group.initialShapeTarget;
-                            if (string.IsNullOrWhiteSpace(target.newName)) target.newName = group.name;
-                            tempBlendShapeTargets.Add(target);
-                        }
-
-                        MorphUtils.ExtractVertexGroups(mainMesh, tempBlendShapeTargets, finalVertexGroups, objectSetup.name, false, 0.00001f, 0f, false, mainVertices, mainNormals, mainTangents, mainWeld);
-                        fatGroupIndices.y = finalVertexGroups.Count - 1;
-                    }
-
-                    Vector2Int variationGroupIndices = indicesDefault;
-                    variationGroupIndices.x = finalVertexGroups.Count;
-                    if (variationGroups != null)
-                    {
-                        tempBlendShapeTargets.Clear();
-                        foreach (var group in variationGroups)
-                        {
-                            if (group.isComposite) continue;
-
-                            var target = group.initialShapeTarget;
-                            if (string.IsNullOrWhiteSpace(target.newName)) target.newName = group.name;
-                            tempBlendShapeTargets.Add(target);
-                        }
-
-                        MorphUtils.ExtractVertexGroups(mainMesh, tempBlendShapeTargets, finalVertexGroups, objectSetup.name, false, 0.00001f, 0f, false, mainVertices, mainNormals, mainTangents, mainWeld);
-                        variationGroupIndices.y = finalVertexGroups.Count - 1;
-                    }
-
-                    #endregion
-
-                    bool hasMuscleGroups = muscleGroupIndices.x <= muscleGroupIndices.y;
-                    bool hasFatGroups = fatGroupIndices.x <= fatGroupIndices.y;
-                    bool hasVariationGroups = variationGroupIndices.x <= variationGroupIndices.y;
-
-                    #region Create And Insert Composite Vertex Groups
-
-                    tempVertexGroups.Clear();
-
-                    Vector2Int compositeStandaloneGroupIndices = indicesDefault;
-                    if (compositeVertexGroups != null)
-                    {
-                        compositeStandaloneGroupIndices.x = tempVertexGroups.Count;
-                        MorphUtils.CreateCompositeVertexGroups(compositeVertexGroups, finalVertexGroups, tempVertexGroups, defaultVertexGroupMaxWeight);
-                        compositeStandaloneGroupIndices.y = tempVertexGroups.Count - 1;
-                    }
-
-                    Vector2Int compositeMuscleGroupIndices = indicesDefault;
-                    if (muscleGroups != null)
-                    {
-                        tempCompositeGroups.Clear();
-                        foreach (var group in muscleGroups)
-                        {
-                            if (!group.isComposite) continue;
-
-                            var composite = group.composite;
-                            if (string.IsNullOrWhiteSpace(composite.name)) composite.name = group.name;
-                            tempCompositeGroups.Add(composite);
-                        }
-
-                        compositeMuscleGroupIndices.x = tempVertexGroups.Count;
-                        MorphUtils.CreateCompositeVertexGroups(tempCompositeGroups, finalVertexGroups, tempVertexGroups, defaultVertexGroupMaxWeight);
-                        compositeMuscleGroupIndices.y = tempVertexGroups.Count - 1;
-                    }
-
-                    Vector2Int compositeFatGroupIndices = indicesDefault;
-                    if (fatGroups != null)
-                    {
-                        tempCompositeGroups.Clear();
-                        foreach (var group in fatGroups)
-                        {
-                            if (!group.isComposite) continue;
-
-                            var composite = group.composite;
-                            if (string.IsNullOrWhiteSpace(composite.name)) composite.name = group.name;
-                            tempCompositeGroups.Add(composite);
-                        }
-
-                        compositeFatGroupIndices.x = tempVertexGroups.Count;
-                        MorphUtils.CreateCompositeVertexGroups(tempCompositeGroups, finalVertexGroups, tempVertexGroups, defaultVertexGroupMaxWeight);
-                        compositeFatGroupIndices.y = tempVertexGroups.Count - 1;
-                    }
-
-                    Vector2Int compositeVariationGroupIndices = indicesDefault;
-                    if (variationGroups != null)
-                    {
-                        tempCompositeGroups.Clear();
-                        foreach (var group in variationGroups)
-                        {
-                            if (!group.isComposite) continue;
-
-                            var composite = group.composite;
-                            if (string.IsNullOrWhiteSpace(composite.name)) composite.name = group.name;
-                            tempCompositeGroups.Add(composite);
-                        }
-
-                        compositeVariationGroupIndices.x = tempVertexGroups.Count;
-                        MorphUtils.CreateCompositeVertexGroups(tempCompositeGroups, finalVertexGroups, tempVertexGroups, defaultVertexGroupMaxWeight);
-                        compositeVariationGroupIndices.y = tempVertexGroups.Count - 1;
-                    }
-
-                    if (compositeStandaloneGroupIndices.x <= compositeStandaloneGroupIndices.y)
-                    {
-                        tempVertexGroups2.Clear();
-                        for(int i = compositeStandaloneGroupIndices.x; i <= compositeStandaloneGroupIndices.y; i++)
-                        {
-                            tempVertexGroups2.Add(tempVertexGroups[i]);
-                        }
-
-                        int insertIndex = Mathf.Max(0, standaloneIndicesEnd + 1);
-                        if (insertIndex >= finalVertexGroups.Count)
-                        {
-                            finalVertexGroups.AddRange(tempVertexGroups2);
-                        }
-                        else
-                        {
-                            finalVertexGroups.InsertRange(insertIndex, tempVertexGroups2);
-                        }
-
-                        int count = compositeStandaloneGroupIndices.y - compositeStandaloneGroupIndices.x + 1;
-                        Vector2Int add = new Vector2Int(count, count);
-
-                        if (hasMuscleGroups) muscleGroupIndices = muscleGroupIndices + add; else muscleGroupIndices.x = muscleGroupIndices.x + count;
-                        if (hasFatGroups) fatGroupIndices = fatGroupIndices + add; else fatGroupIndices.x = fatGroupIndices.x + count;
-                        if (hasVariationGroups) variationGroupIndices = variationGroupIndices + add; else variationGroupIndices.x = variationGroupIndices.x + count;
-                    }
-                    if (compositeMuscleGroupIndices.x <= compositeMuscleGroupIndices.y)
-                    {
-                        tempVertexGroups2.Clear();
-                        for (int i = compositeMuscleGroupIndices.x; i <= compositeMuscleGroupIndices.y; i++)
-                        {
-                            tempVertexGroups2.Add(tempVertexGroups[i]);
-                        }
-
-                        int insertIndex = muscleGroupIndices.y + 1;
-                        if (insertIndex >= finalVertexGroups.Count)
-                        {
-                            finalVertexGroups.AddRange(tempVertexGroups2);
-                        }
-                        else
-                        {
-                            finalVertexGroups.InsertRange(insertIndex, tempVertexGroups2);
-                        }
-
-                        int count = compositeMuscleGroupIndices.y - compositeMuscleGroupIndices.x + 1;
-                        if (!hasMuscleGroups) muscleGroupIndices = new Vector2Int(muscleGroupIndices.x, muscleGroupIndices.x - 1);
-                        muscleGroupIndices.y = muscleGroupIndices.y + count;
-                        Vector2Int add = new Vector2Int(count, count);
-                        if (hasFatGroups) fatGroupIndices = fatGroupIndices + add; else fatGroupIndices.x = fatGroupIndices.x + count;
-                        if (hasVariationGroups) variationGroupIndices = variationGroupIndices + add; else variationGroupIndices.x = variationGroupIndices.x + count;
-                    }
-                    if (compositeFatGroupIndices.x <= compositeFatGroupIndices.y)
-                    {
-                        tempVertexGroups2.Clear();
-                        for (int i = compositeFatGroupIndices.x; i <= compositeFatGroupIndices.y; i++)
-                        {
-                            tempVertexGroups2.Add(tempVertexGroups[i]);
-                        }
-
-                        int insertIndex = fatGroupIndices.y + 1;
-                        if (insertIndex >= finalVertexGroups.Count)
-                        {
-                            finalVertexGroups.AddRange(tempVertexGroups2);
-                        }
-                        else
-                        {
-                            finalVertexGroups.InsertRange(insertIndex, tempVertexGroups2);
-                        }
-
-                        int count = compositeFatGroupIndices.y - compositeFatGroupIndices.x + 1;
-                        if (!hasFatGroups) fatGroupIndices = new Vector2Int(fatGroupIndices.x, fatGroupIndices.x - 1);
-                        fatGroupIndices.y = fatGroupIndices.y + count;
-                        Vector2Int add = new Vector2Int(count, count);
-                        if (hasVariationGroups) variationGroupIndices = variationGroupIndices + add; else variationGroupIndices.x = variationGroupIndices.x + count;
-                    }
-                    if (compositeVariationGroupIndices.x <= compositeVariationGroupIndices.y)
-                    {
-                        tempVertexGroups2.Clear();
-                        for (int i = compositeVariationGroupIndices.x; i <= compositeVariationGroupIndices.y; i++)
-                        {
-                            tempVertexGroups2.Add(tempVertexGroups[i]);
-                        }
-
-                        int insertIndex = variationGroupIndices.y + 1;
-                        if (insertIndex >= finalVertexGroups.Count)
-                        {
-                            finalVertexGroups.AddRange(tempVertexGroups2);
-                        }
-                        else
-                        {
-                            finalVertexGroups.InsertRange(insertIndex, tempVertexGroups2);
-                        }
-
-                        int count = compositeVariationGroupIndices.y - compositeVariationGroupIndices.x + 1;
-                        if (!hasVariationGroups) variationGroupIndices = new Vector2Int(variationGroupIndices.x, variationGroupIndices.x - 1);
-                        variationGroupIndices.y = variationGroupIndices.y + count;
-                    }
-
-                    #endregion
-
-                    #region Finalize Vertex Groups
-
-                    MorphUtils.FinalizeVertexGroupsAsPool(finalVertexGroups, averageMuscleGroupsAsPool, normalizeMuscleGroupsAsPool, muscleGroupIndices, averageMuscleGroupsAsPoolMaxWeight, normalizeMuscleGroupsAsPoolMaxWeight);
-                    MorphUtils.FinalizeVertexGroupsAsPool(finalVertexGroups, averageFatGroupsAsPool, normalizeFatGroupsAsPool, fatGroupIndices, averageFatGroupsAsPoolMaxWeight, normalizeFatGroupsAsPoolMaxWeight);
-                    MorphUtils.FinalizeVertexGroupsAsPool(finalVertexGroups, averageVariationGroupsAsPool, normalizeVariationGroupsAsPool, variationGroupIndices, averageVariationGroupsAsPoolMaxWeight, normalizeVariationGroupsAsPoolMaxWeight);
-
-                    #region Merge Vertex Groups At Seam
-
-                    if (baseMeshIndex >= 0 && baseMeshIndex < objectIndex && seamShapes.Count > 0)
-                    {
                         tempVertexGroups.Clear();
-                        outputDatas[baseMeshIndex].GetVertexGroups(tempVertexGroups); 
-                        MergeVertexGroupsAtSeam(mainMesh, meshObjects[baseMeshIndex].mainMesh, seamShapes[0], finalVertexGroups, tempVertexGroups, nonSeamMergableBlendShapes);
-                    }
 
-                    #endregion
-
-                    #endregion
-
-                    #region Bake Textures To Vertex Colors
-
-                    if (objectSetup.textureToVertexColorBakes != null && objectSetup.textureToVertexColorBakes.Length > 0)
-                    {
-                        Color[] vertexColors = mainMesh.colors;
-                        if (vertexColors == null || vertexColors.Length <= 0) vertexColors = new Color[mainMesh.vertexCount];
-
-                        bool flag = false;
-                        foreach(var bake in objectSetup.textureToVertexColorBakes)
+                        Vector2Int compositeStandaloneGroupIndices = indicesDefault;
+                        if (compositeVertexGroups != null)
                         {
-                            if (bake.texture == null) continue;
+                            compositeStandaloneGroupIndices.x = tempVertexGroups.Count;
+                            MorphUtils.CreateCompositeVertexGroups(compositeVertexGroups, finalVertexGroups, tempVertexGroups, defaultVertexGroupMaxWeight);
+                            compositeStandaloneGroupIndices.y = tempVertexGroups.Count - 1;
+                        }
 
-                            List<Vector2> uvs = null;
-                            if (bake.useBaseMeshGroup)
+                        Vector2Int compositeMuscleGroupIndices = indicesDefault;
+                        if (muscleGroups != null)
+                        {
+                            tempCompositeGroups.Clear();
+                            foreach (var group in muscleGroups)
                             {
-                                if (surfaceTransferBaseMesh == null)
-                                {
-                                    Debug.LogError($"A texture bake for mesh {objectSetup.name} was ignored because the base mesh group was not specified!");
-                                }
-                                else
-                                {
-                                    var baseMeshData = new BaseMeshData();
+                                if (!group.isComposite) continue;
 
-                                    baseMeshData.UpdateBaseMeshData(surfaceTransferBaseMesh);
+                                var composite = group.composite;
+                                if (string.IsNullOrWhiteSpace(composite.name)) composite.name = group.name;
+                                tempCompositeGroups.Add(composite);
+                            }
 
-                                    var settings = new MorphUtils.TransferSurfaceDataSettings()
-                                    {
-                                        baseMeshTriangles = baseMeshData.baseMeshTriangles,
-                                        baseMeshVertices = baseMeshData.baseMeshVertices,
-                                        baseMeshNormals = baseMeshData.baseMeshNormals,
-                                        baseMeshUVs = baseMeshData.baseMeshUVs,
-                                        baseMeshBlendShapes = baseMeshData.baseMeshBlendShapes,
-                                        baseMeshBoneWeights = baseMeshData.baseMeshBoneWeights,
-                                        baseMeshBonesPerVertex = baseMeshData.baseMeshBonesPerVertex,
-                                        baseMeshBoneWeightStartIndices = baseMeshData.baseMeshBoneWeightStartIndices,
+                            compositeMuscleGroupIndices.x = tempVertexGroups.Count;
+                            MorphUtils.CreateCompositeVertexGroups(tempCompositeGroups, finalVertexGroups, tempVertexGroups, defaultVertexGroupMaxWeight);
+                            compositeMuscleGroupIndices.y = tempVertexGroups.Count - 1;
+                        }
 
-                                        treatAsMeshIslands = bake.treatAsMeshIslands,
+                        Vector2Int compositeFatGroupIndices = indicesDefault;
+                        if (fatGroups != null)
+                        {
+                            tempCompositeGroups.Clear();
+                            foreach (var group in fatGroups)
+                            {
+                                if (!group.isComposite) continue;
 
-                                        transferNormals = false,
+                                var composite = group.composite;
+                                if (string.IsNullOrWhiteSpace(composite.name)) composite.name = group.name;
+                                tempCompositeGroups.Add(composite);
+                            }
 
-                                        transferVertexColors = false,
+                            compositeFatGroupIndices.x = tempVertexGroups.Count;
+                            MorphUtils.CreateCompositeVertexGroups(tempCompositeGroups, finalVertexGroups, tempVertexGroups, defaultVertexGroupMaxWeight);
+                            compositeFatGroupIndices.y = tempVertexGroups.Count - 1;
+                        }
 
-                                        transferBoneWeights = false,
+                        Vector2Int compositeVariationGroupIndices = indicesDefault;
+                        if (variationGroups != null)
+                        {
+                            tempCompositeGroups.Clear();
+                            foreach (var group in variationGroups)
+                            {
+                                if (!group.isComposite) continue;
 
-                                        transferUVs = true,
-                                        preserveExistingUVData = false,
-                                        uvTransferRange = new Vector2Int((int)bake.uvChannel, (int)bake.uvChannel),
-                                        uvChannelIndexTransferOffset = 0, 
+                                var composite = group.composite;
+                                if (string.IsNullOrWhiteSpace(composite.name)) composite.name = group.name;
+                                tempCompositeGroups.Add(composite);
+                            }
 
-                                        transferBlendShapes = false,
+                            compositeVariationGroupIndices.x = tempVertexGroups.Count;
+                            MorphUtils.CreateCompositeVertexGroups(tempCompositeGroups, finalVertexGroups, tempVertexGroups, defaultVertexGroupMaxWeight);
+                            compositeVariationGroupIndices.y = tempVertexGroups.Count - 1;
+                        }
 
-                                        alignmentOffset = objectSetup.transferOffset,
-                                        alignmentRotationOffsetEuler = objectSetup.transferRotationOffset
-                                    };
-                                    
-                                    var tempMesh = MorphUtils.TransferSurfaceData(mainMesh, true, settings, surfaceDataTransferVertexData);
+                        if (compositeStandaloneGroupIndices.x <= compositeStandaloneGroupIndices.y)
+                        {
+                            tempVertexGroups2.Clear();
+                            for(int i = compositeStandaloneGroupIndices.x; i <= compositeStandaloneGroupIndices.y; i++)
+                            {
+                                tempVertexGroups2.Add(tempVertexGroups[i]);
+                            }
 
-                                    baseMeshData.Dispose();
-
-                                    uvs = tempMesh.GetUVsByChannelAsList(0);
-                                }
-                            } 
+                            int insertIndex = Mathf.Max(0, standaloneIndicesEnd + 1);
+                            if (insertIndex >= finalVertexGroups.Count)
+                            {
+                                finalVertexGroups.AddRange(tempVertexGroups2);
+                            }
                             else
                             {
-                                uvs = mainMesh.GetUVsByChannelAsList(bake.uvChannel);
+                                finalVertexGroups.InsertRange(insertIndex, tempVertexGroups2);
                             }
 
-                            if (uvs != null && uvs.Count > 0)
+                            int count = compositeStandaloneGroupIndices.y - compositeStandaloneGroupIndices.x + 1;
+                            Vector2Int add = new Vector2Int(count, count);
+
+                            if (hasMuscleGroups) muscleGroupIndices = muscleGroupIndices + add; else muscleGroupIndices.x = muscleGroupIndices.x + count;
+                            if (hasFatGroups) fatGroupIndices = fatGroupIndices + add; else fatGroupIndices.x = fatGroupIndices.x + count;
+                            if (hasVariationGroups) variationGroupIndices = variationGroupIndices + add; else variationGroupIndices.x = variationGroupIndices.x + count;
+                        }
+                        if (compositeMuscleGroupIndices.x <= compositeMuscleGroupIndices.y)
+                        {
+                            tempVertexGroups2.Clear();
+                            for (int i = compositeMuscleGroupIndices.x; i <= compositeMuscleGroupIndices.y; i++)
                             {
-                                flag = true;
-
-                                for(int i = 0; i < uvs.Count; i++)
-                                {
-                                    var uv = uvs[i];
-                                    var vColor = vertexColors[i];
-
-                                    var texColor = bake.texture.GetPixelBilinear(uv.x, uv.y);
-                                    if (bake.targetTextureChannelsR != RGBAChannel.None)
-                                    {
-                                        vColor.r = texColor.GetChannel(bake.targetTextureChannelsR);
-                                    }
-                                    if (bake.targetTextureChannelsG != RGBAChannel.None)
-                                    {
-                                        vColor.g = texColor.GetChannel(bake.targetTextureChannelsG);
-                                    }
-                                    if (bake.targetTextureChannelsB != RGBAChannel.None)
-                                    {
-                                        vColor.b = texColor.GetChannel(bake.targetTextureChannelsB);
-                                    }
-                                    if (bake.targetTextureChannelsA != RGBAChannel.None)
-                                    {
-                                        vColor.a = texColor.GetChannel(bake.targetTextureChannelsA);
-                                    }
-
-                                    vertexColors[i] = vColor;
-                                }
+                                tempVertexGroups2.Add(tempVertexGroups[i]);
                             }
+
+                            int insertIndex = muscleGroupIndices.y + 1;
+                            if (insertIndex >= finalVertexGroups.Count)
+                            {
+                                finalVertexGroups.AddRange(tempVertexGroups2);
+                            }
+                            else
+                            {
+                                finalVertexGroups.InsertRange(insertIndex, tempVertexGroups2);
+                            }
+
+                            int count = compositeMuscleGroupIndices.y - compositeMuscleGroupIndices.x + 1;
+                            if (!hasMuscleGroups) muscleGroupIndices = new Vector2Int(muscleGroupIndices.x, muscleGroupIndices.x - 1);
+                            muscleGroupIndices.y = muscleGroupIndices.y + count;
+                            Vector2Int add = new Vector2Int(count, count);
+                            if (hasFatGroups) fatGroupIndices = fatGroupIndices + add; else fatGroupIndices.x = fatGroupIndices.x + count;
+                            if (hasVariationGroups) variationGroupIndices = variationGroupIndices + add; else variationGroupIndices.x = variationGroupIndices.x + count;
+                        }
+                        if (compositeFatGroupIndices.x <= compositeFatGroupIndices.y)
+                        {
+                            tempVertexGroups2.Clear();
+                            for (int i = compositeFatGroupIndices.x; i <= compositeFatGroupIndices.y; i++)
+                            {
+                                tempVertexGroups2.Add(tempVertexGroups[i]);
+                            }
+
+                            int insertIndex = fatGroupIndices.y + 1;
+                            if (insertIndex >= finalVertexGroups.Count)
+                            {
+                                finalVertexGroups.AddRange(tempVertexGroups2);
+                            }
+                            else
+                            {
+                                finalVertexGroups.InsertRange(insertIndex, tempVertexGroups2);
+                            }
+
+                            int count = compositeFatGroupIndices.y - compositeFatGroupIndices.x + 1;
+                            if (!hasFatGroups) fatGroupIndices = new Vector2Int(fatGroupIndices.x, fatGroupIndices.x - 1);
+                            fatGroupIndices.y = fatGroupIndices.y + count;
+                            Vector2Int add = new Vector2Int(count, count);
+                            if (hasVariationGroups) variationGroupIndices = variationGroupIndices + add; else variationGroupIndices.x = variationGroupIndices.x + count;
+                        }
+                        if (compositeVariationGroupIndices.x <= compositeVariationGroupIndices.y)
+                        {
+                            tempVertexGroups2.Clear();
+                            for (int i = compositeVariationGroupIndices.x; i <= compositeVariationGroupIndices.y; i++)
+                            {
+                                tempVertexGroups2.Add(tempVertexGroups[i]);
+                            }
+
+                            int insertIndex = variationGroupIndices.y + 1;
+                            if (insertIndex >= finalVertexGroups.Count)
+                            {
+                                finalVertexGroups.AddRange(tempVertexGroups2);
+                            }
+                            else
+                            {
+                                finalVertexGroups.InsertRange(insertIndex, tempVertexGroups2);
+                            }
+
+                            int count = compositeVariationGroupIndices.y - compositeVariationGroupIndices.x + 1;
+                            if (!hasVariationGroups) variationGroupIndices = new Vector2Int(variationGroupIndices.x, variationGroupIndices.x - 1);
+                            variationGroupIndices.y = variationGroupIndices.y + count;
                         }
 
-                        if (flag) mainMesh.colors = vertexColors;
-                    }
+                        #endregion
 
-                    #endregion
+                        #region Finalize Vertex Groups
 
-                    #region Final Data Transfers
+                        MorphUtils.FinalizeVertexGroupsAsPool(finalVertexGroups, averageMuscleGroupsAsPool, normalizeMuscleGroupsAsPool, muscleGroupIndices, averageMuscleGroupsAsPoolMaxWeight, normalizeMuscleGroupsAsPoolMaxWeight);
+                        MorphUtils.FinalizeVertexGroupsAsPool(finalVertexGroups, averageFatGroupsAsPool, normalizeFatGroupsAsPool, fatGroupIndices, averageFatGroupsAsPoolMaxWeight, normalizeFatGroupsAsPoolMaxWeight);
+                        MorphUtils.FinalizeVertexGroupsAsPool(finalVertexGroups, averageVariationGroupsAsPool, normalizeVariationGroupsAsPool, variationGroupIndices, averageVariationGroupsAsPoolMaxWeight, normalizeVariationGroupsAsPoolMaxWeight);
 
-                    var existingSetup = objectSetup.existingSetup;
-                    if (existingSetup == null && baseMeshIndex >= 0)
-                    {
-                        existingSetup = outputDatas[baseMeshIndex];
-                    }
+                        #region Merge Vertex Groups At Seam
 
-                    if (surfaceDataTransferVertexData != null && existingSetup != null)
-                    {
-                        float[] tempWeights = new float[existingSetup.SerializedData.Mesh.vertexCount];
-                        foreach (var vertexGroup in finalVertexGroups)
+                        if (baseMeshIndex >= 0 && baseMeshIndex < objectIndex && seamShapes.Count > 0)
                         {
-                            if (vertexGroup == null || (objectSetup.vertexGroupsToPreserve != null && objectSetup.vertexGroupsToPreserve.Contains(vertexGroup.name))) continue; 
-
-                            var refGroupIndex = existingSetup.IndexOfVertexGroup(vertexGroup.name, true);
-                            if (refGroupIndex >= 0)
-                            {
-                                var refGroup = existingSetup.GetVertexGroup(refGroupIndex);
-                                if (refGroup != null)
-                                {
-                                    refGroup.AsLinearWeightArray(tempWeights);
-                                    vertexGroup.Clear();
-                                    for (int v = 0; v < surfaceDataTransferVertexData.Length; v++)
-                                    {
-                                        var transferData = surfaceDataTransferVertexData[v];
-                                        float weight = (tempWeights[transferData.closestIndex0] * transferData.closestWeight0) + (tempWeights[transferData.closestIndex1] * transferData.closestWeight1) + (tempWeights[transferData.closestIndex2] * transferData.closestWeight2);
-                                        if (weight != 0f) vertexGroup.SetWeight(v, weight);
-                                    }
-                                }
-                            }
+                            tempVertexGroups.Clear();
+                            outputDatas[baseMeshIndex].GetVertexGroups(tempVertexGroups); 
+                            MergeVertexGroupsAtSeam(mainMesh, meshObjects[baseMeshIndex].mainMesh, seamShapes[0], finalVertexGroups, tempVertexGroups, nonSeamMergableBlendShapes);
                         }
 
-                        if (objectSetup.copyMeshShapeDataFromExistingSetup)
-                        {
-                            foreach(var meshShape in finalMeshShapes)
-                            {
-                                if (meshShape == null || meshShape.frames == null || (objectSetup.meshShapesToPreserve != null && objectSetup.meshShapesToPreserve.Contains(meshShape.name))) continue;
+                        #endregion
 
-                                var refShapeIndex = existingSetup.IndexOfShape(meshShape.name, true);
-                                if (refShapeIndex >= 0)
+                        #endregion
+
+                        #region Bake Textures To Vertex Colors
+
+                        if (objectSetup.textureToVertexColorBakes != null && objectSetup.textureToVertexColorBakes.Length > 0)
+                        {
+                            Color[] vertexColors = mainMesh.colors;
+                            if (vertexColors == null || vertexColors.Length <= 0) vertexColors = new Color[mainMesh.vertexCount];
+
+                            bool flag = false;
+                            foreach(var bake in objectSetup.textureToVertexColorBakes)
+                            {
+                                if (bake.texture == null) continue;
+
+                                List<Vector2> uvs = null;
+                                if (bake.useBaseMeshGroup)
                                 {
-                                    var refShape = existingSetup.GetShape(refShapeIndex);
-                                    if (refShape != null && refShape.frames != null)
+                                    if (surfaceTransferBaseMeshes == null || surfaceTransferBaseMeshes.Count <= 0)
                                     {
-                                        for (int f = 0; f < Mathf.Min(meshShape.frames.Length, refShape.frames.Length); f++)
+                                        Debug.LogError($"A texture bake for mesh {objectSetup.name} was ignored because the base mesh group was not specified!");
+                                    }
+                                    else
+                                    {
+                                        var baseMeshData = surfaceTransferBaseMeshes[0].baseMeshData;
+
+                                        var settings = new MorphUtils.TransferSurfaceDataSettings()
                                         {
-                                            var localFrame = meshShape.frames[f];
-                                            var refFrame = refShape.frames[f];
-                                            for (int v = 0; v < surfaceDataTransferVertexData.Length; v++)
+                                            baseDataMain = baseMeshData,
+
+                                            treatAsMeshIslands = bake.treatAsMeshIslands,
+
+                                            transferNormals = false,
+
+                                            transferVertexColors = false,
+
+                                            transferBoneWeights = false,
+
+                                            transferUVs = true,
+                                            preserveExistingUVData = false,
+                                            uvTransferRange = new Vector2Int((int)bake.uvChannel, (int)bake.uvChannel),
+                                            uvChannelIndexTransferOffset = 0, 
+
+                                            transferBlendShapes = false
+                                        };
+                                    
+                                        var tempMesh = MorphUtils.TransferSurfaceData(mainMesh, true, settings, surfaceDataTransferVertexData);
+
+                                        uvs = tempMesh.GetUVsByChannelAsList(0);
+                                    }
+                                } 
+                                else
+                                {
+                                    uvs = mainMesh.GetUVsByChannelAsList(bake.uvChannel);
+                                }
+
+                                if (uvs != null && uvs.Count > 0)
+                                {
+                                    flag = true;
+
+                                    for(int i = 0; i < uvs.Count; i++)
+                                    {
+                                        var uv = uvs[i];
+                                        var vColor = vertexColors[i];
+
+                                        var texColor = bake.texture.GetPixelBilinear(uv.x, uv.y);
+                                        if (bake.targetTextureChannelsR != RGBAChannel.None)
+                                        {
+                                            vColor.r = texColor.GetChannel(bake.targetTextureChannelsR);
+                                        }
+                                        if (bake.targetTextureChannelsG != RGBAChannel.None)
+                                        {
+                                            vColor.g = texColor.GetChannel(bake.targetTextureChannelsG);
+                                        }
+                                        if (bake.targetTextureChannelsB != RGBAChannel.None)
+                                        {
+                                            vColor.b = texColor.GetChannel(bake.targetTextureChannelsB);
+                                        }
+                                        if (bake.targetTextureChannelsA != RGBAChannel.None)
+                                        {
+                                            vColor.a = texColor.GetChannel(bake.targetTextureChannelsA);
+                                        }
+
+                                        vertexColors[i] = vColor;
+                                    }
+                                }
+                            }
+
+                            if (flag) mainMesh.colors = vertexColors;
+                        }
+
+                        #endregion
+
+                        #region Final Data Transfers
+
+                        var existingSetup = objectSetup.existingSetup.data;
+                        if (existingSetup == null && baseMeshIndex >= 0)
+                        {
+                            existingSetup = outputDatas[baseMeshIndex];
+                        }
+
+                        if (surfaceDataTransferVertexData != null && existingSetup != null)
+                        {
+                            float[] tempWeights = new float[existingSetup.SerializedData.Mesh.vertexCount];
+                            foreach (var vertexGroup in finalVertexGroups)
+                            {
+                                if (vertexGroup == null || (objectSetup.vertexGroupsToPreserve != null && objectSetup.vertexGroupsToPreserve.Contains(vertexGroup.name))) continue; 
+
+                                var refGroupIndex = existingSetup.IndexOfVertexGroup(vertexGroup.name, true);
+                                if (refGroupIndex >= 0)
+                                {
+                                    var refGroup = existingSetup.GetVertexGroup(refGroupIndex);
+                                    if (refGroup != null)
+                                    {
+                                        refGroup.AsLinearWeightArray(tempWeights);
+                                        vertexGroup.Clear();
+                                        for (int v = 0; v < surfaceDataTransferVertexData.Length; v++)
+                                        {
+                                            var transferData = surfaceDataTransferVertexData[v];
+                                            float weight = (tempWeights[transferData.closestIndex0] * transferData.closestWeight0) + (tempWeights[transferData.closestIndex1] * transferData.closestWeight1) + (tempWeights[transferData.closestIndex2] * transferData.closestWeight2);
+                                            if (weight != 0f) vertexGroup.SetWeight(v, weight);
+                                        }
+                                    }
+                                }
+                            }
+
+                            if (objectSetup.copyMeshShapeDataFromExistingSetup)
+                            {
+                                foreach(var meshShape in finalMeshShapes)
+                                {
+                                    if (meshShape == null || meshShape.frames == null || (objectSetup.meshShapesToPreserve != null && objectSetup.meshShapesToPreserve.Contains(meshShape.name))) continue;
+
+                                    var refShapeIndex = existingSetup.IndexOfShape(meshShape.name, true);
+                                    if (refShapeIndex >= 0)
+                                    {
+                                        var refShape = existingSetup.GetShape(refShapeIndex);
+                                        if (refShape != null && refShape.frames != null)
+                                        {
+                                            for (int f = 0; f < Mathf.Min(meshShape.frames.Length, refShape.frames.Length); f++)
                                             {
-                                                var transferData = surfaceDataTransferVertexData[v];
-                                                localFrame.deltas[v] = (refFrame.deltas[transferData.closestIndex0] * transferData.closestWeight0) + (refFrame.deltas[transferData.closestIndex1] * transferData.closestWeight1) + (refFrame.deltas[transferData.closestIndex2] * transferData.closestWeight2);
+                                                var localFrame = meshShape.frames[f];
+                                                var refFrame = refShape.frames[f];
+                                                for (int v = 0; v < surfaceDataTransferVertexData.Length; v++)
+                                                {
+                                                    var transferData = surfaceDataTransferVertexData[v];
+                                                    localFrame.deltas[v] = (refFrame.deltas[transferData.closestIndex0] * transferData.closestWeight0) + (refFrame.deltas[transferData.closestIndex1] * transferData.closestWeight1) + (refFrame.deltas[transferData.closestIndex2] * transferData.closestWeight2);
+                                                }
+                                                meshShape.frames[f] = localFrame;
                                             }
-                                            meshShape.frames[f] = localFrame;
                                         }
                                     }
                                 }
                             }
                         }
-                    }
 
-                    #endregion
+                        #endregion
 
-                    #region Create Final Meshes
+                        #region Create Final Meshes
 
-                    Mesh outputMeshMain = null;
-                    var baseVertices = mainMesh.vertices;
-                    var baseColors = mainMesh.colors;
-                    var baseUV = useUVsToFindClosestVertex ? mainMesh.GetUVsByChannelAsList((int)nearestVertexUVChannel) : null;
-                    if (storeNearestVertexInUV)
-                    {
-                        List<Vector4> uv3 = mainMesh.GetUVsByChannelAsListV4(3);
-                        if (uv3 == null || uv3.Count < mainMesh.vertexCount)
+                        Mesh outputMeshMain = null;
+                        var baseVertices = mainMesh.vertices;
+                        var baseColors = mainMesh.colors;
+                        var baseUV = useUVsToFindClosestVertex ? mainMesh.GetUVsByChannelAsList((int)nearestVertexUVChannel) : null;
+                        if (storeNearestVertexInUV)
                         {
-                            uv3 = new List<Vector4>();
-                            for (int b = 0; b < mainMesh.vertexCount; b++) uv3.Add(Vector4.zero);
-                        }
-
-                        for (int b = 0; b < uv3.Count; b++) uv3[b] = StoreIndexInUV(uv3[b], b);
-
-                        if (outputMeshMain == null) 
-                        {
-                            outputMeshMain = MeshUtils.DuplicateMesh(mainMesh);
-                            outputMeshMain.name = mainMesh.name;
-                        }
-                        outputMeshMain.SetUVs(3, uv3);
-                    }
-
-                    if (outputMeshMain == null && !ReferenceEquals(mainMesh, objectSetup.mainMesh)) outputMeshMain = mainMesh;
-                    if (outputMeshMain != null)
-                    {
-                        outputMeshMain.ClearBlendShapes();
-
-                        outputMeshMain.name = mainMesh.name + "_" + objectSetup.name;
-                        outputMeshes.Add(outputMeshMain);
-                    }
-                    else outputMeshMain = mainMesh;
-
-                    meshLODs.Clear();
-                    if (objectSetup.lods != null)
-                    {
-                        for (int b = 0; b < objectSetup.lods.Length; b++)
-                        {
-                            var lod = objectSetup.lods[b];
-
-                            Mesh lodMesh = lodMeshes[b];
-                            Mesh outputMesh = null;
-                            if (storeNearestVertexInUV)
+                            List<Vector4> uv3 = mainMesh.GetUVsByChannelAsListV4(3);
+                            if (uv3 == null || uv3.Count < mainMesh.vertexCount)
                             {
-                                var lodVertices = lodMesh.vertices;
-                                var mergedVertices = MeshDataTools.WeldVertices(lodVertices);
+                                uv3 = new List<Vector4>();
+                                for (int b = 0; b < mainMesh.vertexCount; b++) uv3.Add(Vector4.zero);
+                            }
 
-                                List<Vector4> uv3 = lodMesh.GetUVsByChannelAsListV4(3);
-                                if (uv3 == null || uv3.Count < lodMesh.vertexCount)
-                                {
-                                    uv3 = new List<Vector4>();
-                                    for (int c = 0; c < lodMesh.vertexCount; c++) uv3.Add(Vector4.zero);
-                                }
+                            for (int b = 0; b < uv3.Count; b++) uv3[b] = StoreIndexInUV(uv3[b], b);
 
-                                int[] nearestVertices = new int[lodMesh.vertexCount];
-                                if (useUVsToFindClosestVertex)
-                                {
-                                    var lodUV = lodMesh.GetUVsByChannelAsList((int)nearestVertexUVChannel);
-                                    MeshDataTools.FindClosestVerticesUV(lodUV, baseUV, nearestVertices);
-                                }
-                                else
-                                {
-                                    MeshDataTools.FindClosestVertices(lodVertices, baseVertices, nearestVertices);
-                                }
+                            if (outputMeshMain == null) 
+                            {
+                                outputMeshMain = MeshUtils.DuplicateMesh(mainMesh);
+                                outputMeshMain.name = mainMesh.name;
+                            }
+                            outputMeshMain.SetUVs(3, uv3);
+                        }
 
-                                for (int c = 0; c < uv3.Count; c++) uv3[c] = StoreIndexInUV(uv3[c], nearestVertices[c]);
-                                if (mergedVertices != null)
+                        if (outputMeshMain == null && !ReferenceEquals(mainMesh, objectSetup.mainMesh)) outputMeshMain = mainMesh;
+                        if (outputMeshMain != null)
+                        {
+                            outputMeshMain.ClearBlendShapes();
+
+                            outputMeshMain.name = mainMesh.name + "_" + objectSetup.name;
+                            outputMeshes.Add(outputMeshMain);
+                        }
+                        else outputMeshMain = mainMesh;
+
+                        meshLODs.Clear();
+                        if (objectSetup.lods != null)
+                        {
+                            for (int b = 0; b < objectSetup.lods.Length; b++)
+                            {
+                                var lod = objectSetup.lods[b];
+
+                                Mesh lodMesh = lodMeshes[b];
+                                Mesh outputMesh = null;
+                                if (storeNearestVertexInUV)
                                 {
-                                    for (int c = 0; c < mergedVertices.Length; c++)
+                                    var lodVertices = lodMesh.vertices;
+                                    var mergedVertices = MeshDataTools.WeldVertices(lodVertices);
+
+                                    List<Vector4> uv3 = lodMesh.GetUVsByChannelAsListV4(3);
+                                    if (uv3 == null || uv3.Count < lodMesh.vertexCount)
                                     {
-                                        var merge = mergedVertices[c];
-                                        uv3[c] = uv3[merge.firstIndex];
+                                        uv3 = new List<Vector4>();
+                                        for (int c = 0; c < lodMesh.vertexCount; c++) uv3.Add(Vector4.zero);
+                                    }
+
+                                    int[] nearestVertices = new int[lodMesh.vertexCount];
+                                    if (useUVsToFindClosestVertex)
+                                    {
+                                        var lodUV = lodMesh.GetUVsByChannelAsList((int)nearestVertexUVChannel);
+                                        MeshDataTools.FindClosestVerticesUV(lodUV, baseUV, nearestVertices);
+                                    }
+                                    else
+                                    {
+                                        MeshDataTools.FindClosestVertices(lodVertices, baseVertices, nearestVertices);
+                                    }
+
+                                    for (int c = 0; c < uv3.Count; c++) uv3[c] = StoreIndexInUV(uv3[c], nearestVertices[c]);
+                                    if (mergedVertices != null)
+                                    {
+                                        for (int c = 0; c < mergedVertices.Length; c++)
+                                        {
+                                            var merge = mergedVertices[c];
+                                            uv3[c] = uv3[merge.firstIndex];
+                                        }
+                                    }
+
+                                    if (outputMesh == null) 
+                                    { 
+                                        outputMesh = MeshUtils.DuplicateMesh(lodMesh);
+                                        outputMesh.name = lodMesh.name;
+                                    }
+                                    outputMesh.SetUVs(3, uv3);
+
+                                    if ((!lodMesh.HasVertexAttribute(UnityEngine.Rendering.VertexAttribute.Color) || !objectSetup.preserveLodMeshVertexColors) && (baseColors != null && baseColors.Length > 0))
+                                    {
+                                        Color[] copyColors = new Color[outputMesh.vertexCount];
+                                        for (int c = 0; c < outputMesh.vertexCount; c++)
+                                        {
+                                            int baseIndex = FetchIndexFromUV(uv3[c]); 
+                                            if (baseIndex < 0) continue; 
+
+                                            copyColors[c] = baseColors[baseIndex];
+                                        }
+                                        outputMesh.colors = copyColors;
                                     }
                                 }
 
-                                if (outputMesh == null) 
-                                { 
-                                    outputMesh = MeshUtils.DuplicateMesh(lodMesh);
-                                    outputMesh.name = lodMesh.name;
-                                }
-                                outputMesh.SetUVs(3, uv3);
-
-                                if ((!lodMesh.HasVertexAttribute(UnityEngine.Rendering.VertexAttribute.Color) || !objectSetup.preserveLodMeshVertexColors) && (baseColors != null && baseColors.Length > 0))
+                                if (outputMesh != null)
                                 {
-                                    Color[] copyColors = new Color[outputMesh.vertexCount];
-                                    for (int c = 0; c < outputMesh.vertexCount; c++)
+                                    outputMesh.ClearBlendShapes();
+
+                                    if (objectSetup.solidifyThickness > 0f)
                                     {
-                                        int baseIndex = FetchIndexFromUV(uv3[c]); 
-                                        if (baseIndex < 0) continue; 
-
-                                        copyColors[c] = baseColors[baseIndex];
+                                        var solidifiedMesh = MeshDataTools.Solidify(outputMesh, objectSetup.solidifyThickness, 0f, true, true);
+                                        solidifiedMesh.name = outputMesh.name;
+                                        outputMesh = solidifiedMesh;
                                     }
-                                    outputMesh.colors = copyColors;
+
+                                    outputMesh.name = objectSetup.name + $"_lod{(b + 1)}";
+                                    outputMesh.bounds = new Bounds() { center = boundsCenter, extents = boundsExtents };
+                                    outputMeshes.Add(outputMesh);
                                 }
+                                else outputMesh = lodMesh;
+
+                                meshLODs.Add(new MeshLOD() { mesh = outputMesh, screenRelativeTransitionHeight = lod.screenRelativeTransitionHeight });
                             }
 
-                            if (outputMesh != null)
-                            {
-                                outputMesh.ClearBlendShapes();
+                            meshLODs.Sort((MeshLOD lodA, MeshLOD lodB) => Math.Sign(lodB.screenRelativeTransitionHeight - lodA.screenRelativeTransitionHeight)); // descending order
+                        }
+                        outputMeshMain.name = objectSetup.name;
+                        meshLODs.Insert(0, new MeshLOD() { mesh = outputMeshMain, screenRelativeTransitionHeight = meshLODs.Count == 0 ? 0.001f : (meshLODs[0].screenRelativeTransitionHeight < 1f ? 1f : (meshLODs[0].screenRelativeTransitionHeight + 0.1f)) });
 
-                                if (objectSetup.solidifyThickness > 0f)
-                                {
-                                    var solidifiedMesh = MeshDataTools.Solidify(outputMesh, objectSetup.solidifyThickness, 0f, true, true);
-                                    solidifiedMesh.name = outputMesh.name;
-                                    outputMesh = solidifiedMesh;
-                                }
+                            #endregion
 
-                                outputMesh.name = objectSetup.name + $"_lod{(b + 1)}";
-                                outputMesh.bounds = new Bounds() { center = boundsCenter, extents = boundsExtents };
-                                outputMeshes.Add(outputMesh);
-                            }
-                            else outputMesh = lodMesh;
+                        #region Finalize Data
 
-                            meshLODs.Add(new MeshLOD() { mesh = outputMesh, screenRelativeTransitionHeight = lod.screenRelativeTransitionHeight });
+                        PostMeshObjectSetup(objectIndex, objectSetup, meshObject);
+
+                        #region Final Dispose
+
+                        if (surfaceTransferBaseMeshes != null)
+                        {
+                            foreach (var baseMesh in surfaceTransferBaseMeshes) if (baseMesh.baseMeshData != null) baseMesh.baseMeshData.Dispose();
+                            surfaceTransferBaseMeshes.Clear();
                         }
 
-                        meshLODs.Sort((MeshLOD lodA, MeshLOD lodB) => Math.Sign(lodB.screenRelativeTransitionHeight - lodA.screenRelativeTransitionHeight)); // descending order
-                    }
-                    outputMeshMain.name = objectSetup.name;
-                    meshLODs.Insert(0, new MeshLOD() { mesh = outputMeshMain, screenRelativeTransitionHeight = meshLODs.Count == 0 ? 0.001f : (meshLODs[0].screenRelativeTransitionHeight < 1f ? 1f : (meshLODs[0].screenRelativeTransitionHeight + 0.1f)) });
+                        #endregion
 
-                    #endregion
+                        serializedData.meshShapes = finalMeshShapes.ToArray();
+                        serializedData.vertexGroups = finalVertexGroups.ToArray();
 
-                    #region Finalize Data
-
-                    serializedData.meshShapes = finalMeshShapes.ToArray();
-                    serializedData.vertexGroups = finalVertexGroups.ToArray();
-
-                    serializedData.standaloneGroups = new Vector2Int(0, muscleGroupIndices.x - 1);
-                    serializedData.muscleGroups = muscleGroupIndices;
-                    serializedData.fatGroups = fatGroupIndices;
-                    serializedData.variationGroups = variationGroupIndices;
+                        serializedData.standaloneGroups = new Vector2Int(0, muscleGroupIndices.x - 1);
+                        serializedData.muscleGroups = muscleGroupIndices;
+                        serializedData.fatGroups = fatGroupIndices;
+                        serializedData.variationGroups = variationGroupIndices;
                     
-                    serializedData.midlineVertexGroup = serializedData.IndexOfVertexGroup(midlineVertexGroup);
-                    serializedData.bustVertexGroup = serializedData.IndexOfVertexGroup(bustVertexGroup);
-                    serializedData.bustNerfVertexGroup = serializedData.IndexOfVertexGroup(bustNerfVertexGroup);
-                    serializedData.bustSizeShape = serializedData.IndexOfMeshShape(bustSizeShape);
-                    serializedData.bustSizeMuscleShape = serializedData.IndexOfMeshShape(bustSizeMuscleShape);
-                    serializedData.bustShapeShape = serializedData.IndexOfMeshShape(bustShapeShape);                 
-                    serializedData.nippleMaskVertexGroup = serializedData.IndexOfVertexGroup(nippleMaskVertexGroup); 
-                    serializedData.genitalMaskVertexGroup = serializedData.IndexOfVertexGroup(genitalMaskVertexGroup);
+                        serializedData.midlineVertexGroup = serializedData.IndexOfVertexGroup(midlineVertexGroup);
+                        serializedData.bustVertexGroup = serializedData.IndexOfVertexGroup(bustVertexGroup);
+                        serializedData.bustNerfVertexGroup = serializedData.IndexOfVertexGroup(bustNerfVertexGroup);
+                        serializedData.bustSizeShape = serializedData.IndexOfMeshShape(bustSizeShape);
+                        serializedData.bustSizeMuscleShape = serializedData.IndexOfMeshShape(bustSizeMuscleShape);
+                        serializedData.bustShapeShape = serializedData.IndexOfMeshShape(bustShapeShape);                 
+                        serializedData.nippleMaskVertexGroup = serializedData.IndexOfVertexGroup(nippleMaskVertexGroup); 
+                        serializedData.genitalMaskVertexGroup = serializedData.IndexOfVertexGroup(genitalMaskVertexGroup);
 
-                    serializedData.defaultMassShapeWeight = defaultMassShapeWeight;
-                    serializedData.minMassShapeWeight = minMassShapeWeight;
+                        serializedData.defaultMassShapeWeight = defaultMassShapeWeight;
+                        serializedData.minMassShapeWeight = minMassShapeWeight;
 
-                    serializedData.vertexCount = outputMeshMain.vertexCount;
+                        serializedData.vertexCount = outputMeshMain.vertexCount;
 
-                    serializedData.leftRightFlags = new bool[outputMeshMain.vertexCount];
-                    var mainUV = outputMeshMain.uv;
-                    if (mainUV != null && mainUV.Length > 0)
-                    {
-                        for (int i = 0; i < mainUV.Length; i++) serializedData.leftRightFlags[i] = mainUV[i].x < 0.5f;
+                        serializedData.leftRightFlags = new bool[outputMeshMain.vertexCount];
+                        /*var mainUV = outputMeshMain.uv;
+                        if (mainUV != null && mainUV.Length > 0)
+                        {
+                            for (int i = 0; i < mainUV.Length; i++) serializedData.leftRightFlags[i] = mainUV[i].x < 0.5f;
+                        }*/
+                        for (int i = 0; i < baseVertices.Length; i++) serializedData.leftRightFlags[i] = baseVertices[i].x > 0f; 
+
+                        serializedData.baseBoneWeights = mainBoneWeights;
+                        serializedData.baseBindPose = tempMatrices.ToArray();
+
+                        serializedData.materials = objectSetup.materials;
+                        serializedData.boundsCenter = objectSetup.boundsCenter;
+                        serializedData.boundsExtents = objectSetup.boundsExtents;
+                        meshLODs.Sort(CullingLODs.SortLODsDescending);
+                        serializedData.meshLODs = meshLODs.ToArray();
+
+                        if (outputData == null) outputData = CustomizableCharacterMeshV2_DATA.CreateInstance(dataName, serializedData); else outputData.ReplaceData(serializedData);
+
                     }
 
-                    serializedData.baseBoneWeights = mainBoneWeights;
-                    serializedData.baseBindPose = tempMatrices.ToArray();
-
-                    serializedData.materials = objectSetup.materials;
-                    serializedData.boundsCenter = objectSetup.boundsCenter;
-                    serializedData.boundsExtents = objectSetup.boundsExtents;
-                    meshLODs.Sort(CullingLODs.SortLODsDescending);
-                    serializedData.meshLODs = meshLODs.ToArray();
-
-                    if (outputData == null) outputData = CustomizableCharacterMeshV2_DATA.CreateInstance(dataName, serializedData); else outputData.ReplaceData(serializedData);
                     outputDatas.Add(outputData);
-
+                    
                     GameObject prefabChild = new GameObject(objectSetup.name);
                     prefabChild.transform.SetParent(outputPrefab.transform, false);
 
@@ -1852,13 +2229,14 @@ namespace Swole.Morphing
 
                         var autoFlexer = outputPrefab.gameObject.GetComponent<CharacterMuscleAutoFlexer>();
                         if (autoFlexer != null) autoFlexer.characterMeshV2 = characterMesh;
+
+                        var animatableProperties = outputPrefab.gameObject.GetComponent<DynamicAnimationProperties>();
+                        if (animatableProperties != null) characterMesh.SetAnimatablePropertiesController(animatableProperties);
                     }
 
                     #endregion
 
-                    PostMeshObjectSetup(objectIndex, objectSetup, meshObject);  
-
-                }
+                } 
 
                 for (int objectIndex = 0; objectIndex < meshObjects.Length; objectIndex++)
                 {

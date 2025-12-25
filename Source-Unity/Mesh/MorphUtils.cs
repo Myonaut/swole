@@ -606,37 +606,211 @@ namespace Swole.Morphing
 
         #region Surface Data Transfer
 
-        public struct TransferSurfaceDataSettings
+        public struct TransferSurfaceDataBase : IDisposable
         {
-            public bool treatAsMeshIslands;
+            public float costWeight;
+            public float CostWeight => costWeight == 0f ? 1f : costWeight;
+
+            public Dictionary<string, float> shapeCostWeights;
+            public float GetCostWeight(string shape)
+            {
+                if (string.IsNullOrWhiteSpace(shape) || shapeCostWeights == null) return CostWeight;
+                if (shapeCostWeights.TryGetValue(shape, out float costWeight)) return costWeight;
+                return CostWeight;
+            }
+
+            public Mesh baseMesh;
 
             public int[] baseMeshTriangles;
             public Vector3[] baseMeshVertices;
 
+            public NativeArray<int> baseMeshTrianglesJob;
+            public NativeArray<float3> baseMeshVerticesJob;
+            public NativeArray<float3> baseMeshNormalsJob;
+            public NativeArray<float2> baseMeshTransferUVsJob;
+
+            public TransferSurfaceDataBase WithJobData(Allocator allocator, bool includeTransferUV = false, UVChannelURP transferChannel = UVChannelURP.UV0)
+            {
+                var output = this;
+
+                output.baseMeshTrianglesJob = new NativeArray<int>(baseMeshTriangles == null ? new int[0] : baseMeshTriangles, allocator);
+                output.baseMeshVerticesJob = new NativeArray<Vector3>(baseMeshVertices == null ? new Vector3[0] : baseMeshVertices, allocator).Reinterpret<float3>();
+                output.baseMeshNormalsJob = new NativeArray<Vector3>(baseMeshNormals == null ? new Vector3[0] : baseMeshNormals, allocator).Reinterpret<float3>();
+
+                if (includeTransferUV)
+                {
+                    int uvIndex = (int)transferChannel;
+                    if (uvIndex >= 0 && baseMeshUVs != null && uvIndex < baseMeshUVs.Count)
+                    {
+                        var uvs = baseMeshUVs[uvIndex];
+                        output.baseMeshTransferUVsJob = new NativeArray<float2>(uvs.Length, allocator);
+                        for (int i = 0; i < uvs.Length; i++) output.baseMeshTransferUVsJob[i] = new float2(uvs[i].x, uvs[i].y);
+                    } 
+                    else
+                    {
+                        Debug.LogError($"UV Transfer Channel {uvIndex} was out of range for mesh {baseMesh.name}");
+                        output.baseMeshTransferUVsJob = new NativeArray<float2>(output.baseMeshVerticesJob.Length, allocator);
+                    }
+                }
+
+                return output;
+            }
+
+            public Vector3[] baseMeshNormals;
+
+            public Vector4[] baseMeshTangents;
+
+            public List<Vector4[]> baseMeshUVs;
+
+            public Color[] baseMeshVertexColors;
+
+            public NativeArray<BoneWeight1> baseMeshBoneWeights;
+            public NativeArray<byte> baseMeshBonesPerVertex;
+            public int[] baseMeshBoneWeightStartIndices;
+
+            public List<BlendShape> baseMeshBlendShapes;
+            public bool TryGetBlendShape(string shapeName, out BlendShape blendShape)
+            {
+                blendShape = null;
+                if (baseMeshBlendShapes == null) return false;
+
+                foreach(var b in baseMeshBlendShapes)
+                {
+                    if (b != null && b.name == shapeName)
+                    {
+                        blendShape = b;
+                        return true;
+                    }
+                }
+                return false;
+            }
+
+            public Vector3 alignmentOffset;
+            public Vector3 alignmentRotationOffsetEuler;
+
+            public TransferSurfaceDataBase ApplyBlendShapesToBaseData(IEnumerable<NameFloat> shapes)
+            {
+                var output = this;
+
+                output.baseMeshVertices = (Vector3[])baseMeshVertices.Clone();
+                output.baseMeshNormals = (Vector3[])baseMeshNormals.Clone();
+                output.baseMeshTangents = (Vector4[])baseMeshTangents.Clone();
+
+                foreach (var shapeTarget in shapes)
+                {
+                    if (!TryGetBlendShape(shapeTarget.name, out var blendShape)) continue;
+
+                    blendShape.GetTransformedData(output.baseMeshVertices, output.baseMeshNormals, output.baseMeshTangents, shapeTarget.value, out output.baseMeshVertices, out output.baseMeshNormals, out output.baseMeshTangents, false);
+                }
+
+                return output;
+            }
+
+            public void Dispose()
+            {
+                if (this.baseMeshTrianglesJob.IsCreated) 
+                {
+                    this.baseMeshTrianglesJob.Dispose();
+                    this.baseMeshTrianglesJob = default;
+                }
+                if (this.baseMeshVerticesJob.IsCreated) 
+                {
+                    this.baseMeshVerticesJob.Dispose();
+                    this.baseMeshVerticesJob = default;
+                }
+                if (this.baseMeshNormalsJob.IsCreated)
+                {
+                    this.baseMeshNormalsJob.Dispose();
+                    this.baseMeshNormalsJob = default;
+                }
+                if (this.baseMeshTransferUVsJob.IsCreated)
+                {
+                    this.baseMeshTransferUVsJob.Dispose();
+                    this.baseMeshTransferUVsJob = default;
+                }
+            }
+        }
+
+        public struct TransferSurfaceDataSettings : IDisposable
+        {
+            public bool useUVsForBaseDataTransfers;
+            public UVChannelURP baseUV_transferChannel;
+            public UVChannelURP localUV_transferChannel;
+
+            public float uvDistanceWeight;
+            public float positionDistanceWeight;
+            public float normalDotWeight;
+            public float triCoordinatesWeight;
+
+            public float maxDistanceUV;
+            public float maxDistancePosition;
+
+            public bool treatAsMeshIslands;
+
             public bool transferNormals;
             public float transferNormalsWeight;
-            public Vector3[] baseMeshNormals;
 
             public bool transferUVs;
             public bool preserveExistingUVData;
             public Vector2Int uvTransferRange;
             public int uvChannelIndexTransferOffset;
-            public List<Vector4[]> baseMeshUVs;
 
             public bool transferVertexColors;
-            public Color[] baseMeshVertexColors;
 
             public bool transferBoneWeights;
-            public NativeArray<BoneWeight1> baseMeshBoneWeights;
-            public NativeArray<byte> baseMeshBonesPerVertex;
-            public int[] baseMeshBoneWeightStartIndices;
 
             public bool transferBlendShapes;
             public bool preserveExistingBlendShapeData;
-            public List<BlendShape> baseMeshBlendShapes;
 
-            public Vector3 alignmentOffset;
-            public Vector3 alignmentRotationOffsetEuler;
+            public TransferSurfaceDataBase baseDataMain;
+            public TransferSurfaceDataBase[] baseDatas;
+
+            public TransferSurfaceDataSettings WithJobData(Allocator allocator)
+            {
+                var output = this;
+
+                output.baseDataMain = baseDataMain.WithJobData(allocator, useUVsForBaseDataTransfers, baseUV_transferChannel);
+                if (baseDatas != null)
+                {
+                    output.baseDatas = new TransferSurfaceDataBase[baseDatas.Length];
+                    for (int a = 0; a < output.baseDatas.Length; a++) output.baseDatas[a] = baseDatas[a].WithJobData(allocator, useUVsForBaseDataTransfers, baseUV_transferChannel);
+                }
+
+                return output;
+            }
+
+            public void Dispose()
+            {
+                baseDataMain.Dispose();
+                if (baseDatas != null)
+                {
+                    foreach(var baseData in baseDatas)
+                    {
+                        baseData.Dispose();
+                    }
+                }
+            }
+
+            public int BaseDataCount => baseDatas == null ? 1 : (1 + baseDatas.Length);
+            public TransferSurfaceDataBase GetBaseData(int index)
+            {
+                if (baseDatas == null || baseDatas.Length <= 0 || index <= 0 || index >= baseDatas.Length) return baseDataMain;
+
+                return baseDatas[index - 1];
+            }
+
+            public TransferSurfaceDataSettings ApplyBlendShapesToBaseData(IEnumerable<NameFloat> shapes)
+            {
+                var output = this;
+
+                output.baseDataMain = output.baseDataMain.ApplyBlendShapesToBaseData(shapes);
+                if (baseDatas != null)
+                {
+                    for (int a = 0; a < baseDatas.Length; a++) baseDatas[a] = baseDatas[a].ApplyBlendShapesToBaseData(shapes);
+                }
+
+                return output;
+            }
 
             public TransferSurfaceDataSettings Default => new TransferSurfaceDataSettings()
             {
@@ -648,6 +822,8 @@ namespace Swole.Morphing
         [Serializable]
         public struct SurfaceDataTransferVertex
         {
+            public int closestMesh;
+
             public int closestIndex0;
             public int closestIndex1;
             public int closestIndex2;
@@ -657,458 +833,681 @@ namespace Swole.Morphing
             public float closestWeight2;
         }
 
+        private struct TempVertexInfo
+        {
+            public Vector3 centerPoint;
+
+            public int meshIslandIndex;
+            public MeshDataTools.MeshIsland meshIsland;
+            public ContainingTri meshIslandTri;
+
+            public Vector3 originOffset;
+            public float originOffsetDist;
+
+            public bool hasOrigin;
+
+            public float closestDistance;
+            public int closestBaseIndex;
+            public int closestIndex0;
+            public int closestIndex1;
+            public int closestIndex2;
+            public float closestWeight0;
+            public float closestWeight1;
+            public float closestWeight2;
+
+            public static TempVertexInfo Default => new TempVertexInfo()
+            {
+                closestIndex0 = -1,
+                closestIndex1 = -1,
+                closestIndex2 = 1
+            };
+        }
+
         public static Mesh TransferSurfaceData(
             Mesh localMesh, bool instantiateMesh,
-            TransferSurfaceDataSettings settings, SurfaceDataTransferVertex[] vertexTransferDataArray = null)
+            TransferSurfaceDataSettings settings_, SurfaceDataTransferVertex[] vertexTransferDataArray = null, Dictionary<string, SurfaceDataTransferVertex[]> perShapeVertexTransferDataArrays = null)
         {
-            var mesh = instantiateMesh ? MeshDataTools.Duplicate(localMesh) : localMesh;
-
-            Quaternion alignmentRotationOffset = Quaternion.Euler(settings.alignmentRotationOffsetEuler);
-
-            List<string> originalBlendShapes = new List<string>();
-            List<BlendShape> blendShapes = mesh.GetBlendShapes();
-            foreach (var shape in blendShapes) originalBlendShapes.Add(shape.name);
-
-            bool IsOriginalBlendShape(string name)
+            using (var settings = settings_.WithJobData(Allocator.Persistent))
             {
-                foreach (var shapeName in originalBlendShapes) if (shapeName == name) return true;
-                return false;
-            }
-            BlendShape AddOrGetBlendShape(string name, BlendShape.Frame[] referenceFrames)
-            {
-                foreach (var shape in blendShapes)
+                var mesh = instantiateMesh ? MeshDataTools.Duplicate(localMesh) : localMesh;
+
+                int baseDataCount = settings.BaseDataCount;
+
+                List<string> originalBlendShapes = new List<string>();
+                List<BlendShape> blendShapes = mesh.GetBlendShapes();
+                foreach (var shape in blendShapes) originalBlendShapes.Add(shape.name);
+
+                bool IsOriginalBlendShape(string name)
                 {
-                    if (shape.name == name)
+                    foreach (var shapeName in originalBlendShapes) if (shapeName == name) return true;
+                    return false;
+                }
+                BlendShape AddOrGetBlendShape(string name, BlendShape.Frame[] referenceFrames)
+                {
+                    foreach (var shape in blendShapes)
                     {
-                        // if the shape has no frames, add a default frame
-                        if (shape.frames == null || shape.frames.Length <= 0) shape.AddFrame(referenceFrames == null || referenceFrames.Length <= 0 ? 1 : referenceFrames[0].weight, new Vector3[mesh.vertexCount], new Vector3[mesh.vertexCount], new Vector3[mesh.vertexCount]);
+                        if (shape.name == name)
+                        {
+                            // if the shape has no frames, add a default frame
+                            if (shape.frames == null || shape.frames.Length <= 0) shape.AddFrame(referenceFrames == null || referenceFrames.Length <= 0 ? 1 : referenceFrames[0].weight, new Vector3[mesh.vertexCount], new Vector3[mesh.vertexCount], new Vector3[mesh.vertexCount]);
 
-                        return shape;
+                            return shape;
+                        }
+                    }
+
+                    // if the shape does not exist, create it
+                    BlendShape newShape = new BlendShape(name, referenceFrames, mesh.vertexCount, false);
+                    blendShapes.Add(newShape);
+
+                    return newShape;
+                }
+
+                List<MeshDataTools.MeshIsland> meshIslands = null;
+                int[] meshIslandBindings = null;
+                ContainingTri[] meshIslandTriBindings = null; // stores the triangle from the base mesh that each island is bound to
+                Dictionary<string, ContainingTri[]> perShapeMeshIslandTriBindings = null;
+                if (settings.treatAsMeshIslands) meshIslands = MeshDataTools.CalculateMeshIslands(mesh);
+
+                Vector3[] localVertices = mesh.vertices;
+                Vector2[] localTransferUVs = settings.useUVsForBaseDataTransfers ? mesh.GetUVsByChannel(settings.localUV_transferChannel) : null;
+                Vector3[] localNormals = mesh.normals;
+
+                List<Vector4[]> localUVs = null;
+                bool[] initialUVDataStates = null;
+                int uvTransferCount = 0;
+                if (settings.transferUVs && settings.baseDataMain.baseMeshUVs != null)
+                {
+                    localUVs = mesh.GetAllUVs();
+
+                    if (settings.preserveExistingUVData)
+                    {
+                        initialUVDataStates = new bool[localUVs.Count];
+                        for (int a = 0; a < localUVs.Count; a++) initialUVDataStates[a] = localUVs[a] != null;
+                    }
+
+                    uvTransferCount = Mathf.Min(Mathf.Max(0, (Mathf.Min(settings.uvTransferRange.y, 7) - settings.uvTransferRange.x) + 1), settings.baseDataMain.baseMeshUVs.Count);
+                    for (int a = 0; a < uvTransferCount; a++)
+                    {
+                        int baseIndex = a + settings.uvTransferRange.x;
+                        if (baseIndex < 0) continue;
+
+                        int localIndex = a + settings.uvChannelIndexTransferOffset;
+                        if (localIndex < 0 || localIndex >= 8) continue;
+
+                        if (localUVs[localIndex] == null && settings.baseDataMain.baseMeshUVs[baseIndex] != null) localUVs[localIndex] = new Vector4[mesh.vertexCount];
                     }
                 }
 
-                // if the shape does not exist, create it
-                BlendShape newShape = new BlendShape(name, referenceFrames, mesh.vertexCount, false);
-                blendShapes.Add(newShape);
-
-                return newShape;
-            }
-
-            List<MeshDataTools.MeshIsland> meshIslands = null;
-            int[] meshIslandBindings = null;
-            ContainingTri[] meshIslandTriBindings = null; // stores the triangle from the base mesh that each island is bound to
-            if (settings.treatAsMeshIslands) meshIslands = MeshDataTools.CalculateMeshIslands(mesh);
-
-            Vector3[] localVertices = mesh.vertices;
-            for (int c = 0; c < localVertices.Length; c++) localVertices[c] = (alignmentRotationOffset * localVertices[c]) + settings.alignmentOffset;
-
-            Vector3[] localNormals = mesh.normals;
-
-            List<Vector4[]> localUVs = null;
-            bool[] initialUVDataStates = null;
-            int uvTransferCount = 0;
-            if (settings.transferUVs && settings.baseMeshUVs != null)
-            {
-                localUVs = mesh.GetAllUVs();
-
-                if (settings.preserveExistingUVData)
+                Color[] localColors = null;
+                if (settings.transferVertexColors)
                 {
-                    initialUVDataStates = new bool[localUVs.Count];
-                    for (int a = 0; a < localUVs.Count; a++) initialUVDataStates[a] = localUVs[a] != null;
+                    localColors = mesh.colors;
+                    if (localColors == null || localColors.Length < mesh.vertexCount) localColors = new Color[mesh.vertexCount];
                 }
 
-                uvTransferCount = Mathf.Min(Mathf.Max(0, (Mathf.Min(settings.uvTransferRange.y, 7) - settings.uvTransferRange.x) + 1), settings.baseMeshUVs.Count);
-                for (int a = 0; a < uvTransferCount; a++) 
+                Dictionary<int2, float> newBoneWeights = new Dictionary<int2, float>();
+
+                void CalculateMeshIslandTriBindings(string shape)
                 {
-                    int baseIndex = a + settings.uvTransferRange.x;
-                    if (baseIndex < 0) continue;
-
-                    int localIndex = a + settings.uvChannelIndexTransferOffset;
-                    if (localIndex < 0 || localIndex >= 8) continue;
-
-                    if (localUVs[localIndex] == null && settings.baseMeshUVs[baseIndex] != null) localUVs[localIndex] = new Vector4[mesh.vertexCount];
-                }
-            }
-
-            Color[] localColors = null;
-            if (settings.transferVertexColors)
-            {
-                localColors = mesh.colors;
-                if (localColors == null || localColors.Length < mesh.vertexCount) localColors = new Color[mesh.vertexCount];
-            }
-
-            Dictionary<int2, float> newBoneWeights = new Dictionary<int2, float>();
-
-            if (meshIslands != null)
-            {
-                meshIslandBindings = new int[localVertices.Length];
-                for (int c = 0; c < meshIslandBindings.Length; c++) meshIslandBindings[c] = -1;
-
-                meshIslandTriBindings = new ContainingTri[meshIslands.Count];
-
-                for (int c = 0; c < meshIslands.Count; c++)
-                {
-
-                    var island = meshIslands[c];
-
-                    if (island.vertices == null || island.vertices.Length <= 0) continue;
-
-                    Vector3 localVertex;
-
-                    float closestDistance = float.MaxValue;
-                    int closestLocalIndex = -1;
-
-                    for (int d = 0; d < island.vertices.Length; d++)
+                    if (meshIslands != null)
                     {
-                        float distanceWeight = 1; // TODO: Add possible distance weighting based on position in the mesh island or vertex group or vertex colors
-
-                        int localIndex = island.vertices[d];
-                        localVertex = localVertices[localIndex];
-
-                        meshIslandBindings[localIndex] = c;
-
-                        foreach (var v in settings.baseMeshVertices)
+                        if (meshIslandBindings == null)
                         {
-                            float dista = (v - localVertex).sqrMagnitude * distanceWeight;
-                            if (dista < closestDistance)
+                            meshIslandBindings = new int[localVertices.Length];
+                            for (int c = 0; c < meshIslandBindings.Length; c++) meshIslandBindings[c] = -1;
+                        }
+
+                        ContainingTri[] meshIslandTriBindings_;
+                        if (string.IsNullOrWhiteSpace(shape))
+                        {
+                            if (meshIslandTriBindings != null) return;
+                            meshIslandTriBindings = meshIslandTriBindings_ = new ContainingTri[meshIslands.Count];
+                        }
+                        else
+                        {
+                            if (perShapeMeshIslandTriBindings == null) perShapeMeshIslandTriBindings = new Dictionary<string, ContainingTri[]>();
+                            if (perShapeMeshIslandTriBindings.ContainsKey(shape)) return;
+                            perShapeMeshIslandTriBindings[shape] = meshIslandTriBindings_ = new ContainingTri[meshIslands.Count];
+                        }
+
+                        for (int c = 0; c < meshIslands.Count; c++)
+                        {
+
+                            var island = meshIslands[c];
+
+                            if (island.vertices == null || island.vertices.Length <= 0) continue;
+
+                            Vector3 localVertex;
+
+                            float closestDistance = float.MaxValue;
+                            int closestLocalIndex = -1;
+                            int closestBaseIndex = 0;
+
+                            for (int d = 0; d < island.vertices.Length; d++)
                             {
-                                closestLocalIndex = d;
-                                closestDistance = dista;
-                            }
-                        }
-                    }
+                                float distanceWeight = 1f; // TODO: Add possible distance weighting based on position in the mesh island or vertex group or vertex colors
 
-                    island.originIndex = closestLocalIndex;
+                                int localIndex = island.vertices[d];
+                                localVertex = localVertices[localIndex];
 
-                    closestDistance = float.MaxValue;
-                    closestLocalIndex = -1;
-                    int closestIndex0 = -1;
-                    int closestIndex1 = -1;
-                    int closestIndex2 = -1;
-                    float closestWeight0 = 0;
-                    float closestWeight1 = 0;
-                    float closestWeight2 = 0;
+                                meshIslandBindings[localIndex] = c;
 
-                    localVertex = localVertices[island.vertices[island.originIndex]];
-
-                    if (MeshDataTools.GetClosestContainingTriangle(settings.baseMeshVertices, settings.baseMeshTriangles, localVertex, out var index0, out var index1, out var index2, out var weight0, out var weight1, out var weight2, out var dist, 0.5f, 0.2f))
-                    {
-                        if (dist < closestDistance)
-                        {
-                            closestDistance = dist;
-                            closestIndex0 = index0;
-                            closestIndex1 = index1;
-                            closestIndex2 = index2;
-                            closestWeight0 = weight0;
-                            closestWeight1 = weight1;
-                            closestWeight2 = weight2;
-                        }
-                    }
-
-                    meshIslandTriBindings[c] = new ContainingTri(0, closestIndex0, closestIndex1, closestIndex2, closestWeight0, closestWeight1, closestWeight2);
-                }
-            }
-
-            for (int vIndex = 0; vIndex < localVertices.Length; vIndex++)
-            {
-                var localVertex = localVertices[vIndex];
-                var centerPoint = localVertex;
-
-                int meshIslandIndex = meshIslandBindings == null ? -1 : meshIslandBindings[vIndex];
-                var meshIsland = meshIslandIndex >= 0 ? meshIslands[meshIslandIndex] : default;
-                var meshIslandTri = meshIslandIndex >= 0 ? meshIslandTriBindings[meshIslandIndex] : default;
-                if (meshIslandIndex >= 0) centerPoint = localVertices[meshIsland.OriginVertex];
-
-                Vector3 originOffset = localVertex - centerPoint;
-                float originOffsetDist = originOffset.magnitude;
-
-                bool hasOrigin = false;
-                if (originOffsetDist > 0.0001f)
-                {
-                    originOffset = originOffset / originOffsetDist;
-                    hasOrigin = true;
-                }
-
-                float closestDistance = float.MaxValue;
-                int closestIndex0 = -1;
-                int closestIndex1 = -1;
-                int closestIndex2 = -1;
-                float closestWeight0 = 0;
-                float closestWeight1 = 0;
-                float closestWeight2 = 0;
-
-                if (meshIslandIndex < 0)
-                {
-
-                    if (MeshDataTools.GetClosestContainingTriangle(settings.baseMeshVertices, settings.baseMeshTriangles, localVertex, out var index0, out var index1, out var index2, out var weight0, out var weight1, out var weight2, out var dist, 0.5f, 0.2f))
-                    {
-                        if (dist < closestDistance)
-                        {
-                            closestDistance = dist;
-                            closestIndex0 = index0;
-                            closestIndex1 = index1;
-                            closestIndex2 = index2;
-                            closestWeight0 = weight0;
-                            closestWeight1 = weight1;
-                            closestWeight2 = weight2;
-                        }
-                    }
-
-                }
-                else
-                {
-                    closestIndex0 = meshIslandTri.indexA;
-                    closestIndex1 = meshIslandTri.indexB;
-                    closestIndex2 = meshIslandTri.indexC;
-                    closestWeight0 = meshIslandTri.weightA;
-                    closestWeight1 = meshIslandTri.weightB;
-                    closestWeight2 = meshIslandTri.weightC;
-                }
-
-                if (closestIndex0 >= 0 && closestIndex1 >= 0 && closestIndex2 >= 0)
-                {
-                    if (vertexTransferDataArray != null && vIndex < vertexTransferDataArray.Length)
-                    {
-                        vertexTransferDataArray[vIndex] = new SurfaceDataTransferVertex()
-                        {
-                            closestIndex0 = closestIndex0,
-                            closestIndex1 = closestIndex1,
-                            closestIndex2 = closestIndex2,
-                            closestWeight0 = closestWeight0,
-                            closestWeight1 = closestWeight1,
-                            closestWeight2 = closestWeight2
-                        };
-                    }
-
-                    if (settings.transferBlendShapes)
-                    {
-                        var dependencyNormal = ((settings.baseMeshNormals[closestIndex0] * closestWeight0) + (settings.baseMeshNormals[closestIndex1] * closestWeight1) + (settings.baseMeshNormals[closestIndex2] * closestWeight2)).normalized;
-
-                        // basically if the surface that a vertex is bound to changes normal direction, rotate the vertex around the center point accordingly
-                        Vector3 AddNormalBasedRotationToDelta(Vector3 deltaVertex, Vector3 deltaNormal)
-                        {
-                            if (hasOrigin)
-                            {
-                                Quaternion rotOffset = Quaternion.FromToRotation(dependencyNormal, (dependencyNormal + deltaNormal).normalized);
-                                deltaVertex = deltaVertex + ((centerPoint + (rotOffset * originOffset) * originOffsetDist) - localVertex);
-                            }
-
-                            return deltaVertex;
-                        }
-
-                        for (int d = 0; d < settings.baseMeshBlendShapes.Count; d++)
-                        {
-                            var shape = settings.baseMeshBlendShapes[d];
-                            if (shape != null && (!settings.preserveExistingBlendShapeData || !IsOriginalBlendShape(shape.name)))
-                            {
-                                var blendShape = AddOrGetBlendShape(shape.name, shape.frames);
-                                if (blendShape != null)
+                                for (int e = 0; e < baseDataCount; e++)
                                 {
-                                    for (int e = 0; e < blendShape.frames.Length; e++)
+                                    var baseData = settings.GetBaseData(e);
+                                    float costWeight = baseData.GetCostWeight(shape);
+                                    foreach (var v in baseData.baseMeshVertices)
                                     {
-                                        var frame = blendShape.frames[Mathf.Min(e, blendShape.frames.Length - 1)];
-                                        var baseFrame = shape.frames[e];
+                                        float dista = (v - localVertex).sqrMagnitude * distanceWeight * costWeight;
+                                        if (dista < closestDistance)
+                                        {
+                                            closestBaseIndex = e;
+                                            closestLocalIndex = d;
+                                            closestDistance = dista;
+                                        }
+                                    }
+                                }
+                            }
 
-                                        var deltaVertex = (baseFrame.deltaVertices[closestIndex0] * closestWeight0) + (baseFrame.deltaVertices[closestIndex1] * closestWeight1) + (baseFrame.deltaVertices[closestIndex2] * closestWeight2);
-                                        var deltaNormal = (baseFrame.deltaNormals[closestIndex0] * closestWeight0) + (baseFrame.deltaNormals[closestIndex1] * closestWeight1) + (baseFrame.deltaNormals[closestIndex2] * closestWeight2);
-                                        var deltaTangent = (baseFrame.deltaTangents[closestIndex0] * closestWeight0) + (baseFrame.deltaTangents[closestIndex1] * closestWeight1) + (baseFrame.deltaTangents[closestIndex2] * closestWeight2);
+                            island.originIndex = closestLocalIndex;
 
-                                        deltaVertex = AddNormalBasedRotationToDelta(deltaVertex, deltaNormal);
+                            closestDistance = float.MaxValue;
+                            //closestLocalIndex = -1;
+                            int closestIndex0 = -1;
+                            int closestIndex1 = -1;
+                            int closestIndex2 = -1;
+                            float closestWeight0 = 0;
+                            float closestWeight1 = 0;
+                            float closestWeight2 = 0;
 
-                                        frame.deltaVertices[vIndex] = deltaVertex;
-                                        frame.deltaNormals[vIndex] = deltaNormal;
-                                        frame.deltaTangents[vIndex] = deltaTangent;
+                            int localVertexIndex = island.vertices[island.originIndex];
+                            localVertex = localVertices[localVertexIndex];
+                            var localNormal = localNormals[localVertexIndex];
+
+                            var baseDataFinal = settings.GetBaseData(closestBaseIndex);
+                            if (settings.useUVsForBaseDataTransfers)
+                            {
+                                if (MeshDataTools.GetClosestContainingTriangleFromJobWithUV(baseDataFinal.baseMeshTransferUVsJob, settings.uvDistanceWeight, settings.positionDistanceWeight, settings.normalDotWeight, settings.triCoordinatesWeight, baseDataFinal.baseMeshVerticesJob, baseDataFinal.baseMeshNormalsJob, baseDataFinal.baseMeshTrianglesJob, localTransferUVs[localVertexIndex], localVertex, localNormal, out var index0, out var index1, out var index2, out var weight0, out var weight1, out var weight2, out var dist, settings.maxDistanceUV, settings.maxDistancePosition, 0f, 0.2f))
+                                {
+                                    if (dist < closestDistance)
+                                    {
+                                        closestDistance = dist;
+                                        closestIndex0 = index0;
+                                        closestIndex1 = index1;
+                                        closestIndex2 = index2;
+                                        closestWeight0 = weight0;
+                                        closestWeight1 = weight1;
+                                        closestWeight2 = weight2;
+                                    }
+                                }
+                            } 
+                            else
+                            {
+                                if (MeshDataTools.GetClosestContainingTriangleFromJob(baseDataFinal.baseMeshVerticesJob, baseDataFinal.baseMeshTrianglesJob, localVertex, out var index0, out var index1, out var index2, out var weight0, out var weight1, out var weight2, out var dist, settings.maxDistancePosition, 0.2f))
+                                {
+                                    if (dist < closestDistance)
+                                    {
+                                        closestDistance = dist;
+                                        closestIndex0 = index0;
+                                        closestIndex1 = index1;
+                                        closestIndex2 = index2;
+                                        closestWeight0 = weight0;
+                                        closestWeight1 = weight1;
+                                        closestWeight2 = weight2;
+                                    }
+                                }
+                            }
+
+                            meshIslandTriBindings_[c] = new ContainingTri(closestBaseIndex, closestIndex0, closestIndex1, closestIndex2, closestWeight0, closestWeight1, closestWeight2);
+                        }
+                    }
+                }
+
+                CalculateMeshIslandTriBindings(null);
+                HashSet<string> costWeightedShapes = new HashSet<string>();
+                for (int e = 0; e < baseDataCount; e++)
+                {
+                    var baseData = settings.GetBaseData(e);
+                    if (baseData.shapeCostWeights != null)
+                    {
+                        foreach (var entry in baseData.shapeCostWeights)
+                        {
+                            costWeightedShapes.Add(entry.Key);
+                            CalculateMeshIslandTriBindings(entry.Key); // Calculate containing tri arrays per shape if different cost weights are provided
+                        }
+                    }
+                }
+
+                Dictionary<string, TempVertexInfo> perShapeVertexInfos = new Dictionary<string, TempVertexInfo>();
+                for (int vIndex = 0; vIndex < localVertices.Length; vIndex++)
+                {
+                    var localVertex = localVertices[vIndex];
+                    var localNormal = localNormals[vIndex];
+
+                    TempVertexInfo CalculateVertexInfo(string shape)
+                    {
+                        TempVertexInfo vertexInfo = TempVertexInfo.Default;
+
+                        bool isDefault = string.IsNullOrWhiteSpace(shape);
+                        ContainingTri[] meshIslandTriBindings_ = meshIslandTriBindings;
+                        if (!isDefault && perShapeMeshIslandTriBindings != null)
+                        {
+                            if (!perShapeMeshIslandTriBindings.TryGetValue(shape, out meshIslandTriBindings_)) meshIslandTriBindings_ = meshIslandTriBindings; // no special mesh island data for the shape was found, so revert to default
+                        }
+
+                        vertexInfo.centerPoint = localVertex;
+
+                        vertexInfo.meshIslandIndex = meshIslandBindings == null ? -1 : meshIslandBindings[vIndex];
+                        vertexInfo.meshIsland = vertexInfo.meshIslandIndex >= 0 ? meshIslands[vertexInfo.meshIslandIndex] : default;
+                        vertexInfo.meshIslandTri = vertexInfo.meshIslandIndex >= 0 ? meshIslandTriBindings_[vertexInfo.meshIslandIndex] : default;
+                        if (vertexInfo.meshIslandIndex >= 0) vertexInfo.centerPoint = localVertices[vertexInfo.meshIsland.OriginVertex];
+
+                        vertexInfo.originOffset = localVertex - vertexInfo.centerPoint;
+                        vertexInfo.originOffsetDist = vertexInfo.originOffset.magnitude;
+
+                        vertexInfo.hasOrigin = false;
+                        if (vertexInfo.originOffsetDist > 0.0001f)
+                        {
+                            vertexInfo.originOffset = vertexInfo.originOffset / vertexInfo.originOffsetDist;
+                            vertexInfo.hasOrigin = true;
+                        }
+
+                        vertexInfo.closestDistance = float.MaxValue;
+                        vertexInfo.closestBaseIndex = 0;
+                        vertexInfo.closestIndex0 = -1;
+                        vertexInfo.closestIndex1 = -1;
+                        vertexInfo.closestIndex2 = -1;
+                        vertexInfo.closestWeight0 = 0;
+                        vertexInfo.closestWeight1 = 0;
+                        vertexInfo.closestWeight2 = 0;
+
+                        if (vertexInfo.meshIslandIndex < 0)
+                        {
+
+                            for (int e = 0; e < baseDataCount; e++)
+                            {
+                                var baseData = settings.GetBaseData(e);
+                                if (settings.useUVsForBaseDataTransfers)
+                                {
+                                    if (MeshDataTools.GetClosestContainingTriangleFromJobWithUV(baseData.baseMeshTransferUVsJob, settings.uvDistanceWeight, settings.positionDistanceWeight, settings.normalDotWeight, settings.triCoordinatesWeight, baseData.baseMeshVerticesJob, baseData.baseMeshNormalsJob, baseData.baseMeshTrianglesJob, localTransferUVs[vIndex], localVertex, localNormal, out var index0, out var index1, out var index2, out var weight0, out var weight1, out var weight2, out var dist, settings.maxDistanceUV, settings.maxDistancePosition, 0f, 0.2f))
+                                    {
+                                        float cost = dist * baseData.GetCostWeight(shape);
+                                        if (cost < vertexInfo.closestDistance)
+                                        {
+                                            vertexInfo.closestDistance = cost;
+                                            vertexInfo.closestBaseIndex = e;
+                                            vertexInfo.closestIndex0 = index0;
+                                            vertexInfo.closestIndex1 = index1;
+                                            vertexInfo.closestIndex2 = index2;
+                                            vertexInfo.closestWeight0 = weight0;
+                                            vertexInfo.closestWeight1 = weight1;
+                                            vertexInfo.closestWeight2 = weight2;
+                                        }
+                                    }
+                                }
+                                else
+                                {
+                                    if (MeshDataTools.GetClosestContainingTriangleFromJob(baseData.baseMeshVerticesJob, baseData.baseMeshTrianglesJob, localVertex, out var index0, out var index1, out var index2, out var weight0, out var weight1, out var weight2, out var dist, settings.maxDistancePosition, 0.2f))
+                                    {
+                                        float cost = dist * baseData.GetCostWeight(shape);
+                                        if (cost < vertexInfo.closestDistance)
+                                        {
+                                            vertexInfo.closestDistance = cost;
+                                            vertexInfo.closestBaseIndex = e;
+                                            vertexInfo.closestIndex0 = index0;
+                                            vertexInfo.closestIndex1 = index1;
+                                            vertexInfo.closestIndex2 = index2;
+                                            vertexInfo.closestWeight0 = weight0;
+                                            vertexInfo.closestWeight1 = weight1;
+                                            vertexInfo.closestWeight2 = weight2;
+                                        }
+                                    }
+                                }
+                            }
+
+                        }
+                        else
+                        {
+                            vertexInfo.closestBaseIndex = vertexInfo.meshIslandTri.closestDependency;
+                            vertexInfo.closestIndex0 = vertexInfo.meshIslandTri.indexA;
+                            vertexInfo.closestIndex1 = vertexInfo.meshIslandTri.indexB;
+                            vertexInfo.closestIndex2 = vertexInfo.meshIslandTri.indexC;
+                            vertexInfo.closestWeight0 = vertexInfo.meshIslandTri.weightA;
+                            vertexInfo.closestWeight1 = vertexInfo.meshIslandTri.weightB;
+                            vertexInfo.closestWeight2 = vertexInfo.meshIslandTri.weightC;
+                        }
+
+                        return vertexInfo;
+                    }
+
+                    TempVertexInfo defaultVertexInfo = CalculateVertexInfo(null);
+                    perShapeVertexInfos.Clear();
+                    foreach (var shape in costWeightedShapes)
+                    {
+                        perShapeVertexInfos[shape] = CalculateVertexInfo(shape);
+                    }
+
+                    if (defaultVertexInfo.closestBaseIndex >= 0 && defaultVertexInfo.closestIndex0 >= 0 && defaultVertexInfo.closestIndex1 >= 0 && defaultVertexInfo.closestIndex2 >= 0)
+                    {
+                        var defaultBaseData = settings.GetBaseData(defaultVertexInfo.closestBaseIndex);
+
+                        if (vertexTransferDataArray != null && vIndex < vertexTransferDataArray.Length)
+                        {
+                            vertexTransferDataArray[vIndex] = new SurfaceDataTransferVertex()
+                            {
+                                closestMesh = defaultVertexInfo.closestBaseIndex,
+                                closestIndex0 = defaultVertexInfo.closestIndex0,
+                                closestIndex1 = defaultVertexInfo.closestIndex1,
+                                closestIndex2 = defaultVertexInfo.closestIndex2,
+                                closestWeight0 = defaultVertexInfo.closestWeight0,
+                                closestWeight1 = defaultVertexInfo.closestWeight1,
+                                closestWeight2 = defaultVertexInfo.closestWeight2
+                            };
+                        }
+                        if (perShapeVertexTransferDataArrays != null)
+                        {
+                            foreach (var entry in perShapeVertexInfos)
+                            {
+                                if (!perShapeVertexTransferDataArrays.TryGetValue(entry.Key, out var transferDataArray))
+                                {
+                                    transferDataArray = new SurfaceDataTransferVertex[localMesh.vertexCount];
+                                    perShapeVertexTransferDataArrays[entry.Key] = transferDataArray;
+                                }
+
+                                if (transferDataArray != null && vIndex < transferDataArray.Length)
+                                {
+                                    var vertexInfo = entry.Value;
+                                    transferDataArray[vIndex] = new SurfaceDataTransferVertex()
+                                    {
+                                        closestMesh = vertexInfo.closestBaseIndex,
+                                        closestIndex0 = vertexInfo.closestIndex0,
+                                        closestIndex1 = vertexInfo.closestIndex1,
+                                        closestIndex2 = vertexInfo.closestIndex2,
+                                        closestWeight0 = vertexInfo.closestWeight0,
+                                        closestWeight1 = vertexInfo.closestWeight1,
+                                        closestWeight2 = vertexInfo.closestWeight2 
+                                    };
+                                }
+                            }
+                        }
+
+                        if (settings.transferBlendShapes)
+                        {
+                            // basically if the surface that a vertex is bound to changes normal direction, rotate the vertex around the center point accordingly
+                            Vector3 AddNormalBasedRotationToDelta(TempVertexInfo vertexInfo, Vector3 dependencyNormal, Vector3 deltaVertex, Vector3 deltaNormal)
+                            {
+                                if (vertexInfo.hasOrigin)
+                                {
+                                    Quaternion rotOffset = Quaternion.FromToRotation(dependencyNormal, (dependencyNormal + deltaNormal).normalized);
+                                    deltaVertex = deltaVertex + ((vertexInfo.centerPoint + (rotOffset * vertexInfo.originOffset) * vertexInfo.originOffsetDist) - localVertex);
+                                }
+
+                                return deltaVertex;
+                            }
+
+                            for (int d = 0; d < defaultBaseData.baseMeshBlendShapes.Count; d++)
+                            {
+                                var shape = defaultBaseData.baseMeshBlendShapes[d];
+                                if (shape != null && (!settings.preserveExistingBlendShapeData || !IsOriginalBlendShape(shape.name)))
+                                {
+                                    var blendShape = AddOrGetBlendShape(shape.name, shape.frames);
+                                    if (blendShape != null)
+                                    {
+                                        var vertexInfo = defaultVertexInfo;
+                                        var baseData = defaultBaseData;
+
+                                        if (perShapeVertexInfos.TryGetValue(blendShape.name, out vertexInfo))
+                                        {
+                                            baseData = settings.GetBaseData(vertexInfo.closestBaseIndex);
+                                            if (baseData.TryGetBlendShape(shape.name, out var shape_))
+                                            {
+                                                shape = shape_;
+                                            }
+                                            else
+                                            {
+                                                vertexInfo = defaultVertexInfo;
+                                                baseData = defaultBaseData;
+                                            }
+                                        }
+                                        else
+                                        {
+                                            vertexInfo = defaultVertexInfo;
+                                            baseData = defaultBaseData;
+                                        }
+
+                                        var dependencyNormal = baseData.baseMeshNormals == null ? Vector3.zero : ((baseData.baseMeshNormals[vertexInfo.closestIndex0] * vertexInfo.closestWeight0) + (baseData.baseMeshNormals[vertexInfo.closestIndex1] * vertexInfo.closestWeight1) + (baseData.baseMeshNormals[vertexInfo.closestIndex2] * vertexInfo.closestWeight2)).normalized;
+
+                                        for (int e = 0; e < blendShape.frames.Length; e++)
+                                        {
+                                            var frame = blendShape.frames[Mathf.Min(e, blendShape.frames.Length - 1)];
+                                            var baseFrame = shape.frames[e];
+
+                                            var deltaVertex = (baseFrame.deltaVertices[vertexInfo.closestIndex0] * vertexInfo.closestWeight0) + (baseFrame.deltaVertices[vertexInfo.closestIndex1] * vertexInfo.closestWeight1) + (baseFrame.deltaVertices[vertexInfo.closestIndex2] * vertexInfo.closestWeight2);
+                                            var deltaNormal = (baseFrame.deltaNormals[vertexInfo.closestIndex0] * vertexInfo.closestWeight0) + (baseFrame.deltaNormals[vertexInfo.closestIndex1] * vertexInfo.closestWeight1) + (baseFrame.deltaNormals[vertexInfo.closestIndex2] * vertexInfo.closestWeight2);
+                                            var deltaTangent = (baseFrame.deltaTangents[vertexInfo.closestIndex0] * vertexInfo.closestWeight0) + (baseFrame.deltaTangents[vertexInfo.closestIndex1] * vertexInfo.closestWeight1) + (baseFrame.deltaTangents[vertexInfo.closestIndex2] * vertexInfo.closestWeight2);
+
+                                            deltaVertex = AddNormalBasedRotationToDelta(vertexInfo, dependencyNormal, deltaVertex, deltaNormal);
+
+                                            frame.deltaVertices[vIndex] = deltaVertex;
+                                            frame.deltaNormals[vIndex] = deltaNormal;
+                                            frame.deltaTangents[vIndex] = deltaTangent;
+                                        }
                                     }
                                 }
                             }
                         }
-                    }
 
-                    if (settings.transferNormals && settings.baseMeshNormals != null)
-                    {
-                        localNormals[vIndex] = Vector3.LerpUnclamped(localNormals[vIndex], (settings.baseMeshNormals[closestIndex0] * closestWeight0) + (settings.baseMeshNormals[closestIndex1] * closestWeight1) + (settings.baseMeshNormals[closestIndex2] * closestWeight2), settings.transferNormalsWeight).normalized;
-
-                        for (int d = 0; d < settings.baseMeshBlendShapes.Count; d++)
+                        if (settings.transferNormals)
                         {
-                            var shape = settings.baseMeshBlendShapes[d];
-                            if (shape != null)
+                            if (defaultBaseData.baseMeshNormals != null)
                             {
-                                var blendShape = AddOrGetBlendShape(shape.name, shape.frames);
-                                if (blendShape != null)
+                                localNormals[vIndex] = Vector3.LerpUnclamped(localNormals[vIndex], (defaultBaseData.baseMeshNormals[defaultVertexInfo.closestIndex0] * defaultVertexInfo.closestWeight0) + (defaultBaseData.baseMeshNormals[defaultVertexInfo.closestIndex1] * defaultVertexInfo.closestWeight1) + (defaultBaseData.baseMeshNormals[defaultVertexInfo.closestIndex2] * defaultVertexInfo.closestWeight2), settings.transferNormalsWeight).normalized;
+                            }
+
+                            for (int d = 0; d < defaultBaseData.baseMeshBlendShapes.Count; d++)
+                            {
+                                var shape = defaultBaseData.baseMeshBlendShapes[d];
+                                if (shape != null)
                                 {
-                                    for (int e = 0; e < blendShape.frames.Length; e++)
+                                    var blendShape = AddOrGetBlendShape(shape.name, shape.frames);
+                                    if (blendShape != null)
                                     {
-                                        var frame = blendShape.frames[Mathf.Min(e, blendShape.frames.Length - 1)];
-                                        var baseFrame = shape.frames[e];
+                                        var vertexInfo = defaultVertexInfo;
+                                        var baseData = defaultBaseData;
 
-                                        var deltaNormal = (baseFrame.deltaNormals[closestIndex0] * closestWeight0) + (baseFrame.deltaNormals[closestIndex1] * closestWeight1) + (baseFrame.deltaNormals[closestIndex2] * closestWeight2);
+                                        if (perShapeVertexInfos.TryGetValue(blendShape.name, out vertexInfo))
+                                        {
+                                            baseData = settings.GetBaseData(vertexInfo.closestBaseIndex);
+                                            if (baseData.TryGetBlendShape(shape.name, out var shape_))
+                                            {
+                                                shape = shape_;
+                                            }
+                                            else
+                                            {
+                                                vertexInfo = defaultVertexInfo;
+                                                baseData = defaultBaseData;
+                                            }
+                                        }
+                                        else
+                                        {
+                                            vertexInfo = defaultVertexInfo;
+                                            baseData = defaultBaseData;
+                                        }
 
-                                        Vector3.LerpUnclamped(frame.deltaNormals[vIndex], deltaNormal, settings.transferNormalsWeight);
+                                        for (int e = 0; e < blendShape.frames.Length; e++)
+                                        {
+                                            var frame = blendShape.frames[Mathf.Min(e, blendShape.frames.Length - 1)];
+                                            var baseFrame = shape.frames[e];
 
-                                        frame.deltaNormals[vIndex] = deltaNormal;
+                                            var deltaNormal = (baseFrame.deltaNormals[vertexInfo.closestIndex0] * vertexInfo.closestWeight0) + (baseFrame.deltaNormals[vertexInfo.closestIndex1] * vertexInfo.closestWeight1) + (baseFrame.deltaNormals[vertexInfo.closestIndex2] * vertexInfo.closestWeight2);
+
+                                            Vector3.LerpUnclamped(frame.deltaNormals[vIndex], deltaNormal, settings.transferNormalsWeight);
+
+                                            frame.deltaNormals[vIndex] = deltaNormal;
+                                        }
                                     }
                                 }
                             }
                         }
-                    }
 
-                    if (settings.transferUVs && settings.baseMeshUVs != null)
-                    {
-                        for (int a = 0; a < uvTransferCount; a++)
+                        if (settings.transferUVs && defaultBaseData.baseMeshUVs != null)
                         {
-                            int baseIndex = a + settings.uvTransferRange.x;
-                            if (baseIndex < 0) continue;
+                            for (int a = 0; a < uvTransferCount; a++)
+                            {
+                                int baseIndex = a + settings.uvTransferRange.x;
+                                if (baseIndex < 0) continue;
 
-                            int localIndex = a + settings.uvChannelIndexTransferOffset;
-                            if (localIndex < 0 || localIndex >= 8) continue;
+                                int localIndex = a + settings.uvChannelIndexTransferOffset;
+                                if (localIndex < 0 || localIndex >= 8) continue;
 
-                            var uvsBase = settings.baseMeshUVs[baseIndex];
-                            var uvsLocal = localUVs[localIndex];
-                            if ((settings.preserveExistingUVData && initialUVDataStates[localIndex]) || uvsLocal == null) continue;
+                                var uvsBase = defaultBaseData.baseMeshUVs[baseIndex];
+                                var uvsLocal = localUVs[localIndex];
+                                if ((settings.preserveExistingUVData && initialUVDataStates[localIndex]) || uvsLocal == null) continue;
 
-                            uvsLocal[vIndex] = (uvsBase[closestIndex0] * closestWeight0) + (uvsBase[closestIndex1] * closestWeight1) + (uvsBase[closestIndex2] * closestWeight2);
+                                uvsLocal[vIndex] = (uvsBase[defaultVertexInfo.closestIndex0] * defaultVertexInfo.closestWeight0) + (uvsBase[defaultVertexInfo.closestIndex1] * defaultVertexInfo.closestWeight1) + (uvsBase[defaultVertexInfo.closestIndex2] * defaultVertexInfo.closestWeight2);
+                            }
                         }
-                    }
 
-                    if (settings.transferVertexColors && settings.baseMeshVertexColors != null)
-                    {
-                        localColors[vIndex] = (settings.baseMeshVertexColors[closestIndex0] * closestWeight0) + (settings.baseMeshVertexColors[closestIndex1] * closestWeight1) + (settings.baseMeshVertexColors[closestIndex2] * closestWeight2);
-                    }
-
-                    if (settings.transferBoneWeights)
-                    {
-                        var boneWeights = settings.baseMeshBoneWeights;
-                        var bonesPerVertex = settings.baseMeshBonesPerVertex;
-                        var boneWeightStartIndices = settings.baseMeshBoneWeightStartIndices;
-
-                        if (boneWeights.IsCreated && bonesPerVertex.IsCreated && boneWeightStartIndices != null)
+                        if (settings.transferVertexColors && defaultBaseData.baseMeshVertexColors != null)
                         {
-                            int startIndex = boneWeightStartIndices[closestIndex0];
-                            int count = bonesPerVertex[closestIndex0];
-                            for (int d = 0; d < count; d++)
+                            localColors[vIndex] = (defaultBaseData.baseMeshVertexColors[defaultVertexInfo.closestIndex0] * defaultVertexInfo.closestWeight0) + (defaultBaseData.baseMeshVertexColors[defaultVertexInfo.closestIndex1] * defaultVertexInfo.closestWeight1) + (defaultBaseData.baseMeshVertexColors[defaultVertexInfo.closestIndex2] * defaultVertexInfo.closestWeight2);
+                        }
+
+                        if (settings.transferBoneWeights)
+                        {
+                            var boneWeights = defaultBaseData.baseMeshBoneWeights;
+                            var bonesPerVertex = defaultBaseData.baseMeshBonesPerVertex;
+                            var boneWeightStartIndices = defaultBaseData.baseMeshBoneWeightStartIndices;
+
+                            if (boneWeights.IsCreated && bonesPerVertex.IsCreated && boneWeightStartIndices != null)
                             {
-                                int index = startIndex + d;
-                                var bw = boneWeights[index];
+                                int startIndex = boneWeightStartIndices[defaultVertexInfo.closestIndex0];
+                                int count = bonesPerVertex[defaultVertexInfo.closestIndex0];
+                                for (int d = 0; d < count; d++)
+                                {
+                                    int index = startIndex + d;
+                                    var bw = boneWeights[index];
 
-                                int2 i = new int2(vIndex, bw.boneIndex);
+                                    int2 i = new int2(vIndex, bw.boneIndex);
 
-                                newBoneWeights.TryGetValue(i, out float currentWeight);
-                                newBoneWeights[i] = currentWeight + (bw.weight * closestWeight0);
-                            }
+                                    newBoneWeights.TryGetValue(i, out float currentWeight);
+                                    newBoneWeights[i] = currentWeight + (bw.weight * defaultVertexInfo.closestWeight0);
+                                }
 
-                            startIndex = boneWeightStartIndices[closestIndex1];
-                            count = bonesPerVertex[closestIndex1];
-                            for (int d = 0; d < count; d++)
-                            {
-                                int index = startIndex + d;
-                                var bw = boneWeights[index];
+                                startIndex = boneWeightStartIndices[defaultVertexInfo.closestIndex1];
+                                count = bonesPerVertex[defaultVertexInfo.closestIndex1];
+                                for (int d = 0; d < count; d++)
+                                {
+                                    int index = startIndex + d;
+                                    var bw = boneWeights[index];
 
-                                int2 i = new int2(vIndex, bw.boneIndex);
+                                    int2 i = new int2(vIndex, bw.boneIndex);
 
-                                newBoneWeights.TryGetValue(i, out float currentWeight);
-                                newBoneWeights[i] = currentWeight + (bw.weight * closestWeight1);
-                            }
+                                    newBoneWeights.TryGetValue(i, out float currentWeight);
+                                    newBoneWeights[i] = currentWeight + (bw.weight * defaultVertexInfo.closestWeight1);
+                                }
 
-                            startIndex = boneWeightStartIndices[closestIndex2];
-                            count = bonesPerVertex[closestIndex2];
-                            for (int d = 0; d < count; d++)
-                            {
-                                int index = startIndex + d;
-                                var bw = boneWeights[index];
+                                startIndex = boneWeightStartIndices[defaultVertexInfo.closestIndex2];
+                                count = bonesPerVertex[defaultVertexInfo.closestIndex2];
+                                for (int d = 0; d < count; d++)
+                                {
+                                    int index = startIndex + d;
+                                    var bw = boneWeights[index];
 
-                                int2 i = new int2(vIndex, bw.boneIndex);
+                                    int2 i = new int2(vIndex, bw.boneIndex);
 
-                                newBoneWeights.TryGetValue(i, out float currentWeight);
-                                newBoneWeights[i] = currentWeight + (bw.weight * closestWeight2);
+                                    newBoneWeights.TryGetValue(i, out float currentWeight);
+                                    newBoneWeights[i] = currentWeight + (bw.weight * defaultVertexInfo.closestWeight2);
+                                }
                             }
                         }
                     }
                 }
-            }
 
-            if (settings.transferBlendShapes || settings.transferNormals)
-            {
-                mesh.ClearBlendShapes();
-                foreach (var shape in blendShapes)
+                if (settings.transferBlendShapes || settings.transferNormals)
                 {
-                    shape.AddToMesh(mesh);
-                }
-            }
-
-            if (settings.transferNormals)
-            {
-                mesh.normals = localNormals;
-            }
-
-            if (settings.transferVertexColors)
-            {
-                mesh.colors = localColors;
-            }
-
-            if (settings.transferUVs)
-            {
-                for (int a = 0; a < uvTransferCount; a++)
-                {
-                    int localIndex = a + settings.uvChannelIndexTransferOffset;
-                    if (localIndex < 0 || localIndex >= 8) continue;
-
-                    var uvsLocal = localUVs[localIndex];
-                    if ((settings.preserveExistingUVData && initialUVDataStates[localIndex]) || uvsLocal == null) continue;
-
-                    mesh.SetUVs(localIndex, uvsLocal);
-                }
-            }
-
-            if (settings.transferBoneWeights && newBoneWeights.Count > 0)
-            {
-                var boneWeights = new NativeList<BoneWeight1>(mesh.vertexCount, Allocator.Persistent);
-                var bonesPerVertex = new NativeArray<byte>(mesh.vertexCount, Allocator.Persistent);
-
-                List<BoneWeight1> vertexBoneWeights = new List<BoneWeight1>();
-                for (int c = 0; c < mesh.vertexCount; c++)
-                {
-                    vertexBoneWeights.Clear();
-                    foreach (var pair in newBoneWeights)
+                    mesh.ClearBlendShapes();
+                    foreach (var shape in blendShapes)
                     {
-                        if (pair.Key.x == c)
-                        {
-                            var bw = new BoneWeight1();
-                            bw.boneIndex = pair.Key.y;
-                            bw.weight = pair.Value;
-
-                            vertexBoneWeights.Add(bw);
-                        }
+                        shape.AddToMesh(mesh);
                     }
-                    vertexBoneWeights.Sort((BoneWeight1 a, BoneWeight1 b) => (int)Mathf.Sign(b.weight - a.weight));
-                    if (vertexBoneWeights.Count > 8) vertexBoneWeights.RemoveRange(8, vertexBoneWeights.Count - 8);
+                }
 
-                    float totalWeight = 0;
-                    foreach (var bw in vertexBoneWeights) totalWeight += bw.weight;
-                    if (totalWeight > 0)
+                if (settings.transferNormals)
+                {
+                    mesh.normals = localNormals;
+                }
+
+                if (settings.transferVertexColors)
+                {
+                    mesh.colors = localColors;
+                }
+
+                if (settings.transferUVs)
+                {
+                    for (int a = 0; a < uvTransferCount; a++)
                     {
+                        int localIndex = a + settings.uvChannelIndexTransferOffset;
+                        if (localIndex < 0 || localIndex >= 8) continue;
+
+                        var uvsLocal = localUVs[localIndex];
+                        if ((settings.preserveExistingUVData && initialUVDataStates[localIndex]) || uvsLocal == null) continue;
+
+                        mesh.SetUVs(localIndex, uvsLocal);
+                    }
+                }
+
+                if (settings.transferBoneWeights && newBoneWeights.Count > 0)
+                {
+                    var boneWeights = new NativeList<BoneWeight1>(mesh.vertexCount, Allocator.Persistent);
+                    var bonesPerVertex = new NativeArray<byte>(mesh.vertexCount, Allocator.Persistent);
+
+                    List<BoneWeight1> vertexBoneWeights = new List<BoneWeight1>();
+                    for (int c = 0; c < mesh.vertexCount; c++)
+                    {
+                        vertexBoneWeights.Clear();
+                        foreach (var pair in newBoneWeights)
+                        {
+                            if (pair.Key.x == c)
+                            {
+                                var bw = new BoneWeight1();
+                                bw.boneIndex = pair.Key.y;
+                                bw.weight = pair.Value;
+
+                                vertexBoneWeights.Add(bw);
+                            }
+                        }
+                        vertexBoneWeights.Sort((BoneWeight1 a, BoneWeight1 b) => (int)Mathf.Sign(b.weight - a.weight));
+                        if (vertexBoneWeights.Count > 8) vertexBoneWeights.RemoveRange(8, vertexBoneWeights.Count - 8);
+
+                        float totalWeight = 0;
+                        foreach (var bw in vertexBoneWeights) totalWeight += bw.weight;
+                        if (totalWeight > 0)
+                        {
+                            for (int d = 0; d < vertexBoneWeights.Count; d++)
+                            {
+                                var bw = vertexBoneWeights[d];
+                                bw.weight /= totalWeight;
+                                vertexBoneWeights[d] = bw;
+                            }
+                        }
+
                         for (int d = 0; d < vertexBoneWeights.Count; d++)
                         {
                             var bw = vertexBoneWeights[d];
-                            bw.weight /= totalWeight;
-                            vertexBoneWeights[d] = bw;
+                            boneWeights.Add(bw);
                         }
+                        bonesPerVertex[c] = (byte)vertexBoneWeights.Count;
                     }
 
-                    for (int d = 0; d < vertexBoneWeights.Count; d++)
-                    {
-                        var bw = vertexBoneWeights[d];
-                        boneWeights.Add(bw);
-                    }
-                    bonesPerVertex[c] = (byte)vertexBoneWeights.Count;
+                    mesh.SetBoneWeights(bonesPerVertex, boneWeights.AsArray());
+
+                    boneWeights.Dispose();
+                    bonesPerVertex.Dispose();
                 }
 
-                mesh.SetBoneWeights(bonesPerVertex, boneWeights.AsArray());
-
-                boneWeights.Dispose();
-                bonesPerVertex.Dispose();
+                return mesh;
             }
-
-            return mesh;
         }
 
         #endregion
@@ -1193,10 +1592,13 @@ namespace Swole.Morphing
 
     public class BaseMeshData : IDisposable
     {
+        public Mesh baseMesh;
+
         public int[] baseMeshTriangles = null;
 
         public Vector3[] baseMeshVertices = null;
         public Vector3[] baseMeshNormals = null;
+        public Vector4[] baseMeshTangents = null;
         public Color[] baseMeshColors = null;
         public List<Vector4[]> baseMeshUVs = null;
 
@@ -1214,10 +1616,14 @@ namespace Swole.Morphing
 
         public void UpdateBaseMeshData(Mesh baseMesh)
         {
+            this.baseMesh = baseMesh;
+
             baseMeshTriangles = baseMesh.triangles;
 
             baseMeshVertices = baseMesh.vertices;
             baseMeshNormals = baseMesh.normals;
+            baseMeshTangents = baseMesh.tangents;
+            if (baseMeshTangents == null || baseMeshTangents.Length <= 0) baseMeshTangents = new Vector4[baseMesh.vertexCount];
             baseMeshColors = baseMesh.colors;
             baseMeshUVs = baseMesh.GetAllUVs(4, baseMeshUVs, true);
 
@@ -1245,6 +1651,24 @@ namespace Swole.Morphing
                 baseMeshBonesPerVertex.Dispose();
                 baseMeshBonesPerVertex = default;
             }
+        }
+
+        public static implicit operator MorphUtils.TransferSurfaceDataBase(BaseMeshData baseMeshData)
+        {
+            var output = new MorphUtils.TransferSurfaceDataBase();
+
+            output.baseMesh = baseMeshData.baseMesh;
+            output.baseMeshTriangles = baseMeshData.baseMeshTriangles;
+            output.baseMeshVertices = baseMeshData.baseMeshVertices;
+            output.baseMeshNormals = baseMeshData.baseMeshNormals;
+            output.baseMeshTangents = baseMeshData.baseMeshTangents;
+            output.baseMeshUVs = baseMeshData.baseMeshUVs;
+            output.baseMeshBlendShapes = baseMeshData.baseMeshBlendShapes;
+            output.baseMeshBoneWeights = baseMeshData.baseMeshBoneWeights;
+            output.baseMeshBonesPerVertex = baseMeshData.baseMeshBonesPerVertex;
+            output.baseMeshBoneWeightStartIndices = baseMeshData.baseMeshBoneWeightStartIndices;
+
+            return output;
         }
     }
 
@@ -1818,6 +2242,7 @@ namespace Swole.Morphing
         public BlendShapeBaseMix[] baseTargetMix;
         [Tooltip("Optional. Makes this shape relative to the base morphs.")]
         public string[] baseMorphNames;
+        [Tooltip("Used by external systems for varyious functions")]
         public float weight;
         public bool animatable;
         public float deltaMultiplier;
@@ -2221,6 +2646,13 @@ namespace Swole.Morphing
         public bool animatable;
 
         public BlendShapeTarget[] targets;
+    }
+
+    [Serializable]
+    public struct NameFloat
+    {
+        public string name;
+        public float value;
     }
 
     [Serializable]
