@@ -23,6 +23,9 @@ namespace Swole.API.Unity.Animation
                 return false;
             }
         }
+        public bool HasPositionKeyframes => HasKeyframes;
+        public bool HasRotationKeyframes => HasKeyframes;
+        public bool HasScaleKeyframes => HasKeyframes;
         public float GetClosestKeyframeTime(float referenceTime, int framesPerSecond, bool includeReferenceTime = true, IntFromDecimalDelegate getFrameIndex = null)
         {
             float closestTime = 0;
@@ -469,6 +472,11 @@ namespace Swole.API.Unity.Animation
         public void ClearTransformKeys()
         {
             if (frames != null) frames = new ITransformCurve.Frame[0];
+        }
+
+        public void Optimize(bool includePosition = true, float positionTolerance = 0.005f, bool includeRotation = true, float rotationToleranceDeg = 1f, bool includeScale = true, float scaleTolerance = 0.005f)
+        {
+            // TODO: Add optimization support for linear transform curves
         }
 
     }

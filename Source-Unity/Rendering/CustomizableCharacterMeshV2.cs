@@ -1578,7 +1578,6 @@ namespace Swole.Morphing
                         if (finalDeltasBuffer.buffer is InstanceBuffer<MeshVertexDelta> finalDeltasBuffer_)
                         {
                             finalDeltasBuffer_.WriteToBuffer(finalVertexDeltas.AsArray(), 0, 0, finalVertexDeltas.Length);
-                            Debug.Log($"Wrote to deltas buffer {finalVertexDeltas.Length}");
                         }
                     }
                 }
@@ -1758,7 +1757,7 @@ namespace Swole.Morphing
 
                 if (indicesToUpdate.Length > 0)
                 {
-                    Debug.Log($"Updating {indicesToUpdate.Length} meshes");
+                    //Debug.Log($"Updating {indicesToUpdate.Length} meshes");
 
                     JobHandle resetHandle = new ResetFinalVertexDeltasJob()
                     {
@@ -1899,11 +1898,19 @@ namespace Swole.Morphing
                 bustSizes = new NativeList<float2>(maxInstanceCount, Allocator.Persistent);
                 bustSizes.AddReplicate(0f, maxInstanceCount);
 
+                data.TryPrecache();
                 bool isPrecached = data.IsPrecached;
+                if (!isPrecached)
+                {
+#if UNITY_EDITOR
+                    Debug.LogWarning($"Customizable mesh data {debug} is not precached. Performance may be impacted.");
+#else
+                    Debug.LogWarning($"Customizable mesh data is not precached. Performance may be impacted.");
+#endif
+                }
 
 #if UNITY_EDITOR
                 Debug.Log($"CHECKING DATA FOR {debug}");
-                Debug.LogWarning($"DATA NOT PRECACHED");
                 for(int a = data.standaloneShapes.x; a <= data.standaloneShapes.y; a++)
                 {
                     var shape = data.GetShape(a);
@@ -2936,7 +2943,7 @@ namespace Swole.Morphing
 
         }
 
-        [Serializable]
+        [Serializable, NonAnimatable]
         public class SerializedData : IDisposable
         {
 
@@ -3839,14 +3846,18 @@ namespace Swole.Morphing
 
             #region Pre-Caching
 
-            [SerializeField, HideInInspector]
+            //[SerializeField, HideInInspector] 
+            [NonSerialized] // force regeneration on first call to save disk space?
             public MeshVertexDelta[] precache_meshShapeDeltas;
-            [SerializeField, HideInInspector]
+            //[SerializeField, HideInInspector]
+            [NonSerialized] // force regeneration on first call to save disk space?
             public float[] precache_meshShapeFrameWeights;
-            [SerializeField, HideInInspector]
+            //[SerializeField, HideInInspector]
+            [NonSerialized] // force regeneration on first call to save disk space?
             public int2[] precache_meshShapeInfos;
 
-            [SerializeField, HideInInspector]
+            //[SerializeField, HideInInspector]
+            [NonSerialized] // force regeneration on first call to save disk space?
             public float[] precache_vertexGroups;
 
             [SerializeField, HideInInspector]
@@ -3871,6 +3882,10 @@ namespace Swole.Morphing
 
             public void PrecacheMuscleGroupInfluences()
             {
+                if (precache_muscleGroupInfluences != null && precache_muscleGroupInfluences.Length > 0) return;
+
+                Debug.Log("Pre-caching muscle group influences...");
+
                 tempBoneWeights.Clear();
 
                 int muscleGroupCount = MuscleGroupsCount;
@@ -3922,6 +3937,10 @@ namespace Swole.Morphing
 
             public void PrecacheFatGroupInfluences()
             {
+                if (precache_fatGroupInfluences != null && precache_fatGroupInfluences.Length > 0) return;
+
+                Debug.Log("Pre-caching fat group influences...");
+
                 tempBoneWeights.Clear();
 
                 int fatGroupCount = FatGroupsCount;
@@ -3971,6 +3990,10 @@ namespace Swole.Morphing
 
             public void PrecacheMeshShapeFrameDeltas()
             {
+                if (precache_meshShapeFrameDeltas != null && precache_meshShapeFrameDeltas.Length > 0) return;
+
+                Debug.Log("Pre-caching mesh shape frame deltas..."); 
+
                 tempFrameDeltas.Clear();
 
                 foreach (var meshShape in meshShapes)
@@ -4000,181 +4023,217 @@ namespace Swole.Morphing
                 && (precache_blankVariationGroupControlWeights != null && precache_blankVariationGroupControlWeights.Length != 0)
                 && (precache_variationGroupVertexWeights != null && precache_variationGroupVertexWeights.Length != 0);
 
+            public void TryPrecache()
+            {
+                if (IsPrecached) return;
+                Precache();
+            }
             public void Precache()
             {
                 List<float> tempFloats = new List<float>();
                 List<GroupControlWeight2> tempGroupControlWeights = new List<GroupControlWeight2>();
                 List<GroupVertexControlWeight> tempGroupVertexWeights = new List<GroupVertexControlWeight>();
 
-                precache_meshShapeDeltas = new MeshVertexDelta[MeshShapeDeltasCount];
-                precache_meshShapeInfos = new int2[MeshShapeCount];
-                if (meshShapes != null)
+                if (precache_meshShapeDeltas == null || precache_meshShapeDeltas.Length == 0 || precache_meshShapeInfos == null || precache_meshShapeInfos.Length == 0 || precache_meshShapeFrameWeights == null || precache_meshShapeFrameWeights.Length == 0)
                 {
-                    int ind = 0;
-                    int frameInd = 0;
-                    for (int i = 0; i < meshShapes.Length; i++)
+                    Debug.Log("Pre-caching mesh shape data...");
+
+                    precache_meshShapeDeltas = new MeshVertexDelta[MeshShapeDeltasCount];
+                    precache_meshShapeInfos = new int2[MeshShapeCount];
+                    if (meshShapes != null)
                     {
-                        var shape = meshShapes[i];
-
-                        if (shape == null) continue;
-
-                        precache_meshShapeInfos[i] = new int2(frameInd, shape.frames == null ? 0 : shape.frames.Length); // x = start index in frame weights buffer, y = frame count
-
-                        if (shape.frames == null) continue;
-
-                        for (int j = 0; j < shape.frames.Length; j++)
+                        int ind = 0;
+                        int frameInd = 0;
+                        for (int i = 0; i < meshShapes.Length; i++)
                         {
-                            var frame = shape.frames[j];
-                            tempFloats.Add(frame.weight);
-                            frameInd++;
+                            var shape = meshShapes[i];
 
-                            if (frame.deltas == null)
+                            if (shape == null) continue;
+
+                            precache_meshShapeInfos[i] = new int2(frameInd, shape.frames == null ? 0 : shape.frames.Length); // x = start index in frame weights buffer, y = frame count
+
+                            if (shape.frames == null) continue;
+
+                            for (int j = 0; j < shape.frames.Length; j++)
                             {
-                                ind += vertexCount;
-                                continue;
+                                var frame = shape.frames[j];
+                                tempFloats.Add(frame.weight);
+                                frameInd++;
+
+                                if (frame.deltas == null)
+                                {
+                                    ind += vertexCount;
+                                    continue;
+                                }
+
+                                int subCount = Mathf.Min(vertexCount, frame.deltas.Length);
+                                for (int k = 0; k < subCount; k++)
+                                {
+                                    precache_meshShapeDeltas[ind] = frame.deltas[k];
+                                    ind++;
+                                }
+
+                                ind += vertexCount - subCount;
+
                             }
-
-                            int subCount = Mathf.Min(vertexCount, frame.deltas.Length);
-                            for (int k = 0; k < subCount; k++)
-                            {
-                                precache_meshShapeDeltas[ind] = frame.deltas[k];
-                                ind++;
-                            }
-
-                            ind += vertexCount - subCount;
-
                         }
                     }
+                    precache_meshShapeFrameWeights = tempFloats.ToArray();
+
                 }
-                precache_meshShapeFrameWeights = tempFloats.ToArray();
 
-                precache_vertexGroups = new float[VertexGroupCount * vertexCount];
-                if (vertexGroups != null)
+                if (precache_vertexGroups == null || precache_vertexGroups.Length != VertexGroupCount * vertexCount)
                 {
-                    for (int i = 0; i < vertexGroups.Length; i++)
-                    {
-                        var group = vertexGroups[i];
-                        if (group == null) continue;
+                    Debug.Log("Pre-caching vertex group data...");
 
-                        group.InsertIntoArray(precache_vertexGroups, i * vertexCount);
+                    precache_vertexGroups = new float[VertexGroupCount * vertexCount];
+                    if (vertexGroups != null)
+                    {
+                        for (int i = 0; i < vertexGroups.Length; i++)
+                        {
+                            var group = vertexGroups[i];
+                            if (group == null) continue;
+
+                            group.InsertIntoArray(precache_vertexGroups, i * vertexCount);
+                        }
                     }
                 }
 
                 #region Muscle Groups
 
-                tempGroupControlWeights.Clear();
-                tempGroupVertexWeights.Clear();
-                if (muscleGroups.y >= muscleGroups.x)
+                if (precache_blankMuscleGroupControlWeights == null || precache_blankMuscleGroupControlWeights.Length == 0 || precache_muscleGroupVertexWeights == null || precache_muscleGroupVertexWeights.Length == 0)
                 {
-                    for (int g = muscleGroups.x; g <= muscleGroups.y; g++)
-                    {
-                        int localGroupIndex = g - muscleGroups.x;
-                        var vertexGroup = vertexGroups[g];
-                        int weightsStartIndex = tempGroupVertexWeights.Count;
-                        tempGroupControlWeights.Add(new GroupControlWeight2()
-                        {
-                            groupIndex = localGroupIndex,
-                            vertexCount = vertexGroup.EntryCount,
-                            vertexSequenceStartIndex = weightsStartIndex,
-                            weight = 0f
-                        });
 
-                        for (int i = 0; i < vertexGroup.EntryCount; i++)
+                    Debug.Log("Pre-caching muscle group data...");
+
+                    tempGroupControlWeights.Clear();
+                    tempGroupVertexWeights.Clear();
+                    if (muscleGroups.y >= muscleGroups.x)
+                    {
+                        for (int g = muscleGroups.x; g <= muscleGroups.y; g++)
                         {
-                            vertexGroup.GetEntry(i, out int vertexIndex, out float vertexWeight);
-#if UNITY_EDITOR
-                            if (vertexWeight > 1.001f) Debug.LogWarning($"Vertex index {vertexIndex} for muscle group {vertexGroup.name} has weight of {vertexWeight}");
-#endif
-                            tempGroupVertexWeights.Add(new GroupVertexControlWeight()
+                            int localGroupIndex = g - muscleGroups.x;
+                            var vertexGroup = vertexGroups[g];
+                            int weightsStartIndex = tempGroupVertexWeights.Count;
+                            tempGroupControlWeights.Add(new GroupControlWeight2()
                             {
                                 groupIndex = localGroupIndex,
-                                vertexIndex = vertexIndex,
-                                weight = vertexWeight
+                                vertexCount = vertexGroup.EntryCount,
+                                vertexSequenceStartIndex = weightsStartIndex,
+                                weight = 0f
                             });
+
+                            for (int i = 0; i < vertexGroup.EntryCount; i++)
+                            {
+                                vertexGroup.GetEntry(i, out int vertexIndex, out float vertexWeight);
+#if UNITY_EDITOR
+                                if (vertexWeight > 1.001f) Debug.LogWarning($"Vertex index {vertexIndex} for muscle group {vertexGroup.name} has weight of {vertexWeight}");
+#endif
+                                tempGroupVertexWeights.Add(new GroupVertexControlWeight()
+                                {
+                                    groupIndex = localGroupIndex,
+                                    vertexIndex = vertexIndex,
+                                    weight = vertexWeight
+                                });
+                            }
                         }
                     }
-                }
 
-                precache_blankMuscleGroupControlWeights = tempGroupControlWeights.ToArray();
-                precache_muscleGroupVertexWeights = tempGroupVertexWeights.ToArray();
+                    precache_blankMuscleGroupControlWeights = tempGroupControlWeights.ToArray();
+                    precache_muscleGroupVertexWeights = tempGroupVertexWeights.ToArray();
+
+                }
 
                 #endregion
 
                 #region Fat Groups
 
-                tempGroupControlWeights.Clear();
-                tempGroupVertexWeights.Clear();
-                if (fatGroups.y >= fatGroups.x)
+                if (precache_blankFatGroupControlWeights == null || precache_blankFatGroupControlWeights.Length == 0 || precache_fatGroupVertexWeights == null || precache_fatGroupVertexWeights.Length == 0)
                 {
-                    for (int g = fatGroups.x; g <= fatGroups.y; g++)
+
+                    Debug.Log("Pre-caching fat group data...");
+
+                    tempGroupControlWeights.Clear();
+                    tempGroupVertexWeights.Clear();
+                    if (fatGroups.y >= fatGroups.x)
                     {
-                        int localGroupIndex = g - fatGroups.x;
-                        var vertexGroup = vertexGroups[g];
-                        tempGroupControlWeights.Add(new GroupControlWeight2()
+                        for (int g = fatGroups.x; g <= fatGroups.y; g++)
                         {
-                            groupIndex = localGroupIndex,
-                            vertexCount = vertexGroup.EntryCount,
-                            vertexSequenceStartIndex = tempGroupVertexWeights.Count,
-                            weight = new float2(0f, 0f) // TODO: Apply fat muscle modifier value to y component
-                        });
-
-                        for (int i = 0; i < vertexGroup.EntryCount; i++)
-                        {
-                            vertexGroup.GetEntry(i, out int vertexIndex, out float vertexWeight);
-
-                            tempGroupVertexWeights.Add(new GroupVertexControlWeight()
+                            int localGroupIndex = g - fatGroups.x;
+                            var vertexGroup = vertexGroups[g];
+                            tempGroupControlWeights.Add(new GroupControlWeight2()
                             {
                                 groupIndex = localGroupIndex,
-                                vertexIndex = vertexIndex,
-                                weight = vertexWeight
+                                vertexCount = vertexGroup.EntryCount,
+                                vertexSequenceStartIndex = tempGroupVertexWeights.Count,
+                                weight = new float2(0f, 0f) // TODO: Apply fat muscle modifier value to y component
                             });
+
+                            for (int i = 0; i < vertexGroup.EntryCount; i++)
+                            {
+                                vertexGroup.GetEntry(i, out int vertexIndex, out float vertexWeight);
+
+                                tempGroupVertexWeights.Add(new GroupVertexControlWeight()
+                                {
+                                    groupIndex = localGroupIndex,
+                                    vertexIndex = vertexIndex,
+                                    weight = vertexWeight
+                                });
+                            }
                         }
                     }
-                }
 
-                precache_blankFatGroupControlWeights = tempGroupControlWeights.ToArray();
-                precache_fatGroupVertexWeights = tempGroupVertexWeights.ToArray();
+                    precache_blankFatGroupControlWeights = tempGroupControlWeights.ToArray();
+                    precache_fatGroupVertexWeights = tempGroupVertexWeights.ToArray();
+
+                }
 
                 #endregion
 
                 #region Variation Groups
 
-                tempGroupControlWeights.Clear();
-                tempGroupVertexWeights.Clear();
-                if (variationGroups.y >= variationGroups.x)
+                if (precache_blankVariationGroupControlWeights == null || precache_blankVariationGroupControlWeights.Length == 0 || precache_variationGroupVertexWeights == null || precache_variationGroupVertexWeights.Length == 0)
                 {
-                    for (int g = variationGroups.x; g <= variationGroups.y; g++)
+
+                    Debug.Log("Pre-caching variation group data...");
+
+                    tempGroupControlWeights.Clear();
+                    tempGroupVertexWeights.Clear();
+                    if (variationGroups.y >= variationGroups.x)
                     {
-                        int localGroupIndex = g - variationGroups.x;
-                        var vertexGroup = vertexGroups[g];
-
-                        for (int s = variationShapes.x; s <= variationShapes.y; s++)
+                        for (int g = variationGroups.x; g <= variationGroups.y; g++)
                         {
-                            tempGroupControlWeights.Add(new GroupControlWeight2()
-                            {
-                                groupIndex = (localGroupIndex * VariationShapesCount) + s,
-                                vertexCount = vertexGroup.EntryCount,
-                                vertexSequenceStartIndex = tempGroupVertexWeights.Count,
-                                weight = 0f
-                            });
-                        }
+                            int localGroupIndex = g - variationGroups.x;
+                            var vertexGroup = vertexGroups[g];
 
-                        for (int i = 0; i < vertexGroup.EntryCount; i++)
-                        {
-                            vertexGroup.GetEntry(i, out int vertexIndex, out float vertexWeight);
-
-                            tempGroupVertexWeights.Add(new GroupVertexControlWeight()
+                            for (int s = variationShapes.x; s <= variationShapes.y; s++)
                             {
-                                groupIndex = localGroupIndex,
-                                vertexIndex = vertexIndex,
-                                weight = vertexWeight
-                            });
+                                tempGroupControlWeights.Add(new GroupControlWeight2()
+                                {
+                                    groupIndex = (localGroupIndex * VariationShapesCount) + s,
+                                    vertexCount = vertexGroup.EntryCount,
+                                    vertexSequenceStartIndex = tempGroupVertexWeights.Count,
+                                    weight = 0f
+                                });
+                            }
+
+                            for (int i = 0; i < vertexGroup.EntryCount; i++)
+                            {
+                                vertexGroup.GetEntry(i, out int vertexIndex, out float vertexWeight);
+
+                                tempGroupVertexWeights.Add(new GroupVertexControlWeight()
+                                {
+                                    groupIndex = localGroupIndex,
+                                    vertexIndex = vertexIndex,
+                                    weight = vertexWeight
+                                });
+                            }
                         }
                     }
-                }
 
-                precache_blankVariationGroupControlWeights = tempGroupControlWeights.ToArray();
-                precache_variationGroupVertexWeights = tempGroupVertexWeights.ToArray();
+                    precache_blankVariationGroupControlWeights = tempGroupControlWeights.ToArray();
+                    precache_variationGroupVertexWeights = tempGroupVertexWeights.ToArray();
+                }
 
                 #endregion
 
@@ -4191,6 +4250,30 @@ namespace Swole.Morphing
                 #endregion
 
                 PrecacheMeshShapeFrameDeltas();
+
+#if !UNITY_EDITOR
+                if (meshShapes != null)
+                {
+                    for (int i = 0; i < meshShapes.Length; i++)
+                    {
+                        var shape = meshShapes[i];
+                        if (shape == null) continue;
+
+                        shape.frames = null; // free up some memory. TODO: tell frames to reference precached array instead of nulling
+                    }
+                }
+
+                if (vertexGroups != null)
+                {
+                    for (int i = 0; i < vertexGroups.Length; i++)
+                    {
+                        var group = vertexGroups[i];
+                        if (group == null) continue;
+
+                        group.SetExternalWeightSource(precache_vertexGroups, i * vertexCount, vertexCount, true, true);
+                    }
+                }
+#endif
 
             }
 
@@ -4530,6 +4613,8 @@ namespace Swole.Morphing
 
             if (data != null) SetData(data);
 
+            if (animatablePropertiesController == null) animatablePropertiesController = gameObject.GetComponent<DynamicAnimationProperties>();
+            if (animatablePropertiesController == null && transform.parent != null) animatablePropertiesController = transform.parent.GetComponent<DynamicAnimationProperties>(); 
             SetAnimatablePropertiesController(animatablePropertiesController);
 
             Animator = animator; // force subscribe listeners
@@ -4551,8 +4636,11 @@ namespace Swole.Morphing
             var prevData = this.data;
             this.data = data;
 
-            SetupSkinnedMeshSyncs();
-            if (enabled) StartRendering();
+            if (Application.isPlaying)
+            {
+                SetupSkinnedMeshSyncs();
+                if (enabled) StartRendering();
+            }
         }
         public CustomizableCharacterMeshV2_DATA Data => data;
         public SerializedData SubData => data == null ? null : data.SerializedData;
@@ -4823,6 +4911,7 @@ namespace Swole.Morphing
             var bounds = new Bounds(meshData.boundsCenter, meshData.boundsExtents * 2f);
             
             GameObject lodObj = new GameObject("renderers"); 
+            lodObj.layer = gameObject.layer;
 
 
             var lodRootTransform = lodObj.transform;
@@ -4839,7 +4928,8 @@ namespace Swole.Morphing
                 var defaultRenderedMesh = new DefaultRenderedMesh();
 
                 GameObject rendererObj = new GameObject($"LOD_{a}");
-                rendererObj.transform.SetParent(lodRootTransform, false);
+                rendererObj.layer = gameObject.layer;
+                rendererObj.transform.SetParent(lodRootTransform, false); 
 
                 defaultRenderedMesh.meshFilter = rendererObj.AddComponent<MeshFilter>();
                 defaultRenderedMesh.meshFilter.sharedMesh = meshLOD.mesh;
@@ -5338,6 +5428,8 @@ namespace Swole.Morphing
             if (!Application.isPlaying) return;
 #endif
 
+            if (!animatablePropertiesController.IsInitialized) animatablePropertiesController.Initialize();
+
             if (dynamicAnimationProperties == null) dynamicAnimationProperties = new List<DynamicAnimationProperties.Property>(); ;
 
             string id = GetInstanceID().ToString();
@@ -5365,7 +5457,7 @@ namespace Swole.Morphing
             for (int a = 0; a < meshData.MuscleVertexGroupCount; a++)
             {
                 var group = meshData.GetMuscleVertexGroup(a);
-                if (group == null || !group.flag) continue; // animatable permission is stored in vertex group flag field
+                if (group == null /*|| !group.flag*/) continue; // animatable permission is stored in vertex group flag field // TODO: uncomment group.flag check
 
                 int shapeIndex = a;
 

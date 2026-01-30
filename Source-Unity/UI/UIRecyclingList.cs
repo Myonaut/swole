@@ -504,6 +504,12 @@ namespace Swole.UI
             foreach (var mem in listMembers) if (mem.name == name) return mem;  
             return default;
         }
+        public bool HasMemberWithName(string name)
+        {
+            if (string.IsNullOrWhiteSpace(name)) return false;
+            foreach (var mem in listMembers) if (mem.name == name) return true; 
+            return false;
+        }
         public bool TryGetMember(MemberID id, out MemberData mem) => TryGetMember(id == null ? -1 : id.index, out mem);
         public bool TryGetMember(int index, out MemberData mem)
         {
@@ -546,7 +552,8 @@ namespace Swole.UI
             listMembers.Sort(comparer);
         }
 
-        public void Clear()
+        public void Clear() => Clear(false);
+        public void Clear(bool refresh)
         {
             for (int a =  0; a < listMembers.Count; a++)
             {
@@ -556,7 +563,9 @@ namespace Swole.UI
             }
             isDirty = true;
             listMembers.Clear();
-        }
+
+            if (refresh) Refresh();
+        } 
 
         private void RefreshAnchoring()
         {

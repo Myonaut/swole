@@ -34,6 +34,7 @@ namespace Swole
 
         public bool loadInEditor;
         public bool inEditorResetToBindpose;
+        public bool inEditorMirrorAnims;
 
         public UnityEngine.AnimationClip clipToLoad;
         public GameObject prefabToLoad;
@@ -47,11 +48,12 @@ namespace Swole
 
                 if (prefabToLoad != null && clipToLoad != null)
                 {
-                    var instance = Instantiate(prefabToLoad, Vector3.zero, Quaternion.identity);
+                    var instance = Instantiate(prefabToLoad, Vector3.zero, Quaternion.identity); 
 
                     var preset = _defaultImportPreset.Duplicate();
                     preset.resetToBindpose = inEditorResetToBindpose;
-                    LoadModelAndStartNewSession(preset, instance, (ITransformCurve[] defaultTransformCurves, IPropertyCurve[] defaultPropertyCurves, Transform rootBone, Transform rigContainer) =>
+                    preset.mirrorAnimations = inEditorMirrorAnims;
+                    LoadModelAndStartNewSession(preset, instance, (ITransformCurve[] defaultTransformCurves, IPropertyCurve[] defaultPropertyCurves, Transform rootBone, Transform rigContainer, Matrix4x4 rendererL2W, Transform[] bones, Matrix4x4[] bindpose) => 
                     {
                           
                         return CustomAnimationConversion.Convert(null, defaultTransformCurves, defaultPropertyCurves, new CustomAnimationConversion.ClipPair[] 
@@ -60,7 +62,7 @@ namespace Swole
                             {
                                 mainClip = clipToLoad
                             }
-                        }, 1.0f, rootBone == null ? (rigContainer == null ? preset.rootBoneName : rigContainer.name) : rootBone.name, CustomAnimation.DefaultFrameRate, CustomAnimation.DefaultJobCurveSampleRate);
+                        }, 1.0f, rootBone == null ? (rigContainer == null ? preset.rootBoneName : rigContainer.name) : rootBone.name, CustomAnimation.DefaultFrameRate, CustomAnimation.DefaultJobCurveSampleRate, preset.mirrorAnimations, rendererL2W, bones, bindpose);
 
                     }, RegisterSession);
                 }
@@ -1580,7 +1582,7 @@ namespace Swole
 
 
         public delegate void ModelLoadIntoNewSessionDelegate(Session session);
-        public delegate CustomAnimationAsset[] ConvertAnimationsDelegate(ITransformCurve[] defaultTransformCurves, IPropertyCurve[] defaultPropertyCurves, Transform rootBone, Transform rigContainer);
+        public delegate CustomAnimationAsset[] ConvertAnimationsDelegate(ITransformCurve[] defaultTransformCurves, IPropertyCurve[] defaultPropertyCurves, Transform rootBone, Transform rigContainer, Matrix4x4 rendererL2W, Transform[] bones, Matrix4x4[] bindpose);
         public void LoadModelAndStartNewSession(ModelImportSettings activePreset, GameObject rootGameObject, ConvertAnimationsDelegate convertAnims, ModelLoadIntoNewSessionDelegate callback)
         {
             if (rootGameObject != null)
@@ -1641,11 +1643,10 @@ namespace Swole
 
                 if (mainSkinnedRenderer != null)
                 {
+                    var bindposes = mainSkinnedRenderer.sharedMesh == null ? null : mainSkinnedRenderer.sharedMesh.bindposes;
                     var bones = mainSkinnedRenderer.bones;
                     if (activePreset.resetToBindpose)
                     {
-                        var bindposes = mainSkinnedRenderer.sharedMesh.bindposes;
-
                         if (bindposes != null && bones != null)
                         {
                             for (int a = 0; a < Mathf.Min(bindposes.Length, bones.Length); a++)
@@ -1748,7 +1749,7 @@ namespace Swole
                         }
 
                         CustomAnimationConversion.CreateDefaultCurvesFromPosedObject(avatar, bones, out var defaultA, out var defaultB);
-                        var anims = convertAnims(defaultA, defaultB, rootBone, rigContainer);
+                        var anims = convertAnims(defaultA, defaultB, rootBone, rigContainer, mainSkinnedRenderer.transform.localToWorldMatrix, bones, bindposes);
 
                         var animator = rootGameObject.AddOrGetComponent<CustomAnimator>();
                         session.animator = animator;
@@ -1778,9 +1779,9 @@ namespace Swole
 
             void OnLoad(AssetLoaderContext context)
             {
-                LoadModelAndStartNewSession(activePreset, context.RootGameObject, (ITransformCurve[] defaultTransformCurves, IPropertyCurve[] defaultPropertyCurves, Transform rootBone, Transform rigContainer) =>
+                LoadModelAndStartNewSession(activePreset, context.RootGameObject, (ITransformCurve[] defaultTransformCurves, IPropertyCurve[] defaultPropertyCurves, Transform rootBone, Transform rigContainer, Matrix4x4 rendererL2W, Transform[] bones, Matrix4x4[] bindpose) =>
                 {
-                    return CustomAnimationConversion.Convert(context, defaultTransformCurves, defaultPropertyCurves, rootBone == null ? (rigContainer == null ? activePreset.rootBoneName : rigContainer.name) : rootBone.name, CustomAnimation.DefaultFrameRate, CustomAnimation.DefaultJobCurveSampleRate, activePreset.scaleCompensation);
+                    return CustomAnimationConversion.Convert(context, defaultTransformCurves, defaultPropertyCurves, rootBone == null ? (rigContainer == null ? activePreset.rootBoneName : rigContainer.name) : rootBone.name, CustomAnimation.DefaultFrameRate, CustomAnimation.DefaultJobCurveSampleRate, activePreset.scaleCompensation, activePreset.mirrorAnimations, rendererL2W, bones, bindpose);
                 }, callback);
             }
 
@@ -2925,6 +2926,170 @@ namespace Swole
             RefreshAnimationBakeWindow(session, animationBakeWindow);
         }
 
+
+        public struct AnimationBakeSettings
+        {
+            public AnimationBakeType bakeType;
+
+            public bool optimizeKeys;
+            public float optimizationTolerancePosition;
+            public float optimizationToleranceRotation;
+            public float optimizationToleranceScale;
+
+            public bool bakeFkToIk;
+            public bool forceBakeIkPosition;
+            public int samplesPerKey;
+            public float resampleIntervalPos;
+            public float resampleIntervalRot;
+            public float resampleIntervalScale;
+
+            public static AnimationBakeSettings Default => new AnimationBakeSettings()
+            {
+                bakeType = AnimationBakeType.ResamplePerKey,
+                optimizeKeys = false,
+                optimizationTolerancePosition = 0.005f,
+                optimizationToleranceRotation = 1f,
+                optimizationToleranceScale = 0.005f,
+                bakeFkToIk = true,
+                forceBakeIkPosition = true,
+                samplesPerKey = 1,
+                resampleIntervalPos = 0.1f,
+                resampleIntervalRot = 0.1f,
+                resampleIntervalScale = 0.1f
+            };
+
+            public static AnimationBakeSettings ReadFromUI(Transform mainRoot, Transform settingsRoot)
+            {
+                if (settingsRoot == null) settingsRoot = mainRoot;
+                if (mainRoot == null) mainRoot = settingsRoot;
+
+                AnimationBakeSettings settings = Default;
+
+                if (mainRoot != null)
+                {
+                    var bakeTypeObj = mainRoot.FindDeepChildLiberal("bakeType");
+                    if (bakeTypeObj != null)
+                    {
+                        var dropdown = bakeTypeObj.GetComponentInChildren<UIDynamicDropdown>(true);
+                        if (dropdown != null)
+                        {
+                            var selectionIndex = dropdown.GetSelectionIndexFromText();
+                            if (selectionIndex >= 0) settings.bakeType = (AnimationBakeType)selectionIndex;
+                        }
+                        else
+                        {
+                            var selectionText = CustomEditorUtils.GetComponentTextByName(bakeTypeObj, "current-text").ToLower().RemoveWhitespace();
+                            foreach (var type in Enum.GetValues(typeof(AnimationBakeType)))
+                            {
+                                if (selectionText == type.ToString().ToLower().RemoveWhitespace())
+                                {
+                                    settings.bakeType = (AnimationBakeType)type;
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                }
+
+                if (settingsRoot != null)
+                {
+                    var bakeFkIkObj = settingsRoot.FindDeepChildLiberal("bakeFkIk");
+                    if (bakeFkIkObj != null)
+                    {
+                        var toggle = bakeFkIkObj.GetComponentInChildren<Toggle>(true);
+                        if (toggle != null) settings.bakeFkToIk = toggle.isOn;
+                    }
+
+                    var forceBakeIkPosObj = settingsRoot.FindDeepChildLiberal("forceBakeFkIkPosition");
+                    if (forceBakeIkPosObj != null)
+                    {
+                        var toggle = forceBakeIkPosObj.GetComponentInChildren<Toggle>(true);
+                        if (toggle != null) settings.forceBakeIkPosition = toggle.isOn;
+                    }
+
+                    var bakeOptionsObj = settingsRoot.FindDeepChildLiberal("bakeOptions");
+                    if (bakeOptionsObj != null)
+                    {
+                        switch (settings.bakeType)
+                        {
+                            case AnimationBakeType.ResamplePerKey:
+                                var rpk = bakeOptionsObj.FindDeepChildLiberal("rpk");
+                                if (rpk != null)
+                                {
+                                    if (int.TryParse(CustomEditorUtils.GetInputFieldTextByName(rpk, "samplesPerKey"), out var val))
+                                    {
+                                        settings.samplesPerKey = val;
+                                    }
+
+                                    var optimizeKeysObj = rpk.FindDeepChildLiberal("optimize");
+                                    if (optimizeKeysObj != null)
+                                    {
+                                        var toggle = optimizeKeysObj.GetComponentInChildren<Toggle>();
+                                        if (toggle != null) settings.optimizeKeys = toggle.isOn;
+                                    }
+
+                                    if (float.TryParse(CustomEditorUtils.GetInputFieldTextByName(rpk, "positionTolerance"), out float valf))
+                                    {
+                                        settings.optimizationTolerancePosition = valf;
+                                    }
+                                    if (float.TryParse(CustomEditorUtils.GetInputFieldTextByName(rpk, "rotationTolerance"), out valf))
+                                    {
+                                        settings.optimizationToleranceRotation = valf;
+                                    }
+                                    if (float.TryParse(CustomEditorUtils.GetInputFieldTextByName(rpk, "scaleTolerance"), out valf))
+                                    {
+                                        settings.optimizationToleranceScale = valf;
+                                    }
+
+                                }
+                                break;
+
+                            case AnimationBakeType.ResampleInterval:
+                                var ri = bakeOptionsObj.FindDeepChildLiberal("ri");
+                                if (ri != null)
+                                {
+                                    if (float.TryParse(CustomEditorUtils.GetInputFieldTextByName(ri, "resampleIntervalPos"), out var val))
+                                    {
+                                        settings.resampleIntervalPos = val;
+                                    }
+                                    if (float.TryParse(CustomEditorUtils.GetInputFieldTextByName(ri, "resampleIntervalRot"), out val))
+                                    {
+                                        settings.resampleIntervalRot = val;
+                                    }
+                                    if (float.TryParse(CustomEditorUtils.GetInputFieldTextByName(ri, "resampleIntervalScale"), out val))
+                                    {
+                                        settings.resampleIntervalScale = val;
+                                    }
+
+                                    var optimizeKeysObj = ri.FindDeepChildLiberal("optimize");
+                                    if (optimizeKeysObj != null)
+                                    {
+                                        var toggle = optimizeKeysObj.GetComponentInChildren<Toggle>();
+                                        if (toggle != null) settings.optimizeKeys = toggle.isOn;
+                                    }
+
+                                    if (float.TryParse(CustomEditorUtils.GetInputFieldTextByName(ri, "positionTolerance"), out float valf))
+                                    {
+                                        settings.optimizationTolerancePosition = valf;
+                                    }
+                                    if (float.TryParse(CustomEditorUtils.GetInputFieldTextByName(ri, "rotationTolerance"), out valf))
+                                    {
+                                        settings.optimizationToleranceRotation = valf;
+                                    }
+                                    if (float.TryParse(CustomEditorUtils.GetInputFieldTextByName(ri, "scaleTolerance"), out valf))
+                                    {
+                                        settings.optimizationToleranceScale = valf;
+                                    }
+                                }
+                                break;
+                        }
+                    }
+                }
+
+                return settings;
+            }
+        }
+
         public void RefreshAnimationBakeWindow(Session session) => RefreshAnimationBakeWindow(session, animationBakeWindow);
         public void RefreshAnimationBakeWindow(Session session, RectTransform animationBakeWindow)
         {
@@ -2970,92 +3135,12 @@ namespace Swole
                         return;
                     }
 
-                    var bakeType = AnimationBakeType.ResamplePerKey;
-                    var bakeTypeObj = mainObj.FindDeepChildLiberal("bakeType");
-                    if (bakeTypeObj != null)
-                    {
-                        var dropdown = bakeTypeObj.GetComponentInChildren<UIDynamicDropdown>(true);
-                        if (dropdown != null)
-                        {
-                            var selectionIndex = dropdown.GetSelectionIndexFromText();
-                            if (selectionIndex >= 0) bakeType = (AnimationBakeType)selectionIndex; 
-                        }
-                        else
-                        {
-                            var selectionText = CustomEditorUtils.GetComponentTextByName(bakeTypeObj, "current-text").ToLower().RemoveWhitespace();
-                            foreach(var type in Enum.GetValues(typeof(AnimationBakeType)))
-                            {
-                                if (selectionText == type.ToString().ToLower().RemoveWhitespace())
-                                {
-                                    bakeType = (AnimationBakeType)type; 
-                                    break;
-                                }
-                            }
-                        }
-                    } 
-
-                    bool bakeFkToIk = true;
-                    bool forceBakeIkPosition = true;
-                    int samplesPerKey = 1;
-                    float resampleIntervalPos = 0.1f;
-                    float resampleIntervalRot = 0.1f;
-                    float resampleIntervalScale = 0.1f;
-
-                    var bakeFkIkObj = animationBakeWindow.FindDeepChildLiberal("bakeFkIk");
-                    if (bakeFkIkObj != null)
-                    {
-                        var toggle = bakeFkIkObj.GetComponentInChildren<Toggle>(true);
-                        if (toggle != null) bakeFkToIk = toggle.isOn; 
-                    }
-
-                    var forceBakeIkPosObj = animationBakeWindow.FindDeepChildLiberal("forceBakeFkIkPosition");
-                    if (forceBakeIkPosObj != null)
-                    {
-                        var toggle = forceBakeIkPosObj.GetComponentInChildren<Toggle>(true);
-                        if (toggle != null) forceBakeIkPosition = toggle.isOn; 
-                    }
-
-                    var bakeOptionsObj = animationBakeWindow.FindDeepChildLiberal("bakeOptions");
-                    if (bakeOptionsObj != null)
-                    {
-                        switch (bakeType)
-                        {
-                            case AnimationBakeType.ResamplePerKey:
-                                var rpk = bakeOptionsObj.FindDeepChildLiberal("rpk");
-                                if (rpk != null)
-                                {
-                                    if (int.TryParse(CustomEditorUtils.GetInputFieldTextByName(rpk, "samplesPerKey"), out var val))
-                                    {
-                                        samplesPerKey = val;
-                                    }
-                                }
-                                break;
-
-                            case AnimationBakeType.ResampleInterval:
-                                var ri = bakeOptionsObj.FindDeepChildLiberal("ri");
-                                if (ri != null)
-                                {
-                                    if (float.TryParse(CustomEditorUtils.GetInputFieldTextByName(ri, "resampleIntervalPos"), out var val))
-                                    {
-                                        resampleIntervalPos = val;
-                                    }
-                                    if (float.TryParse(CustomEditorUtils.GetInputFieldTextByName(ri, "resampleIntervalRot"), out val))
-                                    {
-                                        resampleIntervalRot = val;
-                                    }
-                                    if (float.TryParse(CustomEditorUtils.GetInputFieldTextByName(ri, "resampleIntervalScale"), out val))
-                                    {
-                                        resampleIntervalScale = val; 
-                                    }
-                                }
-                                break;
-                        }
-                    }
-
                     if (activeSession.selectedAnimations != null && activeSession.selectedAnimations.Count > 0)
                     {
+                        var bakeSettings = AnimationBakeSettings.ReadFromUI(mainObj, animationBakeWindow);
+
                         List<int> toBake = new List<int>(activeSession.selectedAnimations);
-                        List<CustomAnimation> bakedAnims = new List<CustomAnimation>(); 
+                        List<CustomAnimation> bakedAnims = new List<CustomAnimation>();
                         void BakeNext()
                         {
                             if (toBake.Count <= 0) return;
@@ -3063,25 +3148,30 @@ namespace Swole
                             var next = toBake[0];
                             toBake.RemoveAt(0);
 
-                            var bake = BeginAnimationBake(activeSession.animationImports[next].asset, animName + (activeSession.selectedAnimations.Count > 1 ? $"_{(activeSession.selectedAnimations.Count - toBake.Count)}" : string.Empty), bakeType, openInNewTabObj && toBake.Count <= 0, (AnimationBake bakeObj) =>
+                            var bake = BeginAnimationBake(activeSession.animationImports[next].asset, animName + (activeSession.selectedAnimations.Count > 1 ? $"_{(activeSession.selectedAnimations.Count - toBake.Count)}" : string.Empty), bakeSettings.bakeType, openInNewTabObj && toBake.Count <= 0, (AnimationBake bakeObj) =>
                             {
                                 if (bakeObj != null && bakeObj.OutputAnimation != null)
                                 {
                                     var pkg = SwolePackage.Create(lpkg);
-                                    pkg.AddOrReplace(bakeObj.OutputAnimation);  
-                                    lpkg.Content = pkg; 
+                                    pkg.AddOrReplace(bakeObj.OutputAnimation);
+                                    lpkg.Content = pkg;
                                     ContentManager.SavePackage(lpkg);
                                 }
                             }, null, bakedAnims);
 
-                            bake.bakeFkToIk = bakeFkToIk;
-                            bake.forceBakeIkPosition = forceBakeIkPosition;
-                            bake.samplesPerKey = samplesPerKey;
-                            bake.resampleIntervalPos = resampleIntervalPos;
-                            bake.resampleIntervalRot = resampleIntervalRot;
-                            bake.resampleIntervalScale = resampleIntervalScale;
+                            bake.optimizeKeys = bakeSettings.optimizeKeys;
+                            bake.optimizationTolerancePosition = bakeSettings.optimizationTolerancePosition;
+                            bake.optimizationToleranceRotation = bakeSettings.optimizationToleranceRotation;
+                            bake.optimizationToleranceScale = bakeSettings.optimizationToleranceScale; 
+
+                            bake.bakeFkToIk = bakeSettings.bakeFkToIk;
+                            bake.forceBakeIkPosition = bakeSettings.forceBakeIkPosition;
+                            bake.samplesPerKey = bakeSettings.samplesPerKey;
+                            bake.resampleIntervalPos = bakeSettings.resampleIntervalPos;
+                            bake.resampleIntervalRot = bakeSettings.resampleIntervalRot;
+                            bake.resampleIntervalScale = bakeSettings.resampleIntervalScale;
                         }
-                         
+
                         BakeNext();
                     }
                 }
@@ -3110,6 +3200,7 @@ namespace Swole
         private AnimationBake animationBake;
         public bool IsBakingAnimation => animationBake != null && !animationBake.IsComplete;
 
+        public static readonly List<string> _defaultBonesToIgnoreForOptimization = new List<string>() { "root", "pelvis" };
         public AnimationBake BeginAnimationBake(CustomAnimation animationToTransfer, string newAnimationName, AnimationBakeType bakeType, bool openInNewSession, Action<AnimationBake> OnComplete = null, Action<AnimationBake> OnCancel = null, List<CustomAnimation> bakedAnimations = null)
         {
             if (activeSession == null || animationToTransfer == null)
@@ -3192,20 +3283,19 @@ namespace Swole
                 } 
                 else
                 {
-                    OnComplete?.Invoke(animationBake);
+                    if (bakedAnimations != null) bakedAnimations.Add(animationBake.OutputAnimation);
+                    OnComplete?.Invoke(animationBake);  
                 }
 
                 activeSession.RemapTarget.animator.enabled = true;
                 activeSession.animator.enabled = true;
 
-                if (bakedAnimations != null) bakedAnimations.Add(animationBake.OutputAnimation);
-
-                if (openInNewSession)
+                if (openInNewSession && !cancel)
                 {
                     Session session = new Session();
 
                     activeSession.RemapTarget.animator.ResetToPreInitializedBindPose();
-                    session.rootObject = Instantiate(activeSession.RemapTarget.instance);
+                    session.rootObject = Instantiate(activeSession.RemapTarget.instance); 
 
                     session.animator = session.rootObject.GetComponentInChildren<CustomAnimator>(true);
                     session.animator.ClearLayers(false);
@@ -3742,6 +3832,8 @@ namespace Swole
         public bool importMaterials = true;
         public bool importAnimations = true;
 
+        public bool mirrorAnimations = false;
+
 #if BULKOUT_ENV
         public AssetLoaderOptions cachedLoaderOptions;
 
@@ -3835,7 +3927,12 @@ namespace Swole
         private CustomAnimator animatorReference;
         private CustomAnimator animatorTarget;
 
-        private CustomAnimation animationReference;
+        public struct MixedAnimationReference
+        {
+            public CustomAnimation animation;
+            public float mix;
+        }
+        private readonly List<MixedAnimationReference> animationReferences = new List<MixedAnimationReference>();
         private AnimationSource animationSource;
         public CustomAnimation OutputAnimation => animationSource == null ? null : animationSource.CompiledAnimation;
 
@@ -3846,6 +3943,11 @@ namespace Swole
         private int lastFrame;
 
         private bool waiting = false;
+
+        public bool optimizeKeys = false;
+        public float optimizationTolerancePosition = 0.005f;
+        public float optimizationToleranceRotation = 1f;
+        public float optimizationToleranceScale = 0.005f;
 
         public bool bakeFkToIk = true;
         public bool forceBakeIkPosition = true;
@@ -3907,8 +4009,13 @@ namespace Swole
         public float resampleIntervalRot = 0.1f;
         public float resampleIntervalScale = 0.5f;
 
-        private List<IAnimationLayer> originalLayers = new List<IAnimationLayer>();
-        private CustomAnimationLayer controlLayer;
+        private readonly List<IAnimationLayer> originalLayers = new List<IAnimationLayer>();
+        private struct ControlLayer
+        {
+            public CustomAnimationLayer layer;
+            public float mix;
+        }
+        private readonly List<ControlLayer> controlLayers = new List<ControlLayer>();
 
         private Dictionary<string, List<BoneRelation>> boneRelations = new Dictionary<string, List<BoneRelation>>();
         private Dictionary<string, Dictionary<float, Quaternion>> boneRotations = new Dictionary<string, Dictionary<float, Quaternion>>();
@@ -3969,11 +4076,44 @@ namespace Swole
         {
             this.animatorReference = animatorReference;
             this.animatorTarget = animatorTarget;
-            this.animationReference = animationReference;
+            this.animationReferences.Add(new MixedAnimationReference() { animation = animationReference, mix = 1f });
+            this.restPoseTarget = restPoseTarget;
+            this.syncPose = syncPose;
+        }
+        public AnimationBake(CustomAnimator animatorReference, CustomAnimator animatorTarget, IEnumerable<CustomAnimation> animationReferences, AnimationUtils.Pose restPoseTarget, Action syncPose)
+        {
+            this.animatorReference = animatorReference;
+            this.animatorTarget = animatorTarget;
+            foreach(var anim in animationReferences)
+            {
+                if (anim == null) continue;
+                this.animationReferences.Add(new MixedAnimationReference() { animation = anim, mix = 1f });
+            }
+            this.restPoseTarget = restPoseTarget;
+            this.syncPose = syncPose;
+        }
+        public AnimationBake(CustomAnimator animatorReference, CustomAnimator animatorTarget, MixedAnimationReference animationReference, AnimationUtils.Pose restPoseTarget, Action syncPose)
+        {
+            this.animatorReference = animatorReference;
+            this.animatorTarget = animatorTarget;
+            this.animationReferences.Add(animationReference);
+            this.restPoseTarget = restPoseTarget;
+            this.syncPose = syncPose;
+        }
+        public AnimationBake(CustomAnimator animatorReference, CustomAnimator animatorTarget, IEnumerable<MixedAnimationReference> animationReferences, AnimationUtils.Pose restPoseTarget, Action syncPose)
+        {
+            this.animatorReference = animatorReference;
+            this.animatorTarget = animatorTarget;
+            foreach (var anim in animationReferences)
+            {
+                if (anim.animation == null) continue;
+                this.animationReferences.Add(anim);
+            }
             this.restPoseTarget = restPoseTarget;
             this.syncPose = syncPose;
         }
 
+        private static readonly List<CustomAnimation> tempAnims = new List<CustomAnimation>();
         public void Initialize(string animationName, AnimationBakeType bakeType, List<TransformAnimationBakePair> boneBindings, CustomAnimation animationTarget = null, string rootMotionBoneName = null, IEnumerable<string> rootMotionPositionReferenceBones = null, IEnumerable<string> rootMotionRotationReferenceBones = null)
         {
             /*string GetReferenceBoneName(string targetBoneName)
@@ -3983,6 +4123,8 @@ namespace Swole
             }*/
             string GetTargetBoneName(string referenceBoneName)
             {
+                if (boneBindings == null) return referenceBoneName;
+
                 foreach (var pair in boneBindings) if (pair.referenceBone == referenceBoneName) return pair.targetBone;
                 return string.Empty;
             }
@@ -3993,47 +4135,305 @@ namespace Swole
 
             this.bakeType = bakeType;
 
-            for (int a = 0; a < animatorReference.LayerCount; a++) originalLayers.Add(animatorReference.GetLayer(a));
-            animatorReference.ClearLayers(false);
-
             this.lastFrame = Time.frameCount;
 
-            var controller = CustomAnimationController.BuildDefaultController("bake", new CustomAnimation[] { animationReference }, 1);
-            animatorReference.ApplyController(controller);
-            controlLayer = animatorReference.FindTypedLayer($"bake/{animationReference.Name}");
-            controlLayer.mix = 1;
-            if (controlLayer.HasActiveState && controlLayer.ActiveState is CustomAnimationLayerState state && state.MotionControllerIndex >= 0)
+            controlLayers.Clear();
+            if (animatorReference != null)
             {
-                var mc = controlLayer.GetMotionControllerUnsafe(state.MotionControllerIndex);
-                if (mc is AnimationReference ar)
+                for (int a = 0; a < animatorReference.LayerCount; a++) originalLayers.Add(animatorReference.GetLayer(a));
+                animatorReference.ClearLayers(false);
+
+                tempAnims.Clear();
+                foreach(var animRef in animationReferences)
                 {
-                    ar.BaseSpeed = 0;
-                    ar.SetNormalizedTime(controlLayer, 0);
+                    tempAnims.Add(animRef.animation);
+                }
+                var controller = CustomAnimationController.BuildDefaultController("bake", tempAnims, 1);
+                animatorReference.ApplyController(controller);
+
+                foreach (var animationReference in animationReferences)
+                {
+                    var controlLayer = animatorReference.FindTypedLayer($"bake/{animationReference.animation.Name}");
+                    controlLayer.SetAdditive(animationReferences.Count > 1); 
+                    controlLayer.mix = animationReference.mix;
+                    if (controlLayer.HasActiveState && controlLayer.ActiveState is CustomAnimationLayerState state && state.MotionControllerIndex >= 0)
+                    {
+                        var mc = controlLayer.GetMotionControllerUnsafe(state.MotionControllerIndex);
+                        if (mc is AnimationReference ar)
+                        {
+                            ar.BaseSpeed = 0f;
+                            ar.SetNormalizedTime(controlLayer, 0f);
+                        }
+                    }
+
+                    controlLayers.Add(new ControlLayer() { layer = controlLayer, mix = animationReference.mix });
+                }
+
+                GameObject.Destroy(controller);
+            }
+
+            float length = 0f;
+            ContentInfo contentInfo = default;
+            int framesPerSecond = CustomAnimation.DefaultFrameRate;
+            int jobCurveSampleRate = CustomAnimation.DefaultJobCurveSampleRate;
+            foreach (var animationReference in animationReferences)
+            {
+                float length_ = animationReference.animation.LengthInSeconds;
+                if (animationReference.animation.timeCurve != null && animationReference.animation.timeCurve.length > 1) length_ = Mathf.Abs((length_ * animationReference.animation.timeCurve[animationReference.animation.timeCurve.length - 1].time) - (length_ * animationReference.animation.timeCurve[0].time));
+
+                if (length_ > length)
+                {
+                    length = length_;
+                    contentInfo = animationReference.animation.ContentInfo;
+                    framesPerSecond = animationReference.animation.framesPerSecond;
+                    jobCurveSampleRate = animationReference.animation.jobCurveSampleRate;
                 }
             }
 
-            GameObject.Destroy(controller);
-
-            float length = animationReference.LengthInSeconds; 
-            if (animationReference.timeCurve != null && animationReference.timeCurve.length > 1) length = Mathf.Abs((length * animationReference.timeCurve[animationReference.timeCurve.length - 1].time) - (length * animationReference.timeCurve[0].time));
-
-            var contentInfo = animationReference.ContentInfo;
             contentInfo.name = animationName;
             contentInfo.lastEditDate = contentInfo.creationDate = DateTime.Now.ToString();
-            animationSource = new AnimationSource() { DisplayName = animationName, timelineLength = length, rawAnimation = animationTarget == null ? new CustomAnimation(contentInfo, animationReference.framesPerSecond, animationReference.jobCurveSampleRate, null, null, null, null, null, null, null, null) : animationTarget };
+            animationSource = new AnimationSource() { DisplayName = animationName, timelineLength = length, rawAnimation = animationTarget == null ? new CustomAnimation(contentInfo, framesPerSecond, jobCurveSampleRate, null, null, null, null, null, null, null, null) : animationTarget };
             animationSource.MarkAsDirty();
 
             insertionLine.Clear();
             completionLine.Clear();
 
-            switch (bakeType)
+            foreach (var animationRef in animationReferences)
             {
-                case AnimationBakeType.ResamplePerKey:
-                    if (animationReference.transformAnimationCurves != null)
-                    {
-                        HashSet<float> insertionTimesPos = new HashSet<float>();
-                        HashSet<float> insertionTimesRot = new HashSet<float>();
-                        HashSet<float> insertionTimesScale = new HashSet<float>();
+                var animationReference = animationRef.animation;
+                switch (bakeType)
+                {
+                    case AnimationBakeType.ResamplePerKey:
+                        if (animationReference.transformAnimationCurves != null)
+                        {
+                            HashSet<float> insertionTimesPos = new HashSet<float>();
+                            HashSet<float> insertionTimesRot = new HashSet<float>();
+                            HashSet<float> insertionTimesScale = new HashSet<float>();
+
+                            foreach (var curveInfo in animationReference.transformAnimationCurves)
+                            {
+                                if (curveInfo.infoMain.curveIndex >= 0)
+                                {
+                                    Transform targetBone = null;
+
+                                    insertionTimesPos.Clear();
+                                    insertionTimesRot.Clear();
+                                    insertionTimesScale.Clear();
+
+                                    if (curveInfo.infoMain.isLinear)
+                                    {
+                                        var curve = animationReference.transformLinearCurves[curveInfo.infoMain.curveIndex];
+                                        if (curve != null && curve.frames != null)
+                                        {
+                                            var targetBoneName = GetTargetBoneName(curve.TransformName);
+                                            if (string.IsNullOrWhiteSpace(targetBoneName)) continue;
+
+                                            targetBone = animatorTarget.GetUnityBone(targetBoneName);
+                                            if (targetBone == null) continue;
+
+                                            for (int f = 0; f < curve.frames.Length; f++)
+                                            {
+                                                var frame = curve.frames[f];
+                                                float time = frame.GetTime(animationReference.framesPerSecond);
+
+                                                insertionTimesPos.Add(time);
+                                                insertionTimesRot.Add(time);
+                                                insertionTimesScale.Add(time);
+
+                                                if (f < curve.frames.Length - 1)
+                                                {
+                                                    var nextFrame = curve.frames[f + 1];
+                                                    float nextTime = nextFrame.GetTime(animationReference.framesPerSecond);
+
+                                                    for (int g = 1; g < samplesPerKey; g++)
+                                                    {
+                                                        float t = Mathf.Lerp(time, nextTime, g / (float)samplesPerKey);
+
+                                                        insertionTimesPos.Add(t);
+                                                        insertionTimesRot.Add(t);
+                                                        insertionTimesScale.Add(t);
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                    else
+                                    {
+                                        var curve = animationReference.transformCurves[curveInfo.infoMain.curveIndex];
+                                        if (curve != null)
+                                        {
+                                            var targetBoneName = GetTargetBoneName(curve.TransformName);
+                                            if (string.IsNullOrWhiteSpace(targetBoneName))
+                                            {
+#if UNITY_EDITOR
+                                                Debug.Log($"Skipping curves for bone {curve.TransformName}");
+#endif
+                                                continue;
+                                            }
+
+                                            targetBone = animatorTarget.GetUnityBone(targetBoneName);
+                                            if (targetBone == null)
+                                            {
+#if UNITY_EDITOR
+                                                Debug.Log($"{targetBoneName} not found");
+#endif
+                                                continue;
+                                            }
+
+                                            void AddPositionInsertions(EditableAnimationCurve curve)
+                                            {
+                                                for (int f = 0; f < curve.length; f++)
+                                                {
+                                                    var kf = curve[f];
+                                                    insertionTimesPos.Add(kf.time);
+
+                                                    if (f < curve.length - 1)
+                                                    {
+                                                        var nextKf = curve[f + 1];
+
+                                                        for (int g = 1; g < samplesPerKey; g++)
+                                                        {
+                                                            float t = Mathf.Lerp(kf.time, nextKf.time, g / (float)samplesPerKey);
+                                                            insertionTimesPos.Add(t);
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                            void AddRotationInsertions(EditableAnimationCurve curve)
+                                            {
+                                                for (int f = 0; f < curve.length; f++)
+                                                {
+                                                    var kf = curve[f];
+                                                    insertionTimesRot.Add(kf.time);
+
+                                                    if (f < curve.length - 1)
+                                                    {
+                                                        var nextKf = curve[f + 1];
+
+                                                        for (int g = 1; g < samplesPerKey; g++)
+                                                        {
+                                                            float t = Mathf.Lerp(kf.time, nextKf.time, g / (float)samplesPerKey);
+                                                            insertionTimesRot.Add(t);
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                            void AddScaleInsertions(EditableAnimationCurve curve)
+                                            {
+                                                for (int f = 0; f < curve.length; f++)
+                                                {
+                                                    var kf = curve[f];
+                                                    insertionTimesScale.Add(kf.time);
+
+                                                    if (f < curve.length - 1)
+                                                    {
+                                                        var nextKf = curve[f + 1];
+
+                                                        for (int g = 1; g < samplesPerKey; g++)
+                                                        {
+                                                            float t = Mathf.Lerp(kf.time, nextKf.time, g / (float)samplesPerKey);
+                                                            insertionTimesScale.Add(t);
+                                                        }
+                                                    }
+                                                }
+                                            }
+
+                                            if (curve.localPositionCurveX != null) AddPositionInsertions(curve.localPositionCurveX);
+                                            if (curve.localPositionCurveY != null) AddPositionInsertions(curve.localPositionCurveY);
+                                            if (curve.localPositionCurveZ != null) AddPositionInsertions(curve.localPositionCurveZ);
+
+                                            if (curve.localRotationCurveX != null) AddRotationInsertions(curve.localRotationCurveX);
+                                            if (curve.localRotationCurveY != null) AddRotationInsertions(curve.localRotationCurveY);
+                                            if (curve.localRotationCurveZ != null) AddRotationInsertions(curve.localRotationCurveZ);
+                                            if (curve.localRotationCurveW != null) AddRotationInsertions(curve.localRotationCurveW);
+
+                                            if (curve.localScaleCurveX != null) AddScaleInsertions(curve.localScaleCurveX);
+                                            if (curve.localScaleCurveY != null) AddScaleInsertions(curve.localScaleCurveY);
+                                            if (curve.localScaleCurveZ != null) AddScaleInsertions(curve.localScaleCurveZ);
+                                        }
+                                    }
+
+                                    foreach (var time in insertionTimesPos)
+                                    {
+                                        insertionLine.Add(new TransformDataInsertion()
+                                        {
+                                            bone = targetBone,
+                                            time = time,
+                                            channel = TransformDataChannel.LocalPositionX
+                                        });
+                                        insertionLine.Add(new TransformDataInsertion()
+                                        {
+                                            bone = targetBone,
+                                            time = time,
+                                            channel = TransformDataChannel.LocalPositionY
+                                        });
+                                        insertionLine.Add(new TransformDataInsertion()
+                                        {
+                                            bone = targetBone,
+                                            time = time,
+                                            channel = TransformDataChannel.LocalPositionZ
+                                        });
+                                    }
+                                    foreach (var time in insertionTimesRot)
+                                    {
+                                        insertionLine.Add(new TransformDataInsertion()
+                                        {
+                                            bone = targetBone,
+                                            time = time,
+                                            channel = TransformDataChannel.LocalRotationX
+                                        });
+                                        insertionLine.Add(new TransformDataInsertion()
+                                        {
+                                            bone = targetBone,
+                                            time = time,
+                                            channel = TransformDataChannel.LocalRotationY
+                                        });
+                                        insertionLine.Add(new TransformDataInsertion()
+                                        {
+                                            bone = targetBone,
+                                            time = time,
+                                            channel = TransformDataChannel.LocalRotationZ
+                                        });
+                                        insertionLine.Add(new TransformDataInsertion()
+                                        {
+                                            bone = targetBone,
+                                            time = time,
+                                            channel = TransformDataChannel.LocalRotationW
+                                        });
+                                    }
+                                    foreach (var time in insertionTimesScale)
+                                    {
+                                        insertionLine.Add(new TransformDataInsertion()
+                                        {
+                                            bone = targetBone,
+                                            time = time,
+                                            channel = TransformDataChannel.LocalScaleX
+                                        });
+                                        insertionLine.Add(new TransformDataInsertion()
+                                        {
+                                            bone = targetBone,
+                                            time = time,
+                                            channel = TransformDataChannel.LocalScaleY
+                                        });
+                                        insertionLine.Add(new TransformDataInsertion()
+                                        {
+                                            bone = targetBone,
+                                            time = time,
+                                            channel = TransformDataChannel.LocalScaleZ
+                                        });
+                                    }
+                                }
+                            }
+                        }
+                        break;
+
+                    case AnimationBakeType.ResampleInterval:
+
+                        var length_ = length * 0.998f;
+
+                        int insertionsPos = resampleIntervalPos > 0 ? Mathf.FloorToInt(length_ / resampleIntervalPos) : 0;
+                        int insertionsRot = resampleIntervalRot > 0 ? Mathf.FloorToInt(length_ / resampleIntervalRot) : 0;
+                        int insertionsScale = resampleIntervalScale > 0 ? Mathf.FloorToInt(length_ / resampleIntervalScale) : 0;
 
                         foreach (var curveInfo in animationReference.transformAnimationCurves)
                         {
@@ -4041,9 +4441,9 @@ namespace Swole
                             {
                                 Transform targetBone = null;
 
-                                insertionTimesPos.Clear();
-                                insertionTimesRot.Clear();
-                                insertionTimesScale.Clear();
+                                bool insertPos = false;
+                                bool insertRot = false;
+                                bool insertScale = false;
 
                                 if (curveInfo.infoMain.isLinear)
                                 {
@@ -4056,30 +4456,9 @@ namespace Swole
                                         targetBone = animatorTarget.GetUnityBone(targetBoneName);
                                         if (targetBone == null) continue;
 
-                                        for (int f = 0; f < curve.frames.Length; f++)
-                                        {
-                                            var frame = curve.frames[f];
-                                            float time = frame.GetTime(animationReference.framesPerSecond);
-
-                                            insertionTimesPos.Add(time);
-                                            insertionTimesRot.Add(time);
-                                            insertionTimesScale.Add(time);
-
-                                            if (f < curve.frames.Length - 1)
-                                            {
-                                                var nextFrame = curve.frames[f + 1];
-                                                float nextTime = nextFrame.GetTime(animationReference.framesPerSecond);
-
-                                                for (int g = 1; g < samplesPerKey; g++)
-                                                {
-                                                    float t = Mathf.Lerp(time, nextTime, g / (float)samplesPerKey);
-
-                                                    insertionTimesPos.Add(t);
-                                                    insertionTimesRot.Add(t);
-                                                    insertionTimesScale.Add(t);
-                                                }
-                                            } 
-                                        }
+                                        insertPos = true;
+                                        insertRot = true;
+                                        insertScale = true;
                                     }
                                 }
                                 else
@@ -4088,687 +4467,484 @@ namespace Swole
                                     if (curve != null)
                                     {
                                         var targetBoneName = GetTargetBoneName(curve.TransformName);
-                                        if (string.IsNullOrWhiteSpace(targetBoneName))
-                                        {
-#if UNITY_EDITOR
-                                            Debug.Log($"Skipping curves for bone {curve.TransformName}");   
-#endif
-                                            continue;
-                                        }
+                                        if (string.IsNullOrWhiteSpace(targetBoneName)) continue;
 
                                         targetBone = animatorTarget.GetUnityBone(targetBoneName);
-                                        if (targetBone == null)
-                                        {
-#if UNITY_EDITOR
-                                            Debug.Log($"{targetBoneName} not found");
-#endif
-                                            continue;
-                                        }
-
-                                        void AddPositionInsertions(EditableAnimationCurve curve)
-                                        {
-                                            for (int f = 0; f < curve.length; f++)
-                                            {
-                                                var kf = curve[f];
-                                                insertionTimesPos.Add(kf.time);
-
-                                                if (f < curve.length - 1)
-                                                {
-                                                    var nextKf = curve[f + 1];
-
-                                                    for (int g = 1; g < samplesPerKey; g++)
-                                                    {
-                                                        float t = Mathf.Lerp(kf.time, nextKf.time, g / (float)samplesPerKey);
-                                                        insertionTimesPos.Add(t);
-                                                    }
-                                                }
-                                            }
-                                        }
-                                        void AddRotationInsertions(EditableAnimationCurve curve)
-                                        {
-                                            for (int f = 0; f < curve.length; f++)
-                                            {
-                                                var kf = curve[f];
-                                                insertionTimesRot.Add(kf.time);
-
-                                                if (f < curve.length - 1)
-                                                {
-                                                    var nextKf = curve[f + 1];
-
-                                                    for (int g = 1; g < samplesPerKey; g++)
-                                                    {
-                                                        float t = Mathf.Lerp(kf.time, nextKf.time, g / (float)samplesPerKey);
-                                                        insertionTimesRot.Add(t);
-                                                    }
-                                                }
-                                            }
-                                        }
-                                        void AddScaleInsertions(EditableAnimationCurve curve)
-                                        {
-                                            for (int f = 0; f < curve.length; f++)
-                                            {
-                                                var kf = curve[f];
-                                                insertionTimesScale.Add(kf.time);
-
-                                                if (f < curve.length - 1)
-                                                {
-                                                    var nextKf = curve[f + 1];
-
-                                                    for (int g = 1; g < samplesPerKey; g++)
-                                                    {
-                                                        float t = Mathf.Lerp(kf.time, nextKf.time, g / (float)samplesPerKey);
-                                                        insertionTimesScale.Add(t);
-                                                    }
-                                                }
-                                            }
-                                        }
-
-                                        if (curve.localPositionCurveX != null) AddPositionInsertions(curve.localPositionCurveX);
-                                        if (curve.localPositionCurveY != null) AddPositionInsertions(curve.localPositionCurveY);
-                                        if (curve.localPositionCurveZ != null) AddPositionInsertions(curve.localPositionCurveZ);
-
-                                        if (curve.localRotationCurveX != null) AddRotationInsertions(curve.localRotationCurveX);
-                                        if (curve.localRotationCurveY != null) AddRotationInsertions(curve.localRotationCurveY);
-                                        if (curve.localRotationCurveZ != null) AddRotationInsertions(curve.localRotationCurveZ);
-                                        if (curve.localRotationCurveW != null) AddRotationInsertions(curve.localRotationCurveW);
-
-                                        if (curve.localScaleCurveX != null) AddScaleInsertions(curve.localScaleCurveX);
-                                        if (curve.localScaleCurveY != null) AddScaleInsertions(curve.localScaleCurveY);
-                                        if (curve.localScaleCurveZ != null) AddScaleInsertions(curve.localScaleCurveZ);
-                                    }
-                                }
-
-                                foreach (var time in insertionTimesPos)
-                                {
-                                    insertionLine.Add(new TransformDataInsertion()
-                                    {
-                                        bone = targetBone,
-                                        time = time,
-                                        channel = TransformDataChannel.LocalPositionX
-                                    });
-                                    insertionLine.Add(new TransformDataInsertion()
-                                    {
-                                        bone = targetBone,
-                                        time = time,
-                                        channel = TransformDataChannel.LocalPositionY
-                                    });
-                                    insertionLine.Add(new TransformDataInsertion()
-                                    {
-                                        bone = targetBone,
-                                        time = time,
-                                        channel = TransformDataChannel.LocalPositionZ
-                                    });
-                                }
-                                foreach (var time in insertionTimesRot)
-                                {
-                                    insertionLine.Add(new TransformDataInsertion()
-                                    {
-                                        bone = targetBone,
-                                        time = time,
-                                        channel = TransformDataChannel.LocalRotationX
-                                    });
-                                    insertionLine.Add(new TransformDataInsertion()
-                                    {
-                                        bone = targetBone,
-                                        time = time,
-                                        channel = TransformDataChannel.LocalRotationY
-                                    });
-                                    insertionLine.Add(new TransformDataInsertion()
-                                    {
-                                        bone = targetBone,
-                                        time = time,
-                                        channel = TransformDataChannel.LocalRotationZ
-                                    });
-                                    insertionLine.Add(new TransformDataInsertion()
-                                    {
-                                        bone = targetBone,
-                                        time = time,
-                                        channel = TransformDataChannel.LocalRotationW
-                                    });
-                                }
-                                foreach (var time in insertionTimesScale)
-                                {
-                                    insertionLine.Add(new TransformDataInsertion()
-                                    {
-                                        bone = targetBone,
-                                        time = time,
-                                        channel = TransformDataChannel.LocalScaleX
-                                    });
-                                    insertionLine.Add(new TransformDataInsertion()
-                                    {
-                                        bone = targetBone,
-                                        time = time,
-                                        channel = TransformDataChannel.LocalScaleY
-                                    });
-                                    insertionLine.Add(new TransformDataInsertion()
-                                    {
-                                        bone = targetBone,
-                                        time = time,
-                                        channel = TransformDataChannel.LocalScaleZ
-                                    });
-                                }
-                            }
-                        }
-                    }
-                    break;
-
-                case AnimationBakeType.ResampleInterval:
-
-                    var length_ = length * 0.998f;
-
-                    int insertionsPos = resampleIntervalPos > 0 ? Mathf.FloorToInt(length_ / resampleIntervalPos) : 0;
-                    int insertionsRot = resampleIntervalRot > 0 ? Mathf.FloorToInt(length_ / resampleIntervalRot) : 0;
-                    int insertionsScale = resampleIntervalScale > 0 ? Mathf.FloorToInt(length_ / resampleIntervalScale) : 0;
-
-                    foreach (var curveInfo in animationReference.transformAnimationCurves)
-                    {
-                        if (curveInfo.infoMain.curveIndex >= 0)
-                        {
-                            Transform targetBone = null;
-
-                            bool insertPos = false;
-                            bool insertRot = false;
-                            bool insertScale = false;
-
-                            if (curveInfo.infoMain.isLinear)
-                            {
-                                var curve = animationReference.transformLinearCurves[curveInfo.infoMain.curveIndex];
-                                if (curve != null && curve.frames != null)
-                                {
-                                    var targetBoneName = GetTargetBoneName(curve.TransformName);
-                                    if (string.IsNullOrWhiteSpace(targetBoneName)) continue;
-
-                                    targetBone = animatorTarget.GetUnityBone(targetBoneName);
-                                    if (targetBone == null) continue;
-
-                                    insertPos = true;
-                                    insertRot = true;
-                                    insertScale = true;
-                                }
-                            }
-                            else
-                            {
-                                var curve = animationReference.transformCurves[curveInfo.infoMain.curveIndex];
-                                if (curve != null)
-                                {
-                                    var targetBoneName = GetTargetBoneName(curve.TransformName);
-                                    if (string.IsNullOrWhiteSpace(targetBoneName)) continue;
-
-                                    targetBone = animatorTarget.GetUnityBone(targetBoneName);
-                                    if (targetBone == null) continue;
-
-                                    insertPos = (curve.localPositionCurveX != null && curve.localPositionCurveX.length > 0) || (curve.localPositionCurveY != null && curve.localPositionCurveY.length > 0) || (curve.localPositionCurveZ != null && curve.localPositionCurveZ.length > 0);
-                                    insertRot = (curve.localRotationCurveX != null && curve.localRotationCurveX.length > 0) || (curve.localRotationCurveY != null && curve.localRotationCurveY.length > 0) || (curve.localRotationCurveZ != null && curve.localRotationCurveZ.length > 0) || (curve.localRotationCurveW != null && curve.localRotationCurveW.length > 0);
-                                    insertScale = (curve.localScaleCurveX != null && curve.localScaleCurveX.length > 0) || (curve.localScaleCurveY != null && curve.localScaleCurveY.length > 0) || (curve.localScaleCurveZ != null && curve.localScaleCurveZ.length > 0);
-                                }
-                            }
-
-                            if (targetBone == null) continue;
-
-                            if (insertPos)
-                            {
-                                for (int i = 0; i < insertionsPos; i++)
-                                {
-                                    float time = i == insertionsPos - 1 ? length_ : (i * resampleIntervalPos);
-
-                                    insertionLine.Add(new TransformDataInsertion()
-                                    {
-                                        bone = targetBone,
-                                        time = time,
-                                        channel = TransformDataChannel.LocalPositionX
-                                    });
-                                    insertionLine.Add(new TransformDataInsertion()
-                                    {
-                                        bone = targetBone,
-                                        time = time,
-                                        channel = TransformDataChannel.LocalPositionY
-                                    });
-                                    insertionLine.Add(new TransformDataInsertion()
-                                    {
-                                        bone = targetBone,
-                                        time = time,
-                                        channel = TransformDataChannel.LocalPositionZ
-                                    });
-                                }
-                            }
-                            if (insertRot)
-                            {
-                                for (int i = 0; i < insertionsRot; i++)
-                                {
-                                    float time = i == insertionsRot - 1 ? length_ : (i * resampleIntervalPos);
-
-                                    insertionLine.Add(new TransformDataInsertion()
-                                    {
-                                        bone = targetBone,
-                                        time = time,
-                                        channel = TransformDataChannel.LocalRotationX
-                                    });
-                                    insertionLine.Add(new TransformDataInsertion()
-                                    {
-                                        bone = targetBone,
-                                        time = time,
-                                        channel = TransformDataChannel.LocalRotationY
-                                    });
-                                    insertionLine.Add(new TransformDataInsertion()
-                                    {
-                                        bone = targetBone,
-                                        time = time,
-                                        channel = TransformDataChannel.LocalRotationZ
-                                    });
-                                    insertionLine.Add(new TransformDataInsertion()
-                                    {
-                                        bone = targetBone,
-                                        time = time,
-                                        channel = TransformDataChannel.LocalRotationW
-                                    });
-                                }
-                            }
-                            if (insertScale)
-                            {
-                                for (int i = 0; i < insertionsScale; i++)
-                                {
-                                    float time = i == insertionsScale - 1 ? length_ : (i * resampleIntervalPos);
-
-                                    insertionLine.Add(new TransformDataInsertion()
-                                    {
-                                        bone = targetBone,
-                                        time = time,
-                                        channel = TransformDataChannel.LocalScaleX
-                                    });
-                                    insertionLine.Add(new TransformDataInsertion()
-                                    {
-                                        bone = targetBone,
-                                        time = time,
-                                        channel = TransformDataChannel.LocalScaleY
-                                    });
-                                    insertionLine.Add(new TransformDataInsertion()
-                                    {
-                                        bone = targetBone,
-                                        time = time,
-                                        channel = TransformDataChannel.LocalScaleZ
-                                    });
-                                }
-                            }
-                        }
-                    }
-
-                    break;
-
-                case AnimationBakeType.IdenticalPerChannel:
-                    if (animationReference.transformAnimationCurves != null)
-                    {
-                        foreach (var curveInfo in animationReference.transformAnimationCurves)
-                        {
-                            if (curveInfo.infoMain.curveIndex >= 0)
-                            {
-                                if (curveInfo.infoMain.isLinear)
-                                {
-                                    var curve = animationReference.transformLinearCurves[curveInfo.infoMain.curveIndex];
-                                    if (curve != null && curve.frames != null)
-                                    {
-                                        var targetBoneName = GetTargetBoneName(curve.TransformName);
-                                        if (string.IsNullOrWhiteSpace(targetBoneName)) continue;
-
-                                        var targetBone = animatorTarget.GetUnityBone(targetBoneName);
                                         if (targetBone == null) continue;
 
-                                        foreach (var frame in curve.frames)
-                                        {
-                                            float time = frame.GetTime(animationReference.framesPerSecond);
-
-                                            insertionLine.Add(new TransformDataInsertion()
-                                            {
-                                                bone = targetBone,
-                                                time = time,
-                                                channel = TransformDataChannel.LocalPositionX
-                                            });
-                                            insertionLine.Add(new TransformDataInsertion()
-                                            {
-                                                bone = targetBone,
-                                                time = time,
-                                                channel = TransformDataChannel.LocalPositionY
-                                            });
-                                            insertionLine.Add(new TransformDataInsertion()
-                                            {
-                                                bone = targetBone,
-                                                time = time,
-                                                channel = TransformDataChannel.LocalPositionZ
-                                            });
-
-                                            insertionLine.Add(new TransformDataInsertion()
-                                            {
-                                                bone = targetBone,
-                                                time = time,
-                                                channel = TransformDataChannel.LocalRotationX
-                                            });
-                                            insertionLine.Add(new TransformDataInsertion()
-                                            {
-                                                bone = targetBone,
-                                                time = time,
-                                                channel = TransformDataChannel.LocalRotationY
-                                            });
-                                            insertionLine.Add(new TransformDataInsertion()
-                                            {
-                                                bone = targetBone,
-                                                time = time,
-                                                channel = TransformDataChannel.LocalRotationZ
-                                            });
-                                            insertionLine.Add(new TransformDataInsertion()
-                                            {
-                                                bone = targetBone,
-                                                time = time,
-                                                channel = TransformDataChannel.LocalRotationW
-                                            });
-
-                                            insertionLine.Add(new TransformDataInsertion()
-                                            {
-                                                bone = targetBone,
-                                                time = time,
-                                                channel = TransformDataChannel.LocalScaleX
-                                            });
-                                            insertionLine.Add(new TransformDataInsertion()
-                                            {
-                                                bone = targetBone,
-                                                time = time,
-                                                channel = TransformDataChannel.LocalScaleY
-                                            });
-                                            insertionLine.Add(new TransformDataInsertion()
-                                            {
-                                                bone = targetBone,
-                                                time = time,
-                                                channel = TransformDataChannel.LocalScaleZ
-                                            });
-                                        }
+                                        insertPos = (curve.localPositionCurveX != null && curve.localPositionCurveX.length > 0) || (curve.localPositionCurveY != null && curve.localPositionCurveY.length > 0) || (curve.localPositionCurveZ != null && curve.localPositionCurveZ.length > 0);
+                                        insertRot = (curve.localRotationCurveX != null && curve.localRotationCurveX.length > 0) || (curve.localRotationCurveY != null && curve.localRotationCurveY.length > 0) || (curve.localRotationCurveZ != null && curve.localRotationCurveZ.length > 0) || (curve.localRotationCurveW != null && curve.localRotationCurveW.length > 0);
+                                        insertScale = (curve.localScaleCurveX != null && curve.localScaleCurveX.length > 0) || (curve.localScaleCurveY != null && curve.localScaleCurveY.length > 0) || (curve.localScaleCurveZ != null && curve.localScaleCurveZ.length > 0);
                                     }
                                 }
-                                else
+
+                                if (targetBone == null) continue;
+
+                                if (insertPos)
                                 {
-                                    var curve = animationReference.transformCurves[curveInfo.infoMain.curveIndex];
-                                    if (curve != null)
+                                    for (int i = 0; i < insertionsPos; i++)
                                     {
-                                        var targetBoneName = GetTargetBoneName(curve.TransformName);
-                                        if (string.IsNullOrWhiteSpace(targetBoneName)) continue;
+                                        float time = i == insertionsPos - 1 ? length_ : (i * resampleIntervalPos);
 
-                                        var targetBone = animatorTarget.GetUnityBone(targetBoneName);
-                                        if (targetBone == null) continue;
-
-                                        if (curve.localPositionCurveX != null)
+                                        insertionLine.Add(new TransformDataInsertion()
                                         {
-                                            float amp = AnimationUtils.CalculateAmplitude(curve.localPositionCurveX);
+                                            bone = targetBone,
+                                            time = time,
+                                            channel = TransformDataChannel.LocalPositionX
+                                        });
+                                        insertionLine.Add(new TransformDataInsertion()
+                                        {
+                                            bone = targetBone,
+                                            time = time,
+                                            channel = TransformDataChannel.LocalPositionY
+                                        });
+                                        insertionLine.Add(new TransformDataInsertion()
+                                        {
+                                            bone = targetBone,
+                                            time = time,
+                                            channel = TransformDataChannel.LocalPositionZ
+                                        });
+                                    }
+                                }
+                                if (insertRot)
+                                {
+                                    for (int i = 0; i < insertionsRot; i++)
+                                    {
+                                        float time = i == insertionsRot - 1 ? length_ : (i * resampleIntervalPos);
 
-                                            for (int f = 0; f < curve.localPositionCurveX.length; f++)
+                                        insertionLine.Add(new TransformDataInsertion()
+                                        {
+                                            bone = targetBone,
+                                            time = time,
+                                            channel = TransformDataChannel.LocalRotationX
+                                        });
+                                        insertionLine.Add(new TransformDataInsertion()
+                                        {
+                                            bone = targetBone,
+                                            time = time,
+                                            channel = TransformDataChannel.LocalRotationY
+                                        });
+                                        insertionLine.Add(new TransformDataInsertion()
+                                        {
+                                            bone = targetBone,
+                                            time = time,
+                                            channel = TransformDataChannel.LocalRotationZ
+                                        });
+                                        insertionLine.Add(new TransformDataInsertion()
+                                        {
+                                            bone = targetBone,
+                                            time = time,
+                                            channel = TransformDataChannel.LocalRotationW
+                                        });
+                                    }
+                                }
+                                if (insertScale)
+                                {
+                                    for (int i = 0; i < insertionsScale; i++)
+                                    {
+                                        float time = i == insertionsScale - 1 ? length_ : (i * resampleIntervalPos);
+
+                                        insertionLine.Add(new TransformDataInsertion()
+                                        {
+                                            bone = targetBone,
+                                            time = time,
+                                            channel = TransformDataChannel.LocalScaleX
+                                        });
+                                        insertionLine.Add(new TransformDataInsertion()
+                                        {
+                                            bone = targetBone,
+                                            time = time,
+                                            channel = TransformDataChannel.LocalScaleY
+                                        });
+                                        insertionLine.Add(new TransformDataInsertion()
+                                        {
+                                            bone = targetBone,
+                                            time = time,
+                                            channel = TransformDataChannel.LocalScaleZ
+                                        });
+                                    }
+                                }
+                            }
+                        }
+
+                        break;
+
+                    case AnimationBakeType.IdenticalPerChannel:
+                        if (animationReference.transformAnimationCurves != null)
+                        {
+                            foreach (var curveInfo in animationReference.transformAnimationCurves)
+                            {
+                                if (curveInfo.infoMain.curveIndex >= 0)
+                                {
+                                    if (curveInfo.infoMain.isLinear)
+                                    {
+                                        var curve = animationReference.transformLinearCurves[curveInfo.infoMain.curveIndex];
+                                        if (curve != null && curve.frames != null)
+                                        {
+                                            var targetBoneName = GetTargetBoneName(curve.TransformName);
+                                            if (string.IsNullOrWhiteSpace(targetBoneName)) continue;
+
+                                            var targetBone = animatorTarget.GetUnityBone(targetBoneName);
+                                            if (targetBone == null) continue;
+
+                                            foreach (var frame in curve.frames)
                                             {
-                                                var key = curve.localPositionCurveX[f];
+                                                float time = frame.GetTime(animationReference.framesPerSecond);
 
                                                 insertionLine.Add(new TransformDataInsertion()
                                                 {
                                                     bone = targetBone,
-                                                    time = key.time,
-                                                    channel = TransformDataChannel.LocalPositionX,
+                                                    time = time,
+                                                    channel = TransformDataChannel.LocalPositionX
+                                                });
+                                                insertionLine.Add(new TransformDataInsertion()
+                                                {
+                                                    bone = targetBone,
+                                                    time = time,
+                                                    channel = TransformDataChannel.LocalPositionY
+                                                });
+                                                insertionLine.Add(new TransformDataInsertion()
+                                                {
+                                                    bone = targetBone,
+                                                    time = time,
+                                                    channel = TransformDataChannel.LocalPositionZ
+                                                });
 
-                                                    useExistingKeyframe = true,
-                                                    keyframe = key,
+                                                insertionLine.Add(new TransformDataInsertion()
+                                                {
+                                                    bone = targetBone,
+                                                    time = time,
+                                                    channel = TransformDataChannel.LocalRotationX
+                                                });
+                                                insertionLine.Add(new TransformDataInsertion()
+                                                {
+                                                    bone = targetBone,
+                                                    time = time,
+                                                    channel = TransformDataChannel.LocalRotationY
+                                                });
+                                                insertionLine.Add(new TransformDataInsertion()
+                                                {
+                                                    bone = targetBone,
+                                                    time = time,
+                                                    channel = TransformDataChannel.LocalRotationZ
+                                                });
+                                                insertionLine.Add(new TransformDataInsertion()
+                                                {
+                                                    bone = targetBone,
+                                                    time = time,
+                                                    channel = TransformDataChannel.LocalRotationW
+                                                });
 
-                                                    referenceAmplitude = amp,
-
-                                                    hasPreceedingKeyframe = f > 0,
-                                                    preceedingKeyframe = curve.localPositionCurveX[Mathf.Max(0, f - 1)],
-
-                                                    hasProceedingKeyframe = f < curve.localPositionCurveX.length - 1,
-                                                    proceedingKeyframe = curve.localPositionCurveX[Mathf.Min(f + 1, curve.localPositionCurveX.length - 1)]
+                                                insertionLine.Add(new TransformDataInsertion()
+                                                {
+                                                    bone = targetBone,
+                                                    time = time,
+                                                    channel = TransformDataChannel.LocalScaleX
+                                                });
+                                                insertionLine.Add(new TransformDataInsertion()
+                                                {
+                                                    bone = targetBone,
+                                                    time = time,
+                                                    channel = TransformDataChannel.LocalScaleY
+                                                });
+                                                insertionLine.Add(new TransformDataInsertion()
+                                                {
+                                                    bone = targetBone,
+                                                    time = time,
+                                                    channel = TransformDataChannel.LocalScaleZ
                                                 });
                                             }
                                         }
-                                        if (curve.localPositionCurveY != null)
+                                    }
+                                    else
+                                    {
+                                        var curve = animationReference.transformCurves[curveInfo.infoMain.curveIndex];
+                                        if (curve != null)
                                         {
-                                            float amp = AnimationUtils.CalculateAmplitude(curve.localPositionCurveY);
+                                            var targetBoneName = GetTargetBoneName(curve.TransformName);
+                                            if (string.IsNullOrWhiteSpace(targetBoneName)) continue;
 
-                                            for (int f = 0; f < curve.localPositionCurveY.length; f++)
+                                            var targetBone = animatorTarget.GetUnityBone(targetBoneName);
+                                            if (targetBone == null) continue;
+
+                                            if (curve.localPositionCurveX != null)
                                             {
-                                                var key = curve.localPositionCurveY[f];
+                                                float amp = AnimationUtils.CalculateAmplitude(curve.localPositionCurveX);
 
-                                                insertionLine.Add(new TransformDataInsertion()
+                                                for (int f = 0; f < curve.localPositionCurveX.length; f++)
                                                 {
-                                                    bone = targetBone,
-                                                    time = key.time,
-                                                    channel = TransformDataChannel.LocalPositionY,
+                                                    var key = curve.localPositionCurveX[f];
 
-                                                    useExistingKeyframe = true,
-                                                    keyframe = key,
-                                                    
-                                                    referenceAmplitude = amp,
+                                                    insertionLine.Add(new TransformDataInsertion()
+                                                    {
+                                                        bone = targetBone,
+                                                        time = key.time,
+                                                        channel = TransformDataChannel.LocalPositionX,
 
-                                                    hasPreceedingKeyframe = f > 0,
-                                                    preceedingKeyframe = curve.localPositionCurveY[Mathf.Max(0, f - 1)],
+                                                        useExistingKeyframe = true,
+                                                        keyframe = key,
 
-                                                    hasProceedingKeyframe = f < curve.localPositionCurveY.length - 1,
-                                                    proceedingKeyframe = curve.localPositionCurveY[Mathf.Min(f + 1, curve.localPositionCurveY.length - 1)]
-                                                });
+                                                        referenceAmplitude = amp,
+
+                                                        hasPreceedingKeyframe = f > 0,
+                                                        preceedingKeyframe = curve.localPositionCurveX[Mathf.Max(0, f - 1)],
+
+                                                        hasProceedingKeyframe = f < curve.localPositionCurveX.length - 1,
+                                                        proceedingKeyframe = curve.localPositionCurveX[Mathf.Min(f + 1, curve.localPositionCurveX.length - 1)]
+                                                    });
+                                                }
                                             }
-                                        }
-                                        if (curve.localPositionCurveZ != null)
-                                        {
-                                            float amp = AnimationUtils.CalculateAmplitude(curve.localPositionCurveZ);
-
-                                            for (int f = 0; f < curve.localPositionCurveZ.length; f++)
+                                            if (curve.localPositionCurveY != null)
                                             {
-                                                var key = curve.localPositionCurveZ[f];
+                                                float amp = AnimationUtils.CalculateAmplitude(curve.localPositionCurveY);
 
-                                                insertionLine.Add(new TransformDataInsertion()
+                                                for (int f = 0; f < curve.localPositionCurveY.length; f++)
                                                 {
-                                                    bone = targetBone,
-                                                    time = key.time,
-                                                    channel = TransformDataChannel.LocalPositionZ,
+                                                    var key = curve.localPositionCurveY[f];
 
-                                                    useExistingKeyframe = true,
-                                                    keyframe = key,
+                                                    insertionLine.Add(new TransformDataInsertion()
+                                                    {
+                                                        bone = targetBone,
+                                                        time = key.time,
+                                                        channel = TransformDataChannel.LocalPositionY,
 
-                                                    referenceAmplitude = amp,
+                                                        useExistingKeyframe = true,
+                                                        keyframe = key,
 
-                                                    hasPreceedingKeyframe = f > 0,
-                                                    preceedingKeyframe = curve.localPositionCurveZ[Mathf.Max(0, f - 1)],
+                                                        referenceAmplitude = amp,
 
-                                                    hasProceedingKeyframe = f < curve.localPositionCurveZ.length - 1,
-                                                    proceedingKeyframe = curve.localPositionCurveZ[Mathf.Min(f + 1, curve.localPositionCurveZ.length - 1)]
-                                                });
+                                                        hasPreceedingKeyframe = f > 0,
+                                                        preceedingKeyframe = curve.localPositionCurveY[Mathf.Max(0, f - 1)],
+
+                                                        hasProceedingKeyframe = f < curve.localPositionCurveY.length - 1,
+                                                        proceedingKeyframe = curve.localPositionCurveY[Mathf.Min(f + 1, curve.localPositionCurveY.length - 1)]
+                                                    });
+                                                }
                                             }
-                                        }
-
-                                        if (curve.localRotationCurveX != null)
-                                        {
-                                            float amp = AnimationUtils.CalculateAmplitude(curve.localRotationCurveX);
-
-                                            for (int f = 0; f < curve.localRotationCurveX.length; f++)
+                                            if (curve.localPositionCurveZ != null)
                                             {
-                                                var key = curve.localRotationCurveX[f];
+                                                float amp = AnimationUtils.CalculateAmplitude(curve.localPositionCurveZ);
 
-                                                insertionLine.Add(new TransformDataInsertion()
+                                                for (int f = 0; f < curve.localPositionCurveZ.length; f++)
                                                 {
-                                                    bone = targetBone,
-                                                    time = key.time,
-                                                    channel = TransformDataChannel.LocalRotationX,
+                                                    var key = curve.localPositionCurveZ[f];
 
-                                                    useExistingKeyframe = true,
-                                                    keyframe = key,
+                                                    insertionLine.Add(new TransformDataInsertion()
+                                                    {
+                                                        bone = targetBone,
+                                                        time = key.time,
+                                                        channel = TransformDataChannel.LocalPositionZ,
 
-                                                    referenceAmplitude = amp,
+                                                        useExistingKeyframe = true,
+                                                        keyframe = key,
 
-                                                    hasPreceedingKeyframe = f > 0,
-                                                    preceedingKeyframe = curve.localRotationCurveX[Mathf.Max(0, f - 1)],
+                                                        referenceAmplitude = amp,
 
-                                                    hasProceedingKeyframe = f < curve.localRotationCurveX.length - 1,
-                                                    proceedingKeyframe = curve.localRotationCurveX[Mathf.Min(f + 1, curve.localRotationCurveX.length - 1)]
-                                                });
+                                                        hasPreceedingKeyframe = f > 0,
+                                                        preceedingKeyframe = curve.localPositionCurveZ[Mathf.Max(0, f - 1)],
+
+                                                        hasProceedingKeyframe = f < curve.localPositionCurveZ.length - 1,
+                                                        proceedingKeyframe = curve.localPositionCurveZ[Mathf.Min(f + 1, curve.localPositionCurveZ.length - 1)]
+                                                    });
+                                                }
                                             }
-                                        }
-                                        if (curve.localRotationCurveY != null)
-                                        {
-                                            float amp = AnimationUtils.CalculateAmplitude(curve.localRotationCurveY);
 
-                                            for (int f = 0; f < curve.localRotationCurveY.length; f++)
+                                            if (curve.localRotationCurveX != null)
                                             {
-                                                var key = curve.localRotationCurveY[f];
+                                                float amp = AnimationUtils.CalculateAmplitude(curve.localRotationCurveX);
 
-                                                insertionLine.Add(new TransformDataInsertion()
+                                                for (int f = 0; f < curve.localRotationCurveX.length; f++)
                                                 {
-                                                    bone = targetBone,
-                                                    time = key.time,
-                                                    channel = TransformDataChannel.LocalRotationY,
-                                                    useExistingKeyframe = true,
-                                                    keyframe = key,
+                                                    var key = curve.localRotationCurveX[f];
 
-                                                    referenceAmplitude = amp,
+                                                    insertionLine.Add(new TransformDataInsertion()
+                                                    {
+                                                        bone = targetBone,
+                                                        time = key.time,
+                                                        channel = TransformDataChannel.LocalRotationX,
 
-                                                    hasPreceedingKeyframe = f > 0,
-                                                    preceedingKeyframe = curve.localRotationCurveY[Mathf.Max(0, f - 1)],
+                                                        useExistingKeyframe = true,
+                                                        keyframe = key,
 
-                                                    hasProceedingKeyframe = f < curve.localRotationCurveY.length - 1,
-                                                    proceedingKeyframe = curve.localRotationCurveY[Mathf.Min(f + 1, curve.localRotationCurveY.length - 1)]
-                                                });
+                                                        referenceAmplitude = amp,
+
+                                                        hasPreceedingKeyframe = f > 0,
+                                                        preceedingKeyframe = curve.localRotationCurveX[Mathf.Max(0, f - 1)],
+
+                                                        hasProceedingKeyframe = f < curve.localRotationCurveX.length - 1,
+                                                        proceedingKeyframe = curve.localRotationCurveX[Mathf.Min(f + 1, curve.localRotationCurveX.length - 1)]
+                                                    });
+                                                }
                                             }
-                                        }
-                                        if (curve.localRotationCurveZ != null)
-                                        {
-                                            float amp = AnimationUtils.CalculateAmplitude(curve.localRotationCurveZ);
-
-                                            for (int f = 0; f < curve.localRotationCurveZ.length; f++)
+                                            if (curve.localRotationCurveY != null)
                                             {
-                                                var key = curve.localRotationCurveZ[f];
+                                                float amp = AnimationUtils.CalculateAmplitude(curve.localRotationCurveY);
 
-                                                insertionLine.Add(new TransformDataInsertion()
+                                                for (int f = 0; f < curve.localRotationCurveY.length; f++)
                                                 {
-                                                    bone = targetBone,
-                                                    time = key.time,
-                                                    channel = TransformDataChannel.LocalRotationZ,
+                                                    var key = curve.localRotationCurveY[f];
 
-                                                    useExistingKeyframe = true,
-                                                    keyframe = key,
+                                                    insertionLine.Add(new TransformDataInsertion()
+                                                    {
+                                                        bone = targetBone,
+                                                        time = key.time,
+                                                        channel = TransformDataChannel.LocalRotationY,
+                                                        useExistingKeyframe = true,
+                                                        keyframe = key,
 
-                                                    referenceAmplitude = amp,
+                                                        referenceAmplitude = amp,
 
-                                                    hasPreceedingKeyframe = f > 0,
-                                                    preceedingKeyframe = curve.localRotationCurveZ[Mathf.Max(0, f - 1)],
+                                                        hasPreceedingKeyframe = f > 0,
+                                                        preceedingKeyframe = curve.localRotationCurveY[Mathf.Max(0, f - 1)],
 
-                                                    hasProceedingKeyframe = f < curve.localRotationCurveZ.length - 1,
-                                                    proceedingKeyframe = curve.localRotationCurveZ[Mathf.Min(f + 1, curve.localRotationCurveZ.length - 1)]
-                                                });
+                                                        hasProceedingKeyframe = f < curve.localRotationCurveY.length - 1,
+                                                        proceedingKeyframe = curve.localRotationCurveY[Mathf.Min(f + 1, curve.localRotationCurveY.length - 1)]
+                                                    });
+                                                }
                                             }
-                                        }
-                                        if (curve.localRotationCurveW != null)
-                                        {
-                                            float amp = AnimationUtils.CalculateAmplitude(curve.localRotationCurveW);
-
-                                            for (int f = 0; f < curve.localRotationCurveW.length; f++)
+                                            if (curve.localRotationCurveZ != null)
                                             {
-                                                var key = curve.localRotationCurveW[f];
+                                                float amp = AnimationUtils.CalculateAmplitude(curve.localRotationCurveZ);
 
-                                                insertionLine.Add(new TransformDataInsertion()
+                                                for (int f = 0; f < curve.localRotationCurveZ.length; f++)
                                                 {
-                                                    bone = targetBone,
-                                                    time = key.time,
-                                                    channel = TransformDataChannel.LocalRotationW,
+                                                    var key = curve.localRotationCurveZ[f];
 
-                                                    useExistingKeyframe = true,
-                                                    keyframe = key,
+                                                    insertionLine.Add(new TransformDataInsertion()
+                                                    {
+                                                        bone = targetBone,
+                                                        time = key.time,
+                                                        channel = TransformDataChannel.LocalRotationZ,
 
-                                                    referenceAmplitude = amp,
+                                                        useExistingKeyframe = true,
+                                                        keyframe = key,
 
-                                                    hasPreceedingKeyframe = f > 0,
-                                                    preceedingKeyframe = curve.localRotationCurveW[Mathf.Max(0, f - 1)],
+                                                        referenceAmplitude = amp,
 
-                                                    hasProceedingKeyframe = f < curve.localRotationCurveW.length - 1,
-                                                    proceedingKeyframe = curve.localRotationCurveW[Mathf.Min(f + 1, curve.localRotationCurveW.length - 1)]
-                                                });
+                                                        hasPreceedingKeyframe = f > 0,
+                                                        preceedingKeyframe = curve.localRotationCurveZ[Mathf.Max(0, f - 1)],
+
+                                                        hasProceedingKeyframe = f < curve.localRotationCurveZ.length - 1,
+                                                        proceedingKeyframe = curve.localRotationCurveZ[Mathf.Min(f + 1, curve.localRotationCurveZ.length - 1)]
+                                                    });
+                                                }
                                             }
-                                        }
-
-                                        if (curve.localScaleCurveX != null)
-                                        {
-                                            float amp = AnimationUtils.CalculateAmplitude(curve.localScaleCurveX);
-
-                                            for (int f = 0; f < curve.localScaleCurveX.length; f++)
+                                            if (curve.localRotationCurveW != null)
                                             {
-                                                var key = curve.localScaleCurveX[f];
+                                                float amp = AnimationUtils.CalculateAmplitude(curve.localRotationCurveW);
 
-                                                insertionLine.Add(new TransformDataInsertion()
+                                                for (int f = 0; f < curve.localRotationCurveW.length; f++)
                                                 {
-                                                    bone = targetBone,
-                                                    time = key.time,
-                                                    channel = TransformDataChannel.LocalScaleX,
+                                                    var key = curve.localRotationCurveW[f];
 
-                                                    useExistingKeyframe = true,
-                                                    keyframe = key,
+                                                    insertionLine.Add(new TransformDataInsertion()
+                                                    {
+                                                        bone = targetBone,
+                                                        time = key.time,
+                                                        channel = TransformDataChannel.LocalRotationW,
 
-                                                    referenceAmplitude = amp,
+                                                        useExistingKeyframe = true,
+                                                        keyframe = key,
 
-                                                    hasPreceedingKeyframe = f > 0,
-                                                    preceedingKeyframe = curve.localScaleCurveX[Mathf.Max(0, f - 1)],
+                                                        referenceAmplitude = amp,
 
-                                                    hasProceedingKeyframe = f < curve.localScaleCurveX.length - 1,
-                                                    proceedingKeyframe = curve.localScaleCurveX[Mathf.Min(f + 1, curve.localScaleCurveX.length - 1)]
-                                                });
+                                                        hasPreceedingKeyframe = f > 0,
+                                                        preceedingKeyframe = curve.localRotationCurveW[Mathf.Max(0, f - 1)],
+
+                                                        hasProceedingKeyframe = f < curve.localRotationCurveW.length - 1,
+                                                        proceedingKeyframe = curve.localRotationCurveW[Mathf.Min(f + 1, curve.localRotationCurveW.length - 1)]
+                                                    });
+                                                }
                                             }
-                                        }
-                                        if (curve.localScaleCurveY != null)
-                                        {
-                                            float amp = AnimationUtils.CalculateAmplitude(curve.localScaleCurveY);
 
-                                            for (int f = 0; f < curve.localScaleCurveY.length; f++)
+                                            if (curve.localScaleCurveX != null)
                                             {
-                                                var key = curve.localScaleCurveY[f];
+                                                float amp = AnimationUtils.CalculateAmplitude(curve.localScaleCurveX);
 
-                                                insertionLine.Add(new TransformDataInsertion()
+                                                for (int f = 0; f < curve.localScaleCurveX.length; f++)
                                                 {
-                                                    bone = targetBone,
-                                                    time = key.time,
-                                                    channel = TransformDataChannel.LocalScaleY,
+                                                    var key = curve.localScaleCurveX[f];
 
-                                                    useExistingKeyframe = true,
-                                                    keyframe = key,
+                                                    insertionLine.Add(new TransformDataInsertion()
+                                                    {
+                                                        bone = targetBone,
+                                                        time = key.time,
+                                                        channel = TransformDataChannel.LocalScaleX,
 
-                                                    referenceAmplitude = amp,
+                                                        useExistingKeyframe = true,
+                                                        keyframe = key,
 
-                                                    hasPreceedingKeyframe = f > 0,
-                                                    preceedingKeyframe = curve.localScaleCurveY[Mathf.Max(0, f - 1)],
+                                                        referenceAmplitude = amp,
 
-                                                    hasProceedingKeyframe = f < curve.localScaleCurveY.length - 1,
-                                                    proceedingKeyframe = curve.localScaleCurveY[Mathf.Min(f + 1, curve.localScaleCurveY.length - 1)]
-                                                });
+                                                        hasPreceedingKeyframe = f > 0,
+                                                        preceedingKeyframe = curve.localScaleCurveX[Mathf.Max(0, f - 1)],
+
+                                                        hasProceedingKeyframe = f < curve.localScaleCurveX.length - 1,
+                                                        proceedingKeyframe = curve.localScaleCurveX[Mathf.Min(f + 1, curve.localScaleCurveX.length - 1)]
+                                                    });
+                                                }
                                             }
-                                        }
-                                        if (curve.localScaleCurveZ != null)
-                                        {
-                                            float amp = AnimationUtils.CalculateAmplitude(curve.localScaleCurveZ);
-
-                                            for (int f = 0; f < curve.localScaleCurveZ.length; f++)
+                                            if (curve.localScaleCurveY != null)
                                             {
-                                                var key = curve.localScaleCurveZ[f];
+                                                float amp = AnimationUtils.CalculateAmplitude(curve.localScaleCurveY);
 
-                                                insertionLine.Add(new TransformDataInsertion()
+                                                for (int f = 0; f < curve.localScaleCurveY.length; f++)
                                                 {
-                                                    bone = targetBone,
-                                                    time = key.time,
-                                                    channel = TransformDataChannel.LocalScaleZ,
+                                                    var key = curve.localScaleCurveY[f];
 
-                                                    useExistingKeyframe = true,
-                                                    keyframe = key,
+                                                    insertionLine.Add(new TransformDataInsertion()
+                                                    {
+                                                        bone = targetBone,
+                                                        time = key.time,
+                                                        channel = TransformDataChannel.LocalScaleY,
 
-                                                    referenceAmplitude = amp,
+                                                        useExistingKeyframe = true,
+                                                        keyframe = key,
 
-                                                    hasPreceedingKeyframe = f > 0,
-                                                    preceedingKeyframe = curve.localScaleCurveZ[Mathf.Max(0, f - 1)],
+                                                        referenceAmplitude = amp,
 
-                                                    hasProceedingKeyframe = f < curve.localScaleCurveZ.length - 1,
-                                                    proceedingKeyframe = curve.localScaleCurveZ[Mathf.Min(f + 1, curve.localScaleCurveZ.length - 1)]
-                                                });
+                                                        hasPreceedingKeyframe = f > 0,
+                                                        preceedingKeyframe = curve.localScaleCurveY[Mathf.Max(0, f - 1)],
+
+                                                        hasProceedingKeyframe = f < curve.localScaleCurveY.length - 1,
+                                                        proceedingKeyframe = curve.localScaleCurveY[Mathf.Min(f + 1, curve.localScaleCurveY.length - 1)]
+                                                    });
+                                                }
+                                            }
+                                            if (curve.localScaleCurveZ != null)
+                                            {
+                                                float amp = AnimationUtils.CalculateAmplitude(curve.localScaleCurveZ);
+
+                                                for (int f = 0; f < curve.localScaleCurveZ.length; f++)
+                                                {
+                                                    var key = curve.localScaleCurveZ[f];
+
+                                                    insertionLine.Add(new TransformDataInsertion()
+                                                    {
+                                                        bone = targetBone,
+                                                        time = key.time,
+                                                        channel = TransformDataChannel.LocalScaleZ,
+
+                                                        useExistingKeyframe = true,
+                                                        keyframe = key,
+
+                                                        referenceAmplitude = amp,
+
+                                                        hasPreceedingKeyframe = f > 0,
+                                                        preceedingKeyframe = curve.localScaleCurveZ[Mathf.Max(0, f - 1)],
+
+                                                        hasProceedingKeyframe = f < curve.localScaleCurveZ.length - 1,
+                                                        proceedingKeyframe = curve.localScaleCurveZ[Mathf.Min(f + 1, curve.localScaleCurveZ.length - 1)]
+                                                    });
+                                                }
                                             }
                                         }
                                     }
                                 }
                             }
                         }
-                    }
-                    break;
+                        break;
+                }
             }
 
             if (bakeRootMotion)
@@ -5067,24 +5243,27 @@ namespace Swole
 
                 float nextTime = insertionLine[0].time;
 
-                controlLayer.mix = 1;
-                if (controlLayer.HasActiveState && controlLayer.ActiveState is CustomAnimationLayerState state && state.MotionControllerIndex >= 0)
+                foreach (var controlLayer in controlLayers) 
                 {
-                    var mc = controlLayer.GetMotionControllerUnsafe(state.MotionControllerIndex);
-                    if (mc is AnimationReference ar)
+                    controlLayer.layer.mix = controlLayer.mix;
+                    if (controlLayer.layer.HasActiveState && controlLayer.layer.ActiveState is CustomAnimationLayerState state && state.MotionControllerIndex >= 0)
                     {
-                        ar.BaseSpeed = 0;
-                        ar.SetTime(controlLayer, nextTime);
+                        var mc = controlLayer.layer.GetMotionControllerUnsafe(state.MotionControllerIndex);
+                        if (mc is AnimationReference ar)
+                        {
+                            ar.BaseSpeed = 0f;
+                            ar.SetTime(controlLayer.layer, nextTime);
 #if UNITY_EDITOR
-                        //Debug.Log(nextTime);
+                            //Debug.Log(nextTime);
 #endif
+                        }
                     }
                 }
 
-                animatorTarget.ResetToBindPose();
+                if (animatorTarget != null && !ReferenceEquals(animatorTarget, animatorReference)) animatorTarget.ResetToBindPose();
                 syncPose?.Invoke();
 
-                if (bakeFkToIk) animatorTarget.SyncIKFK(false); 
+                if (bakeFkToIk) animatorTarget.SyncIKFK(false, false, false); 
 
                 waiting = true;
             }
@@ -5191,7 +5370,7 @@ namespace Swole
                     previousRootRotation = rootRot;
                 }
 
-                if (bakeFkToIk) animatorTarget.SyncIKFK(false);
+                if (bakeFkToIk) animatorTarget.SyncIKFK(false, false, false); 
                 
                 List<Transform> insertionBones = new List<Transform>();
                 foreach (var insertion in toInsert)
@@ -5324,76 +5503,81 @@ namespace Swole
 
         public void Complete()
         {
-            if (isComplete) return; 
+            if (isComplete) return;
 
-            if (animationSource != null) animationSource.MarkForRecompilation();
-
-            if (completionLine != null)
+            if (animationSource != null)
             {
-                void UpdateCurveKeyTangents(EditableAnimationCurve curve, TransformDataInsertion completion) // scale and or flip keyframe tangents based on differences from reference data
+                if (completionLine != null)
                 {
-                    if (curve.HasKeyAtTime(completion.time, out var key, out var keyIndex))
+                    void UpdateCurveKeyTangents(EditableAnimationCurve curve, TransformDataInsertion completion) // scale and or flip keyframe tangents based on differences from reference data
                     {
-                        float amp = AnimationUtils.CalculateAmplitude(curve);
-                        float scale = amp / completion.referenceAmplitude;
-
-                        if (completion.hasPreceedingKeyframe && keyIndex - 1 >= 0)
+                        if (curve.HasKeyAtTime(completion.time, out var key, out var keyIndex))
                         {
-                            var inKey = curve[keyIndex - 1];
-                            key.inTangent *= scale * (Mathf.Sign(completion.preceedingKeyframe.value - completion.keyframe.value) == Mathf.Sign(inKey.value - key.value) ? 1 : -1);
-                        }
-                        if (completion.hasProceedingKeyframe && keyIndex + 1 <= curve.length)
-                        {
-                            var outKey = curve[keyIndex + 1];
-                            key.outTangent *= scale * (Mathf.Sign(completion.proceedingKeyframe.value - completion.keyframe.value) == Mathf.Sign(outKey.value - key.value) ? 1 : -1);
-                        }
+                            float amp = AnimationUtils.CalculateAmplitude(curve);
+                            float scale = amp / completion.referenceAmplitude;
 
-                        curve[keyIndex] = key;
+                            if (completion.hasPreceedingKeyframe && keyIndex - 1 >= 0)
+                            {
+                                var inKey = curve[keyIndex - 1];
+                                key.inTangent *= scale * (Mathf.Sign(completion.preceedingKeyframe.value - completion.keyframe.value) == Mathf.Sign(inKey.value - key.value) ? 1 : -1);
+                            }
+                            if (completion.hasProceedingKeyframe && keyIndex + 1 <= curve.length)
+                            {
+                                var outKey = curve[keyIndex + 1];
+                                key.outTangent *= scale * (Mathf.Sign(completion.proceedingKeyframe.value - completion.keyframe.value) == Mathf.Sign(outKey.value - key.value) ? 1 : -1);
+                            }
+
+                            curve[keyIndex] = key;
+                        }
+                    }
+
+                    foreach (var completion in completionLine)
+                    {
+                        if (!completion.useExistingKeyframe || (!completion.hasPreceedingKeyframe && !completion.hasProceedingKeyframe) || completion.referenceAmplitude == 0) continue;
+
+                        if (!animationSource.rawAnimation.TryGetTransformCurve(completion.bone.name, out var curve)) continue;
+
+                        switch (completion.channel)
+                        {
+                            case TransformDataChannel.LocalPositionX:
+                                if (curve.localPositionCurveX != null) UpdateCurveKeyTangents(curve.localPositionCurveX, completion);
+                                break;
+                            case TransformDataChannel.LocalPositionY:
+                                if (curve.localPositionCurveY != null) UpdateCurveKeyTangents(curve.localPositionCurveY, completion);
+                                break;
+                            case TransformDataChannel.LocalPositionZ:
+                                if (curve.localPositionCurveZ != null) UpdateCurveKeyTangents(curve.localPositionCurveZ, completion);
+                                break;
+
+                            case TransformDataChannel.LocalRotationX:
+                                if (curve.localRotationCurveX != null) UpdateCurveKeyTangents(curve.localRotationCurveX, completion);
+                                break;
+                            case TransformDataChannel.LocalRotationY:
+                                if (curve.localRotationCurveY != null) UpdateCurveKeyTangents(curve.localRotationCurveY, completion);
+                                break;
+                            case TransformDataChannel.LocalRotationZ:
+                                if (curve.localRotationCurveZ != null) UpdateCurveKeyTangents(curve.localRotationCurveZ, completion);
+                                break;
+                            case TransformDataChannel.LocalRotationW:
+                                if (curve.localRotationCurveW != null) UpdateCurveKeyTangents(curve.localRotationCurveW, completion);
+                                break;
+
+                            case TransformDataChannel.LocalScaleX:
+                                if (curve.localScaleCurveX != null) UpdateCurveKeyTangents(curve.localScaleCurveX, completion);
+                                break;
+                            case TransformDataChannel.LocalScaleY:
+                                if (curve.localScaleCurveY != null) UpdateCurveKeyTangents(curve.localScaleCurveY, completion);
+                                break;
+                            case TransformDataChannel.LocalScaleZ:
+                                if (curve.localScaleCurveZ != null) UpdateCurveKeyTangents(curve.localScaleCurveZ, completion);
+                                break;
+                        }
                     }
                 }
 
-                foreach(var completion in completionLine)
-                {
-                    if (!completion.useExistingKeyframe || (!completion.hasPreceedingKeyframe && !completion.hasProceedingKeyframe) || completion.referenceAmplitude == 0) continue;
+                if (optimizeKeys) animationSource.rawAnimation.Optimize(false, 0f, optimizationTolerancePosition > 0f, optimizationTolerancePosition, optimizationToleranceRotation > 0f, optimizationToleranceRotation, optimizationToleranceScale > 0f, optimizationToleranceScale, ModelEditor._defaultBonesToIgnoreForOptimization);
 
-                    if (!animationSource.rawAnimation.TryGetTransformCurve(completion.bone.name, out var curve)) continue;
-
-                    switch (completion.channel)
-                    {
-                        case TransformDataChannel.LocalPositionX:
-                            if (curve.localPositionCurveX != null) UpdateCurveKeyTangents(curve.localPositionCurveX, completion);
-                            break;
-                        case TransformDataChannel.LocalPositionY:
-                            if (curve.localPositionCurveY != null) UpdateCurveKeyTangents(curve.localPositionCurveY, completion);
-                            break;
-                        case TransformDataChannel.LocalPositionZ:
-                            if (curve.localPositionCurveZ != null) UpdateCurveKeyTangents(curve.localPositionCurveZ, completion);
-                            break;
-
-                        case TransformDataChannel.LocalRotationX:
-                            if (curve.localRotationCurveX != null) UpdateCurveKeyTangents(curve.localRotationCurveX, completion);
-                            break;
-                        case TransformDataChannel.LocalRotationY:
-                            if (curve.localRotationCurveY != null) UpdateCurveKeyTangents(curve.localRotationCurveY, completion);
-                            break;
-                        case TransformDataChannel.LocalRotationZ:
-                            if (curve.localRotationCurveZ != null) UpdateCurveKeyTangents(curve.localRotationCurveZ, completion);
-                            break;
-                        case TransformDataChannel.LocalRotationW:
-                            if (curve.localRotationCurveW != null) UpdateCurveKeyTangents(curve.localRotationCurveW, completion);
-                            break;
-
-                        case TransformDataChannel.LocalScaleX:
-                            if (curve.localScaleCurveX != null) UpdateCurveKeyTangents(curve.localScaleCurveX, completion);
-                            break;
-                        case TransformDataChannel.LocalScaleY:
-                            if (curve.localScaleCurveY != null) UpdateCurveKeyTangents(curve.localScaleCurveY, completion);
-                            break;
-                        case TransformDataChannel.LocalScaleZ:
-                            if (curve.localScaleCurveZ != null) UpdateCurveKeyTangents(curve.localScaleCurveZ, completion);
-                            break;
-                    }
-                }
+                animationSource.MarkForRecompilation();
             }
 
             isComplete = true;

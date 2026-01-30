@@ -777,7 +777,7 @@ namespace Swole.API.Unity.Animation
                     memberPart = part.Substring(0, bracketIndex);
                 }
 
-                MemberInfo info = currentType.GetField(memberPart, BindingFlags.Instance | BindingFlags.Public);
+                MemberInfo info = currentType.GetField(memberPart, BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
                 if (info == null) info = currentType.GetProperty(memberPart, BindingFlags.Instance | BindingFlags.Public);
 
                 if (info == null) 
@@ -3171,6 +3171,142 @@ namespace Swole.API.Unity.Animation
 
             }
 
+        }
+
+        #region Bone Heights
+
+        protected Dictionary<string, AnimationCurve> boneHeightCurves;
+
+        public Matrix4x4 CalculateBoneWorldMatrix(Transform bone, float referenceTime, Transform cutoffTransform = null/*, Color test = default*/)
+        {
+            float animLength = LengthInSeconds;
+            float referenceTimeNormalized = animLength > 0f ? referenceTime / animLength : 0f;
+
+            var bone_ = bone;
+            Matrix4x4 worldMatrix = Matrix4x4.identity;
+            //Matrix4x4 worldMatrix2 = Matrix4x4.identity;
+            //Matrix4x4 worldMatrix3 = Matrix4x4.identity;
+            //int i = 0;
+            while (bone_ != null && bone_ != cutoffTransform)
+            {
+                Matrix4x4 state;
+                if (TryGetTransformCurve(bone_.name, out var transformCurve) && transformCurve.HasKeyframes)
+                {
+                    float curveLength = transformCurve.GetLengthInSeconds(framesPerSecond);
+                    var data = transformCurve.Evaluate(referenceTimeNormalized * (animLength / (curveLength > 0f ? curveLength : 1f)));
+                    state = Matrix4x4.TRS(transformCurve.HasPositionKeyframes ? data.localPosition : bone_.localPosition, (transformCurve.HasRotationKeyframes ? ((Quaternion)data.localRotation) : bone_.localRotation).normalized, (transformCurve.HasScaleKeyframes ? data.localScale : bone_.localScale)); 
+                }
+                else
+                {
+                    state = Matrix4x4.TRS(bone_.localPosition, bone_.localRotation.normalized, bone_.localScale);
+                }
+
+                worldMatrix = state * worldMatrix;
+                //if (i >= 1) worldMatrix2 = state * worldMatrix2;
+                //if (i >= 2) worldMatrix3 = state * worldMatrix3;
+
+                bone_ = bone_.parent;
+                //i++;
+            }
+
+            //Debug.DrawRay(worldMatrix.MultiplyPoint(Vector3.zero), worldMatrix.MultiplyVector(Vector3.up * 0.1f), test, 100f); 
+            //Debug.DrawLine(worldMatrix2.MultiplyPoint(Vector3.zero), worldMatrix.MultiplyPoint(Vector3.zero), test, 100f);
+            //Debug.DrawLine(worldMatrix3.MultiplyPoint(Vector3.zero), worldMatrix2.MultiplyPoint(Vector3.zero), test, 100f); 
+
+            return worldMatrix;
+        }
+
+        public AnimationCurve CalculateBoneHeights(Transform bone, int samplesPerSecond, float baseReferenceTime = 0f, Vector3 heightAxis = default, Transform cutoffTransform = null)
+        {
+            if (bone == null) return null;
+
+            if (boneHeightCurves == null) boneHeightCurves = new Dictionary<string, AnimationCurve>();
+
+            if (!boneHeightCurves.TryGetValue(bone.name, out var finalCurve))
+            {
+                finalCurve = new AnimationCurve();
+                boneHeightCurves[bone.name] = finalCurve;
+            } 
+            else
+            {
+                finalCurve.ClearKeys();
+            }
+
+            if (heightAxis.x == 0f && heightAxis.y == 0f && heightAxis.z == 0f) heightAxis = Vector3.up;
+
+            //Color test = UnityEngine.Random.ColorHSV(0f, 1f, 0f, 1f, 0.5f, 1f);
+            float baseHeight = Vector3.Dot(CalculateBoneWorldMatrix(bone, baseReferenceTime, cutoffTransform/*, test*/).GetPosition(), heightAxis);
+
+            int samples = Mathf.CeilToInt(Mathf.Max(1, LengthInSeconds * samplesPerSecond)); 
+            float sampleRate = 1f / samplesPerSecond;
+            float timeLength = LengthInSeconds;
+            for (int a = 0; a < samples; a++)
+            {
+                float t = a >= samples - 1 ? timeLength : (a * sampleRate);
+                float height = Vector3.Dot(CalculateBoneWorldMatrix(bone, t, cutoffTransform/*, Color.Lerp(test, Color.red, (t / timeLength) * 0.15f)*/).GetPosition(), heightAxis) - baseHeight;
+                finalCurve.AddKey(t, height);
+
+                if (a > 0) finalCurve.SmoothTangents(a - 1, 0.35f);
+            }
+
+            return finalCurve;
+        }
+
+        public AnimationCurve GetBoneHeightCurve(Transform bone, int samplesPerSecond, float baseReferenceTime = 0f, Vector3 heightAxis = default, Transform cutoffTransform = null)
+        {
+            if (bone == null) return null;
+
+            AnimationCurve finalCurve = null;
+            if (boneHeightCurves == null || !boneHeightCurves.TryGetValue(bone.name, out finalCurve))
+            {
+                finalCurve = CalculateBoneHeights(bone, samplesPerSecond, baseReferenceTime, heightAxis, cutoffTransform);
+            }
+
+            return finalCurve;
+        }
+        public bool TryGetBoneHeightCurve(string boneName, out AnimationCurve heightCurve)
+        {
+            heightCurve = null;
+            if (boneHeightCurves != null && boneHeightCurves.TryGetValue(boneName, out heightCurve))
+            {
+                return true;
+            }
+
+            return false;
+        }
+        public bool TryGetBoneHeightCurve(Transform bone, out AnimationCurve heightCurve) => TryGetBoneHeightCurve(bone == null ? string.Empty : bone.name, out heightCurve);
+
+        #endregion
+
+        public void Optimize(bool includeProperties = true, float propertyTolerance = 0.005f, bool includePosition = true, float positionTolerance = 0.005f, bool includeRotation = true, float rotationToleranceDeg = 1f, bool includeScale = true, float scaleTolerance = 0.005f, List<string> bonesToIgnore = null)
+        {
+            if (includeProperties)
+            {
+                if (propertyCurves != null) foreach (var curve in propertyCurves) curve.Optimize(propertyTolerance);
+                if (propertyLinearCurves != null) foreach (var curve in propertyLinearCurves) curve.Optimize(propertyTolerance); 
+            }
+
+            if (includePosition || includeRotation || includeScale)
+            {
+                if (transformCurves != null)
+                {
+                    foreach (var curve in transformCurves)
+                    {
+                        if (bonesToIgnore != null && bonesToIgnore.Contains(curve.TransformName)) continue;
+
+                        curve.Optimize(includePosition, positionTolerance, includeRotation, rotationToleranceDeg, includeScale, scaleTolerance);
+                    }
+                }
+                if (transformLinearCurves != null)
+                {
+                    foreach (var curve in transformLinearCurves)
+                    {
+                        if (bonesToIgnore != null && bonesToIgnore.Contains(curve.TransformName)) continue;
+
+                        curve.Optimize(includePosition, positionTolerance, includeRotation, rotationToleranceDeg, includeScale, scaleTolerance);
+                    }
+                }
+            }
         }
 
     }

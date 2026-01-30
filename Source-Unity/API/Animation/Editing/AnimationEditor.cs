@@ -5052,7 +5052,7 @@ namespace Swole.API.Unity.Animation
             var activeObj = ActiveAnimatable;
             if (activeObj == null) return;
 
-            var layout = window.GetComponentInChildren<LayoutGroup>();
+            var layout = window.GetComponentInChildren<LayoutGroup>(); 
             if (layout == null) return;
 
             if (activeObj.animator != null && activeObj.animator.avatar != null)
@@ -6070,7 +6070,7 @@ namespace Swole.API.Unity.Animation
 
             if (rebuild) curveRenderer.Rebuild();
         }
-        public void RefreshTimeline()
+        public void RefreshTimeline() 
         {
             if (timelineWindow == null) return;
 
@@ -6425,6 +6425,18 @@ namespace Swole.API.Unity.Animation
 
         public GameObject undoButton;
         public GameObject redoButton;
+
+        public RectTransform progressBar;
+        private UIProgressBar progressBarComp;
+        public void SetVisualAnimationBakeProgress(float progress)
+        {
+            if (progressBar == null) return;
+
+            if (progressBarComp == null) progressBarComp = progressBar.GetComponentInChildren<UIProgressBar>();
+            if (progressBarComp == null) return;
+
+            progressBarComp.SetProgress(progress);
+        }
 
         [Header("Bone Rendering")]
         public int boneOverlayLayer = 29; 
@@ -6803,6 +6815,8 @@ namespace Swole.API.Unity.Animation
 
         protected void OnDestroy()
         {
+
+            if (isPlaying) RenderingControl.SetRenderAnimationBones(true); 
 
             swole.Unregister(this); 
 
@@ -8666,10 +8680,101 @@ namespace Swole.API.Unity.Animation
             return false;
         }
 
+        #region Animation Baking
+
+        private AnimationBake animationBake;
+        public bool IsBakingAnimation => animationBake != null && !animationBake.IsComplete;
+
+        public AnimationBake BeginAnimationBake(ImportedAnimatable targetObj, AnimationBake.MixedAnimationReference[] animationsToBake, string newAnimationName, AnimationBakeType bakeType,  Action<AnimationBake> OnComplete = null, Action<AnimationBake> OnCancel = null, List<CustomAnimation> bakedAnimations = null)
+        {
+            if (animationsToBake == null)
+            {
+                OnCancel?.Invoke(null);
+                return null;
+            }
+
+            animationBake = new AnimationBake(targetObj.animator, targetObj.animator, animationsToBake, targetObj.RestPose, null);
+            animationBake.insertionFrameDelay = 3;
+
+            animationBake.bakeRootMotion = false;
+
+            IEnumerator Bake()
+            {
+                bool wasOverridingUpdateCalls = targetObj.animator.OverrideUpdateCalls;
+                targetObj.animator.ResetToPreInitializedBindPose();
+
+                yield return null;
+
+                animationBake.Initialize(newAnimationName, bakeType, null, null);
+
+                yield return null;
+
+                bool cancel = false;
+
+                if (progressBar != null)
+                {
+                    progressBar.gameObject.SetActive(true);
+                    progressBar.SetAsLastSibling();
+
+                    var popup = progressBar.GetComponentInChildren<UIPopup>(true);
+                    if (popup != null)
+                    {
+                        popup.Elevate();
+                        if (popup.OnClose == null) popup.OnClose = new UnityEvent();
+                        popup.OnClose.RemoveAllListeners();
+                        popup.OnClose.AddListener(() => cancel = true);
+                    }
+                }
+                SetVisualAnimationBakeProgress(0f);
+
+                targetObj.animator.enabled = true;
+                targetObj.animator.SetOverrideUpdateCalls(false);
+
+                while (!cancel && !ProgressAnimationBake())
+                {
+                    yield return null;
+                }
+
+                targetObj.animator.SetOverrideUpdateCalls(wasOverridingUpdateCalls);
+
+                if (progressBar != null) progressBar.gameObject.SetActive(false);
+
+                if (cancel)
+                {
+                    OnCancel?.Invoke(animationBake);
+                }
+                else
+                {
+                    if (bakedAnimations != null) bakedAnimations.Add(animationBake.OutputAnimation);
+                    OnComplete?.Invoke(animationBake);
+                }
+            }
+
+            StartCoroutine(Bake());
+
+            return animationBake;
+        }
+        public bool ProgressAnimationBake()
+        {
+            if (animationBake == null) return true;
+
+            if (animationBake.ProgressBake())
+            {
+                animationBake.Complete();
+                return true;
+            }
+
+            SetVisualAnimationBakeProgress(animationBake.Progress);
+
+            return false;
+        }
+
+        #endregion
+
         public const float maxAnimationLength = 600;
         public void OpenNewAnimationWindow()
         {
-            if (newAnimationWindow == null) return;
+            if (newAnimationWindow == null || currentSession == null) return;
 
             InputField[] fields = newAnimationWindow.gameObject.GetComponentsInChildren<InputField>(true);
             foreach (var field in fields) if (field != null && field.contentType != InputField.ContentType.DecimalNumber && field.contentType != InputField.ContentType.IntegerNumber) field.text = string.Empty;
@@ -8679,6 +8784,98 @@ namespace Swole.API.Unity.Animation
 
             UIPopupMessageFadable errorMessage = newAnimationWindow.GetComponentInChildren<UIPopupMessageFadable>(true);
             UIPopup popup = newAnimationWindow.GetComponentInChildren<UIPopup>(true);
+
+            Transform tempTransform;
+
+            var bakeSourceRoot = newAnimationWindow.FindDeepChildLiberal("BakeSource");
+
+            tempTransform = bakeSourceRoot == null ? null : bakeSourceRoot.FindDeepChildLiberal("BakeTarget");
+            var bakeTargetDropdown = tempTransform != null ? tempTransform.GetComponentInChildren<UIDynamicDropdown>() : null;
+            if (bakeTargetDropdown != null) 
+            {
+                bakeTargetDropdown.ClearMenuItems();
+                if (currentSession.importedObjects != null)
+                {
+                    foreach(var obj in currentSession.importedObjects)
+                    {
+                        if (obj == null) continue;
+                        bakeTargetDropdown.CreateNewMenuItem(obj.displayName, true, true);
+                    }
+                }
+            }
+
+            tempTransform = bakeSourceRoot == null ? null : bakeSourceRoot.FindDeepChildLiberal("Sources");
+            var bakeSourcesList = tempTransform != null ? tempTransform.GetComponentInChildren<UIRecyclingList>() : null;
+            if (bakeSourcesList != null)
+            {
+                bakeSourcesList.Clear(true); 
+
+                CustomEditorUtils.SetButtonOnClickActionByName(tempTransform, "addSource", () =>
+                {
+                    OpenBrowseAnimationsWindow(browseAnimationsWindow, (CustomAnimation selection) => 
+                    {
+                        var activeObj = currentSession.ActiveObject;
+                        if (activeObj == null || activeObj.animationBank == null) return;
+
+                        activeObj.TryGetSource(selection.Name, out var targetSource);
+
+                        bakeSourcesList.AddNewMember(selection.Name, null, true, (UIRecyclingList.MemberData memberData, GameObject instance) =>
+                        {
+                            if (instance == null) return;
+
+                            CustomEditorUtils.SetButtonOnClickActionByName(instance, "remove", () => 
+                            {
+                                bakeSourcesList.RemoveMember(memberData);
+                                bakeSourcesList.Refresh();
+                            });
+
+                            var mixSlider = instance.GetComponentInChildren<Slider>(true);
+                            if (mixSlider != null)
+                            {
+                                if (memberData.storage is float storedMix) 
+                                { 
+                                    mixSlider.value = storedMix;
+                                } 
+                                else
+                                {
+                                    mixSlider.value = targetSource == null ? 1f : targetSource.Mix;
+                                }          
+                                
+                                if (mixSlider.onValueChanged == null) mixSlider.onValueChanged = new Slider.SliderEvent();
+                                mixSlider.onValueChanged.RemoveAllListeners();
+                                mixSlider.onValueChanged.AddListener((float val) =>
+                                {
+                                    memberData.storage = val;
+                                });
+                            }
+
+                        }, targetSource == null ? 1f : targetSource.Mix);
+
+                        if (browseAnimationsWindow != null) browseAnimationsWindow.gameObject.SetActive(false);
+                    }, 
+
+                    "Source Animation", 
+                    
+                    (UICategorizedList animationsList, AddSelectableAnimationDelegate addListMember) =>
+                    {
+                        var activeObj = currentSession.ActiveObject;
+                        if (activeObj == null || activeObj.animationBank == null) return;
+
+                        var cat = animationsList.AddOrGetCategory(activeObj.displayName);
+                        cat.Expand();
+
+                        for (int a = 0; a < activeObj.animationBank.Count; a++)
+                        {
+                            var source = activeObj.animationBank[a];
+                            if (source == null) continue;
+
+                            if (bakeSourcesList.HasMemberWithName(source.DisplayName)) continue; 
+
+                            addListMember(source.DisplayName, source.rawAnimation, cat);
+                        }
+                    });
+                });
+            }
 
             var create = newAnimationWindow.FindDeepChildLiberal("Create");
             void Create()
@@ -8756,11 +8953,88 @@ namespace Swole.API.Unity.Animation
                                     return;
                                 }
                             }
+                        } 
+                        else if (selectionText == "bake")
+                        {
+                            string animName = string.Empty;
+
+                            var selectionRoot = newAnimationWindow.FindDeepChildLiberal("BakeSource");
+                            if (selectionRoot != null)
+                            {
+                                var name = selectionRoot.FindDeepChildLiberal("Name");
+                                if (name != null) animName = GetInputFieldText(name);
+
+                                if (string.IsNullOrWhiteSpace(animName))
+                                {
+                                    if (errorMessage != null) errorMessage.SetMessage("Animation name cannot be empty!").SetDisplayTime(errorMessage.DefaultDisplayTime).Show(); 
+                                    return;
+                                }
+
+                                if (bakeSourcesList != null)
+                                {
+                                    if (bakeSourcesList.Count <= 0)
+                                    {
+                                        if (errorMessage != null) errorMessage.SetMessage("No source animations added to bake from!").SetDisplayTime(errorMessage.DefaultDisplayTime).Show(); 
+                                        return;
+                                    }
+
+                                    var settingsRoot = selectionRoot.FindDeepChildLiberal("settings");
+
+                                    var activeObj = currentSession.ActiveObject;
+                                    if (activeObj == null || activeObj.animationBank == null) return;
+
+                                    List<AnimationBake.MixedAnimationReference> toBake = new List<AnimationBake.MixedAnimationReference>();
+                                    for(int a = 0; a < bakeSourcesList.Count; a++)
+                                    {
+                                        var member = bakeSourcesList.GetMember(a);
+                                        activeObj.TryGetSource(member.name, out var targetSource);
+                                        if (targetSource == null || targetSource.rawAnimation == null) continue;
+
+                                        float mix = 1f;
+                                        if (member.storage is float storedMix) mix = storedMix;
+
+                                        toBake.Add(new AnimationBake.MixedAnimationReference()
+                                        {
+                                            animation = targetSource.CompiledAnimation,
+                                            mix = mix
+                                        });
+                                    }
+                                    if (toBake.Count > 0)
+                                    {
+                                        var bakeSettings = ModelEditor.AnimationBakeSettings.ReadFromUI(selectionRoot, settingsRoot);
+
+                                        void BakeAnim() 
+                                        {
+                                            var bake = BeginAnimationBake(activeObj, toBake.ToArray(), animName, bakeSettings.bakeType, (AnimationBake bakeObj) =>
+                                            {
+                                                if (bakeObj != null && bakeObj.OutputAnimation != null)
+                                                {
+                                                    activeObj.LoadNewAnimationSource(this, animName, bakeObj.OutputAnimation, true);
+                                                }
+                                            }, null, null);
+
+                                            bake.optimizeKeys = bakeSettings.optimizeKeys;
+                                            bake.optimizationTolerancePosition = bakeSettings.optimizationTolerancePosition;
+                                            bake.optimizationToleranceRotation = bakeSettings.optimizationToleranceRotation;
+                                            bake.optimizationToleranceScale = bakeSettings.optimizationToleranceScale;
+
+                                            bake.bakeFkToIk = bakeSettings.bakeFkToIk;
+                                            bake.forceBakeIkPosition = bakeSettings.forceBakeIkPosition;
+                                            bake.samplesPerKey = bakeSettings.samplesPerKey;
+                                            bake.resampleIntervalPos = bakeSettings.resampleIntervalPos;
+                                            bake.resampleIntervalRot = bakeSettings.resampleIntervalRot;
+                                            bake.resampleIntervalScale = bakeSettings.resampleIntervalScale;
+                                        }
+
+                                        BakeAnim();
+                                    }
+                                }
+                            }
                         }
                     }
                 }
 
-                popup.Close();
+                popup.Close(); 
             }
             SetButtonOnClickAction(create, Create);
 
@@ -9930,7 +10204,7 @@ namespace Swole.API.Unity.Animation
                 {
                     if (obj == null || obj.animator == null) continue;
 
-                    obj.animator.SyncIKFK(true);   
+                    obj.animator.SyncIKFK(true, true, true); 
                 }
 
                 SnapbackLockedTransforms();

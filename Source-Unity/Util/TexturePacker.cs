@@ -123,6 +123,8 @@ namespace Swole.Unity
             {
                 foreach (var tex in channelR.textures)
                 {
+                    if (tex == null) continue;
+
                     for (int x = 0; x < width; x++)
                     {
                         for (int y = 0; y < height; y++)
@@ -167,6 +169,8 @@ namespace Swole.Unity
             {
                 foreach (var tex in channelG.textures)
                 {
+                    if (tex == null) continue;
+
                     for (int x = 0; x < width; x++)
                     {
                         for (int y = 0; y < height; y++)
@@ -211,6 +215,8 @@ namespace Swole.Unity
             {
                 foreach (var tex in channelB.textures)
                 {
+                    if (tex == null) continue;
+
                     for (int x = 0; x < width; x++)
                     {
                         for (int y = 0; y < height; y++)
@@ -255,6 +261,8 @@ namespace Swole.Unity
             {
                 foreach (var tex in channelA.textures)
                 {
+                    if (tex == null) continue;
+
                     for (int x = 0; x < width; x++)
                     {
                         for (int y = 0; y < height; y++)

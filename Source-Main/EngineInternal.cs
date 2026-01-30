@@ -2990,6 +2990,22 @@ namespace Swole
 
             public int TransformHierarchyCount => IsDestroyed ? 0 : instance.TransformHierarchyCount;
 
+            public float GetCurrentBoneHeight(string boneName)
+            {
+                if (IsDestroyed) return 0f;
+                return instance.GetCurrentBoneHeight(boneName);
+            }
+            public float GetBoneHeight(string boneName, float timeOffset)
+            {
+                if (IsDestroyed) return 0f;
+                return instance.GetBoneHeight(boneName, timeOffset);
+            }
+            public float GetBoneHeightAtTime(string boneName, float time)
+            {
+                if (IsDestroyed) return 0f;
+                return instance.GetBoneHeightAtTime(boneName, time);
+            }
+
             #endregion
 
         } 
@@ -3604,6 +3620,22 @@ namespace Swole
                 return instance.GetActiveParameters(indices);
             }
 
+            public float GetCurrentBoneHeight(string boneName)
+            {
+                if (instance == null) return 0f;
+                return instance.GetCurrentBoneHeight(boneName);
+            }
+            public float GetBoneHeight(string boneName, float timeOffset)
+            {
+                if (instance == null) return 0f;
+                return instance.GetBoneHeight(boneName, timeOffset);
+            }
+            public float GetBoneHeightAtTime(string boneName, float time)
+            {
+                if (instance == null) return 0f;
+                return instance.GetBoneHeightAtTime(boneName, time);
+            }
+
             #endregion
 
         }
@@ -3902,6 +3934,30 @@ namespace Swole
                 }
             }
 
+            public int TransitionCount
+            {
+                get
+                {
+                    if (instance == null) return 0;
+                    return instance.TransitionCount;
+                }
+            }
+            public Transition GetTransition(int index)
+            {
+                if (instance == null) return null;
+                return instance.GetTransition(index);
+            }
+            public Transition GetTransitionUnsafe(int index)
+            {
+                if (instance == null) return null;
+                return instance.GetTransitionUnsafe(index);
+            }
+            public int GetTransitionIndex(Transition transition)
+            {
+                if (instance == null) return -1;
+                return instance.GetTransitionIndex(transition);
+            }
+
             public Transition ActiveTransition => instance == null ? null : instance.ActiveTransition; 
 
             public int TransitionTarget => instance == null ? -1 : instance.TransitionTarget;
@@ -3998,10 +4054,26 @@ namespace Swole
                 return instance.GetActiveParameters(layer, indices);
             }
 
+            public float GetCurrentBoneHeight(string boneName)
+            {
+                if (instance == null) return 0f;
+                return instance.GetCurrentBoneHeight(boneName);
+            }
+            public float GetBoneHeight(string boneName, float timeOffset)
+            {
+                if (instance == null) return 0f;
+                return instance.GetBoneHeight(boneName, timeOffset);
+            }
+            public float GetBoneHeightAtTime(string boneName, float time)
+            {
+                if (instance == null) return 0f;
+                return instance.GetBoneHeightAtTime(boneName, time);
+            }
+
             #endregion
 
         }
-        
+
         public struct AnimationReference : IAnimationReference
         {
 
@@ -4010,14 +4082,14 @@ namespace Swole
             public object Clone()
             {
                 var copy = this;
-                copy.instance = (IAnimationReference)instance.Clone(); 
+                copy.instance = (IAnimationReference)instance.Clone();
                 return copy;
             }
 
             #endregion
 
             public IAnimationReference instance;
-            public object Instance => instance; 
+            public object Instance => instance;
 
             public AnimationReference(IAnimationReference instance)
             {
@@ -4029,7 +4101,7 @@ namespace Swole
                 if (rhs is AnimationReference ts) return lhs.instance == ts.instance;
                 return lhs.instance == rhs;
             }
-            public static bool operator !=(AnimationReference lhs, object rhs) => !(lhs == rhs); 
+            public static bool operator !=(AnimationReference lhs, object rhs) => !(lhs == rhs);
 
             public override bool Equals(object obj)
             {
@@ -4099,9 +4171,9 @@ namespace Swole
             public void Reset(IAnimationLayer layer)
             {
                 if (instance == null) return;
-                instance.Reset(layer); 
+                instance.Reset(layer);
             }
-             
+
             public float GetSpeed(IAnimationLayer layer)
             {
                 if (instance == null) return 0;
@@ -4117,7 +4189,7 @@ namespace Swole
             public void ForceSetLoopMode(IAnimationLayer layer, AnimationLoopMode loopMode)
             {
                 if (instance == null) return;
-               instance.ForceSetLoopMode(layer, loopMode);
+                instance.ForceSetLoopMode(layer, loopMode);
             }
 
             public void SetWeight(float weight)
@@ -4135,7 +4207,7 @@ namespace Swole
             public void SyncWeight(IAnimationLayer layer)
             {
                 if (instance == null) return;
-                instance.SyncWeight(layer); 
+                instance.SyncWeight(layer);
             }
 
             public float GetBaseWeight()
@@ -4165,7 +4237,7 @@ namespace Swole
             public float GetMaxScaledDuration(IAnimationLayer layer)
             {
                 if (instance == null) return default;
-                return instance.GetMaxScaledDuration(layer); 
+                return instance.GetMaxScaledDuration(layer);
             }
 
             public float GetTime(IAnimationLayer layer, float addTime = 0)
@@ -4212,7 +4284,7 @@ namespace Swole
             public void RemapChildIndices(Dictionary<int, int> remapper, int minIndex, bool invalidateNonRemappedIndices = false)
             {
                 if (instance == null) return;
-                instance.RemapChildIndices(remapper, minIndex, invalidateNonRemappedIndices); 
+                instance.RemapChildIndices(remapper, minIndex, invalidateNonRemappedIndices);
             }
 
             public void GetParameterIndices(IAnimationLayer layer, List<int> indices)
@@ -4237,9 +4309,9 @@ namespace Swole
                 appliedBias = false;
                 if (instance == null) return defaultValue;
 
-                return instance.GetBiasedParameterValue(layer, parameterIndex, defaultValue, updateParameter, out appliedBias);  
+                return instance.GetBiasedParameterValue(layer, parameterIndex, defaultValue, updateParameter, out appliedBias);
             }
-            
+
             public bool HasDerivativeHierarchyOf(IAnimationLayer layer, IAnimationMotionController other)
             {
                 if (instance == null) return default;
@@ -4267,13 +4339,29 @@ namespace Swole
             public void SetChildIndex(int childIndex, int controllerIndex)
             {
                 if (instance == null) return;
-                instance.SetChildIndex(childIndex, controllerIndex); 
+                instance.SetChildIndex(childIndex, controllerIndex);
             }
 
             public HashSet<int> GetActiveParameters(IAnimationLayer layer, HashSet<int> indices = null)
             {
                 if (instance == null) return indices;
                 return instance.GetActiveParameters(layer, indices);
+            }
+
+            public float GetCurrentBoneHeight(IAnimationLayer layer, string boneName)
+            {
+                if (instance == null) return 0f;
+                return instance.GetCurrentBoneHeight(layer, boneName);
+            }
+            public float GetBoneHeight(IAnimationLayer layer, string boneName, float timeOffset)
+            {
+                if (instance == null) return 0f;
+                return instance.GetBoneHeight(layer, boneName, timeOffset);
+            }
+            public float GetBoneHeightAtTime(IAnimationLayer layer, string boneName, float time)
+            {
+                if (instance == null) return 0f;
+                return instance.GetBoneHeightAtTime(layer, boneName, time);
             }
 
             #endregion

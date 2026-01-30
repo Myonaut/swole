@@ -292,6 +292,10 @@ namespace Swole.API.Unity.Animation
             return inputList;
         }
 
+        public void Optimize(float tolerance = 0.01f)
+        {
+            if (propertyValueCurve != null) AnimationCurveEditorUtils.Optimize(propertyValueCurve, tolerance);
+        }
     }
 }
 

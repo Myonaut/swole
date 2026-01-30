@@ -442,6 +442,11 @@ namespace Swole.API.Unity
             }
         }
 
+        [NonSerialized]
+        protected bool disableValueResets;
+        public void SetDisableValueResets(bool flag) => disableValueResets = flag;
+        public void DisableValueResets() => SetDisableValueResets(true);
+        public void EnableValueResets() => SetDisableValueResets(false);
         private static float MixFlex(float currentFlexValue, float nextFlexValue, FlexMixType flexMixType, ref bool isFirst)
         {
             switch(flexMixType)
@@ -466,7 +471,7 @@ namespace Swole.API.Unity
         {
             var characterMesh = CharacterMesh;
 
-            bool resetValues = animator == null || !animator.isActiveAndEnabled;
+            bool resetValues = !disableValueResets && (animator == null || !animator.isActiveAndEnabled);
 
             if (characterMesh != null && characterMesh.IsInitialized)
             {

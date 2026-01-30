@@ -1251,6 +1251,34 @@ namespace Swole.API.Unity.Animation
             return muscleConfigMixes;
         }
 
+        public float GetCurrentBoneHeight(string boneName) => GetBoneHeight(boneName, 0f);
+        public float GetBoneHeight(string boneName, float timeOffset)
+        {
+            float height = 0f;
+
+            var state = ActiveState;
+            while (state != null)
+            {
+                height += state.GetBoneHeight(boneName, timeOffset);
+                state = state.IsTransitioning ? GetStateUnsafe(state.TransitionTarget) : null;
+            }
+
+            return height;
+        }
+        public float GetBoneHeightAtTime(string boneName, float time)
+        {
+            float height = 0f;
+
+            var state = ActiveState;
+            while (state != null)
+            {
+                height += state.GetBoneHeightAtTime(boneName, time);
+                state = state.IsTransitioning ? GetStateUnsafe(state.TransitionTarget) : null;
+            }
+
+            return height;
+        }
+
     }
 }
 

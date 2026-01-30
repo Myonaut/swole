@@ -9,7 +9,7 @@ using Unity.Collections;
 namespace Swole
 {
 
-    [Serializable]
+    [Serializable, NonAnimatable]
     public class VertexGroup
     {
 
@@ -25,11 +25,11 @@ namespace Swole
         public static VertexGroup ConvertToVertexGroup(BlendShape shape, bool normalize = true, string keyword = "", float threshold = 0.0001f, float normalizationSetMaxWeight = 0f, bool clampWeights = true)
         {
 
-            float maxWeight = normalizationSetMaxWeight; 
+            float maxWeight = normalizationSetMaxWeight;
             if (shape.frames != null && shape.frames.Length > 0)
             {
 
-                Dictionary<int, float> weightDic = new Dictionary<int, float>(); 
+                Dictionary<int, float> weightDic = new Dictionary<int, float>();
 
                 for (int b = 0; b < shape.frames.Length; b++)
                 {
@@ -66,10 +66,10 @@ namespace Swole
                     {
 
                         indices.Add(weight.Key);
-                        weights.Add(clampWeights ? Mathf.Clamp01(weight.Value / maxWeight) : (weight.Value / maxWeight)); 
+                        weights.Add(clampWeights ? Mathf.Clamp01(weight.Value / maxWeight) : (weight.Value / maxWeight));
 
                     }
-                } 
+                }
                 else
                 {
                     foreach (var weight in weightDic)
@@ -114,6 +114,75 @@ namespace Swole
         /// </summary>
         public bool flag;
 
+        [Serializable]
+        public enum SampleSource
+        {
+            Default,
+            ExternalArray,
+            ExternalNativeArray
+        }
+
+#if (UNITY_STANDALONE || UNITY_EDITOR)
+        [SerializeField]
+#endif
+        protected SampleSource weightSampleSource = SampleSource.Default;
+        public SampleSource WeightSampleSource => weightSampleSource;
+#if (UNITY_STANDALONE || UNITY_EDITOR)
+        [SerializeField]
+#endif
+        protected int weightSampleSourceStartIndex;
+        public int WeightSampleSourceStartIndex => weightSampleSourceStartIndex;
+#if (UNITY_STANDALONE || UNITY_EDITOR)
+        [SerializeField]
+#endif
+        protected int weightSampleSourceSize;
+        public int WeightSampleSourceSize => weightSampleSourceSize;
+
+        protected float[] externalWeights;
+#if (UNITY_STANDALONE || UNITY_EDITOR)
+        protected NativeArray<float> externalNativeWeights;
+#endif
+
+        public void SetExternalWeightSource(float[] weights, int startIndex = 0, int size = -1, bool clearDefaultLists = false, bool nullifyDefaultLists = false)
+        {
+            weightSampleSource = SampleSource.ExternalArray;
+            weightSampleSourceStartIndex = startIndex;
+            weightSampleSourceSize = size < 0 ? weights.Length - startIndex : size;
+            externalWeights = weights;
+
+            if (clearDefaultLists)
+            {
+                this.indices.Clear();
+                this.weights.Clear();
+            }
+            if (nullifyDefaultLists)
+            {
+                this.indices = null;
+                this.weights = null;
+            }
+        }
+
+#if (UNITY_STANDALONE || UNITY_EDITOR)
+        public void SetExternalWeightSource(NativeArray<float> weights, int startIndex = 0, int size = -1, bool clearDefaultLists = false, bool nullifyDefaultLists = false)
+        {
+            weightSampleSource = SampleSource.ExternalNativeArray;
+            weightSampleSourceStartIndex = startIndex;
+            weightSampleSourceSize = size < 0 ? weights.Length - startIndex : size;
+            externalNativeWeights = weights;
+
+            if (clearDefaultLists)
+            {
+                this.indices.Clear();
+                this.weights.Clear();
+            }
+            if (nullifyDefaultLists)
+            {
+                this.indices = null;
+                this.weights = null;
+            }
+        }
+#endif
+
 #if (UNITY_STANDALONE || UNITY_EDITOR)
         [SerializeField, HideInInspector]
 #endif
@@ -122,7 +191,7 @@ namespace Swole
         public int EntryIndexOf(int vertexIndex)
         {
             if (indices == null) return -1;
-            return indices.IndexOf(vertexIndex); 
+            return indices.IndexOf(vertexIndex);
         }
 
 #if (UNITY_STANDALONE || UNITY_EDITOR)
@@ -132,12 +201,18 @@ namespace Swole
 
         public void Normalize(float maxWeight = 0f)
         {
-            if (maxWeight == 0f) for (int a = 0; a < weights.Count; a++) maxWeight = Mathf.Max(maxWeight, weights[a]);          
+            if (maxWeight == 0f) for (int a = 0; a < weights.Count; a++) maxWeight = Mathf.Max(maxWeight, weights[a]);
             if (maxWeight != 0f) for (int a = 0; a < weights.Count; a++) weights[a] = weights[a] / maxWeight;
         }
         public void Add(VertexGroup group, bool limitMaxWeight = false, float maxWeight = 1, float multiplier = 1)
         {
-            using(var enu1 = group.indices.GetEnumerator())
+            if (weightSampleSource != SampleSource.Default) 
+            { 
+                swole.LogWarning($"VertexGroup.Add() operation is not supported when using an external weight source (VertexGroup: {name}).");
+                return;
+            }
+
+            using (var enu1 = group.indices.GetEnumerator())
             {
                 using (var enu2 = group.weights.GetEnumerator())
                 {
@@ -150,7 +225,7 @@ namespace Swole
                         if (entryIndex < 0)
                         {
                             SetWeight(ind, limitMaxWeight ? Mathf.Min(weight, maxWeight) : weight);
-                        } 
+                        }
                         else
                         {
                             weight = weight + GetEntryWeight(entryIndex);
@@ -162,6 +237,12 @@ namespace Swole
         }
         public void Subtract(VertexGroup group, bool limitMinWeight = true, float minWeight = 0, float multiplier = 1)
         {
+            if (weightSampleSource != SampleSource.Default)
+            {
+                swole.LogWarning($"VertexGroup.Subtract() operation is not supported when using an external weight source (VertexGroup: {name}).");
+                return;
+            }
+
             using (var enu1 = group.indices.GetEnumerator())
             {
                 using (var enu2 = group.weights.GetEnumerator())
@@ -179,7 +260,7 @@ namespace Swole
                         else
                         {
                             weight = weight + GetEntryWeight(entryIndex);
-                            SetEntryWeight(entryIndex, limitMinWeight ? Mathf.Max(weight, minWeight) : weight); 
+                            SetEntryWeight(entryIndex, limitMinWeight ? Mathf.Max(weight, minWeight) : weight);
                         }
                     }
                 }
@@ -188,15 +269,28 @@ namespace Swole
 
         public void Clear()
         {
+            if (weightSampleSource != SampleSource.Default)
+            {
+                swole.LogWarning($"VertexGroup.Clear() is not supported when using an external weight source (VertexGroup: {name}).");
+                return;
+            }
+
             indices.Clear();
             weights.Clear();
         }
 
         public int EntryCount => indices == null ? 0 : indices.Count;
-        public int GetEntryIndex(int entryIndex) => indices[entryIndex];
-        public float GetEntryWeight(int entryIndex) => weights[entryIndex];
+        public int GetEntryIndex(int entryIndex) => weightSampleSource != SampleSource.Default ? entryIndex : indices[entryIndex];
+        public float GetEntryWeight(int entryIndex) => weightSampleSource != SampleSource.Default ? GetWeight(entryIndex) : weights[entryIndex];
         public void GetEntry(int entryIndex, out int vertexIndex, out float weight)
         {
+            if (weightSampleSource != SampleSource.Default)
+            {
+                vertexIndex = entryIndex;
+                weight = GetWeight(entryIndex);
+                return;
+            }
+
             vertexIndex = -1;
             weight = 0f;
             if (entryIndex < 0 || entryIndex >= indices.Count) return;
@@ -205,11 +299,24 @@ namespace Swole
             weight = weights[entryIndex];
         }
 
-        public void SetEntryIndex(int entryIndex, int vertexIndex) => indices[entryIndex] = vertexIndex;
-        public void SetEntryWeight(int entryIndex, float weight) => weights[entryIndex] = weight;
+        public void SetEntryIndex(int entryIndex, int vertexIndex)
+        {
+            if (weightSampleSource != SampleSource.Default) return;
+            indices[entryIndex] = vertexIndex;
+        }
+        public void SetEntryWeight(int entryIndex, float weight)
+        {
+            if (weightSampleSource != SampleSource.Default)
+            {
+                SetWeight(entryIndex, weight);
+                return;
+            }
+
+            weights[entryIndex] = weight;
+        }
         public void RemoveEntry(int entryIndex)
         {
-            if (entryIndex < 0 || entryIndex >= indices.Count) return;
+            if (weightSampleSource != SampleSource.Default || entryIndex < 0 || entryIndex >= indices.Count) return;
 
             indices.RemoveAt(entryIndex);
             weights.RemoveAt(entryIndex);
@@ -217,29 +324,58 @@ namespace Swole
 
         public float GetWeight(int vertexIndex)
         {
-            for (int a = 0; a < indices.Count; a++)
+            switch(weightSampleSource)
             {
-                if (indices[a] == vertexIndex) return weights[a];
-            }
+                default:
+                    for (int a = 0; a < indices.Count; a++)
+                    {
+                        if (indices[a] == vertexIndex) return weights[a];
+                    }
 
-            return 0f;
+                    return 0f;
+
+                case SampleSource.ExternalArray:
+                    return externalWeights[weightSampleSourceStartIndex + vertexIndex];
+
+#if (UNITY_STANDALONE || UNITY_EDITOR)
+                case SampleSource.ExternalNativeArray:
+                    return externalNativeWeights[weightSampleSourceStartIndex + vertexIndex];
+#endif
+            }
         }
         public void SetWeight(int vertexIndex, float weight)
         {
-            for (int a = 0; a < indices.Count; a++)
+            switch (weightSampleSource)
             {
-                if (indices[a] == vertexIndex)
-                {
-                    weights[a] = weight;
-                    return;
-                }
-            }
+                default:
+                    for (int a = 0; a < indices.Count; a++)
+                    {
+                        if (indices[a] == vertexIndex)
+                        {
+                            weights[a] = weight;
+                            return;
+                        }
+                    }
 
-            indices.Add(vertexIndex);
-            weights.Add(weight);
+                    indices.Add(vertexIndex);
+                    weights.Add(weight);
+                    break;
+
+                case SampleSource.ExternalArray:
+                    externalWeights[weightSampleSourceStartIndex + vertexIndex] = weight;
+                    break;
+
+#if (UNITY_STANDALONE || UNITY_EDITOR)
+                case SampleSource.ExternalNativeArray:
+                    externalNativeWeights[weightSampleSourceStartIndex + vertexIndex] = weight;
+                    break;
+#endif
+            }
         }
         public bool RemoveWeight(int vertexIndex)
         {
+            if (weightSampleSource != SampleSource.Default) return false;
+
             int ind = indices.IndexOf(vertexIndex);
             if (ind >= 0)
             {
@@ -258,11 +394,11 @@ namespace Swole
             {
                 using (var wEn = weights.GetEnumerator())
                 {
-                    while (iEn.MoveNext() && wEn.MoveNext()) 
+                    while (iEn.MoveNext() && wEn.MoveNext())
                     {
                         int ind = iEn.Current;
                         float weight = wEn.Current;
-                        SetWeight(ind, weight); 
+                        SetWeight(ind, weight);
                     }
                 }
             }
@@ -274,7 +410,7 @@ namespace Swole
             set => SetWeight(vertexIndex, value);
         }
 
-        public VertexGroup(string name) : this(name, new List<int>(), new List<float>()) {}
+        public VertexGroup(string name) : this(name, new List<int>(), new List<float>()) { }
         protected VertexGroup(string name, List<int> indices, List<float> weights)
         {
             this.name = name;
@@ -282,61 +418,118 @@ namespace Swole
             this.weights = weights;
         }
 
+        public float[] AsLinearWeightArray(float[] array, bool clearArray = true, int indexOffset = 0)
+        {
+            if (clearArray) for (int a = 0; a < array.Length; a++) array[a] = 0f; // clear the array first to avoid leftover data if reusing the array
+
+            switch (weightSampleSource)
+            {
+                default:
+                    for (int a = 0; a < indices.Count; a++)
+                    {
+                        int index = indices[a] + indexOffset;
+                        if (index < 0 || index >= array.Length) continue;
+
+                        array[index] = this.weights[a];
+                    }
+                    break;
+
+                case SampleSource.ExternalArray:
+                    for (int a = 0; a < weightSampleSourceSize; a++)
+                    {
+                        array[a + indexOffset] = externalWeights[weightSampleSourceStartIndex + a];
+                    }
+                    break;
+
+#if (UNITY_STANDALONE || UNITY_EDITOR)
+                case SampleSource.ExternalNativeArray:
+                    for (int a = 0; a < weightSampleSourceSize; a++)
+                    {
+                        array[a + indexOffset] = externalNativeWeights[weightSampleSourceStartIndex + a];
+                    }
+                    break;
+#endif
+            }
+
+            return array;
+        }
         public float[] AsLinearWeightArray(int vertexCount)
         {
             float[] weights = new float[vertexCount];
-            for (int a = 0; a < indices.Count; a++)
-            {
-                int index = indices[a];
-                if (index < 0 || index >= weights.Length) continue; 
-
-                weights[index] = this.weights[a];
-            }
-
+            AsLinearWeightArray(weights, false, 0);
             return weights;
         }
         public IList<float> AsLinearWeightList(int vertexCount, IList<float> outputList = null)
         {
             if (outputList == null) outputList = new List<float>(vertexCount);
             int indexOffset = outputList.Count;
-            for (int a = 0; a < vertexCount; a++) outputList.Add(0f); 
-            for (int a = 0; a < indices.Count; a++)
+            for (int a = 0; a < vertexCount; a++) outputList.Add(0f);
+            switch (weightSampleSource)
             {
-                int index = indices[a];
-                if (index < 0 || index + indexOffset >= outputList.Count) continue; 
+                default:
+                    for (int a = 0; a < indices.Count; a++)
+                    {
+                        int index = indices[a];
+                        if (index < 0 || index + indexOffset >= outputList.Count) continue;
 
-                outputList[index + indexOffset] = this.weights[a];
+                        outputList[index + indexOffset] = this.weights[a];
+                    }
+                    break;
+                case SampleSource.ExternalArray:
+                    for (int a = 0; a < Mathf.Min(vertexCount, weightSampleSourceSize); a++)
+                    {
+                        outputList[a + indexOffset] = externalWeights[weightSampleSourceStartIndex + a];
+                    }
+                    break;
+
+#if (UNITY_STANDALONE || UNITY_EDITOR)
+                case SampleSource.ExternalNativeArray:
+                    for (int a = 0; a < Mathf.Min(vertexCount, weightSampleSourceSize); a++)
+                    {
+                        outputList[a + indexOffset] = externalNativeWeights[weightSampleSourceStartIndex + a];
+                    }
+                    break;
+#endif
             }
 
             return weights;
         }
-        public float[] AsLinearWeightArray(float[] array, bool clearArray = true, int indexOffset = 0)
-        {
-            if (clearArray) for (int a = 0; a < array.Length; a++) array[a] = 0; // clear the array first to avoid leftover data if reusing the array
-            for (int a = 0; a < indices.Count; a++)
-            {
-                int index = indices[a] + indexOffset;
-                if (index < 0 || index >= array.Length) continue;
 
-                array[index] = this.weights[a]; 
-            }
-
-            return array;
-        }
         public void InsertIntoArray(float[] array, int startIndex) => AsLinearWeightArray(array, false, startIndex);
 
 #if (UNITY_STANDALONE || UNITY_EDITOR)
         public void InsertIntoNativeArray(NativeArray<float> array, int startIndex)
         {
-            for (int a = 0; a < indices.Count; a++)
+            switch (weightSampleSource)
             {
-                int index = indices[a] + startIndex;
-                if (index < 0 || index >= array.Length) continue;
+                default:
+                    for (int a = 0; a < indices.Count; a++)
+                    {
+                        int index = indices[a] + startIndex;
+                        if (index < 0 || index >= array.Length) continue;
 
-                array[index] = this.weights[a];
+                        array[index] = this.weights[a];
+                    }
+                    break;
+
+                case SampleSource.ExternalArray:
+                    for (int a = 0; a < weightSampleSourceSize; a++)
+                    {
+                        array[a + startIndex] = externalWeights[weightSampleSourceStartIndex + a];
+                    }
+                    break;
+
+#if (UNITY_STANDALONE || UNITY_EDITOR)
+                case SampleSource.ExternalNativeArray:
+                    for (int a = 0; a < weightSampleSourceSize; a++)
+                    {
+                        array[a + startIndex] = externalNativeWeights[weightSampleSourceStartIndex + a];
+                    }
+                    break;
+#endif
             }
         }
-        #endif
+#endif
 
     }
 

@@ -286,6 +286,10 @@ namespace Swole.API.Unity.Animation
 
         public virtual int GetLongestHierarchyIndex(IAnimationLayer layer) => -1;
 
+        public virtual float GetCurrentBoneHeight(IAnimationLayer layer, string boneName) => GetBoneHeight(layer, boneName, 0f);
+        public abstract float GetBoneHeight(IAnimationLayer layer, string boneName, float timeOffset);
+        public abstract float GetBoneHeightAtTime(IAnimationLayer layer, string boneName, float time);
+
     }
 
     [Serializable]
@@ -618,7 +622,7 @@ namespace Swole.API.Unity.Animation
         public override float GetTime(IAnimationLayer layer, float addTime = 0)
         {
 
-            if (AnimationPlayer == null) return 0;
+            if (AnimationPlayer == null) return 0f;
 
             var apTyped = AnimationPlayerTyped;
             return AnimationPlayer.Time + addTime * GetSpeed(layer) * (apTyped == null ? 1f : apTyped.InternalSpeedMultiplier);  
@@ -671,6 +675,30 @@ namespace Swole.API.Unity.Animation
 
             return AnimationPlayer != null;
 
+        }
+
+
+        public override float GetBoneHeight(IAnimationLayer layer, string boneName, float timeOffset)
+        {
+            if (AnimationPlayer != null)
+            {
+                return GetBoneHeightAtTime(layer, boneName, GetTime(layer, timeOffset)) * layer.Mix * AnimationPlayer.Mix;
+            }
+
+            return 0f;
+        }
+        public override float GetBoneHeightAtTime(IAnimationLayer layer, string boneName, float time)
+        {
+            var anim = Animation;
+            if (anim is CustomAnimation canim)
+            {
+                if (canim.TryGetBoneHeightCurve(boneName, out var curve))
+                {
+                    return curve.Evaluate(time) * layer.Mix * AnimationPlayer.Mix;
+                }
+            }
+
+            return 0f;
         }
 
     }
@@ -1646,6 +1674,43 @@ namespace Swole.API.Unity.Animation
             }
         }
 
+        public override float GetBoneHeight(IAnimationLayer layer, string boneName, float timeOffset)
+        {
+            if (MotionParts == null) return 0f;
+
+            float height = 0f;
+            for (int a = 0; a < MotionParts.Length; a++)
+            {
+
+                var part = MotionParts[a];
+                var controller = layer.GetMotionController(part.ControllerIndex);
+                if (controller == null) continue;
+
+                height += controller.GetBoneHeight(layer, boneName, timeOffset);
+
+            }
+
+            return height;
+        }
+        public override float GetBoneHeightAtTime(IAnimationLayer layer, string boneName, float time)
+        {
+            if (MotionParts == null) return 0f;
+
+            float height = 0f;
+            for (int a = 0; a < MotionParts.Length; a++)
+            {
+
+                var part = MotionParts[a];
+                var controller = layer.GetMotionController(part.ControllerIndex);
+                if (controller == null) continue;
+
+                height += controller.GetBoneHeightAtTime(layer, boneName, time);
+
+            }
+
+            return height;
+        }
+
     }
 
     [Serializable]
@@ -2414,6 +2479,44 @@ namespace Swole.API.Unity.Animation
                 controller.SyncWeight(layer);
             }
         }
+
+        public override float GetBoneHeight(IAnimationLayer layer, string boneName, float timeOffset)
+        {
+            if (BaseMotionFields == null) return 0f;
+
+            float height = 0f;
+            for (int a = 0; a < BaseMotionFields.Length; a++)
+            {
+
+                var part = BaseMotionFields[a];
+                var controller = layer.GetMotionController(part.ControllerIndex);
+                if (controller == null) continue;
+
+                height += controller.GetBoneHeight(layer, boneName, timeOffset);
+
+            }
+
+            return height;
+        }
+        public override float GetBoneHeightAtTime(IAnimationLayer layer, string boneName, float time)
+        {
+            if (BaseMotionFields == null) return 0f;
+
+            float height = 0f;
+            for (int a = 0; a < BaseMotionFields.Length; a++)
+            {
+
+                var part = BaseMotionFields[a];
+                var controller = layer.GetMotionController(part.ControllerIndex);
+                if (controller == null) continue;
+
+                height += controller.GetBoneHeightAtTime(layer, boneName, time);
+
+            }
+
+            return height;
+        }
+
     }
 
     [Serializable]

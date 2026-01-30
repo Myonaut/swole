@@ -18,9 +18,19 @@ namespace Swole
     public class AnimatablePropertyPrefixAttribute : System.Attribute
     {
         public string prefix;
-        public AnimatablePropertyPrefixAttribute(string prefix)
+        public bool hideReferenceChain;
+        public AnimatablePropertyPrefixAttribute(string prefix, bool hideReferenceChain = false)
         {
             this.prefix = prefix;
+            this.hideReferenceChain = hideReferenceChain;
+        }
+    }
+
+    [AttributeUsage(AttributeTargets.Class | AttributeTargets.Struct)] 
+    public class NonAnimatableAttribute : System.Attribute
+    {
+        public NonAnimatableAttribute()
+        {
         }
     }
 }

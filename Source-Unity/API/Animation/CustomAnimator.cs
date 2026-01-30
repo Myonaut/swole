@@ -401,7 +401,7 @@ namespace Swole.API.Unity.Animation
                         ikBone.ikController = controller;
                     }
 
-                    if (onlyEnabledIKControllers && ikBone.ikController != null && !ikBone.ikController.IsActive) continue;
+                    if (ikBone.ikController == null || (onlyEnabledIKControllers && !ikBone.ikController.IsActive)) continue;
 
                     var offsetState = GetIKOffsetState(a);
                     if (offsetState == null && ikOffsetStates != null)
@@ -418,8 +418,8 @@ namespace Swole.API.Unity.Animation
                 }
             }
         }
-        public void SyncIKFK() => SyncIKFK(true);
-        public void SyncIKFK(bool onlyDisabledIKControllers)
+        public void SyncIKFK() => SyncIKFK(false, true, true);
+        public void SyncIKFK(bool useOffsetStates, bool onlyDisabledIKControllers, bool onlyBonesWithValidController)
         {
             if (Bones != null && m_bones.ikBones != null)
             {
@@ -437,15 +437,19 @@ namespace Swole.API.Unity.Animation
                         ikBone.ikController = controller;
                     }
 
-                    if (onlyDisabledIKControllers && ikBone.ikController != null && ikBone.ikController.IsActive) continue;
-                     
-                    var offsetState = GetIKOffsetState(a);
-                    if (offsetState == null && ikOffsetStates != null)
+                    if ((onlyBonesWithValidController && ikBone.ikController == null) || (onlyDisabledIKControllers && ikBone.ikController != null && ikBone.ikController.IsActive)) continue;
+
+                    IKOffsetState offsetState = null;
+                    if (useOffsetStates)
                     {
-                        offsetState = new IKOffsetState();
-                        offsetState.offsetPos = ikBone.avatarBone.fkOffsetPosition;
-                        offsetState.offsetRot = Quaternion.Euler(ikBone.avatarBone.fkOffsetEulerRotation);
-                        ikOffsetStates[a] = offsetState;
+                        offsetState = GetIKOffsetState(a);
+                        if (offsetState == null && ikOffsetStates != null)
+                        {
+                            offsetState = new IKOffsetState();
+                            offsetState.offsetPos = ikBone.avatarBone.fkOffsetPosition;
+                            offsetState.offsetRot = Quaternion.Euler(ikBone.avatarBone.fkOffsetEulerRotation);
+                            ikOffsetStates[a] = offsetState;
+                        }
                     }
 
                     var offsetPos = ikBone.avatarBone.fkOffsetPosition;
@@ -459,7 +463,7 @@ namespace Swole.API.Unity.Animation
                     {
                         offsetRot = Quaternion.Euler(ikBone.avatarBone.fkOffsetEulerRotation);
                     }
-
+                    
                     //Vector3 currentPos = Vector3.zero;
                     //Quaternion currentRot = Quaternion.identity;
                     Vector3 worldPos = Vector3.zero;
@@ -2230,6 +2234,8 @@ namespace Swole.API.Unity.Animation
         protected void ResetPropertyStates()
         {
 
+            ResetIKControllers();
+
             if (useDynamicBindPose)
             {
 
@@ -2886,6 +2892,56 @@ namespace Swole.API.Unity.Animation
                 }
             }
 
+        }
+
+        public float GetCurrentBoneHeight(string boneName) => GetBoneHeight(boneName, 0f);
+        public float GetBoneHeight(string boneName, float timeOffset)
+        {
+            float height = 0f;
+
+            if (m_animationLayers != null)
+            {
+                for (int a = 0; a < m_animationLayers.Count; a++)
+                {
+
+                    var layer = m_animationLayers[a];
+                    if (layer is not CustomAnimationLayer cal || !layer.IsActive) continue; 
+
+                    if (!layer.IsAdditive)
+                    {
+                        height = height * Mathf.Max(0f, 1f - layer.Mix);
+                    }
+
+                    height += layer.GetBoneHeight(boneName, timeOffset);
+
+                }
+            }
+
+            return height;
+        }
+        public float GetBoneHeightAtTime(string boneName, float time)
+        {
+            float height = 0f;
+
+            if (m_animationLayers != null)
+            {
+                for (int a = 0; a < m_animationLayers.Count; a++)
+                {
+
+                    var layer = m_animationLayers[a];
+                    if (layer is not CustomAnimationLayer cal || !layer.IsActive) continue;
+
+                    if (!layer.IsAdditive)
+                    {
+                        height = height * Mathf.Max(0f, 1f - layer.Mix);
+                    }
+
+                    height += layer.GetBoneHeightAtTime(boneName, time);
+
+                }
+            }
+
+            return height;
         }
 
         //

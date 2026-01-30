@@ -185,6 +185,8 @@ namespace Swole.API.Unity.Animation
         public List<float> GetFrameTimes(int framesPerSecond, List<float> inputList = null);
         public List<CustomAnimation.FrameHeader> GetFrameTimes(int framesPerSecond, List<CustomAnimation.FrameHeader> inputList);
 
+        public void Optimize(float tolerance = 0.01f);
+
     }
 }
 

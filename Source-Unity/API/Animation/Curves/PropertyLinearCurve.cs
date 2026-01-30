@@ -450,6 +450,11 @@ namespace Swole.API.Unity.Animation
             return inputList;
         }
 
+        public void Optimize(float tolerance = 0.01f)
+        {
+            // TODO: Add optimization support for linear property curves
+        }
+
     }
 }
 

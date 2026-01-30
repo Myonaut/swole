@@ -354,7 +354,7 @@ namespace Swole.API.Unity.Animation
 
         }
 
-        public static CustomAnimationAsset[] Convert(string savePath, AnimationClip defaultBaseClip, ClipPair[] inputClips, float scaleCompensation = 1, string rootBoneName = null, int defaultFrameRate = 30, int defaultSampleRate = 16)
+        public static CustomAnimationAsset[] Convert(string savePath, AnimationClip defaultBaseClip, ClipPair[] inputClips, float scaleCompensation = 1, string rootBoneName = null, int defaultFrameRate = 30, int defaultSampleRate = 16, bool mirror = false, Matrix4x4 parentL2W = default, Transform[] bones = null, Matrix4x4[] bindpose = null)
         {
 
             if (defaultBaseClip == null)
@@ -377,7 +377,7 @@ namespace Swole.API.Unity.Animation
 
             ExtractBaseCurves(defaultBaseClip, out ITransformCurve[] defaultBaseTransformCurves, out IPropertyCurve[] defaultBasePropertyCurves, scaleCompensation, rootBoneName);
 
-            return Convert(savePath, defaultBaseTransformCurves, defaultBasePropertyCurves, inputClips, scaleCompensation, rootBoneName, defaultFrameRate, defaultSampleRate);
+            return Convert(savePath, defaultBaseTransformCurves, defaultBasePropertyCurves, inputClips, scaleCompensation, rootBoneName, defaultFrameRate, defaultSampleRate, mirror, parentL2W, bones, bindpose);
 
         }
 
@@ -446,12 +446,179 @@ namespace Swole.API.Unity.Animation
                 AddDataToCurve(transformCurve, curve, propertyType, component, scaleCompensation);
             }
         }
-        private static CustomAnimationAsset FinalizeClipConversion(string savePath, string clipName, int defaultFrameRate, int defaultSampleRate, Dictionary<string, TransformCurve> convertedTransformCurves, List<CustomAnimation.CurveInfoPair> newTransformAnimationCurves, List<TransformCurve> newTransformCurves, List<TransformLinearCurve> newTransformLinearCurves, Dictionary<string, CustomAnimation.CurveInfo> baseTransformCurveInfo)
+        private static CustomAnimationAsset FinalizeClipConversion(string savePath, string clipName, int defaultFrameRate, int defaultSampleRate, Dictionary<string, TransformCurve> convertedTransformCurves, List<CustomAnimation.CurveInfoPair> newTransformAnimationCurves, List<TransformCurve> newTransformCurves, List<TransformLinearCurve> newTransformLinearCurves, Dictionary<string, CustomAnimation.CurveInfo> baseTransformCurveInfo, bool mirror, Matrix4x4 parentL2W, Transform[] bones, Matrix4x4[] bindpose)
         {
+            int GetBoneIndex(string boneName)
+            {
+                if (bones == null) return -1;
+
+                for(int i = 0; i < bones.Length; i++) if (bones[i].name == boneName) return i;
+
+                return -1;
+            }
+            Matrix4x4 GetBoneL2WFromIndex(int boneIndex)
+            {
+                if (boneIndex < 0) return Matrix4x4.identity;
+
+                return parentL2W * bindpose[boneIndex].inverse;
+            }
+            /*Matrix4x4 GetBoneL2W(string boneName)
+            {
+                var boneIndex = GetBoneIndex(boneName);
+                return GetBoneL2WFromIndex(boneIndex);
+            }*/
+
+
             foreach (var conversion in convertedTransformCurves)
             {
 
                 var mainCurve = conversion.Value;
+                if (mirror)
+                {
+                    var boneIndex = GetBoneIndex(mainCurve.TransformName); 
+                    if (boneIndex >= 0)
+                    {
+                        var mirroredName = Utils.GetMirroredName(mainCurve.name, true, true);
+                        var mirroredBoneIndex = GetBoneIndex(mirroredName);
+
+                        if (mirroredBoneIndex >= 0)
+                        {
+                            var bone = bones[boneIndex];
+                            int parentBoneIndex = -1;
+                            if (bone.parent != null)
+                            {
+                                parentBoneIndex = GetBoneIndex(bone.parent.name);
+                            }
+
+                            var mirrorBone = bones[mirroredBoneIndex];
+                            int parentMirroredBoneIndex = -1;
+                            if (mirrorBone.parent != null)
+                            {
+                                parentMirroredBoneIndex = GetBoneIndex(mirrorBone.parent.name);
+                            }
+
+                            Matrix4x4 l2w = parentL2W;
+                            Matrix4x4 w2l = parentL2W.inverse;
+
+                            if (parentBoneIndex >= 0)
+                            {
+                                l2w = GetBoneL2WFromIndex(parentBoneIndex);
+                            }
+                            if (parentMirroredBoneIndex >= 0)
+                            {
+                                w2l = GetBoneL2WFromIndex(parentMirroredBoneIndex).inverse;
+                            }
+
+                            var origLocalPositionCurveX = mainCurve.localPositionCurveX == null ? null : mainCurve.localPositionCurveX.Duplicate();
+                            var origLocalPositionCurveY = mainCurve.localPositionCurveY == null ? null : mainCurve.localPositionCurveY.Duplicate();
+                            var origLocalPositionCurveZ = mainCurve.localPositionCurveZ == null ? null : mainCurve.localPositionCurveZ.Duplicate();
+
+                            var origLocalRotationCurveX = mainCurve.localRotationCurveX == null ? null : mainCurve.localRotationCurveX.Duplicate();
+                            var origLocalRotationCurveY = mainCurve.localRotationCurveY == null ? null : mainCurve.localRotationCurveY.Duplicate();
+                            var origLocalRotationCurveZ = mainCurve.localRotationCurveZ == null ? null : mainCurve.localRotationCurveZ.Duplicate();
+                            var origLocalRotationCurveW = mainCurve.localRotationCurveW == null ? null : mainCurve.localRotationCurveW.Duplicate();
+
+                            if (mainCurve.localPositionCurveX != null)
+                            {
+                                for (int i = 0; i < mainCurve.localPositionCurveX.length; i++)
+                                {
+                                    var key = mainCurve.localPositionCurveX[i];
+                                    Vector3 localPos = new Vector3(key.value, origLocalPositionCurveY == null ? 0f : origLocalPositionCurveY.Evaluate(key.time), origLocalPositionCurveZ == null ? 0f : origLocalPositionCurveZ.Evaluate(key.time));
+                                    Vector3 worldPos = l2w.MultiplyPoint(localPos);
+                                    worldPos.x = -worldPos.x;
+                                    localPos = w2l.MultiplyPoint(worldPos);
+                                    key.value = localPos.x;
+                                    mainCurve.localPositionCurveX[i] = key;
+                                }
+                            }
+                            if (mainCurve.localPositionCurveY != null)
+                            {
+                                for (int i = 0; i < mainCurve.localPositionCurveY.length; i++)
+                                {
+                                    var key = mainCurve.localPositionCurveY[i];
+                                    Vector3 localPos = new Vector3(origLocalPositionCurveX == null ? 0f : origLocalPositionCurveX.Evaluate(key.time), key.value, origLocalPositionCurveZ == null ? 0f : origLocalPositionCurveZ.Evaluate(key.time));
+                                    Vector3 worldPos = l2w.MultiplyPoint(localPos);
+                                    worldPos.x = -worldPos.x;
+                                    localPos = w2l.MultiplyPoint(worldPos);
+                                    key.value = localPos.y;
+                                    mainCurve.localPositionCurveY[i] = key;
+                                }
+                            }
+                            if (mainCurve.localPositionCurveZ != null)
+                            {
+                                for (int i = 0; i < mainCurve.localPositionCurveZ.length; i++)
+                                {
+                                    var key = mainCurve.localPositionCurveZ[i];
+                                    Vector3 localPos = new Vector3(origLocalPositionCurveX == null ? 0f : origLocalPositionCurveX.Evaluate(key.time), origLocalPositionCurveY == null ? 0f : origLocalPositionCurveY.Evaluate(key.time), key.value);
+                                    Vector3 worldPos = l2w.MultiplyPoint(localPos);
+                                    worldPos.x = -worldPos.x;
+                                    localPos = w2l.MultiplyPoint(worldPos);
+                                    key.value = localPos.z;
+                                    mainCurve.localPositionCurveZ[i] = key; 
+                                }
+                            }
+
+                            if (mainCurve.localRotationCurveX != null)
+                            {
+                                for (int i = 0; i < mainCurve.localRotationCurveX.length; i++)
+                                {
+                                    var key = mainCurve.localRotationCurveX[i];
+                                    Quaternion localRot = new Quaternion(key.value, origLocalRotationCurveY == null ? 0f : origLocalRotationCurveY.Evaluate(key.time), origLocalRotationCurveZ == null ? 0f : origLocalRotationCurveZ.Evaluate(key.time), origLocalRotationCurveW == null ? 0f : origLocalRotationCurveW.Evaluate(key.time));
+                                    Quaternion worldRot = l2w.rotation * localRot;
+                                    worldRot = worldRot.ReflectX();
+                                    localRot = w2l.rotation * worldRot;
+                                    key.value = localRot.x;
+                                    mainCurve.localRotationCurveX[i] = key;  
+                                }
+                            }
+                            if (mainCurve.localRotationCurveY != null)
+                            {
+                                for (int i = 0; i < mainCurve.localRotationCurveY.length; i++)
+                                {
+                                    var key = mainCurve.localRotationCurveY[i];
+                                    Quaternion localRot = new Quaternion(origLocalRotationCurveX == null ? 0f : origLocalRotationCurveX.Evaluate(key.time), key.value, origLocalRotationCurveZ == null ? 0f : origLocalRotationCurveZ.Evaluate(key.time), origLocalRotationCurveW == null ? 0f : origLocalRotationCurveW.Evaluate(key.time));
+                                    Quaternion worldRot = l2w.rotation * localRot;
+                                    worldRot = worldRot.ReflectX();
+                                    localRot = w2l.rotation * worldRot;
+                                    key.value = localRot.y;
+                                    mainCurve.localRotationCurveY[i] = key;
+                                }
+                            }
+                            if (mainCurve.localRotationCurveZ != null)
+                            {
+                                for (int i = 0; i < mainCurve.localRotationCurveZ.length; i++)
+                                {
+                                    var key = mainCurve.localRotationCurveZ[i];
+                                    Quaternion localRot = new Quaternion(origLocalRotationCurveX == null ? 0f : origLocalRotationCurveX.Evaluate(key.time), origLocalRotationCurveY == null ? 0f : origLocalRotationCurveY.Evaluate(key.time), key.value, origLocalRotationCurveW == null ? 0f : origLocalRotationCurveW.Evaluate(key.time));
+                                    Quaternion worldRot = l2w.rotation * localRot;
+                                    worldRot = worldRot.ReflectX();
+                                    localRot = w2l.rotation * worldRot;
+                                    key.value = localRot.z;
+                                    mainCurve.localRotationCurveZ[i] = key; 
+                                }
+                            }
+                            if (mainCurve.localRotationCurveW != null)
+                            {
+                                for (int i = 0; i < mainCurve.localRotationCurveW.length; i++)
+                                {
+                                    var key = mainCurve.localRotationCurveW[i];
+                                    Quaternion localRot = new Quaternion(origLocalRotationCurveX == null ? 0f : origLocalRotationCurveX.Evaluate(key.time), origLocalRotationCurveY == null ? 0f : origLocalRotationCurveY.Evaluate(key.time), origLocalRotationCurveZ == null ? 0f : origLocalRotationCurveZ.Evaluate(key.time), key.value);
+                                    Quaternion worldRot = l2w.rotation * localRot;
+                                    worldRot = worldRot.ReflectX();
+                                    localRot = w2l.rotation * worldRot;
+                                    key.value = localRot.w;
+                                    mainCurve.localRotationCurveW[i] = key; 
+                                }
+                            }
+
+                            if (mirroredName != mainCurve.name)
+                            {
+                                //Debug.Log($"Found mirror bone {mainCurve.name} -> {mirroredName}");
+                                mainCurve.name = mirroredName; 
+                            }
+                        }
+                    }
+                }
 
                 if (!baseTransformCurveInfo.TryGetValue(mainCurve.name, out CustomAnimation.CurveInfo infoBase))
                 {
@@ -490,7 +657,7 @@ namespace Swole.API.Unity.Animation
             return CustomAnimationAsset.Create(savePath, clipName, newAnimation, true);  
         }
 
-        public static CustomAnimationAsset[] Convert(string savePath, ITransformCurve[] defaultBaseTransformCurves, IPropertyCurve[] defaultBasePropertyCurves, ClipPair[] inputClips, float scaleCompensation = 1, string rootBoneName = null, int defaultFrameRate = 30, int defaultSampleRate = 16)
+        public static CustomAnimationAsset[] Convert(string savePath, ITransformCurve[] defaultBaseTransformCurves, IPropertyCurve[] defaultBasePropertyCurves, ClipPair[] inputClips, float scaleCompensation = 1, string rootBoneName = null, int defaultFrameRate = 30, int defaultSampleRate = 16, bool mirror = false, Matrix4x4 parentL2W = default, Transform[] bones = null, Matrix4x4[] bindpose = null)
         {
 
             if (inputClips == null) return new CustomAnimationAsset[0];
@@ -559,7 +726,7 @@ namespace Swole.API.Unity.Animation
                     clipName = $"anim_{a}";
                 }
 
-                var newAnimationAsset = FinalizeClipConversion(savePath, clipName, defaultFrameRate, defaultSampleRate, convertedTransformCurves, newTransformAnimationCurves, newTransformCurves, newTransformLinearCurves, baseTransformCurveInfo);
+                var newAnimationAsset = FinalizeClipConversion(savePath, clipName, defaultFrameRate, defaultSampleRate, convertedTransformCurves, newTransformAnimationCurves, newTransformCurves, newTransformLinearCurves, baseTransformCurveInfo, mirror, parentL2W, bones, bindpose);
                 if (!string.IsNullOrWhiteSpace(savePath))
                 {
                     EditorUtility.SetDirty(newAnimationAsset);
@@ -582,7 +749,7 @@ namespace Swole.API.Unity.Animation
 
 #if BULKOUT_ENV
 
-        public static List<CustomAnimationAsset> ConvertIntoList(AssetLoaderContext assetLoaderContext, ITransformCurve[] baseTransformCurves, IPropertyCurve[] basePropertyCurves, string rootBoneName, int defaultFrameRate, int defaultSampleRate, List<CustomAnimationAsset> outputList, float scaleCompensation = 1)
+        public static List<CustomAnimationAsset> ConvertIntoList(AssetLoaderContext assetLoaderContext, ITransformCurve[] baseTransformCurves, IPropertyCurve[] basePropertyCurves, string rootBoneName, int defaultFrameRate, int defaultSampleRate, List<CustomAnimationAsset> outputList, float scaleCompensation = 1, bool mirror = false, Matrix4x4 parentL2W = default, Transform[] bones = null, Matrix4x4[] bindpose = null)
         {
             if (outputList == null) outputList = new List<CustomAnimationAsset>();
 
@@ -594,7 +761,7 @@ namespace Swole.API.Unity.Animation
                 if (animationCurveBindings == null) continue;
 
                 PrepareClipConversion(baseTransformCurves, basePropertyCurves, out var newTransformAnimationCurves, out var newTransformCurves, out var newTransformLinearCurves, out var baseTransformCurveInfo, out var convertedTransformCurves);
-
+                
                 for (var i = animationCurveBindings.Count - 1; i >= 0; i--)
                 {
                     var animationCurveBinding = animationCurveBindings[i];
@@ -615,7 +782,7 @@ namespace Swole.API.Unity.Animation
                         //Debug.Log(gameObjectPath + " :::: " + propertyName + " :::::: " + propertyType);
                         if (propertyType == typeof(UnityEngine.Transform))
                         {
-                            ConvertCurveData(rootBoneName, scaleCompensation, gameObjectPath, propertyName, unityAnimationCurve, convertedTransformCurves);  
+                            ConvertCurveData(rootBoneName, scaleCompensation, gameObjectPath, propertyName, unityAnimationCurve, convertedTransformCurves);
                         }
                     }
                 }
@@ -626,14 +793,14 @@ namespace Swole.API.Unity.Animation
                     clipName = $"anim_{outputList.Count}";
                 }
 
-                var newAnimationAsset = FinalizeClipConversion(null, clipName, defaultFrameRate, defaultSampleRate, convertedTransformCurves, newTransformAnimationCurves, newTransformCurves, newTransformLinearCurves, baseTransformCurveInfo);
+                var newAnimationAsset = FinalizeClipConversion(null, clipName, defaultFrameRate, defaultSampleRate, convertedTransformCurves, newTransformAnimationCurves, newTransformCurves, newTransformLinearCurves, baseTransformCurveInfo, mirror, parentL2W, bones, bindpose);
                 outputList.Add(newAnimationAsset);
             }
 
             return outputList;
         }
-        public static List<CustomAnimationAsset> ConvertIntoList(AssetLoaderContext assetLoaderContext, ITransformCurve[] baseTransformCurves, IPropertyCurve[] basePropertyCurves, string rootBoneName, int defaultFrameRate, int defaultSampleRate, float scaleCompensation = 1) => ConvertIntoList(assetLoaderContext, baseTransformCurves, basePropertyCurves, rootBoneName, defaultFrameRate, defaultSampleRate, null, scaleCompensation);
-        public static CustomAnimationAsset[] Convert(AssetLoaderContext assetLoaderContext, ITransformCurve[] baseTransformCurves, IPropertyCurve[] basePropertyCurves, string rootBoneName, int defaultFrameRate, int defaultSampleRate, float scaleCompensation = 1) => ConvertIntoList(assetLoaderContext, baseTransformCurves, basePropertyCurves, rootBoneName, defaultFrameRate, defaultSampleRate, null, scaleCompensation).ToArray();
+        public static List<CustomAnimationAsset> ConvertIntoList(AssetLoaderContext assetLoaderContext, ITransformCurve[] baseTransformCurves, IPropertyCurve[] basePropertyCurves, string rootBoneName, int defaultFrameRate, int defaultSampleRate, float scaleCompensation = 1, bool mirror = false, Matrix4x4 parentL2W = default, Transform[] bones = null, Matrix4x4[] bindpose = null) => ConvertIntoList(assetLoaderContext, baseTransformCurves, basePropertyCurves, rootBoneName, defaultFrameRate, defaultSampleRate, null, scaleCompensation, mirror, parentL2W, bones, bindpose);
+        public static CustomAnimationAsset[] Convert(AssetLoaderContext assetLoaderContext, ITransformCurve[] baseTransformCurves, IPropertyCurve[] basePropertyCurves, string rootBoneName, int defaultFrameRate, int defaultSampleRate, float scaleCompensation = 1, bool mirror = false, Matrix4x4 parentL2W = default, Transform[] bones = null, Matrix4x4[] bindpose = null) => ConvertIntoList(assetLoaderContext, baseTransformCurves, basePropertyCurves, rootBoneName, defaultFrameRate, defaultSampleRate, null, scaleCompensation, mirror, parentL2W, bones, bindpose).ToArray();
 
 #endif
 

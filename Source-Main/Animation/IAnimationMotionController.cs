@@ -74,6 +74,10 @@ namespace Swole.Animation
         public bool HasDerivativeHierarchyOf(IAnimationLayer layer, IAnimationMotionController other);
 
         public int GetLongestHierarchyIndex(IAnimationLayer layer);
+
+        public float GetCurrentBoneHeight(IAnimationLayer layer, string boneName);
+        public float GetBoneHeight(IAnimationLayer layer, string boneName, float timeOffset);
+        public float GetBoneHeightAtTime(IAnimationLayer layer, string boneName, float time);
     }
 
     public delegate WeightedAvatarMaskComposite AvatarMaskInversionDelegate(WeightedAvatarMaskComposite mask);

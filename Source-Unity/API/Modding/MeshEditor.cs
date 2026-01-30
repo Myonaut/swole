@@ -65,6 +65,11 @@ namespace Swole.Modding
                 nearbyCollisionTriangles.Dispose();
                 nearbyCollisionTriangles = default;
             }
+            if (nearbyCollisionTriangleSurfaceData.IsCreated)
+            {
+                nearbyCollisionTriangleSurfaceData.Dispose();
+                nearbyCollisionTriangleSurfaceData = default;
+            }
             if (nearbyCollisionTriangleCounts.IsCreated)
             {
                 nearbyCollisionTriangleCounts.Dispose();
@@ -235,7 +240,12 @@ namespace Swole.Modding
                 editedBlendShapeStartIndices.Dispose();
                 editedBlendShapeStartIndices = default;
             }
-            foreach(var list in savedBlendShapeStates)
+            if (blendShapePenetrationMask.IsCreated)
+            {
+                blendShapePenetrationMask.Dispose();
+                blendShapePenetrationMask = default;
+            }           
+            foreach (var list in savedBlendShapeStates)
             {
                 if (list == null) continue;
 
@@ -253,11 +263,18 @@ namespace Swole.Modding
             }
             savedBlendShapeStates.Clear();
 
+            if (initialPenetrationMask.IsCreated)
+            {
+                initialPenetrationMask.Dispose();
+                initialPenetrationMask = default;
+            }
             if (depenetrationMask.IsCreated)
             { 
                 depenetrationMask.Dispose();
                 depenetrationMask = default;
             }
+
+            StopRenderingVertices();
         }
         protected virtual void OnDestroy()
         {
@@ -272,7 +289,7 @@ namespace Swole.Modding
         protected NativeList<ShapeVertexDelta> collisionBlendShapeData;
         protected NativeList<int> collisionBlendShapeFrameCounts;
         protected NativeList<int> collisionBlendShapeStartIndices;
-        protected int FindCollisionShapeIndex(string shapeName)
+        public int FindCollisionShapeIndex(string shapeName)
         {
             if (collisionShapeNames == null) return -1;
 
@@ -292,8 +309,15 @@ namespace Swole.Modding
 
             return -1;
         }
+        public int GetCollisionShapeFrameCount(int shapeIndex)
+        {
+            if (!collisionBlendShapeFrameCounts.IsCreated) return 0;
+            if (shapeIndex < 0 || shapeIndex >= collisionBlendShapeFrameCounts.Length) return 0;
+            return collisionBlendShapeFrameCounts[shapeIndex];
+        }
 
         protected NativeList<int> nearbyCollisionTriangles;
+        protected NativeList<float4> nearbyCollisionTriangleSurfaceData;
         protected NativeList<int> nearbyCollisionTriangleCounts;
         protected NativeList<int> nearbyCollisionTriangleStartIndices;
         public bool NearbyCollisionVerticesAreInitialized => nearbyCollisionTriangles.IsCreated;
@@ -302,14 +326,16 @@ namespace Swole.Modding
             if (editedMesh == null || !HasCollisionData) return;
 
             if (!nearbyCollisionTriangles.IsCreated) nearbyCollisionTriangles = new NativeList<int>(editedMesh.vertexCount, Allocator.Persistent);
+            if (!nearbyCollisionTriangleSurfaceData.IsCreated) nearbyCollisionTriangleSurfaceData = new NativeList<float4>(editedMesh.vertexCount, Allocator.Persistent);
             if (!nearbyCollisionTriangleCounts.IsCreated) nearbyCollisionTriangleCounts = new NativeList<int>(editedMesh.vertexCount, Allocator.Persistent);
             if (!nearbyCollisionTriangleStartIndices.IsCreated) nearbyCollisionTriangleStartIndices = new NativeList<int>(editedMesh.vertexCount, Allocator.Persistent);
 
             nearbyCollisionTriangles.Clear();
+            nearbyCollisionTriangleSurfaceData.Clear();
             nearbyCollisionTriangleCounts.Clear();
             nearbyCollisionTriangleStartIndices.Clear(); 
 
-            NativeArray<bool> nearbyCollisionTrianglesOutput = new NativeArray<bool>(batchSize * collisionTriangles.Length, Allocator.Persistent);
+            NativeArray<bool2> nearbyCollisionTrianglesOutput = new NativeArray<bool2>(batchSize * collisionTriangles.Length, Allocator.Persistent);
             int batchCount = Mathf.CeilToInt(editedMesh.vertexCount / (float)batchSize); 
             JobHandle jobs = default;
 
@@ -331,17 +357,24 @@ namespace Swole.Modding
                     localSkinningData = PerVertexSkinningMatrices,
                     proximityOutput = nearbyCollisionTrianglesOutput
                 }.Schedule(collisionTriangles.Length, 1, jobs);
-                jobs = new EvaluateNearbyCollisionTrianglesJob()
+                jobs = new EvaluateNearbyCollisionTrianglesJob() 
                 {
+                    localIndexOffset = startIndex,
                     batchSize = batchSize,
                     collisionTriangleCount = collisionTriangles.Length,
                     proximityOutput = nearbyCollisionTrianglesOutput,
+                    collisionTriangles = collisionTriangles,
+                    collisionVertexData = collisionVertexData,
+                    collisionSkinningData = collisionVertexSkinning,
+                    localVertexData = BaseVertexData,
+                    localSkinningData = PerVertexSkinningMatrices,
                     nearbyCollisionTriangles = nearbyCollisionTriangles,
+                    nearbyCollisionTriangleSurfaceData = nearbyCollisionTriangleSurfaceData,
                     nearbyCollisionTriangleCounts = nearbyCollisionTriangleCounts,
                     nearbyCollisionTriangleStartIndices = nearbyCollisionTriangleStartIndices
                 }.Schedule(size, jobs);
             }
-
+            
             jobs.Complete();
             nearbyCollisionTrianglesOutput.Dispose();
         }
@@ -369,7 +402,7 @@ namespace Swole.Modding
             public NativeList<float4x4> localSkinningData;
 
             [NativeDisableParallelForRestriction]
-            public NativeArray<bool> proximityOutput;
+            public NativeArray<bool2> proximityOutput;
 
             public void Execute(int collisionTriangleIndex)
             {
@@ -381,14 +414,14 @@ namespace Swole.Modding
 
                 for (int a = 0; a < size; a++)
                 {
-                    int localIndex = localIndexOffset + a;
+                    int localIndex = localIndexOffset + a; 
 
                     var localVertex = math.transform(localSkinningData[localIndex], localVertexData[localIndex].position);
                     float3 distances = new float3(math.distance(localVertex, collisionVertex1), math.distance(localVertex, collisionVertex2), math.distance(localVertex, collisionVertex3));
                     bool3 withinRange = distances <= maxDistance;
 
-                    int outputIndex = (collisionTriangleIndex * batchSize) + a;
-                    proximityOutput[outputIndex] = math.any(withinRange);
+                    int outputIndex = (collisionTriangleIndex * batchSize) + a; 
+                    proximityOutput[outputIndex] = new bool2(math.any(withinRange), Maths.IsInTriangle(localVertex, collisionVertex1, collisionVertex2, collisionVertex3, 0.15f));
                 }
             }
         }
@@ -397,25 +430,55 @@ namespace Swole.Modding
         protected struct EvaluateNearbyCollisionTrianglesJob : IJobFor
         {
             public int batchSize;
+            public int localIndexOffset;
 
-            public int collisionTriangleCount; 
+            public int collisionTriangleCount;
 
             [ReadOnly]
-            public NativeArray<bool> proximityOutput;
+            public NativeList<MeshDataTools.Triangle> collisionTriangles;
+            [ReadOnly]
+            public NativeList<BaseVertexData> collisionVertexData;
+            [ReadOnly]
+            public NativeList<float4x4> collisionSkinningData;
+
+            [ReadOnly]
+            public NativeList<BaseVertexData> localVertexData;
+            [ReadOnly]
+            public NativeList<float4x4> localSkinningData;
+
+            [ReadOnly]
+            public NativeArray<bool2> proximityOutput;
 
             public NativeList<int> nearbyCollisionTriangles;
+            public NativeList<float4> nearbyCollisionTriangleSurfaceData;
             public NativeList<int> nearbyCollisionTriangleCounts;
             public NativeList<int> nearbyCollisionTriangleStartIndices; 
 
             public void Execute(int index)
             {
-                nearbyCollisionTriangleStartIndices.Add(nearbyCollisionTriangles.Length);
+                int vIndex = localIndexOffset + index;
+
+                nearbyCollisionTriangleStartIndices.Add(nearbyCollisionTriangles.Length); 
+
+                var localVertex = math.transform(localSkinningData[vIndex], localVertexData[vIndex].position);
 
                 int nearbyCount = 0;
                 for(int collisionTriangleIndex = 0; collisionTriangleIndex < collisionTriangleCount; collisionTriangleIndex++)
                 {
-                    if (proximityOutput[(collisionTriangleIndex * batchSize) + index]) 
+                    var output = proximityOutput[(collisionTriangleIndex * batchSize) + index]; 
+                    if (output.x) 
                     {
+                        var triangle = collisionTriangles[collisionTriangleIndex];
+
+                        var collisionVertex1 = math.transform(collisionSkinningData[triangle.i0], collisionVertexData[triangle.i0].position);
+                        var collisionVertex2 = math.transform(collisionSkinningData[triangle.i1], collisionVertexData[triangle.i1].position);
+                        var collisionVertex3 = math.transform(collisionSkinningData[triangle.i2], collisionVertexData[triangle.i2].position);
+                        
+                        var collisionCenter = (collisionVertex1 + collisionVertex2 + collisionVertex3) / 3f;
+                        var collisionNormal = math.normalize(math.cross(collisionVertex2 - collisionVertex1, collisionVertex3 - collisionVertex1));
+                        var projection = math.project(localVertex - collisionCenter, collisionNormal);
+
+                        nearbyCollisionTriangleSurfaceData.Add(new float4(projection, output.y ? 1f : 0f));
                         nearbyCollisionTriangles.Add(collisionTriangleIndex);
                         nearbyCount++;
                     }
@@ -518,6 +581,21 @@ namespace Swole.Modding
             collisionVertexSkinning.CopyFrom(vertexSkinning);
         }
 
+        protected NativeList<bool> initialPenetrationMask;
+        public NativeList<bool> InitialPenetrationMask
+        {
+            get
+            {
+                if (!initialPenetrationMask.IsCreated)
+                {
+                    if (VerticesArray == null) return default;
+                    initialPenetrationMask = new NativeList<bool>(verticesArray.Length, Allocator.Persistent);
+                    for (int a = 0; a < verticesArray.Length; a++) initialPenetrationMask.Add(false);
+                }
+
+                return initialPenetrationMask;
+            }
+        }
         protected NativeList<bool> depenetrationMask;
         public NativeList<bool> DepenetrationMask
         {
@@ -616,6 +694,8 @@ namespace Swole.Modding
             for (int a = 0; a < targetVertexIndices.Length; a++) if (targetVertexIndices[a] == index) return true;
             return false;
         }
+
+        public int VertexCount => editedMesh == null ? 0 : editedMesh.vertexCount;
 
         protected Vector3[] verticesArray;
         public Vector3[] VerticesArray
@@ -958,7 +1038,7 @@ namespace Swole.Modding
                 return perVertexSkinningMatricesInverse;
             }
         }
-        public void RefreshPerVertexSkinningMatrices(bool refreshBoneMatrices = true)
+        public void RefreshPerVertexSkinningMatrices(bool refreshBoneMatrices = true) 
         {
             if (refreshBoneMatrices) RefreshBoneMatrices();
             if (BoneMatricesArray == null) return;
@@ -978,6 +1058,8 @@ namespace Swole.Modding
                 perVertexSkinningMatricesInverse.Clear();
                 for (int a = 0; a < perVertexSkinningMatricesInverseArray.Length; a++) perVertexSkinningMatricesInverse.Add(perVertexSkinningMatricesInverseArray[a]); 
             }
+
+            RefreshSelectableVertexPositions();
         }
 
         protected SkinnedVertex[] skinnedVerticesArray;
@@ -1281,12 +1363,30 @@ namespace Swole.Modding
         }
         protected NativeList<int> editedBlendShapeFrameCounts;
         protected NativeList<int> editedBlendShapeStartIndices;
+        protected NativeList<bool> blendShapePenetrationMask;
 
         public int BlendShapeCount => !editedBlendShapeFrameCounts.IsCreated ? 0 : editedBlendShapeFrameCounts.Length;
         public int GetBlendShapeFrameCount(int blendShapeIndex)
         {
             if (!editedBlendShapeFrameCounts.IsCreated || blendShapeIndex < 0 || blendShapeIndex >= editedBlendShapeFrameCounts.Length) return 0;
             return editedBlendShapeFrameCounts[blendShapeIndex];
+        }
+        public string GetBlendShapeName(int blendShapeIndex)
+        {
+            if (editedBlendShapes == null || blendShapeIndex < 0 || blendShapeIndex >= editedBlendShapes.Count) return string.Empty;
+            return editedBlendShapes[blendShapeIndex].name;
+        }
+
+        public delegate float FetchDynamicBlendShapeFrameWeightDelegate(string shapeName, int frameIndex);
+        protected FetchDynamicBlendShapeFrameWeightDelegate fetchDynamicBlendShapeFrameWeight;
+        public void SetFetchDynamicBlendShapeFrameWeightDelegate(FetchDynamicBlendShapeFrameWeightDelegate del)
+        {
+            fetchDynamicBlendShapeFrameWeight = del;
+        }
+        public float FetchDynamicBlendShapeFrameWeight(string shapeName, int frameIndex)
+        {
+            if (fetchDynamicBlendShapeFrameWeight != null) return fetchDynamicBlendShapeFrameWeight(shapeName, frameIndex);
+            return 1f;
         }
 
         public void InitializeBlendShapeEdits()
@@ -1296,6 +1396,7 @@ namespace Swole.Modding
             if (!editedBlendShapeDeltas.IsCreated) editedBlendShapeDeltas = new NativeList<ShapeVertexDelta>(editedMesh.vertexCount, Allocator.Persistent);
             if (!editedBlendShapeFrameCounts.IsCreated) editedBlendShapeFrameCounts = new NativeList<int>(0, Allocator.Persistent);
             if (!editedBlendShapeStartIndices.IsCreated) editedBlendShapeStartIndices = new NativeList<int>(0, Allocator.Persistent); 
+            if (!blendShapePenetrationMask.IsCreated) blendShapePenetrationMask = new NativeList<bool>(editedMesh.vertexCount, Allocator.Persistent);
 
             editedBlendShapeDeltas.Clear();
             editedBlendShapeFrameCounts.Clear();
@@ -1325,6 +1426,7 @@ namespace Swole.Modding
                             deltaNormal = frame.deltaNormals[c],
                             deltaTangent = frame.deltaTangents[c],
                         });
+                        blendShapePenetrationMask.Add(false);
                     }
                 }
             }
@@ -1333,6 +1435,7 @@ namespace Swole.Modding
         }
         public void ApplyBlendShapeDataEdits()
         {
+            currentJobHandle.Complete();
             if (editedMesh == null || !editedBlendShapeDeltas.IsCreated || !editedBlendShapeFrameCounts.IsCreated || !editedBlendShapeStartIndices.IsCreated) return;
 
             for (int shapeIndex = 0; shapeIndex < editedBlendShapeStartIndices.Length; shapeIndex++)
@@ -1367,7 +1470,7 @@ namespace Swole.Modding
 
         private JobHandle currentJobHandle;
 
-        public JobHandle SmoothPreserveShapeDeltaVolumes(float factor, NativeList<float> mask, ICollection<int> targetShapes, bool affectedVerticesOnly, JobHandle inputDeps = default, bool appendCleaningJob = true)
+        public JobHandle SmoothPreserveShapeDeltaVolumes(float factor, NativeList<float> mask, ICollection<int> targetShapes, bool affectedVerticesOnly, JobHandle inputDeps = default, bool appendCleaningJob = true, bool includeCollision = false, float collisionThickness = 0f)
         {
             if (targetShapes == null || !BlendShapeEditsAreInitialized) return default;
 
@@ -1377,7 +1480,7 @@ namespace Swole.Modding
                 var frameCount = editedBlendShapeFrameCounts[targetShape];
                 for(int a = 0; a < frameCount; a++)
                 {
-                    currentJobHandle = SmoothPreserveShapeDeltaVolume(factor, mask, targetShape, a, affectedVerticesOnly, inputDeps, false);
+                    currentJobHandle = SmoothPreserveShapeDeltaVolume(factor, mask, targetShape, a, affectedVerticesOnly, inputDeps, false, includeCollision, -1, 0, collisionThickness);
                     inputDeps = currentJobHandle;
                 }
             }
@@ -1386,14 +1489,14 @@ namespace Swole.Modding
 
             return currentJobHandle;
         }
-        public JobHandle SmoothPreserveShapeDeltaVolumes(float factor, NativeList<float> mask, ICollection<int2> targetShapes, bool affectedVerticesOnly, JobHandle inputDeps = default, bool appendCleaningJob = true)
+        public JobHandle SmoothPreserveShapeDeltaVolumes(float factor, NativeList<float> mask, ICollection<int2> targetShapes, bool affectedVerticesOnly, JobHandle inputDeps = default, bool appendCleaningJob = true, bool includeCollision = false, float collisionThickness = 0f)
         {
             if (targetShapes == null || !BlendShapeEditsAreInitialized) return default;
 
             currentJobHandle.Complete();
             foreach (var targetShape in targetShapes)
             {
-                currentJobHandle = SmoothPreserveShapeDeltaVolume(factor, mask, targetShape.x, targetShape.y, affectedVerticesOnly, inputDeps, false);
+                currentJobHandle = SmoothPreserveShapeDeltaVolume(factor, mask, targetShape.x, targetShape.y, affectedVerticesOnly, inputDeps, false, includeCollision, -1, 0, collisionThickness);
                 inputDeps = currentJobHandle;
             }
 
@@ -1401,7 +1504,7 @@ namespace Swole.Modding
 
             return currentJobHandle;
         }
-        public JobHandle SmoothPreserveShapeDeltaVolumes(float factor, NativeList<float> mask, bool affectedVerticesOnly, JobHandle inputDeps = default, bool appendCleaningJob = true)
+        public JobHandle SmoothPreserveShapeDeltaVolumes(float factor, NativeList<float> mask, bool affectedVerticesOnly, JobHandle inputDeps = default, bool appendCleaningJob = true, bool includeCollision = false, float collisionThickness = 0f)
         {
             if (!BlendShapeEditsAreInitialized) return default;
 
@@ -1411,7 +1514,7 @@ namespace Swole.Modding
                 var frameCount = editedBlendShapeFrameCounts[targetShape];
                 for (int a = 0; a < frameCount; a++)
                 {
-                    currentJobHandle = SmoothPreserveShapeDeltaVolume(factor, mask, targetShape, a, affectedVerticesOnly, inputDeps, false); 
+                    currentJobHandle = SmoothPreserveShapeDeltaVolume(factor, mask, targetShape, a, affectedVerticesOnly, inputDeps, false, includeCollision, -1, 0, collisionThickness); 
                     inputDeps = currentJobHandle;
                 }
             }
@@ -1420,9 +1523,12 @@ namespace Swole.Modding
 
             return currentJobHandle;
         }
-        public JobHandle SmoothPreserveShapeDeltaVolume(float factor, NativeList<float> mask, int targetShapeIndex, int targetShapeFrame, bool affectedVerticesOnly, JobHandle inputDeps = default, bool appendCleaningJob = true)
+        public JobHandle SmoothPreserveShapeDeltaVolume(float factor, NativeList<float> mask, int targetShapeIndex, int targetShapeFrame, bool affectedVerticesOnly, JobHandle inputDeps = default, bool appendCleaningJob = true, bool includeCollision = false, int targetCollisionShapeIndex = -1, int targetCollisionShapeFrame = 0, float collisionThickness = 0f)
         {
             if (editedMesh == null || !BlendShapeEditsAreInitialized) return default;
+
+            float shapeWeight = FetchDynamicBlendShapeFrameWeight(editedBlendShapes[targetShapeIndex].name, targetShapeFrame);
+            if (shapeWeight <= 0f) return default;
 
             if (!VertexConnectionsAreInitialized) InitializeVertexConnections();
 
@@ -1434,23 +1540,124 @@ namespace Swole.Modding
                 targetBlendShapeFrame = targetShapeFrame,
                 vertexCount = editedMesh.vertexCount,
                 factor = factor,
+                shapeWeight = shapeWeight,
                 affectedVerticesOnly = affectedVerticesOnly,
                 localVertexIndices = targetVertexIndices,
                 localVertexConnections = vertexConnections,
                 localVertexConnectionCounts = vertexConnectionCounts,
-                localVertexConnectionStartIndices = vertexConnectionStartIndices,
+                localVertexConnectionStartIndices = vertexConnectionStartIndices, 
                 originalLocalBlendShapeData = previousEditedBlendShapeDeltas,
                 //localBlendShapeFrameCounts = editedBlendShapeFrameCounts,
                 localBlendShapeStartIndices = editedBlendShapeStartIndices,
                 editedLocalBlendShapeData = editedBlendShapeDeltas
             }.Schedule(targetVertexIndices.Length, 4, inputDeps);
 
+            if (includeCollision)
+            {
+                if (targetCollisionShapeIndex < 0)
+                {
+                    var targetShape = editedBlendShapes[targetShapeIndex];
+                    targetCollisionShapeIndex = FindCollisionShapeIndex(targetShape.name);
+                    if (targetCollisionShapeIndex < 0)
+                    {
+                        includeCollision = false;
+                    }
+                    else
+                    {
+                        var collisionFrameCount = collisionBlendShapeFrameCounts[targetCollisionShapeIndex];
+                        if (targetShapeFrame < collisionFrameCount)
+                        {
+                            targetCollisionShapeFrame = targetShapeFrame;
+                        }
+                        else
+                        {
+                            targetCollisionShapeFrame = collisionFrameCount - 1;
+                        }
+                    }
+                }
+            }
+
+            if (includeCollision)
+            {
+                if (!VertexTrianglesAreInitialized) InitializeVertexTriangles();
+
+                var penetrationJob = new MeshEditing.CheckShapeDeltaPenetrationJob()
+                {
+                    initialPenetrationMask = InitialPenetrationMask,
+
+                    collisionScale = 100f,
+
+                    targetBlendShapeIndex = targetShapeIndex,
+                    targetBlendShapeFrame = targetShapeFrame,
+                    vertexCount = editedMesh.vertexCount,
+
+                    targetCollisionBlendShapeIndex = targetCollisionShapeIndex,
+                    targetCollisionBlendShapeFrame = targetCollisionShapeFrame,
+                    collisionVertexCount = collisionVertexData.Length,
+
+                    affectedVerticesOnly = affectedVerticesOnly,
+                    thickness = collisionThickness,
+                    shapeWeight = shapeWeight,
+                    collisionShapeWeight = shapeWeight,
+
+                    collisionTriangles = collisionTriangles,
+                    collisionVertexData = collisionVertexData,
+                    collisionVertexSkinning = collisionVertexSkinning,
+
+                    collisionBlendShapeData = collisionBlendShapeData,
+                    //collisionBlendShapeFrameCounts = collisionBlendShapeFrameCounts,
+                    collisionBlendShapeStartIndices = collisionBlendShapeStartIndices,
+
+                    nearbyCollisionTriangles = nearbyCollisionTriangles,
+                    nearbyCollisionTrianglesCounts = nearbyCollisionTriangleCounts,
+                    nearbyCollisionTrianglesStartIndices = nearbyCollisionTriangleStartIndices,
+
+                    localVertexIndices = targetVertexIndices,
+                    localVertexData = BaseVertexData,
+                    localVertexSkinning = PerVertexSkinningMatrices,
+                    localVertexSkinningInverse = PerVertexSkinningMatricesInverse,
+                    localVertexTriangles = vertexTriangles,
+                    localVertexTriangleCounts = vertexTriangleCounts,
+                    localVertexTriangleStartIndices = vertexTriangleStartIndices,
+                    originalLocalBlendShapeData = previousEditedBlendShapeDeltas,
+                    //localBlendShapeFrameCounts = editedBlendShapeFrameCounts,
+                    localBlendShapeStartIndices = editedBlendShapeStartIndices,
+
+                    newLocalBlendShapeData = editedBlendShapeDeltas,
+
+                    penetrationMask = blendShapePenetrationMask,
+                    penetrationMaskIndexOffset = (editedBlendShapeStartIndices[targetShapeIndex] + targetShapeFrame * editedMesh.vertexCount)
+
+                };
+
+                currentJobHandle = penetrationJob.Schedule(targetVertexIndices.Length, 1, currentJobHandle);
+                if (shapeWeight != 1f) // also check penetration at full shape weight
+                {
+                    penetrationJob.shapeWeight = 1f;
+                    currentJobHandle = penetrationJob.Schedule(targetVertexIndices.Length, 1, currentJobHandle);
+                }
+
+                currentJobHandle = new MeshEditing.RevertShapeDeltaEditByPenetrationJob()
+                {
+                    targetBlendShapeIndex = targetShapeIndex,
+                    targetBlendShapeFrame = targetShapeFrame,
+                    vertexCount = editedMesh.vertexCount,
+                    localVertexIndices = targetVertexIndices,
+                    originalLocalBlendShapeData = previousEditedBlendShapeDeltas,
+                    //localBlendShapeFrameCounts = editedBlendShapeFrameCounts,
+                    localBlendShapeStartIndices = editedBlendShapeStartIndices,
+                    editedLocalBlendShapeData = editedBlendShapeDeltas,
+                    penetrationMask = blendShapePenetrationMask,
+                    penetrationMaskIndexOffset = (editedBlendShapeStartIndices[targetShapeIndex] + targetShapeFrame * editedMesh.vertexCount)
+                }.Schedule(targetVertexIndices.Length, 1, currentJobHandle);
+            }
+         
             if (appendCleaningJob) currentJobHandle = new CopyListJob<ShapeVertexDelta>() { listA = editedBlendShapeDeltas, listB = previousEditedBlendShapeDeltas }.Schedule(currentJobHandle);
 
             return currentJobHandle;
         }
 
-        public JobHandle PreserveShapeDeltaVolumes(float factor, NativeList<float> mask, ICollection<int> targetShapes, bool affectedVerticesOnly, JobHandle inputDeps = default, bool appendCleaningJob = true)
+        public JobHandle PreserveShapeDeltaVolumes(float factor, NativeList<float> mask, ICollection<int> targetShapes, bool affectedVerticesOnly, JobHandle inputDeps = default, bool appendCleaningJob = true, bool includeCollision = false, float collisionThickness = 0f)
         {
             if (targetShapes == null || !BlendShapeEditsAreInitialized) return default;
 
@@ -1460,7 +1667,7 @@ namespace Swole.Modding
                 var frameCount = editedBlendShapeFrameCounts[targetShape];
                 for (int a = 0; a < frameCount; a++)
                 {
-                    currentJobHandle = PreserveShapeDeltaVolume(factor, mask, targetShape, a, affectedVerticesOnly, inputDeps, false);
+                    currentJobHandle = PreserveShapeDeltaVolume(factor, mask, targetShape, a, affectedVerticesOnly, inputDeps, false, includeCollision, -1, 0, collisionThickness);
                     inputDeps = currentJobHandle;
                 }
             }
@@ -1469,14 +1676,14 @@ namespace Swole.Modding
 
             return currentJobHandle;
         }
-        public JobHandle PreserveShapeDeltaVolumes(float factor, NativeList<float> mask, ICollection<int2> targetShapes, bool affectedVerticesOnly, JobHandle inputDeps = default, bool appendCleaningJob = true)
+        public JobHandle PreserveShapeDeltaVolumes(float factor, NativeList<float> mask, ICollection<int2> targetShapes, bool affectedVerticesOnly, JobHandle inputDeps = default, bool appendCleaningJob = true, bool includeCollision = false, float collisionThickness = 0f)
         {
             if (targetShapes == null || !BlendShapeEditsAreInitialized) return default;
 
             currentJobHandle.Complete();
             foreach (var targetShape in targetShapes)
             {
-                currentJobHandle = PreserveShapeDeltaVolume(factor, mask, targetShape.x, targetShape.y, affectedVerticesOnly, inputDeps, false); 
+                currentJobHandle = PreserveShapeDeltaVolume(factor, mask, targetShape.x, targetShape.y, affectedVerticesOnly, inputDeps, false, includeCollision, -1, 0, collisionThickness); 
                 inputDeps = currentJobHandle;
             }
 
@@ -1484,7 +1691,7 @@ namespace Swole.Modding
 
             return currentJobHandle;
         }
-        public JobHandle PreserveShapeDeltaVolumes(float factor, NativeList<float> mask, bool affectedVerticesOnly, JobHandle inputDeps = default, bool appendCleaningJob = true)
+        public JobHandle PreserveShapeDeltaVolumes(float factor, NativeList<float> mask, bool affectedVerticesOnly, JobHandle inputDeps = default, bool appendCleaningJob = true, bool includeCollision = false, float collisionThickness = 0f)
         {
             if (!BlendShapeEditsAreInitialized) return default;
 
@@ -1494,7 +1701,7 @@ namespace Swole.Modding
                 var frameCount = editedBlendShapeFrameCounts[targetShape];
                 for (int a = 0; a < frameCount; a++)
                 {
-                    currentJobHandle = PreserveShapeDeltaVolume(factor, mask, targetShape, a, affectedVerticesOnly, inputDeps, false);
+                    currentJobHandle = PreserveShapeDeltaVolume(factor, mask, targetShape, a, affectedVerticesOnly, inputDeps, false, includeCollision, -1, 0, collisionThickness);
                     inputDeps = currentJobHandle;
                 }
             }
@@ -1503,9 +1710,12 @@ namespace Swole.Modding
 
             return currentJobHandle;
         }
-        public JobHandle PreserveShapeDeltaVolume(float factor, NativeList<float> mask, int targetShapeIndex, int targetShapeFrame, bool affectedVerticesOnly, JobHandle inputDeps = default, bool appendCleaningJob = true)
+        public JobHandle PreserveShapeDeltaVolume(float factor, NativeList<float> mask, int targetShapeIndex, int targetShapeFrame, bool affectedVerticesOnly, JobHandle inputDeps = default, bool appendCleaningJob = true, bool includeCollision = false, int targetCollisionShapeIndex = -1, int targetCollisionShapeFrame = 0, float collisionThickness = 0f)
         {
             if (editedMesh == null || !BlendShapeEditsAreInitialized) return default;
+
+            float shapeWeight = FetchDynamicBlendShapeFrameWeight(editedBlendShapes[targetShapeIndex].name, targetShapeFrame);
+            if (shapeWeight <= 0f) return default;
 
             if (!VertexConnectionsAreInitialized) InitializeVertexConnections();
 
@@ -1517,6 +1727,7 @@ namespace Swole.Modding
                 targetBlendShapeFrame = targetShapeFrame,
                 vertexCount = editedMesh.vertexCount,
                 factor = factor,
+                shapeWeight = shapeWeight,
                 affectedVerticesOnly = affectedVerticesOnly,
                 localVertexIndices = targetVertexIndices,
                 localVertexData = BaseVertexData,
@@ -1528,6 +1739,106 @@ namespace Swole.Modding
                 localBlendShapeStartIndices = editedBlendShapeStartIndices,
                 editedLocalBlendShapeData = editedBlendShapeDeltas
             }.Schedule(targetVertexIndices.Length, 4, inputDeps);
+
+            if (includeCollision)
+            {
+                if (targetCollisionShapeIndex < 0)
+                {
+                    var targetShape = editedBlendShapes[targetShapeIndex];
+                    targetCollisionShapeIndex = FindCollisionShapeIndex(targetShape.name);
+                    if (targetCollisionShapeIndex < 0)
+                    {
+                        includeCollision = false;
+                    } 
+                    else
+                    {
+                        var collisionFrameCount = collisionBlendShapeFrameCounts[targetCollisionShapeIndex];
+                        if (targetShapeFrame < collisionFrameCount)
+                        {
+                            targetCollisionShapeFrame = targetShapeFrame;
+                        }
+                        else
+                        {
+                            targetCollisionShapeFrame = collisionFrameCount - 1;
+                        }
+                    }
+                }
+            }
+
+            if (includeCollision)
+            {
+                if (!VertexTrianglesAreInitialized) InitializeVertexTriangles();
+
+                var penetrationJob = new MeshEditing.CheckShapeDeltaPenetrationJob()
+                {
+                    initialPenetrationMask = InitialPenetrationMask,
+
+                    collisionScale = 100f,
+
+                    targetBlendShapeIndex = targetShapeIndex,
+                    targetBlendShapeFrame = targetShapeFrame,
+                    vertexCount = editedMesh.vertexCount,
+
+                    targetCollisionBlendShapeIndex = targetCollisionShapeIndex,
+                    targetCollisionBlendShapeFrame = targetCollisionShapeFrame,
+                    collisionVertexCount = collisionVertexData.Length,
+
+                    affectedVerticesOnly = affectedVerticesOnly,
+                    thickness = collisionThickness,
+                    shapeWeight = shapeWeight,
+                    collisionShapeWeight = shapeWeight,
+
+                    collisionTriangles = collisionTriangles,
+                    collisionVertexData = collisionVertexData,
+                    collisionVertexSkinning = collisionVertexSkinning,
+
+                    collisionBlendShapeData = collisionBlendShapeData,
+                    //collisionBlendShapeFrameCounts = collisionBlendShapeFrameCounts,
+                    collisionBlendShapeStartIndices = collisionBlendShapeStartIndices,
+
+                    nearbyCollisionTriangles = nearbyCollisionTriangles,
+                    nearbyCollisionTrianglesCounts = nearbyCollisionTriangleCounts,
+                    nearbyCollisionTrianglesStartIndices = nearbyCollisionTriangleStartIndices,
+
+                    localVertexIndices = targetVertexIndices,
+                    localVertexData = BaseVertexData,
+                    localVertexSkinning = PerVertexSkinningMatrices,
+                    localVertexSkinningInverse = PerVertexSkinningMatricesInverse,
+                    localVertexTriangles = vertexTriangles,
+                    localVertexTriangleCounts = vertexTriangleCounts,
+                    localVertexTriangleStartIndices = vertexTriangleStartIndices,
+                    originalLocalBlendShapeData = previousEditedBlendShapeDeltas,
+                    //localBlendShapeFrameCounts = editedBlendShapeFrameCounts,
+                    localBlendShapeStartIndices = editedBlendShapeStartIndices,
+
+                    newLocalBlendShapeData = editedBlendShapeDeltas,
+
+                    penetrationMask = blendShapePenetrationMask,
+                    penetrationMaskIndexOffset = (editedBlendShapeStartIndices[targetShapeIndex] + targetShapeFrame * editedMesh.vertexCount)
+
+                };
+
+                currentJobHandle = penetrationJob.Schedule(targetVertexIndices.Length, 1, currentJobHandle);
+                if (shapeWeight != 1f) // also check penetration at full shape weight
+                {
+                    penetrationJob.shapeWeight = 1f;
+                    currentJobHandle = penetrationJob.Schedule(targetVertexIndices.Length, 1, currentJobHandle);
+                }
+
+                currentJobHandle = new MeshEditing.RevertShapeDeltaEditByPenetrationJob()
+                {
+                    targetBlendShapeIndex = targetShapeIndex,
+                    targetBlendShapeFrame = targetShapeFrame,
+                    vertexCount = editedMesh.vertexCount,
+                    localVertexIndices = targetVertexIndices,
+                    originalLocalBlendShapeData = previousEditedBlendShapeDeltas,
+                    //localBlendShapeFrameCounts = editedBlendShapeFrameCounts,
+                    localBlendShapeStartIndices = editedBlendShapeStartIndices,
+                    editedLocalBlendShapeData = editedBlendShapeDeltas,
+                    penetrationMask = blendShapePenetrationMask,
+                    penetrationMaskIndexOffset = (editedBlendShapeStartIndices[targetShapeIndex] + targetShapeFrame * editedMesh.vertexCount)
+                }.Schedule(targetVertexIndices.Length, 1, currentJobHandle);
+            }
 
             if (appendCleaningJob) currentJobHandle = new CopyListJob<ShapeVertexDelta>() { listA = editedBlendShapeDeltas, listB = previousEditedBlendShapeDeltas }.Schedule(currentJobHandle);
 
@@ -1629,14 +1940,42 @@ namespace Swole.Modding
         }
         unsafe public JobHandle DepenetrateShapeDeltas(float factor, NativeList<float> mask, float localCollisionFactor, float thickness, int targetShapeIndex, int targetShapeFrame, int targetCollisionShapeIndex, int targetCollisionShapeFrame, bool affectedVerticesOnly, JobHandle inputDeps = default, bool appendCleaningJob = true, bool appendToRepetitionList = true)
         {
-            if (editedMesh == null || !BlendShapeEditsAreInitialized || !HasCollisionData) return default;
-            
-            if (!VertexTrianglesAreInitialized) InitializeVertexTriangles();
+            if (editedMesh == null || !BlendShapeEditsAreInitialized || !HasCollisionData || targetShapeIndex < 0 || targetCollisionShapeIndex < 0) return default;
+
+            float shapeWeight = FetchDynamicBlendShapeFrameWeight(editedBlendShapes[targetShapeIndex].name, targetShapeFrame); 
+            if (shapeWeight <= 0f) return default;
+
+            if (!VertexTrianglesAreInitialized) InitializeVertexTriangles(); 
 
             currentJobHandle.Complete();
+
+            /*Debug.Log(editedBlendShapes[targetShapeIndex].name + " : " + collisionShapeNames[targetCollisionShapeIndex] + " : " + targetCollisionShapeIndex + " :: " + FindCollisionShapeIndex(editedBlendShapes[targetShapeIndex].name));
+            int shapeIndex = editedBlendShapeStartIndices[targetShapeIndex] + targetShapeFrame * editedMesh.vertexCount;
+            int collisionShapeIndex = collisionBlendShapeStartIndices[targetCollisionShapeIndex] + targetCollisionShapeFrame * collisionVertexData.Length;
+            for (int a = 0; a < BaseVertexData.Length; a++)
+            {
+                var localPosition = math.transform(PerVertexSkinningMatrices[a], BaseVertexData[a].position + editedBlendShapeDeltas[shapeIndex + a].deltaPosition * shapeWeight);
+                Debug.DrawRay(localPosition, Vector3.up * 0.005f, Color.green, 200f);
+            }
+
+            for (int a = 0; a < collisionTriangles.Length; a++)
+            {
+                var triangle = collisionTriangles[a];
+                var collisionVertex1 = math.transform(collisionVertexSkinning[triangle.i0], collisionVertexData[triangle.i0].position + collisionBlendShapeData[collisionShapeIndex + triangle.i0].deltaPosition * shapeWeight);
+                var collisionVertex2 = math.transform(collisionVertexSkinning[triangle.i1], collisionVertexData[triangle.i1].position + collisionBlendShapeData[collisionShapeIndex + triangle.i1].deltaPosition * shapeWeight);
+                var collisionVertex3 = math.transform(collisionVertexSkinning[triangle.i2], collisionVertexData[triangle.i2].position + collisionBlendShapeData[collisionShapeIndex + triangle.i2].deltaPosition * shapeWeight);
+
+                Debug.DrawLine(collisionVertex1, collisionVertex2, Color.blue, 200f);
+                Debug.DrawLine(collisionVertex2, collisionVertex3, Color.blue, 200f);
+                Debug.DrawLine(collisionVertex3, collisionVertex1, Color.blue, 200f);
+            }*/
+
             currentJobHandle = new MeshEditing.DepenetrateShapeDeltaJob()
             {
                 mask = mask,
+                initialPenetrationMask = InitialPenetrationMask,
+
+                collisionScale = 100f,
 
                 //penetrationCounter = penetrationCounter,
                 depenetrationMask = DepenetrationMask,
@@ -1652,6 +1991,8 @@ namespace Swole.Modding
                 affectedVerticesOnly = affectedVerticesOnly,
                 localCollisionFactor = localCollisionFactor,
                 thickness = thickness,
+                shapeWeight = shapeWeight,
+                collisionShapeWeight = shapeWeight,
 
                 collisionTriangles = collisionTriangles,
                 collisionVertexData = collisionVertexData,
@@ -1662,6 +2003,7 @@ namespace Swole.Modding
                 collisionBlendShapeStartIndices = collisionBlendShapeStartIndices,
 
                 nearbyCollisionTriangles = nearbyCollisionTriangles,
+                nearbyCollisionTriangleSurfaceData = nearbyCollisionTriangleSurfaceData,
                 nearbyCollisionTrianglesCounts = nearbyCollisionTriangleCounts,
                 nearbyCollisionTrianglesStartIndices = nearbyCollisionTriangleStartIndices,
 
@@ -1683,6 +2025,111 @@ namespace Swole.Modding
             if (appendToRepetitionList) currentDepenetrationShapeTargets.Add(new DepenetrationTarget() { indices = new int2(targetShapeIndex, targetShapeFrame), collisionIndices = new int2(targetCollisionShapeIndex, targetCollisionShapeFrame), factor = factor, thickness = thickness });
 
             return currentJobHandle;
+        }
+
+        unsafe public void CalculateInitialPenetrationMask(JobHandle inputDeps = default)
+        {
+            if (editedMesh == null || !BlendShapeEditsAreInitialized || !HasCollisionData) return;
+
+            if (!VertexTrianglesAreInitialized) InitializeVertexTriangles();
+
+            currentJobHandle.Complete();
+
+            using (var tempInitialPenetrationMask = new NativeList<bool>(editedMesh.vertexCount, Allocator.TempJob))
+            {
+                for (int a = 0; a < editedMesh.vertexCount; a++) tempInitialPenetrationMask.Add(false);
+
+                using (var tempMask = new NativeList<float>(editedMesh.vertexCount, Allocator.TempJob))
+                {
+                    for (int a = 0; a < editedMesh.vertexCount; a++) tempMask.Add(1f);
+
+                    using (var tempCollisionBlendShapeData = new NativeList<ShapeVertexDelta>(collisionVertexData.Length, Allocator.TempJob))
+                    {
+                        for (int a = 0; a < collisionVertexData.Length; a++)
+                        {
+                            tempCollisionBlendShapeData.Add(new ShapeVertexDelta());
+                        }
+
+                        using (var tempCollisionBlendShapeStartIndices = new NativeList<int>(1, Allocator.TempJob))
+                        {
+                            tempCollisionBlendShapeStartIndices.Add(0);
+
+                            using (var tempPreviousEditedBlendShapeDeltas = new NativeList<ShapeVertexDelta>(editedMesh.vertexCount, Allocator.TempJob))
+                            {
+                                for (int a = 0; a < editedMesh.vertexCount; a++)
+                                {
+                                    tempPreviousEditedBlendShapeDeltas.Add(new ShapeVertexDelta());
+                                }
+
+                                using (var tempEditedBlendShapeDeltas = new NativeList<ShapeVertexDelta>(editedMesh.vertexCount, Allocator.TempJob))
+                                {
+                                    tempEditedBlendShapeDeltas.CopyFrom(previousEditedBlendShapeDeltas);
+
+                                    using (var tempEditedBlendShapeStartIndices = new NativeList<int>(1, Allocator.TempJob))
+                                    {
+                                        tempEditedBlendShapeStartIndices.Add(0);
+
+                                        using (var tempTargetVertexIndices = new NativeList<int>(editedMesh.vertexCount, Allocator.TempJob))
+                                        {
+                                            for (int a = 0; a < editedMesh.vertexCount; a++) tempTargetVertexIndices.Add(a);
+
+                                            currentJobHandle = new MeshEditing.DepenetrateShapeDeltaJob()
+                                            {
+                                                mask = tempMask,
+                                                initialPenetrationMask = tempInitialPenetrationMask,
+
+                                                collisionScale = 100f,
+
+                                                //penetrationCounter = penetrationCounter,
+                                                depenetrationMask = InitialPenetrationMask,
+                                                targetBlendShapeIndex = 0,
+                                                targetBlendShapeFrame = 0,
+                                                vertexCount = editedMesh.vertexCount,
+
+                                                targetCollisionBlendShapeIndex = 0,
+                                                targetCollisionBlendShapeFrame = 0,
+                                                collisionVertexCount = collisionVertexData.Length,
+
+                                                factor = 1f,
+                                                affectedVerticesOnly = false,
+                                                localCollisionFactor = 1f,
+                                                thickness = 0f,
+                                                shapeWeight = 1f,
+                                                collisionShapeWeight = 1f,
+
+                                                collisionTriangles = collisionTriangles,
+                                                collisionVertexData = collisionVertexData,
+                                                collisionVertexSkinning = collisionVertexSkinning,
+
+                                                collisionBlendShapeData = tempCollisionBlendShapeData,
+                                                collisionBlendShapeStartIndices = tempCollisionBlendShapeStartIndices,
+
+                                                nearbyCollisionTriangles = nearbyCollisionTriangles,
+                                                nearbyCollisionTriangleSurfaceData = nearbyCollisionTriangleSurfaceData,
+                                                nearbyCollisionTrianglesCounts = nearbyCollisionTriangleCounts,
+                                                nearbyCollisionTrianglesStartIndices = nearbyCollisionTriangleStartIndices,
+
+                                                localVertexIndices = tempTargetVertexIndices,
+                                                localVertexData = BaseVertexData,
+                                                localVertexSkinning = PerVertexSkinningMatrices,
+                                                localVertexSkinningInverse = PerVertexSkinningMatricesInverse,
+                                                localVertexTriangles = vertexTriangles,
+                                                localVertexTriangleCounts = vertexTriangleCounts,
+                                                localVertexTriangleStartIndices = vertexTriangleStartIndices,
+                                                originalLocalBlendShapeData = tempPreviousEditedBlendShapeDeltas,
+                                                localBlendShapeStartIndices = tempEditedBlendShapeStartIndices,
+                                                editedLocalBlendShapeData = tempEditedBlendShapeDeltas
+                                            }.Schedule(targetVertexIndices.Length, 1, inputDeps);
+
+                                            currentJobHandle.Complete();
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
         }
 
         unsafe protected void RequeueDepenetrationJobsIfRequired()
@@ -1735,6 +2182,124 @@ namespace Swole.Modding
                 listB.CopyFrom(listA);
             }
         }
+
+        #region Rendering
+
+        [Header("Rendering")]
+        public Mesh vertexSelectionMesh;
+
+        [Tooltip("MATERIAL MUST SUPPORT GPU INSTANCING")]
+        public Material vertexSelectionMaterial;
+
+        public string vertexSelectionColorProperty = "_BaseColor";
+        public Color defaultVertexColor = Color.white;
+        public Color selectedVertexColor = Color.red;
+
+        public float vertexRenderSize = 0.001f;
+
+        public bool testRender;
+        public void OnValidate()
+        {
+            if (testRender)
+            {
+                testRender = false;
+
+                if (vertexRenderingGroup == null) StartRenderingVertices(); else StopRenderingVertices();
+            }
+        }
+
+        protected InstancedRendering.RenderGroup<InstancedRendering.InstanceDataMatrixOnly> vertexRenderingGroup;
+        protected List<InstancedRendering.RenderingInstance<InstancedRendering.InstanceDataMatrixOnly>> vertexRenderingInstances = new List<InstancedRendering.RenderingInstance<InstancedRendering.InstanceDataMatrixOnly>>();
+
+        public void StartRenderingVertices()
+        {
+            StopRenderingVertices();
+
+            vertexRenderingGroup = InstancedRendering.GetRenderGroup<InstancedRendering.InstanceDataMatrixOnly>(vertexSelectionMesh, 0, 1023);
+            if (vertexRenderingGroup == null)
+            {
+                Debug.LogWarning("Failed to get vertex rendering group");
+                return;
+            }
+
+            if (vertexRenderingInstances == null) vertexRenderingInstances = new List<InstancedRendering.RenderingInstance<InstancedRendering.InstanceDataMatrixOnly>>();
+
+            var verticesArray = VerticesArray;
+            if (verticesArray == null || verticesArray.Length == 0)
+            {
+                Debug.LogWarning("No vertices to render");
+                return;
+            }
+
+            var perVertexSkinning = PerVertexSkinningMatricesArray;
+            Vector3 selectionScale = Vector3.one * vertexRenderSize;
+            for (int a = 0; a < verticesArray.Length; a++)
+            {
+                var instance = vertexRenderingGroup.AddNewInstance(vertexSelectionMaterial, new InstancedRendering.InstanceDataMatrixOnly()
+                {
+                    objectToWorld = Matrix4x4.TRS(perVertexSkinning[a].MultiplyPoint(verticesArray[a]), Quaternion.identity, selectionScale)
+                });
+
+                vertexRenderingInstances.Add(instance);
+            }
+
+            Debug.Log($"Started rendering {vertexRenderingInstances.Count} vertices");
+        }
+
+        public void RefreshSelectableVertexPositions()
+        {
+            if (vertexRenderingInstances == null || vertexRenderingInstances.Count <= 0 || verticesArray == null || perVertexSkinningMatricesArray == null) return;
+
+            Vector3 selectionScale = Vector3.one * vertexRenderSize;
+            for (int a = 0; a < vertexRenderingInstances.Count; a++)
+            {
+                var instance = vertexRenderingInstances[a];
+                instance.SetData(new InstancedRendering.InstanceDataMatrixOnly()
+                {
+                    objectToWorld = Matrix4x4.TRS(perVertexSkinningMatricesArray[a].MultiplyPoint(verticesArray[a]), Quaternion.identity, selectionScale)
+                });
+            }
+        }
+
+        public void StopRenderingVertices()
+        {
+            if (vertexRenderingInstances != null)
+            {
+                Debug.Log($"Stopping rendering of {vertexRenderingInstances.Count} vertices");
+
+                foreach (var instance in vertexRenderingInstances)
+                {
+                    if (instance == null) continue;
+
+                    //instance.Dispose(false, true);
+                    instance.Dispose(true, true);
+                }
+
+                /*if (vertexRenderingGroup != null)
+                {
+                    for(int a = 0; a < vertexRenderingGroup.SequenceCount; a++)
+                    {
+                        var seq = vertexRenderingGroup.GetSequence(a);
+                        if (seq == null) continue;
+
+                        for(int b = 0; b < seq.SubSequenceCount; b++)
+                        {
+                            var subSeq = seq[b];
+                            if (subSeq == null) continue;
+
+                            subSeq.RefreshLocalIndices();
+                        }
+                    }
+                }*/
+
+                vertexRenderingInstances.Clear();
+            }
+
+            vertexRenderingGroup = null;
+        }
+
+        #endregion
+
     }
 
     public static class MeshEditing
@@ -1987,6 +2552,8 @@ namespace Swole.Modding
 
             public float distanceBindingWeight;
 
+            public float scoreMultiplier;
+
             public int referenceIndex;
 
             [ReadOnly]
@@ -2022,7 +2589,7 @@ namespace Swole.Modding
                     float distance = math.distance(localVertex.vertex.worldPosition, refVertex.vertex.worldPosition);
                     if (distance > maxDistance) continue; 
 
-                    float score = localVertex.vertex.ComparisonScore(refVertex.vertex, distance, distanceBindingWeight);
+                    float score = localVertex.vertex.ComparisonScore(refVertex.vertex, distance, distanceBindingWeight) * scoreMultiplier;
                     if (score > infA.score)
                     {
                         if (refVertIndex != infB.vertexIndex || referenceIndex != infB.meshIndex) // prevent merged vertices from being chosen multiple times
@@ -2032,13 +2599,11 @@ namespace Swole.Modding
                                 infB.score = infA.score;
                                 infB.meshIndex = infA.meshIndex;
                                 infB.vertexIndex = infA.vertexIndex;
-                                infB.weight = infA.weight;
                             }
 
                             infA.score = score;
                             infA.meshIndex = referenceIndex;
                             infA.vertexIndex = refVertIndex;
-                            infA.weight = 0;
                         }
                     } 
                     else if (score > infB.score && (refVertIndex != infA.vertexIndex || referenceIndex != infA.meshIndex)) // prevent merged vertices from being chosen multiple times
@@ -2046,13 +2611,12 @@ namespace Swole.Modding
                         infB.score = score;
                         infB.meshIndex = referenceIndex;
                         infB.vertexIndex = refVertIndex;
-                        infB.weight = 0;
                     }
                 }
 
                 float totalScore = infA.score + infB.score;
-                infA.weight = math.select(0, infA.score / totalScore, totalScore > 0) * mask[localIndex];
-                infB.weight = math.select(0, infB.score / totalScore, totalScore > 0) * mask[localIndex];
+                infA.weight = math.select(0f, infA.score / totalScore, totalScore > 0f) * mask[localIndex];
+                infB.weight = math.select(0f, infB.score / totalScore, totalScore > 0f) * mask[localIndex];
                 influence.influenceA = infA;
                 influence.influenceB = infB;
                 influences[localIndex] = influence;
@@ -2068,6 +2632,7 @@ namespace Swole.Modding
             public int vertexCount;
 
             public float factor;
+            public float shapeWeight;
 
             public bool affectedVerticesOnly;
 
@@ -2105,9 +2670,11 @@ namespace Swole.Modding
 
                 int shapeRelativeIndex = shapeIndex + localIndex;
                 var finalShapeDeltas = originalLocalBlendShapeData[shapeRelativeIndex];
+                var visualShapeDeltas = finalShapeDeltas * shapeWeight;
+                float shapeWeightInv = 1f / shapeWeight;
 
                 float maskWeight = mask[localIndex];
-                if (maskWeight <= 0f || (affectedVerticesOnly && math.length(finalShapeDeltas.deltaPosition) < 0.0001f)) return;
+                if (maskWeight <= 0f || (affectedVerticesOnly && math.length(visualShapeDeltas.deltaPosition) < 0.0001f)) return;
 
                 var editedShapeDeltas = new ShapeVertexDelta();
                 float totalWeight = 0f;
@@ -2116,15 +2683,16 @@ namespace Swole.Modding
                     var connection = localVertexConnections[vertexConnectionsIndex + a];
 
                     int shapeRelativeConnectionIndex = shapeIndex + connection.index;
-                    var shapeDeltas = originalLocalBlendShapeData[shapeRelativeConnectionIndex];
+                    var shapeDeltas = originalLocalBlendShapeData[shapeRelativeConnectionIndex] * shapeWeight;
 
                     float connectionMaskWeight = mask[connection.index];
                     if (connectionMaskWeight <= 0f || (affectedVerticesOnly && math.length(shapeDeltas.deltaPosition) < 0.0001f)) continue;
 
                     float connectionWeight = connection.weight * connectionMaskWeight;
-                    editedShapeDeltas.deltaPosition = editedShapeDeltas.deltaPosition + shapeDeltas.deltaPosition * connectionWeight;
-                    editedShapeDeltas.deltaNormal = editedShapeDeltas.deltaNormal + shapeDeltas.deltaNormal * connectionWeight;
-                    editedShapeDeltas.deltaTangent = editedShapeDeltas.deltaTangent + shapeDeltas.deltaTangent * connectionWeight;
+                    float finalWeight = connectionWeight * shapeWeightInv;
+                    editedShapeDeltas.deltaPosition = editedShapeDeltas.deltaPosition + shapeDeltas.deltaPosition * finalWeight;
+                    editedShapeDeltas.deltaNormal = editedShapeDeltas.deltaNormal + shapeDeltas.deltaNormal * finalWeight;
+                    editedShapeDeltas.deltaTangent = editedShapeDeltas.deltaTangent + shapeDeltas.deltaTangent * finalWeight;
 
                     totalWeight += connectionWeight;
                 }
@@ -2151,6 +2719,7 @@ namespace Swole.Modding
             public int vertexCount;
 
             public float factor;
+            public float shapeWeight;
 
             public bool affectedVerticesOnly;
 
@@ -2193,11 +2762,13 @@ namespace Swole.Modding
 
                 int shapeRelativeIndex = shapeIndex + localIndex;
                 var finalShapeDeltas = originalLocalBlendShapeData[shapeRelativeIndex];
+                var visualShapeDeltas = finalShapeDeltas * shapeWeight;
+                float shapeWeightInv = 1f / shapeWeight;
 
                 float maskWeight = mask[localIndex];
-                if (maskWeight <= 0f || (affectedVerticesOnly && math.length(finalShapeDeltas.deltaPosition) < 0.0001f)) return;
+                if (maskWeight <= 0f || (affectedVerticesOnly && math.length(visualShapeDeltas.deltaPosition) < 0.0001f)) return;
 
-                var localShapeVertex = localBaseVertex + finalShapeDeltas;
+                //var localShapeVertex = localBaseVertex + visualShapeDeltas;
 
                 var editedShapeDeltas = new ShapeVertexDelta();
                 float totalWeight = 0f;
@@ -2208,7 +2779,7 @@ namespace Swole.Modding
                     var baseVertex = localVertexData[connection.index];
 
                     int shapeRelativeConnectionIndex = shapeIndex + connection.index;
-                    var shapeDeltas = originalLocalBlendShapeData[shapeRelativeConnectionIndex];
+                    var shapeDeltas = originalLocalBlendShapeData[shapeRelativeConnectionIndex] * shapeWeight;
 
                     float connectionMaskWeight = mask[connection.index];
                     if (connectionMaskWeight <= 0f || (affectedVerticesOnly && math.length(shapeDeltas.deltaPosition) < 0.0001f)) continue;
@@ -2226,9 +2797,10 @@ namespace Swole.Modding
                     shapeVertex.tangent.xyz = math.rotate(originalOffsetTan, shapeVertex.tangent.xyz);
 
                     float connectionWeight = connection.weight * connectionMaskWeight;
-                    editedShapeDeltas.deltaPosition = editedShapeDeltas.deltaPosition + (shapeVertex.position - localBaseVertex.position) * connectionWeight;
-                    editedShapeDeltas.deltaNormal = editedShapeDeltas.deltaNormal + (shapeVertex.normal - localBaseVertex.normal) * connectionWeight;
-                    editedShapeDeltas.deltaTangent = editedShapeDeltas.deltaTangent + (shapeVertex.tangent.xyz - localBaseVertex.tangent.xyz) * connectionWeight;
+                    float finalWeight = connectionWeight * shapeWeightInv;
+                    editedShapeDeltas.deltaPosition = editedShapeDeltas.deltaPosition + (shapeVertex.position - localBaseVertex.position) * finalWeight;
+                    editedShapeDeltas.deltaNormal = editedShapeDeltas.deltaNormal + (shapeVertex.normal - localBaseVertex.normal) * finalWeight;
+                    editedShapeDeltas.deltaTangent = editedShapeDeltas.deltaTangent + (shapeVertex.tangent.xyz - localBaseVertex.tangent.xyz) * finalWeight;
 
                     totalWeight += connectionWeight;
                 }
@@ -2261,11 +2833,568 @@ namespace Swole.Modding
             public float factor;
             public float localCollisionFactor;
             public float thickness;
+            public float shapeWeight;
+            public float collisionShapeWeight;
+
+            public float collisionScale;
 
             public bool affectedVerticesOnly;
 
             [ReadOnly]
             public NativeList<float> mask;
+            [ReadOnly]
+            public NativeList<bool> initialPenetrationMask;
+
+            [ReadOnly]
+            public NativeList<MeshDataTools.Triangle> collisionTriangles;
+            [ReadOnly]
+            public NativeList<BaseVertexData> collisionVertexData;
+            [ReadOnly]
+            public NativeList<float4x4> collisionVertexSkinning;
+            [ReadOnly]
+            public NativeList<ShapeVertexDelta> collisionBlendShapeData;
+            //[ReadOnly]
+            //public NativeList<int> collisionBlendShapeFrameCounts;
+            [ReadOnly]
+            public NativeList<int> collisionBlendShapeStartIndices;
+
+            [ReadOnly]
+            public NativeList<int> nearbyCollisionTriangles;
+            [ReadOnly]
+            public NativeList<float4> nearbyCollisionTriangleSurfaceData;
+            [ReadOnly]
+            public NativeList<int> nearbyCollisionTrianglesCounts;
+            [ReadOnly]
+            public NativeList<int> nearbyCollisionTrianglesStartIndices;
+
+            [ReadOnly]
+            public NativeList<int> localVertexIndices;
+
+            [ReadOnly]
+            public NativeList<BaseVertexData> localVertexData;
+            [ReadOnly]
+            public NativeList<float4x4> localVertexSkinning;
+            [ReadOnly]
+            public NativeList<float4x4> localVertexSkinningInverse;
+
+            [ReadOnly]
+            public NativeList<MeshDataTools.Triangle> localVertexTriangles;
+            [ReadOnly]
+            public NativeList<int> localVertexTriangleCounts;
+            [ReadOnly]
+            public NativeList<int> localVertexTriangleStartIndices;
+
+            [ReadOnly]
+            public NativeList<ShapeVertexDelta> originalLocalBlendShapeData;
+            //[ReadOnly]
+            //public NativeList<int> localBlendShapeFrameCounts;
+            [ReadOnly]
+            public NativeList<int> localBlendShapeStartIndices;
+
+            [NativeDisableParallelForRestriction]
+            public NativeList<ShapeVertexDelta> editedLocalBlendShapeData;
+
+            [NativeDisableParallelForRestriction]
+            public NativeList<bool> depenetrationMask;
+
+            public bool CheckSignFlip(float shapeWeight, float collisionShapeWeight, float4x4 skinningInverse, int ownerIndex, int shapeStartIndex, int collisionShapeStartIndex, out float3 localDisplacement)
+            {
+                localDisplacement = float3.zero;
+
+                var vertexA = localVertexData[ownerIndex];
+                var shapeDeltasA = originalLocalBlendShapeData[shapeStartIndex + ownerIndex] * shapeWeight;
+
+                float maskWeightA = mask[ownerIndex];
+                if (affectedVerticesOnly && (maskWeightA <= 0f || math.length(shapeDeltasA.deltaPosition) < 0.0001f)) return false;
+
+                vertexA.position = (vertexA.position + shapeDeltasA.deltaPosition);// - math.normalize(vertexA.normal + shapeDeltasA.deltaNormal) * thickness;
+
+                var skinningA = localVertexSkinning[ownerIndex];
+
+                var worldVertexA = math.transform(skinningA, vertexA.position);
+
+                var nearbyTrisStartIndex = nearbyCollisionTrianglesStartIndices[ownerIndex];
+                var nearbyTrisCount = nearbyCollisionTrianglesCounts[ownerIndex];
+                for (int a = 0; a < nearbyTrisCount; a++)
+                {
+                    int nearbyTriIndex = nearbyTrisStartIndex + a;
+                    var surfaceData = nearbyCollisionTriangleSurfaceData[nearbyTriIndex];
+                    if (surfaceData.w <= 0f) continue;
+
+                    var colTriIndex = nearbyCollisionTriangles[nearbyTriIndex];
+                    var colTri = collisionTriangles[colTriIndex];
+
+                    var colVert1 = collisionVertexData[colTri.i0];
+                    var colVert2 = collisionVertexData[colTri.i1];
+                    var colVert3 = collisionVertexData[colTri.i2];
+                    var colShapeDeltas1 = collisionBlendShapeData[collisionShapeStartIndex + colTri.i0] * collisionShapeWeight;
+                    var colShapeDeltas2 = collisionBlendShapeData[collisionShapeStartIndex + colTri.i1] * collisionShapeWeight;
+                    var colShapeDeltas3 = collisionBlendShapeData[collisionShapeStartIndex + colTri.i2] * collisionShapeWeight;
+
+                    colVert1.position = (colVert1.position + colShapeDeltas1.deltaPosition);
+                    colVert2.position = (colVert2.position + colShapeDeltas2.deltaPosition);
+                    colVert3.position = (colVert3.position + colShapeDeltas3.deltaPosition);
+
+                    var colSkinning1 = collisionVertexSkinning[colTri.i0];
+                    var colSkinning2 = collisionVertexSkinning[colTri.i1];
+                    var colSkinning3 = collisionVertexSkinning[colTri.i2];
+
+                    var colWorldVertex1 = math.transform(colSkinning1, colVert1.position);
+                    var colWorldVertex2 = math.transform(colSkinning2, colVert2.position);
+                    var colWorldVertex3 = math.transform(colSkinning3, colVert3.position);
+
+                    if (Maths.IsInTriangle(worldVertexA * collisionScale, colWorldVertex1 * collisionScale, colWorldVertex2 * collisionScale, colWorldVertex3 * collisionScale, 0.15f)) // make sure we're still within the triangle bounds
+                    {
+                        var collisionCenter = (colWorldVertex1 + colWorldVertex2 + colWorldVertex3) / 3f;
+                        var collisionNormal = math.normalize(math.cross(colWorldVertex2 - colWorldVertex1, colWorldVertex3 - colWorldVertex1));
+                        var projection = math.project(worldVertexA - collisionCenter, collisionNormal); 
+
+                        float projectionDot = math.dot(projection, surfaceData.xyz); // compare to original projection (surfaceData.xyz)
+                        if (projectionDot < 0f) // sign flip detected (vertex moved to opposite side of triangle plane)
+                        {
+                            localDisplacement = math.rotate(skinningInverse, -projection * surfaceData.w * 1.0001f);
+                            //Debug.DrawRay(worldVertexA, Vector3.up * 0.5f, Color.blue, 25f);
+                            //Debug.DrawLine(worldVertexA, collisionCenter, Color.red, 25f);
+                            return true;
+                        }
+                    }
+                }
+
+                return false;
+            }
+
+            public bool CheckPenetration(float3 ownerWorldPosition, float shapeWeight, float collisionShapeWeight, float4x4 skinningInverse, int ownerIndex, int vertIndexA, int vertIndexB, int shapeStartIndex, int collisionShapeStartIndex, out float3 localDisplacement)
+            {
+                localDisplacement = float3.zero;
+
+                var vertexA = localVertexData[vertIndexA];
+                var vertexB = localVertexData[vertIndexB];
+                var shapeDeltasA = originalLocalBlendShapeData[shapeStartIndex + vertIndexA] * shapeWeight;
+                var shapeDeltasB = originalLocalBlendShapeData[shapeStartIndex + vertIndexB] * shapeWeight;
+
+                float maskWeightA = mask[vertIndexA];
+                float maskWeightB = mask[vertIndexB];
+                if (affectedVerticesOnly && (maskWeightA <= 0f || maskWeightB <= 0f || math.length(shapeDeltasA.deltaPosition) < 0.0001f || math.length(shapeDeltasB.deltaPosition) < 0.0001f)) return false;
+
+                vertexA.position = (vertexA.position + shapeDeltasA.deltaPosition) - math.normalize(vertexA.normal + shapeDeltasA.deltaNormal) * thickness;
+                vertexB.position = (vertexB.position + shapeDeltasB.deltaPosition) - math.normalize(vertexB.normal + shapeDeltasB.deltaNormal) * thickness;
+
+                var skinningA = localVertexSkinning[vertIndexA];
+                var skinningB = localVertexSkinning[vertIndexB];
+
+                var worldVertexA = math.transform(skinningA, vertexA.position);
+                var worldVertexB = math.transform(skinningB, vertexB.position);
+
+                var nearbyTrisStartIndex = nearbyCollisionTrianglesStartIndices[ownerIndex];
+                var nearbyTrisCount = nearbyCollisionTrianglesCounts[ownerIndex];
+                for (int a = 0; a < nearbyTrisCount; a++)
+                {
+                    var colTriIndex = nearbyCollisionTriangles[nearbyTrisStartIndex + a];
+                    var colTri = collisionTriangles[colTriIndex];
+
+                    var colVert1 = collisionVertexData[colTri.i0];
+                    var colVert2 = collisionVertexData[colTri.i1];
+                    var colVert3 = collisionVertexData[colTri.i2];
+                    var colShapeDeltas1 = collisionBlendShapeData[collisionShapeStartIndex + colTri.i0] * collisionShapeWeight;
+                    var colShapeDeltas2 = collisionBlendShapeData[collisionShapeStartIndex + colTri.i1] * collisionShapeWeight;
+                    var colShapeDeltas3 = collisionBlendShapeData[collisionShapeStartIndex + colTri.i2] * collisionShapeWeight;
+
+                    colVert1.position = (colVert1.position + colShapeDeltas1.deltaPosition);
+                    colVert2.position = (colVert2.position + colShapeDeltas2.deltaPosition);
+                    colVert3.position = (colVert3.position + colShapeDeltas3.deltaPosition);
+
+                    var colSkinning1 = collisionVertexSkinning[colTri.i0];
+                    var colSkinning2 = collisionVertexSkinning[colTri.i1];
+                    var colSkinning3 = collisionVertexSkinning[colTri.i2];
+
+                    var colWorldVertex1 = math.transform(colSkinning1, colVert1.position);
+                    var colWorldVertex2 = math.transform(colSkinning2, colVert2.position);
+                    var colWorldVertex3 = math.transform(colSkinning3, colVert3.position);
+
+                    var colWorldCenter = (colWorldVertex1 + colWorldVertex2 + colWorldVertex3) / 3f;
+                    var colNormal = math.normalize(math.cross(colWorldVertex2 - colWorldVertex1, colWorldVertex3 - colWorldVertex1));
+                    var ownerOffset = ownerWorldPosition - colWorldCenter;
+                    if (math.dot(ownerOffset, colNormal) > 0f) continue; // only calculate displacement if the owner vertex is "behind" the triangle
+
+                    /*if (Maths.IntersectSegmentTriangle(worldVertexA, worldVertexB, colWorldVertex1, colWorldVertex2, colWorldVertex3, out var hit))
+                    {
+                        float3 offsetA = (hit.point - worldVertexA) * maskWeightA;
+                        float3 offsetB = (hit.point - worldVertexB) * maskWeightB;
+
+                        float dA = math.dot(offsetA, hit.normal);
+                        float dB = math.dot(offsetB, hit.normal);
+
+                        localDisplacement = math.rotate(skinningInverse, hit.normal * math.max(dA, dB));
+
+                        //Debug.DrawRay(hit.point, Vector3.up * 0.1f, Color.blue, 100f);
+                        //Debug.DrawRay(hit.point, localDisplacement, Color.red, 100f);
+
+                        return true;
+                    }*/
+
+                    float3 rayOffset = worldVertexB - worldVertexA;
+                    if (Maths.seg_intersect_triangle(worldVertexA * collisionScale, rayOffset * collisionScale, colWorldVertex1 * collisionScale, colWorldVertex2 * collisionScale, colWorldVertex3 * collisionScale, out Maths.RaycastHitResult hit))
+                    {
+                        float3 offsetA = (hit.point - (worldVertexA * collisionScale)) * maskWeightA;
+                        float3 offsetB = (hit.point - (worldVertexB * collisionScale)) * maskWeightB;
+
+                        float dA = math.dot(offsetA, hit.normal);
+                        float dB = math.dot(offsetB, hit.normal);
+
+                        localDisplacement = math.rotate(skinningInverse, hit.normal * (math.max(dA, dB) / collisionScale));
+
+                        //Debug.DrawRay(hit.point / collisionScale, Vector3.up * 0.1f, Color.blue, 300f);
+                        //Debug.DrawRay(hit.point / collisionScale, math.rotate(math.inverse(skinningInverse), localDisplacement), Color.red, 300f);
+
+                        return true;
+                    }
+                }
+
+                return false;
+            }
+
+            public bool CheckPenetration2(float shapeWeight, float collisionShapeWeight, float4x4 skinningInverse, int ownerIndex, MeshDataTools.Triangle localTriangle, int shapeStartIndex, int collisionShapeStartIndex, out float3 localDisplacement)
+            {
+                localDisplacement = float3.zero;
+
+                var vertex0 = localVertexData[localTriangle.i0];
+                var vertex1 = localVertexData[localTriangle.i1];
+                var vertex2 = localVertexData[localTriangle.i2];
+                var shapeDeltas0 = originalLocalBlendShapeData[shapeStartIndex + localTriangle.i0] * shapeWeight;
+                var shapeDeltas1 = originalLocalBlendShapeData[shapeStartIndex + localTriangle.i1] * shapeWeight;
+                var shapeDeltas2 = originalLocalBlendShapeData[shapeStartIndex + localTriangle.i2] * shapeWeight;
+
+                float maskWeight0 = mask[localTriangle.i0];
+                float maskWeight1 = mask[localTriangle.i1];
+                float maskWeight2 = mask[localTriangle.i2];
+                if (affectedVerticesOnly && (maskWeight0 <= 0f || maskWeight1 <= 0f || maskWeight2 <= 0f || math.length(shapeDeltas0.deltaPosition) < 0.0001f || math.length(shapeDeltas1.deltaPosition) < 0.0001f || math.length(shapeDeltas2.deltaPosition) < 0.0001f)) return false; 
+
+                vertex0.position = (vertex0.position + shapeDeltas0.deltaPosition) - math.normalize(vertex0.normal + shapeDeltas0.deltaNormal) * thickness;
+                vertex1.position = (vertex1.position + shapeDeltas1.deltaPosition) - math.normalize(vertex1.normal + shapeDeltas1.deltaNormal) * thickness;
+                vertex2.position = (vertex2.position + shapeDeltas2.deltaPosition) - math.normalize(vertex2.normal + shapeDeltas2.deltaNormal) * thickness;
+
+                var skinning0 = localVertexSkinning[localTriangle.i0];
+                var skinning1 = localVertexSkinning[localTriangle.i1];
+                var skinning2 = localVertexSkinning[localTriangle.i2];
+
+                var worldVertex0 = math.transform(skinning0, vertex0.position) * collisionScale;
+                var worldVertex1 = math.transform(skinning1, vertex1.position) * collisionScale;
+                var worldVertex2 = math.transform(skinning2, vertex2.position) * collisionScale;
+
+                var nearbyTrisStartIndex = nearbyCollisionTrianglesStartIndices[ownerIndex];
+                var nearbyTrisCount = nearbyCollisionTrianglesCounts[ownerIndex];
+                for (int a = 0; a < nearbyTrisCount; a++)
+                {
+                    var colTriIndex = nearbyCollisionTriangles[nearbyTrisStartIndex + a];
+                    var colTri = collisionTriangles[colTriIndex];
+
+                    var colVert1 = collisionVertexData[colTri.i0];
+                    var colVert2 = collisionVertexData[colTri.i1];
+                    var colVert3 = collisionVertexData[colTri.i2];
+                    var colShapeDeltas1 = collisionBlendShapeData[collisionShapeStartIndex + colTri.i0] * collisionShapeWeight;
+                    var colShapeDeltas2 = collisionBlendShapeData[collisionShapeStartIndex + colTri.i1] * collisionShapeWeight;
+                    var colShapeDeltas3 = collisionBlendShapeData[collisionShapeStartIndex + colTri.i2] * collisionShapeWeight;
+
+                    colVert1.position = (colVert1.position + colShapeDeltas1.deltaPosition);
+                    colVert2.position = (colVert2.position + colShapeDeltas2.deltaPosition);
+                    colVert3.position = (colVert3.position + colShapeDeltas3.deltaPosition); 
+
+                    var colSkinning1 = collisionVertexSkinning[colTri.i0];
+                    var colSkinning2 = collisionVertexSkinning[colTri.i1];
+                    var colSkinning3 = collisionVertexSkinning[colTri.i2];
+
+                    var colWorldVertex1 = math.transform(colSkinning1, colVert1.position) * collisionScale;
+                    var colWorldVertex2 = math.transform(colSkinning2, colVert2.position) * collisionScale; 
+                    var colWorldVertex3 = math.transform(colSkinning3, colVert3.position) * collisionScale;
+
+                    if (Maths.IntersectSegmentTriangle(colWorldVertex1, colWorldVertex2, worldVertex0, worldVertex1, worldVertex2, out float3 ab, out float3 ac, out float3 triNormal, out var hit))
+                    {
+                        //float3 offset = colWorldVertex1 - hit.point;
+                        //localDisplacement = math.rotate(skinningInverse, hit.normal * math.dot(offset, hit.normal) * localCollisionFactor);
+                        
+                        float3 offsetA = hit.point - colWorldVertex1;
+                        float3 offsetB = hit.point - colWorldVertex2;
+
+                        float dA = math.dot(offsetA, hit.normal);
+                        float dB = math.dot(offsetB, hit.normal);
+
+                        float3 coords = hit.barycentricCoordinate;
+                        float weight = 1f;//(maskWeight0 * coords.x) + (maskWeight1 * coords.y) + (maskWeight2 * coords.z);
+
+                        float dMax = math.max(dA, dB);
+                        if (dMax > 0f)
+                        {
+                            localDisplacement = math.rotate(skinningInverse, hit.normal * (dMax / collisionScale) * localCollisionFactor * weight);
+
+                            return true;
+                        }
+                    }
+
+                    if (Maths.IntersectSegmentTriangle(colWorldVertex1, colWorldVertex3, worldVertex0, worldVertex1, worldVertex2, ab, ac, triNormal, out hit))
+                    {
+                        //float3 offset = colWorldVertex1 - hit.point;
+                        //localDisplacement = math.rotate(skinningInverse, hit.normal * math.dot(offset, hit.normal) * localCollisionFactor);
+
+                        float3 offsetA = hit.point - colWorldVertex1;
+                        float3 offsetB = hit.point - colWorldVertex3;
+
+                        float dA = math.dot(offsetA, hit.normal);
+                        float dB = math.dot(offsetB, hit.normal);
+
+                        float3 coords = hit.barycentricCoordinate;
+                        float weight = 1f;//(maskWeight0 * coords.x) + (maskWeight1 * coords.y) + (maskWeight2 * coords.z);
+
+                        float dMax = math.max(dA, dB);
+                        if (dMax > 0f)
+                        {
+                            localDisplacement = math.rotate(skinningInverse, hit.normal * (dMax / collisionScale) * localCollisionFactor * weight);
+
+                            return true;
+                        }
+                    }
+
+                    if (Maths.IntersectSegmentTriangle(colWorldVertex2, colWorldVertex3, worldVertex0, worldVertex1, worldVertex2, ab, ac, triNormal, out hit))
+                    {
+                        //float3 offset = colWorldVertex2 - hit.point;
+                        //localDisplacement = math.rotate(skinningInverse, hit.normal * math.dot(offset, hit.normal) * localCollisionFactor);
+
+                        float3 offsetA = hit.point - colWorldVertex2;
+                        float3 offsetB = hit.point - colWorldVertex3;
+
+                        float dA = math.dot(offsetA, hit.normal);
+                        float dB = math.dot(offsetB, hit.normal);
+
+                        float3 coords = hit.barycentricCoordinate;
+                        float weight = 1f;//(maskWeight0 * coords.x) + (maskWeight1 * coords.y) + (maskWeight2 * coords.z);
+
+                        float dMax = math.max(dA, dB);
+                        if (dMax > 0f) 
+                        {
+                            localDisplacement = math.rotate(skinningInverse, hit.normal * (dMax / collisionScale) * localCollisionFactor * weight);
+
+                            return true;
+                        }
+                    }
+                }
+
+                return false;
+            }
+
+            public void Execute(int index)
+            {
+                int localIndex = localVertexIndices[index];
+
+                int vertexTrianglesIndex = localVertexTriangleStartIndices[localIndex];
+                int vertexTrianglesCount = localVertexTriangleCounts[localIndex];
+
+                int shapeIndex = localBlendShapeStartIndices[targetBlendShapeIndex] + targetBlendShapeFrame * vertexCount;
+                int collisionShapeIndex = collisionBlendShapeStartIndices[targetCollisionBlendShapeIndex] + targetCollisionBlendShapeFrame * collisionVertexCount;
+
+                int shapeRelativeIndex = shapeIndex + localIndex;
+                var finalShapeDeltas = originalLocalBlendShapeData[shapeRelativeIndex];
+
+                float maskWeight = mask[localIndex];
+                if (initialPenetrationMask[localIndex] || (affectedVerticesOnly && (maskWeight <= 0f || math.length(finalShapeDeltas.deltaPosition) < 0.0001f))) return;
+
+                float shapeWeightInv = 1f / shapeWeight;
+
+                bool penetrated = false;
+                var editedShapeDeltas = finalShapeDeltas; 
+
+                /*var vertex0 = localVertexData[localIndex];
+                var shapeDeltas0 = originalLocalBlendShapeData[shapeRelativeIndex] * shapeWeight;
+                vertex0.position = (vertex0.position + shapeDeltas0.deltaPosition) - math.normalize(vertex0.normal + shapeDeltas0.deltaNormal) * thickness;
+                var skinning0 = localVertexSkinning[localIndex];
+                var worldVertex0 = math.transform(skinning0, vertex0.position);
+                Debug.DrawRay(worldVertex0, Vector3.up * 0.005f, Color.green, 100f);*/
+
+                float3 localDisplacement;
+                if (CheckSignFlip(shapeWeight, collisionShapeWeight, localVertexSkinningInverse[localIndex], localIndex, shapeIndex, collisionShapeIndex, out localDisplacement))
+                {
+                    penetrated = true;
+                    editedShapeDeltas.deltaPosition += localDisplacement * shapeWeightInv;
+                }
+                else
+                {
+                    var vertexOwner = localVertexData[localIndex];
+                    var shapeDeltasOwner = originalLocalBlendShapeData[shapeRelativeIndex] * shapeWeight;
+                    vertexOwner.position = (vertexOwner.position + shapeDeltasOwner.deltaPosition) - math.normalize(vertexOwner.normal + shapeDeltasOwner.deltaNormal) * thickness;
+                    var skinningOwner = localVertexSkinning[localIndex];
+                    var worldVertexOwner = math.transform(skinningOwner, vertexOwner.position);
+
+                    for (int a = 0; a < vertexTrianglesCount; a++)
+                    {
+                        var triangle = localVertexTriangles[vertexTrianglesIndex + a];
+
+                        float4x4 skinningInverse = float4x4.identity;
+
+                        if (triangle.ownerIndex == MeshDataTools.TriangleOwnerIndex.A)
+                        {
+                            skinningInverse = localVertexSkinningInverse[triangle.i0];
+
+                            if (CheckPenetration(worldVertexOwner, shapeWeight, collisionShapeWeight, skinningInverse, triangle.i0, triangle.i1, triangle.i0, shapeIndex, collisionShapeIndex, out localDisplacement))
+                            {
+                                penetrated = true;
+                                editedShapeDeltas.deltaPosition += localDisplacement * shapeWeightInv;
+                                break;
+                            }
+                            else if (CheckPenetration(worldVertexOwner, shapeWeight, collisionShapeWeight, skinningInverse, triangle.i0, triangle.i2, triangle.i0, shapeIndex, collisionShapeIndex, out localDisplacement))
+                            {
+                                penetrated = true;
+                                editedShapeDeltas.deltaPosition += localDisplacement * shapeWeightInv;
+                                break;
+                            }
+                        }
+                        else if (triangle.ownerIndex == MeshDataTools.TriangleOwnerIndex.B)
+                        {
+                            skinningInverse = localVertexSkinningInverse[triangle.i1];
+
+                            if (CheckPenetration(worldVertexOwner, shapeWeight, collisionShapeWeight, skinningInverse, triangle.i1, triangle.i0, triangle.i1, shapeIndex, collisionShapeIndex, out localDisplacement))
+                            {
+                                penetrated = true;
+                                editedShapeDeltas.deltaPosition += localDisplacement * shapeWeightInv;
+                                break;
+                            }
+                            else if (CheckPenetration(worldVertexOwner, shapeWeight, collisionShapeWeight, skinningInverse, triangle.i1, triangle.i2, triangle.i1, shapeIndex, collisionShapeIndex, out localDisplacement))
+                            {
+                                penetrated = true;
+                                editedShapeDeltas.deltaPosition += localDisplacement * shapeWeightInv;
+                                break;
+                            }
+                        }
+                        else if (triangle.ownerIndex == MeshDataTools.TriangleOwnerIndex.C)
+                        {
+                            skinningInverse = localVertexSkinningInverse[triangle.i2];
+
+                            if (CheckPenetration(worldVertexOwner, shapeWeight, collisionShapeWeight, skinningInverse, triangle.i2, triangle.i0, triangle.i2, shapeIndex, collisionShapeIndex, out localDisplacement))
+                            {
+                                penetrated = true;
+                                editedShapeDeltas.deltaPosition += localDisplacement * shapeWeightInv;
+                                break;
+                            }
+                            else if (CheckPenetration(worldVertexOwner, shapeWeight, collisionShapeWeight, skinningInverse, triangle.i2, triangle.i1, triangle.i2, shapeIndex, collisionShapeIndex, out localDisplacement))
+                            {
+                                penetrated = true;
+                                editedShapeDeltas.deltaPosition += localDisplacement * shapeWeightInv;
+                                break;
+                            }
+                        }
+
+                        /*if (triangle.ownerIndex == MeshDataTools.TriangleOwnerIndex.A)
+                        {
+                            skinningInverse = localVertexSkinningInverse[triangle.i0];
+
+                            if (CheckPenetration(worldVertexOwner, shapeWeight, collisionShapeWeight, skinningInverse, triangle.i0, triangle.i1, triangle.i0, shapeIndex, collisionShapeIndex, out localDisplacement))
+                            {
+                                penetrated = true;
+                                editedShapeDeltas.deltaPosition += localDisplacement * shapeWeightInv;
+                                break;
+                            }
+                            else if (CheckPenetration(worldVertexOwner, shapeWeight, collisionShapeWeight, skinningInverse, triangle.i0, triangle.i2, triangle.i0, shapeIndex, collisionShapeIndex, out localDisplacement))
+                            {
+                                penetrated = true;
+                                editedShapeDeltas.deltaPosition += localDisplacement * shapeWeightInv;
+                                break;
+                            }
+                            else if (CheckPenetration(worldVertexOwner, shapeWeight, collisionShapeWeight, skinningInverse, triangle.i0, triangle.i1, triangle.i2, shapeIndex, collisionShapeIndex, out localDisplacement))
+                            {
+                                penetrated = true;
+                                editedShapeDeltas.deltaPosition += localDisplacement * shapeWeightInv;
+                                break;
+                            }
+                        }
+                        else if (triangle.ownerIndex == MeshDataTools.TriangleOwnerIndex.B)
+                        {
+                            skinningInverse = localVertexSkinningInverse[triangle.i1];
+
+                            if (CheckPenetration(worldVertexOwner, shapeWeight, collisionShapeWeight, skinningInverse, triangle.i1, triangle.i0, triangle.i1, shapeIndex, collisionShapeIndex, out localDisplacement))
+                            {
+                                penetrated = true;
+                                editedShapeDeltas.deltaPosition += localDisplacement * shapeWeightInv;
+                                break;
+                            }
+                            else if (CheckPenetration(worldVertexOwner, shapeWeight, collisionShapeWeight, skinningInverse, triangle.i1, triangle.i2, triangle.i1, shapeIndex, collisionShapeIndex, out localDisplacement))
+                            {
+                                penetrated = true;
+                                editedShapeDeltas.deltaPosition += localDisplacement * shapeWeightInv;
+                                break;
+                            }
+                            else if (CheckPenetration(worldVertexOwner, shapeWeight, collisionShapeWeight, skinningInverse, triangle.i1, triangle.i2, triangle.i0, shapeIndex, collisionShapeIndex, out localDisplacement))
+                            {
+                                penetrated = true;
+                                editedShapeDeltas.deltaPosition += localDisplacement * shapeWeightInv;
+                                break;
+                            }
+                        }
+                        else if (triangle.ownerIndex == MeshDataTools.TriangleOwnerIndex.C)
+                        {
+                            skinningInverse = localVertexSkinningInverse[triangle.i2];
+
+                            if (CheckPenetration(worldVertexOwner, shapeWeight, collisionShapeWeight, skinningInverse, triangle.i2, triangle.i0, triangle.i2, shapeIndex, collisionShapeIndex, out localDisplacement))
+                            {
+                                penetrated = true;
+                                editedShapeDeltas.deltaPosition += localDisplacement * shapeWeightInv;
+                                break;
+                            }
+                            else if (CheckPenetration(worldVertexOwner, shapeWeight, collisionShapeWeight, skinningInverse, triangle.i2, triangle.i1, triangle.i2, shapeIndex, collisionShapeIndex, out localDisplacement))
+                            {
+                                penetrated = true;
+                                editedShapeDeltas.deltaPosition += localDisplacement * shapeWeightInv;
+                                break;
+                            }
+                            else if (CheckPenetration(worldVertexOwner, shapeWeight, collisionShapeWeight, skinningInverse, triangle.i2, triangle.i0, triangle.i1, shapeIndex, collisionShapeIndex, out localDisplacement))
+                            {
+                                penetrated = true;
+                                editedShapeDeltas.deltaPosition += localDisplacement * shapeWeightInv;
+                                break;
+                            }
+                        }*/
+
+                        // check if external triangles penetrate the local triangle
+                        if (CheckPenetration2(shapeWeight, collisionShapeWeight, skinningInverse, localIndex, triangle, shapeIndex, collisionShapeIndex, out localDisplacement))
+                        {
+                            penetrated = true;
+                            editedShapeDeltas.deltaPosition += localDisplacement * shapeWeightInv;
+                            break;
+                        }
+                    }
+                }
+
+                float mix = factor * maskWeight;
+                finalShapeDeltas.deltaPosition = math.lerp(finalShapeDeltas.deltaPosition, editedShapeDeltas.deltaPosition, mix);
+                //finalShapeDeltas.deltaNormal = math.lerp(finalShapeDeltas.deltaNormal, editedShapeDeltas.deltaNormal, mix);
+                //finalShapeDeltas.deltaTangent = math.lerp(finalShapeDeltas.deltaTangent, editedShapeDeltas.deltaTangent, mix);
+
+                editedLocalBlendShapeData[shapeRelativeIndex] = finalShapeDeltas;
+
+                if (penetrated) depenetrationMask[localIndex] = true; 
+            }
+        }
+
+        [BurstCompile]
+        public struct CheckShapeDeltaPenetrationJob : IJobParallelFor
+        {
+
+            public int targetBlendShapeIndex;
+            public int targetBlendShapeFrame;
+            public int vertexCount;
+
+            public int targetCollisionBlendShapeIndex;
+            public int targetCollisionBlendShapeFrame;
+            public int collisionVertexCount;
+
+            public int penetrationMaskIndexOffset;
+
+            public float thickness;
+            public float shapeWeight;
+            public float collisionShapeWeight;
+
+            public float collisionScale;
+
+            public bool affectedVerticesOnly;
+
+            [ReadOnly]
+            public NativeList<bool> initialPenetrationMask;
 
             [ReadOnly]
             public NativeList<MeshDataTools.Triangle> collisionTriangles;
@@ -2306,29 +3435,88 @@ namespace Swole.Modding
 
             [ReadOnly]
             public NativeList<ShapeVertexDelta> originalLocalBlendShapeData;
+            [ReadOnly]
+            public NativeList<ShapeVertexDelta> newLocalBlendShapeData;
             //[ReadOnly]
             //public NativeList<int> localBlendShapeFrameCounts;
             [ReadOnly]
             public NativeList<int> localBlendShapeStartIndices;
 
             [NativeDisableParallelForRestriction]
-            public NativeList<ShapeVertexDelta> editedLocalBlendShapeData;
+            public NativeList<bool> penetrationMask;
 
-            [NativeDisableParallelForRestriction]
-            public NativeList<bool> depenetrationMask;
-
-            public bool CheckPenetration(float4x4 skinningInverse, int ownerIndex, int vertIndexA, int vertIndexB, int shapeStartIndex, int collisionShapeStartIndex, out float3 localDisplacement)
+            /// <summary>
+            /// Would mean that the vertex moved from one side of a collision triangle to the other
+            /// </summary>
+            public bool CheckSignFlip(float shapeWeight, float collisionShapeWeight, int ownerIndex, int shapeStartIndex, int collisionShapeStartIndex)
             {
-                localDisplacement = float3.zero;
+                var vertexA = localVertexData[ownerIndex];
+                int shapeLocalIndex = shapeStartIndex + ownerIndex;
+                var origShapeDeltasA = originalLocalBlendShapeData[shapeLocalIndex] * shapeWeight;
+                var newShapeDeltasA = newLocalBlendShapeData[shapeLocalIndex] * shapeWeight;
 
+                if (affectedVerticesOnly & math.length(newShapeDeltasA.deltaPosition) < 0.0001f) return false;
+
+                var origPosA = (vertexA.position + origShapeDeltasA.deltaPosition) - math.normalize(vertexA.normal + origShapeDeltasA.deltaNormal) * thickness;
+                var newPosA = (vertexA.position + newShapeDeltasA.deltaPosition) - math.normalize(vertexA.normal + newShapeDeltasA.deltaNormal) * thickness;
+
+                var skinningA = localVertexSkinning[ownerIndex];
+
+                var origWorldPosA = math.transform(skinningA, origPosA);
+                var newWorldPosA = math.transform(skinningA, newPosA);
+
+                var nearbyTrisStartIndex = nearbyCollisionTrianglesStartIndices[ownerIndex];
+                var nearbyTrisCount = nearbyCollisionTrianglesCounts[ownerIndex];
+                for (int a = 0; a < nearbyTrisCount; a++)
+                {
+                    var colTriIndex = nearbyCollisionTriangles[nearbyTrisStartIndex + a];
+                    var colTri = collisionTriangles[colTriIndex];
+
+                    var colVert1 = collisionVertexData[colTri.i0];
+                    var colVert2 = collisionVertexData[colTri.i1];
+                    var colVert3 = collisionVertexData[colTri.i2];
+                    var colShapeDeltas1 = collisionBlendShapeData[collisionShapeStartIndex + colTri.i0] * collisionShapeWeight;
+                    var colShapeDeltas2 = collisionBlendShapeData[collisionShapeStartIndex + colTri.i1] * collisionShapeWeight;
+                    var colShapeDeltas3 = collisionBlendShapeData[collisionShapeStartIndex + colTri.i2] * collisionShapeWeight;
+
+                    colVert1.position = (colVert1.position + colShapeDeltas1.deltaPosition);
+                    colVert2.position = (colVert2.position + colShapeDeltas2.deltaPosition);
+                    colVert3.position = (colVert3.position + colShapeDeltas3.deltaPosition);
+
+                    var colSkinning1 = collisionVertexSkinning[colTri.i0];
+                    var colSkinning2 = collisionVertexSkinning[colTri.i1];
+                    var colSkinning3 = collisionVertexSkinning[colTri.i2];
+
+                    var colWorldVertex1 = math.transform(colSkinning1, colVert1.position);
+                    var colWorldVertex2 = math.transform(colSkinning2, colVert2.position);
+                    var colWorldVertex3 = math.transform(colSkinning3, colVert3.position);
+
+                    if (Maths.IsInTriangle(origWorldPosA * collisionScale, colWorldVertex1 * collisionScale, colWorldVertex2 * collisionScale, colWorldVertex3 * collisionScale, 0.15f))
+                    {
+                        var colWorldCenter = (colWorldVertex1 + colWorldVertex2 + colWorldVertex3) / 3f;
+
+                        var colNormalWorld = math.normalize(math.cross(colWorldVertex2 - colWorldVertex1, colWorldVertex3 - colWorldVertex1));
+                        float sign = math.dot(math.project(origWorldPosA - colWorldCenter, colNormalWorld), math.project(newWorldPosA - colWorldCenter, colNormalWorld));
+                        if (sign < 0f)
+                        {
+                            //Debug.DrawLine(colWorldCenter, origWorldPosA, Color.blue, 25f);
+                            //Debug.DrawLine(colWorldCenter, newWorldPosA, Color.red, 25f);
+                            return true;
+                        }
+                    }
+                }
+
+                return false;
+            }
+
+            public bool CheckPenetration(float shapeWeight, float collisionShapeWeight, int ownerIndex, int vertIndexA, int vertIndexB, int shapeStartIndex, int collisionShapeStartIndex)
+            {
                 var vertexA = localVertexData[vertIndexA];
                 var vertexB = localVertexData[vertIndexB];
-                var shapeDeltasA = originalLocalBlendShapeData[shapeStartIndex + vertIndexA];
-                var shapeDeltasB = originalLocalBlendShapeData[shapeStartIndex + vertIndexB];
+                var shapeDeltasA = newLocalBlendShapeData[shapeStartIndex + vertIndexA] * shapeWeight;
+                var shapeDeltasB = newLocalBlendShapeData[shapeStartIndex + vertIndexB] * shapeWeight;
 
-                float maskWeightA = mask[vertIndexA];
-                float maskWeightB = mask[vertIndexB];
-                if (affectedVerticesOnly && (maskWeightA <= 0f || maskWeightB <= 0f || math.length(shapeDeltasA.deltaPosition) < 0.0001f || math.length(shapeDeltasB.deltaPosition) < 0.0001f)) return false;
+                if (affectedVerticesOnly & (math.length(shapeDeltasA.deltaPosition) < 0.0001f | math.length(shapeDeltasB.deltaPosition) < 0.0001f)) return false;
 
                 vertexA.position = (vertexA.position + shapeDeltasA.deltaPosition) - math.normalize(vertexA.normal + shapeDeltasA.deltaNormal) * thickness;
                 vertexB.position = (vertexB.position + shapeDeltasB.deltaPosition) - math.normalize(vertexB.normal + shapeDeltasB.deltaNormal) * thickness;
@@ -2349,9 +3537,9 @@ namespace Swole.Modding
                     var colVert1 = collisionVertexData[colTri.i0];
                     var colVert2 = collisionVertexData[colTri.i1];
                     var colVert3 = collisionVertexData[colTri.i2];
-                    var colShapeDeltas1 = collisionBlendShapeData[collisionShapeStartIndex + colTri.i0];
-                    var colShapeDeltas2 = collisionBlendShapeData[collisionShapeStartIndex + colTri.i1];
-                    var colShapeDeltas3 = collisionBlendShapeData[collisionShapeStartIndex + colTri.i2];
+                    var colShapeDeltas1 = collisionBlendShapeData[collisionShapeStartIndex + colTri.i0] * collisionShapeWeight;
+                    var colShapeDeltas2 = collisionBlendShapeData[collisionShapeStartIndex + colTri.i1] * collisionShapeWeight;
+                    var colShapeDeltas3 = collisionBlendShapeData[collisionShapeStartIndex + colTri.i2] * collisionShapeWeight;
 
                     colVert1.position = (colVert1.position + colShapeDeltas1.deltaPosition);
                     colVert2.position = (colVert2.position + colShapeDeltas2.deltaPosition);
@@ -2365,25 +3553,9 @@ namespace Swole.Modding
                     var colWorldVertex2 = math.transform(colSkinning2, colVert2.position);
                     var colWorldVertex3 = math.transform(colSkinning3, colVert3.position);
 
-                    /*if (Maths.IntersectSegmentTriangle(worldVertexA, worldVertexB, colWorldVertex1, colWorldVertex2, colWorldVertex3, out var hit))
-                    {
-                        //localDisplacement = math.rotate(skinningInverse, hit.normal * math.length(hit.point - worldVertexB));
-                        float3 offset = hit.point - worldVertexB;
-                        localDisplacement = math.rotate(skinningInverse, hit.normal * math.dot(offset, hit.normal));  
-                        return true; 
-                    }*/
-
                     float3 rayOffset = worldVertexB - worldVertexA;
-                    if (Maths.seg_intersect_triangle(worldVertexA, rayOffset, colWorldVertex1, colWorldVertex2, colWorldVertex3, out Maths.RaycastHitResult hit))
+                    if (Maths.seg_intersect_triangle(worldVertexA * collisionScale, rayOffset * collisionScale, colWorldVertex1 * collisionScale, colWorldVertex2 * collisionScale, colWorldVertex3 * collisionScale, out Maths.RaycastHitResult hit))
                     {
-                        float3 offsetA = (hit.point - worldVertexA) * maskWeightA;
-                        float3 offsetB = (hit.point - worldVertexB) * maskWeightB;
-
-                        float dA = math.dot(offsetA, hit.normal);
-                        float dB = math.dot(offsetB, hit.normal);
-
-                        localDisplacement = math.rotate(skinningInverse, hit.normal * math.select(dB, dA, dA >= 0f));
-
                         return true;
                     }
                 }
@@ -2391,21 +3563,16 @@ namespace Swole.Modding
                 return false;
             }
 
-            public bool CheckPenetration2(float4x4 skinningInverse, int ownerIndex, MeshDataTools.Triangle localTriangle, int shapeStartIndex, int collisionShapeStartIndex, out float3 localDisplacement)
+            public bool CheckPenetration2(float shapeWeight, float collisionShapeWeight, int ownerIndex, MeshDataTools.Triangle localTriangle, int shapeStartIndex, int collisionShapeStartIndex)
             {
-                localDisplacement = float3.zero;
-
                 var vertex0 = localVertexData[localTriangle.i0];
                 var vertex1 = localVertexData[localTriangle.i1];
                 var vertex2 = localVertexData[localTriangle.i2];
-                var shapeDeltas0 = originalLocalBlendShapeData[shapeStartIndex + localTriangle.i0];
-                var shapeDeltas1 = originalLocalBlendShapeData[shapeStartIndex + localTriangle.i1];
-                var shapeDeltas2 = originalLocalBlendShapeData[shapeStartIndex + localTriangle.i2];
+                var shapeDeltas0 = newLocalBlendShapeData[shapeStartIndex + localTriangle.i0] * shapeWeight;
+                var shapeDeltas1 = newLocalBlendShapeData[shapeStartIndex + localTriangle.i1] * shapeWeight;
+                var shapeDeltas2 = newLocalBlendShapeData[shapeStartIndex + localTriangle.i2] * shapeWeight;
 
-                float maskWeight0 = mask[localTriangle.i0];
-                float maskWeight1 = mask[localTriangle.i1];
-                float maskWeight2 = mask[localTriangle.i2];
-                if (affectedVerticesOnly && (maskWeight0 <= 0f || maskWeight1 <= 0f || maskWeight2 <= 0f || math.length(shapeDeltas0.deltaPosition) < 0.0001f || math.length(shapeDeltas1.deltaPosition) < 0.0001f || math.length(shapeDeltas2.deltaPosition) < 0.0001f)) return false; 
+                if (affectedVerticesOnly & (math.length(shapeDeltas0.deltaPosition) < 0.0001f | math.length(shapeDeltas1.deltaPosition) < 0.0001f | math.length(shapeDeltas2.deltaPosition) < 0.0001f)) return false;
 
                 vertex0.position = (vertex0.position + shapeDeltas0.deltaPosition) - math.normalize(vertex0.normal + shapeDeltas0.deltaNormal) * thickness;
                 vertex1.position = (vertex1.position + shapeDeltas1.deltaPosition) - math.normalize(vertex1.normal + shapeDeltas1.deltaNormal) * thickness;
@@ -2429,104 +3596,44 @@ namespace Swole.Modding
                     var colVert1 = collisionVertexData[colTri.i0];
                     var colVert2 = collisionVertexData[colTri.i1];
                     var colVert3 = collisionVertexData[colTri.i2];
-                    var colShapeDeltas1 = collisionBlendShapeData[collisionShapeStartIndex + colTri.i0];
-                    var colShapeDeltas2 = collisionBlendShapeData[collisionShapeStartIndex + colTri.i1];
-                    var colShapeDeltas3 = collisionBlendShapeData[collisionShapeStartIndex + colTri.i2];
+                    var colShapeDeltas1 = collisionBlendShapeData[collisionShapeStartIndex + colTri.i0] * collisionShapeWeight;
+                    var colShapeDeltas2 = collisionBlendShapeData[collisionShapeStartIndex + colTri.i1] * collisionShapeWeight;
+                    var colShapeDeltas3 = collisionBlendShapeData[collisionShapeStartIndex + colTri.i2] * collisionShapeWeight;
 
                     colVert1.position = (colVert1.position + colShapeDeltas1.deltaPosition);
                     colVert2.position = (colVert2.position + colShapeDeltas2.deltaPosition);
-                    colVert3.position = (colVert3.position + colShapeDeltas3.deltaPosition); 
+                    colVert3.position = (colVert3.position + colShapeDeltas3.deltaPosition);
 
                     var colSkinning1 = collisionVertexSkinning[colTri.i0];
                     var colSkinning2 = collisionVertexSkinning[colTri.i1];
                     var colSkinning3 = collisionVertexSkinning[colTri.i2];
 
                     var colWorldVertex1 = math.transform(colSkinning1, colVert1.position);
-                    var colWorldVertex2 = math.transform(colSkinning2, colVert2.position); 
+                    var colWorldVertex2 = math.transform(colSkinning2, colVert2.position);
                     var colWorldVertex3 = math.transform(colSkinning3, colVert3.position);
 
-                    if (Maths.IntersectSegmentTriangle(colWorldVertex1, colWorldVertex2, worldVertex0, worldVertex1, worldVertex2, out float3 ab, out float3 ac, out float3 triNormal, out var hit))
+                    if (Maths.IntersectSegmentTriangle(colWorldVertex1 * collisionScale, colWorldVertex2 * collisionScale, worldVertex0 * collisionScale, worldVertex1 * collisionScale, worldVertex2 * collisionScale, out float3 ab, out float3 ac, out float3 triNormal, out var hit))
                     {
-                        //float3 offset = colWorldVertex1 - hit.point;
-                        //localDisplacement = math.rotate(skinningInverse, hit.normal * math.dot(offset, hit.normal) * localCollisionFactor);
-                        
-                        float3 offsetA = hit.point - colWorldVertex1;
-                        float3 offsetB = hit.point - colWorldVertex2;
-
-                        float dA = math.dot(offsetA, hit.normal);
-                        float dB = math.dot(offsetB, hit.normal);
-
-                        float3 coords = hit.barycentricCoordinate;
-                        float weight = (maskWeight0 * coords.x) + (maskWeight1 * coords.y) + (maskWeight2 * coords.z);
-
-                        localDisplacement = math.rotate(skinningInverse, hit.normal * math.select(dB, dA, dA >= 0f) * localCollisionFactor * weight);
-
                         return true;
                     }
-                    /*else if (Maths.IntersectSegmentTriangle(colWorldVertex2, colWorldVertex1, worldVertex0, worldVertex1, worldVertex2, ab, ac, triNormal, out hit))
+                    else if (Maths.IntersectSegmentTriangle(colWorldVertex1 * collisionScale, colWorldVertex3 * collisionScale, worldVertex0 * collisionScale, worldVertex1 * collisionScale, worldVertex2 * collisionScale, ab, ac, triNormal, out hit))
                     {
-                        float3 offset = colWorldVertex2 - hit.point;
-                        localDisplacement = math.rotate(skinningInverse, hit.normal * math.dot(offset, hit.normal) * localCollisionFactor);
-                        return true;
-                    }*/
-
-                    else if (Maths.IntersectSegmentTriangle(colWorldVertex1, colWorldVertex3, worldVertex0, worldVertex1, worldVertex2, ab, ac, triNormal, out hit))
-                    {
-                        //float3 offset = colWorldVertex1 - hit.point;
-                        //localDisplacement = math.rotate(skinningInverse, hit.normal * math.dot(offset, hit.normal) * localCollisionFactor);
-
-                        float3 offsetA = hit.point - colWorldVertex1;
-                        float3 offsetB = hit.point - colWorldVertex3;
-
-                        float dA = math.dot(offsetA, hit.normal);
-                        float dB = math.dot(offsetB, hit.normal);
-
-                        float3 coords = hit.barycentricCoordinate;
-                        float weight = (maskWeight0 * coords.x) + (maskWeight1 * coords.y) + (maskWeight2 * coords.z);
-
-                        localDisplacement = math.rotate(skinningInverse, hit.normal * math.select(dB, dA, dA >= 0f) * localCollisionFactor * weight);
-
                         return true;
                     }
-                    /*else if (Maths.IntersectSegmentTriangle(colWorldVertex3, colWorldVertex1, worldVertex0, worldVertex1, worldVertex2, ab, ac, triNormal, out hit))
+                    else if (Maths.IntersectSegmentTriangle(colWorldVertex2 * collisionScale, colWorldVertex3 * collisionScale, worldVertex0 * collisionScale, worldVertex1 * collisionScale, worldVertex2 * collisionScale, ab, ac, triNormal, out hit))
                     {
-                        float3 offset = colWorldVertex3 - hit.point;
-                        localDisplacement = math.rotate(skinningInverse, hit.normal * math.dot(offset, hit.normal) * localCollisionFactor);
-                        return true;
-                    }*/
-
-                    else if (Maths.IntersectSegmentTriangle(colWorldVertex2, colWorldVertex3, worldVertex0, worldVertex1, worldVertex2, ab, ac, triNormal, out hit))
-                    {
-                        //float3 offset = colWorldVertex2 - hit.point;
-                        //localDisplacement = math.rotate(skinningInverse, hit.normal * math.dot(offset, hit.normal) * localCollisionFactor);
-
-                        float3 offsetA = hit.point - colWorldVertex2;
-                        float3 offsetB = hit.point - colWorldVertex3;
-
-                        float dA = math.dot(offsetA, hit.normal);
-                        float dB = math.dot(offsetB, hit.normal);
-
-                        float3 coords = hit.barycentricCoordinate;
-                        float weight = (maskWeight0 * coords.x) + (maskWeight1 * coords.y) + (maskWeight2 * coords.z);
-
-                        localDisplacement = math.rotate(skinningInverse, hit.normal * math.select(dB, dA, dA >= 0f) * localCollisionFactor * weight); 
-
                         return true;
                     }
-                    /*else if (Maths.IntersectSegmentTriangle(colWorldVertex3, colWorldVertex2, worldVertex0, worldVertex1, worldVertex2, ab, ac, triNormal, out hit))
-                    {
-                        float3 offset = colWorldVertex3 - hit.point;
-                        localDisplacement = math.rotate(skinningInverse, hit.normal * math.dot(offset, hit.normal) * localCollisionFactor);
-                        return true;
-                    }*/
                 }
 
-                return false;
+                return false; 
             }
 
             public void Execute(int index)
             {
                 int localIndex = localVertexIndices[index];
+                int penetrationIndex = localIndex + penetrationMaskIndexOffset;
+                penetrationMask[penetrationIndex] = false;
 
                 int vertexTrianglesIndex = localVertexTriangleStartIndices[localIndex];
                 int vertexTrianglesCount = localVertexTriangleCounts[localIndex];
@@ -2535,106 +3642,147 @@ namespace Swole.Modding
                 int collisionShapeIndex = collisionBlendShapeStartIndices[targetCollisionBlendShapeIndex] + targetCollisionBlendShapeFrame * collisionVertexCount;
 
                 int shapeRelativeIndex = shapeIndex + localIndex;
-                var finalShapeDeltas = originalLocalBlendShapeData[shapeRelativeIndex];
+                var finalShapeDeltas = newLocalBlendShapeData[shapeRelativeIndex];
 
-                float maskWeight = mask[localIndex];
-                if (affectedVerticesOnly && (maskWeight <= 0f || math.length(finalShapeDeltas.deltaPosition) < 0.0001f)) return;
+                if (initialPenetrationMask[localIndex] || (affectedVerticesOnly & math.length(finalShapeDeltas.deltaPosition) < 0.0001f)) return;
+
+                float shapeWeightInv = 1f / shapeWeight;
 
                 bool penetrated = false;
-                var editedShapeDeltas = finalShapeDeltas;
-                for (int a = 0; a < vertexTrianglesCount; a++)
+                if (CheckSignFlip(shapeWeight, collisionShapeWeight, localIndex, shapeIndex, collisionShapeIndex))
                 {
-                    var triangle = localVertexTriangles[vertexTrianglesIndex + a];
-
-                    float4x4 skinningInverse = float4x4.identity;
-
-                    float3 localDisplacement;
-                    if (triangle.ownerIndex == MeshDataTools.TriangleOwnerIndex.A) 
+                    penetrated = true;
+                }
+                else
+                {
+                    for (int a = 0; a < vertexTrianglesCount; a++)
                     {
-                        skinningInverse = localVertexSkinningInverse[triangle.i0]; 
-                        
-                        if (CheckPenetration(skinningInverse, triangle.i0, triangle.i1, triangle.i0, shapeIndex, collisionShapeIndex, out localDisplacement))
-                        {
-                            penetrated = true;
-                            editedShapeDeltas.deltaPosition += localDisplacement;
-                            break;
-                        }
-                        else if (CheckPenetration(skinningInverse, triangle.i0, triangle.i2, triangle.i0, shapeIndex, collisionShapeIndex, out localDisplacement))
-                        {
-                            penetrated = true;
-                            editedShapeDeltas.deltaPosition += localDisplacement;
-                            break;
-                        }
-                        else if (CheckPenetration(skinningInverse, triangle.i0, triangle.i1, triangle.i2, shapeIndex, collisionShapeIndex, out localDisplacement))
-                        {
-                            penetrated = true;
-                            editedShapeDeltas.deltaPosition += localDisplacement;
-                            break;
-                        }
-                    }
-                    else if (triangle.ownerIndex == MeshDataTools.TriangleOwnerIndex.B)
-                    {
-                        skinningInverse = localVertexSkinningInverse[triangle.i1];
+                        var triangle = localVertexTriangles[vertexTrianglesIndex + a];
 
-                        if (CheckPenetration(skinningInverse, triangle.i1, triangle.i0, triangle.i1, shapeIndex, collisionShapeIndex, out localDisplacement))
+                        if (triangle.ownerIndex == MeshDataTools.TriangleOwnerIndex.A)
                         {
-                            penetrated = true;
-                            editedShapeDeltas.deltaPosition += localDisplacement;
-                            break;
+                            if (CheckPenetration(shapeWeight, collisionShapeWeight, triangle.i0, triangle.i1, triangle.i0, shapeIndex, collisionShapeIndex))
+                            {
+                                penetrated = true;
+                                break;
+                            }
+                            else if (CheckPenetration(shapeWeight, collisionShapeWeight, triangle.i0, triangle.i2, triangle.i0, shapeIndex, collisionShapeIndex))
+                            {
+                                penetrated = true;
+                                break;
+                            }
+                            else if (CheckPenetration(shapeWeight, collisionShapeWeight, triangle.i0, triangle.i1, triangle.i2, shapeIndex, collisionShapeIndex))
+                            {
+                                penetrated = true;
+                                break;
+                            }
                         }
-                        else if (CheckPenetration(skinningInverse, triangle.i1, triangle.i2, triangle.i1, shapeIndex, collisionShapeIndex, out localDisplacement))
+                        else if (triangle.ownerIndex == MeshDataTools.TriangleOwnerIndex.B)
                         {
-                            penetrated = true;
-                            editedShapeDeltas.deltaPosition += localDisplacement;
-                            break;
+                            if (CheckPenetration(shapeWeight, collisionShapeWeight, triangle.i1, triangle.i0, triangle.i1, shapeIndex, collisionShapeIndex))
+                            {
+                                penetrated = true;
+                                break;
+                            }
+                            else if (CheckPenetration(shapeWeight, collisionShapeWeight, triangle.i1, triangle.i2, triangle.i1, shapeIndex, collisionShapeIndex))
+                            {
+                                penetrated = true;
+                                break;
+                            }
+                            else if (CheckPenetration(shapeWeight, collisionShapeWeight, triangle.i1, triangle.i2, triangle.i0, shapeIndex, collisionShapeIndex))
+                            {
+                                penetrated = true;
+                                break;
+                            }
                         }
-                        else if (CheckPenetration(skinningInverse, triangle.i1, triangle.i2, triangle.i0, shapeIndex, collisionShapeIndex, out localDisplacement))
+                        else if (triangle.ownerIndex == MeshDataTools.TriangleOwnerIndex.C)
                         {
-                            penetrated = true;
-                            editedShapeDeltas.deltaPosition += localDisplacement;
-                            break;
+                            if (CheckPenetration(shapeWeight, collisionShapeWeight, triangle.i2, triangle.i0, triangle.i2, shapeIndex, collisionShapeIndex))
+                            {
+                                penetrated = true;
+                                break;
+                            }
+                            else if (CheckPenetration(shapeWeight, collisionShapeWeight, triangle.i2, triangle.i1, triangle.i2, shapeIndex, collisionShapeIndex))
+                            {
+                                penetrated = true;
+                                break;
+                            }
+                            else if (CheckPenetration(shapeWeight, collisionShapeWeight, triangle.i2, triangle.i0, triangle.i1, shapeIndex, collisionShapeIndex))
+                            {
+                                penetrated = true;
+                                break;
+                            }
                         }
-                    }
-                    else if (triangle.ownerIndex == MeshDataTools.TriangleOwnerIndex.C)
-                    {
-                        skinningInverse = localVertexSkinningInverse[triangle.i2];
 
-                        if (CheckPenetration(skinningInverse, triangle.i2, triangle.i0, triangle.i2, shapeIndex, collisionShapeIndex, out localDisplacement))
+                        // check if external triangles penetrate the local triangle
+                        if (CheckPenetration2(shapeWeight, collisionShapeWeight, localIndex, triangle, shapeIndex, collisionShapeIndex))
                         {
                             penetrated = true;
-                            editedShapeDeltas.deltaPosition += localDisplacement;
                             break;
                         }
-                        else if (CheckPenetration(skinningInverse, triangle.i2, triangle.i1, triangle.i2, shapeIndex, collisionShapeIndex, out localDisplacement))
-                        {
-                            penetrated = true;
-                            editedShapeDeltas.deltaPosition += localDisplacement;
-                            break;
-                        }
-                        else if (CheckPenetration(skinningInverse, triangle.i2, triangle.i0, triangle.i1, shapeIndex, collisionShapeIndex, out localDisplacement))
-                        {
-                            penetrated = true;
-                            editedShapeDeltas.deltaPosition += localDisplacement;
-                            break;
-                        }
-                    }
-
-                    if (CheckPenetration2(skinningInverse, localIndex, triangle, shapeIndex, collisionShapeIndex, out localDisplacement)) 
-                    {
-                        penetrated = true;
-                        editedShapeDeltas.deltaPosition += localDisplacement; 
-                        break;
                     }
                 }
 
-                float mix = factor * maskWeight;
-                finalShapeDeltas.deltaPosition = math.lerp(finalShapeDeltas.deltaPosition, editedShapeDeltas.deltaPosition, mix);
-                //finalShapeDeltas.deltaNormal = math.lerp(finalShapeDeltas.deltaNormal, editedShapeDeltas.deltaNormal, mix);
-                //finalShapeDeltas.deltaTangent = math.lerp(finalShapeDeltas.deltaTangent, editedShapeDeltas.deltaTangent, mix);
+                /*if (penetrated)
+                {
+                    var vertexA = localVertexData[localIndex];
+                    var newShapeDeltasA = newLocalBlendShapeData[shapeRelativeIndex] * shapeWeight;
+                    var newPosA = (vertexA.position + newShapeDeltasA.deltaPosition) - math.normalize(vertexA.normal + newShapeDeltasA.deltaNormal) * thickness;
 
-                editedLocalBlendShapeData[shapeRelativeIndex] = finalShapeDeltas;
+                    var skinningA = localVertexSkinning[localIndex];
 
-                if (penetrated) depenetrationMask[localIndex] = true; 
+                    var newWorldPosA = math.transform(skinningA, newPosA);
+
+                    Debug.DrawRay(newWorldPosA, new float3(0f, 0.01f, 0f), Color.red, 10f);
+                }*/
+
+                penetrationMask[penetrationIndex] = penetrated;
+            }
+        }
+
+        [BurstCompile]
+        public struct RevertShapeDeltaEditByPenetrationJob : IJobParallelFor
+        {
+
+            public int targetBlendShapeIndex;
+            public int targetBlendShapeFrame;
+            public int vertexCount;
+
+            public int penetrationMaskIndexOffset;
+
+            [ReadOnly]
+            public NativeList<int> localVertexIndices;
+
+            [ReadOnly]
+            public NativeList<ShapeVertexDelta> originalLocalBlendShapeData;
+            //[ReadOnly]
+            //public NativeList<int> localBlendShapeFrameCounts;
+            [ReadOnly]
+            public NativeList<int> localBlendShapeStartIndices;
+
+            [ReadOnly]
+            public NativeList<bool> penetrationMask;
+
+            [NativeDisableParallelForRestriction]
+            public NativeList<ShapeVertexDelta> editedLocalBlendShapeData;
+
+            public void Execute(int index)
+            {
+                int localIndex = localVertexIndices[index];
+                int penetrationIndex = localIndex + penetrationMaskIndexOffset;
+                int shapeIndex = localBlendShapeStartIndices[targetBlendShapeIndex] + targetBlendShapeFrame * vertexCount;
+                int shapeRelativeIndex = shapeIndex + localIndex;
+
+                bool penetrated = penetrationMask[penetrationIndex];
+
+                var originalData = originalLocalBlendShapeData[shapeRelativeIndex];
+                var newData = editedLocalBlendShapeData[shapeRelativeIndex];
+
+                newData.deltaPosition = math.select(newData.deltaPosition, originalData.deltaPosition, penetrated);
+                newData.deltaNormal = math.select(newData.deltaNormal, originalData.deltaNormal, penetrated);
+                newData.deltaTangent = math.select(newData.deltaTangent, originalData.deltaTangent, penetrated);
+
+                editedLocalBlendShapeData[shapeRelativeIndex] = newData;
             }
         }
 
@@ -2812,26 +3960,26 @@ namespace Swole.Modding
         }
         public float ComparisonScore(SkinnedVertex8 comparableVertex, float distance, float distanceBindingWeight)
         {
-            float score = 10;
+            float score = 10f;
 
-            if (distance <= 0) return float.MaxValue;
+            if (distance <= 0f) return float.MaxValue;
           
-            bool4 weightCheckAA = boneWeights.weight > 0;
-            bool4 weightCheckAB = boneWeights.weight2 > 0;
+            bool4 weightCheckAA = boneWeights.weight > 0f;
+            bool4 weightCheckAB = boneWeights.weight2 > 0f;
 
-            bool4 weightCheckBA = comparableVertex.boneWeights.weight > 0;
-            bool4 weightCheckBB = comparableVertex.boneWeights.weight2 > 0;
+            bool4 weightCheckBA = comparableVertex.boneWeights.weight > 0f;
+            bool4 weightCheckBB = comparableVertex.boneWeights.weight2 > 0f;
 
             float4 wAA = math.abs(boneWeights.weight - comparableVertex.boneWeights.weight);
             float4 wAB = math.abs(boneWeights.weight - comparableVertex.boneWeights.weight2); 
-            float4 scoreAA = math.select(0, math.lerp(500, 0, wAA), (boneWeights.boneIndex == comparableVertex.boneWeights.boneIndex) & weightCheckAA & weightCheckBA);
-            float4 scoreAB = math.select(0, math.lerp(500, 0, wAB), (boneWeights.boneIndex == comparableVertex.boneWeights.boneIndex2) & weightCheckAA & weightCheckBB);
+            float4 scoreAA = math.select(0f, math.lerp(500f, 0f, wAA), (boneWeights.boneIndex == comparableVertex.boneWeights.boneIndex) & weightCheckAA & weightCheckBA);
+            float4 scoreAB = math.select(0f, math.lerp(500f, 0f, wAB), (boneWeights.boneIndex == comparableVertex.boneWeights.boneIndex2) & weightCheckAA & weightCheckBB);
             float4 scoreA = scoreAA + scoreAB;
 
             float4 wBA = math.abs(boneWeights.weight2 - comparableVertex.boneWeights.weight);
             float4 wBB = math.abs(boneWeights.weight2 - comparableVertex.boneWeights.weight2);
-            float4 scoreBA = math.select(0, math.lerp(500, 0, wBA), (boneWeights.boneIndex2 == comparableVertex.boneWeights.boneIndex) & weightCheckAB & weightCheckBA);
-            float4 scoreBB = math.select(0, math.lerp(500, 0, wBB), (boneWeights.boneIndex2 == comparableVertex.boneWeights.boneIndex2) & weightCheckAB & weightCheckBB);
+            float4 scoreBA = math.select(0f, math.lerp(500f, 0f, wBA), (boneWeights.boneIndex2 == comparableVertex.boneWeights.boneIndex) & weightCheckAB & weightCheckBA);
+            float4 scoreBB = math.select(0f, math.lerp(500f, 0f, wBB), (boneWeights.boneIndex2 == comparableVertex.boneWeights.boneIndex2) & weightCheckAB & weightCheckBB);
             float4 scoreB = scoreBA + scoreBB;
 
             scoreA = scoreA + scoreB;
@@ -3275,8 +4423,8 @@ namespace Swole.Modding
             for (int a = 0; a < inputs.Length; a++)
             {
                 var input = inputs[a];
-                 
-                for(int b = 0; b < input.renderer.sharedMesh.blendShapeCount; b++)
+
+                for (int b = 0; b < input.renderer.sharedMesh.blendShapeCount; b++)
                 {
                     string shapeName = input.renderer.sharedMesh.GetBlendShapeName(b);
                     if (_tempBlendShapes.ContainsKey(shapeName)) continue;

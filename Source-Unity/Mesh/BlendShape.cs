@@ -20,6 +20,11 @@ namespace Swole
         public string tag;
 
         /// <summary>
+        /// Convenience field for storing a boolean flag
+        /// </summary>
+        public bool flag;
+
+        /// <summary>
         /// Convenience field for storing an index
         /// </summary>
         public int index;

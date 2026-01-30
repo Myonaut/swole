@@ -108,5 +108,9 @@ namespace Swole.Animation
         public void ReinitializeController(int controllerIndex);
         public void ReinitializeController(IAnimationMotionController controller);
 
+        public float GetCurrentBoneHeight(string boneName);
+        public float GetBoneHeight(string boneName, float timeOffset);
+        public float GetBoneHeightAtTime(string boneName, float time);
+
     }
 }

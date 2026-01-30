@@ -176,6 +176,7 @@ namespace Swole
             public int SubSequenceCount => subSequences.Count;
 
             public SubRenderSequence this[int index] => index < 0 || index >= subSequences.Count ? null : subSequences[index];
+            public SubRenderSequence GetSubSequence(int index) => this[index];
 
             public void FindNextSubSequenceSlotIndex(out int subSequenceIndex, out int indexInSubsequence)
             {
@@ -589,7 +590,7 @@ namespace Swole
                 foreach (var override_ in vectorPropertyOverrides) override_.Value.RemoveAt(localIndex);
                 SetDirty();
                 activeIndices.RemoveAt(localIndex);
-                RefreshLocalIndices(localIndex);
+                if (refreshIndices) RefreshLocalIndices(localIndex);
             }
             public void RemoveMemberByGroupLocalIndex(int groupLocalIndex, bool refreshIndices = true)
             {
@@ -846,7 +847,7 @@ namespace Swole
 
                 if (renderGroup != null)
                 {
-                    if (removeFromRenderGroup) renderGroup.DestroyInstance(this, refreshRenderIndices, false);
+                    if (removeFromRenderGroup) renderGroup.DestroyInstance(this, false, refreshRenderIndices);
                 }
 
                 Dispose(refreshRenderIndices, removeFromRenderGroup);    
@@ -1072,20 +1073,20 @@ namespace Swole
 
                 int2 subIndex = sequence.AddMember(index, instanceFloatPropertyOverrides, instanceColorPropertyOverrides, instanceVectorPropertyOverrides);
                 var subSequence = sequence[subIndex.x];
-                var instance = new RenderingInstance<T>(this, index, renderSequenceIndex, subIndex.x, subIndex.y); 
-
-                instanceData[instance.IndexInSubsequence] = initialData;
-
+                var instance = new RenderingInstance<T>(this, index, renderSequenceIndex, subIndex.x, subIndex.y);
+                
                 if (index >= indexReferences.Count) 
                 {
-                    index = indexReferences.Count;
+                    instance.index = index = indexReferences.Count;
                     indexReferences.Add(instance);
                 } 
                 else
                 {
                     indexReferences[index] = instance;
                 }
-                
+
+                instanceData[index] = initialData;
+
                 return instance;
 
             }
@@ -1280,7 +1281,7 @@ namespace Swole
                     var sequence = renderSequences[s];
                     sequence.RefreshIfDirty();
                     //Debug.Log($"F ({frame}) Rendering sequence {s} {sequence.RenderParams.material.name}"); 
-
+                    
                     if (useCameraRelativeWorldBounds)
                     {
                         var camera = sequence.Camera;
@@ -1291,12 +1292,12 @@ namespace Swole
                     {
                         var subSequence = sequence[ss];
                         int count = Mathf.Clamp(subSequence.InstanceCount, 0, batchSize);
-                        //Debug.Log($" - ({i}) sub sequence {ss} (Size: {subSequence.Count} - Clamped Size: {count}) Material: {subSequence.RenderParams.material.name}");    
+                        //Debug.Log($" - ({s}) sub sequence {ss} (Size: {subSequence.InstanceCount} - Clamped Size: {count}) (Buffer Start Index: {subSequence.InstanceStartIndex}) Material: {subSequence.RenderParams.material.name}");    
                         if (count < 1) continue;
 
                         var renderParams = subSequence.RenderParams;
                        // Debug.Log($"Rendering: {renderParams.material} for cam {(renderParams.camera == null ? null : renderParams.camera.name)} ::: {renderParams.material.GetBuffer("_SkinningMatrices").value} : {renderParams.material.GetFloat("_VertexCount")} :  {renderParams.material.GetInteger("_BoneCount")}"); 
-                        if (useCameraRelativeWorldBounds) renderParams.worldBounds = worldBounds; 
+                        if (useCameraRelativeWorldBounds) renderParams.worldBounds = worldBounds;
                         Graphics.RenderMeshInstanced(
                             renderParams,
                             mesh,

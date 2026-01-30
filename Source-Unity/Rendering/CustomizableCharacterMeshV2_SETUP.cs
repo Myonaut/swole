@@ -210,6 +210,8 @@ namespace Swole.Morphing
             public bool HasAdditionalExistingSetups => additionalExistingSetups != null && additionalExistingSetups.Length > 0;
             public bool createTransferDebugObject;
             public bool treatAsMeshIslands;
+            public BlendShapeTarget meshIslandRootsVertexGroup;
+            public BlendShapeTarget meshIslandBlendVertexGroup;
 
             public bool transferNormals;
             [Range(0, 1)]
@@ -385,6 +387,11 @@ namespace Swole.Morphing
         [Header("Other")]
         public List<string> nonSeamMergableBlendShapes;
 
+        [Tooltip("Defaults to the prefab root")]
+        public Transform ikBonesParent;
+        [Tooltip("IK Bones that are to be reparented to the prefab root")]
+        public List<Transform> ikBonesToFloat;
+
         [Header("Output")]
         public GameObject outputPrefab;
         public List<Mesh> outputMeshes = new List<Mesh>();
@@ -461,6 +468,7 @@ namespace Swole.Morphing
 
             outputPrefab = Instantiate(prefabRootReference);
             outputPrefab.name = string.IsNullOrWhiteSpace(prefabName) ? prefabRootReference.name : prefabName;
+            var prefabRoot = outputPrefab.transform;
             if (deleteInactiveChildrenInPrefab)
             {
                 var children = outputPrefab.GetComponentsInChildren<Transform>(true);
@@ -471,6 +479,8 @@ namespace Swole.Morphing
                     if (!child.gameObject.activeSelf) DestroyImmediate(child.gameObject);
                 }
             }
+
+            var animator = outputPrefab.GetComponent<CustomAnimator>();
 
             #endregion
 
@@ -614,11 +624,35 @@ namespace Swole.Morphing
                                     if (merger.allowSurfaceDataTransfer)
                                     {
 
+                                        float[] meshIslandRootVertexGroup_ = null;
+                                        float[] meshIslandBlendVertexGroup_ = null; 
+
+                                        if (merger.treatAsMeshIslands)
+                                        {
+                                            var combineVertices = meshToCombine.vertices;
+                                            var combineNormals = meshToCombine.normals;
+                                            var combineTangents = meshToCombine.tangents;
+                                            var combineWeld = MeshDataTools.WeldVertices(combineVertices);
+
+                                            if (merger.meshIslandRootsVertexGroup.TryGetBlendShape(objectSetup.name, meshToCombine, out var blendShape_, combineVertices, combineNormals, combineTangents, combineWeld))
+                                            {
+                                                var vg = VertexGroup.ConvertToVertexGroup(blendShape_, true, string.Empty, 0.00001f);
+                                                meshIslandRootVertexGroup_ = vg.AsLinearWeightArray(meshToCombine.vertexCount);
+                                            }
+                                            if (merger.meshIslandBlendVertexGroup.TryGetBlendShape(objectSetup.name, meshToCombine, out blendShape_, combineVertices, combineNormals, combineTangents, combineWeld))
+                                            {
+                                                var vg = VertexGroup.ConvertToVertexGroup(blendShape_, true, string.Empty, 0.00001f);
+                                                meshIslandBlendVertexGroup_ = vg.AsLinearWeightArray(meshToCombine.vertexCount);
+                                            }
+                                        }
+
                                         var settings = new MorphUtils.TransferSurfaceDataSettings()
                                         {
                                             baseDataMain = baseMeshData,
 
                                             treatAsMeshIslands = merger.treatAsMeshIslands,
+                                            meshIslandBlendWeights = meshIslandBlendVertexGroup_,
+                                            meshIslandRootWeights = meshIslandRootVertexGroup_,
 
                                             transferNormals = merger.transferNormals,
                                             transferNormalsWeight = merger.transferNormalsWeight,
@@ -822,6 +856,20 @@ namespace Swole.Morphing
                     
                         if (surfaceTransferBaseMeshes != null && surfaceTransferBaseMeshes.Count > 0)
                         {
+                            float[] meshIslandRootVertexGroup = null;
+                            float[] meshIslandBlendVertexGroup = null;
+
+                            if (objectSetup.meshIslandRootsVertexGroup.TryGetBlendShape(objectSetup.name, mainMesh, out var blendShape_, mainVertices, mainNormals, mainTangents, mainWeld))
+                            {
+                                var vg = VertexGroup.ConvertToVertexGroup(blendShape_, true, string.Empty, 0.00001f);
+                                meshIslandRootVertexGroup = vg.AsLinearWeightArray(mainMesh.vertexCount);
+                            }
+                            if (objectSetup.meshIslandBlendVertexGroup.TryGetBlendShape(objectSetup.name, mainMesh, out blendShape_, mainVertices, mainNormals, mainTangents, mainWeld))
+                            {
+                                var vg = VertexGroup.ConvertToVertexGroup(blendShape_, true, string.Empty, 0.00001f);
+                                meshIslandBlendVertexGroup = vg.AsLinearWeightArray(mainMesh.vertexCount);
+                            }
+
                             MorphUtils.TransferSurfaceDataBase defaultBaseData = surfaceTransferBaseMeshes[0];
                             MorphUtils.TransferSurfaceDataBase[] additionalBaseDatas = surfaceTransferBaseMeshes.Count > 1 ? new TransferSurfaceDataBase[surfaceTransferBaseMeshes.Count - 1] : null;
                             if (additionalBaseDatas != null) 
@@ -1178,6 +1226,8 @@ namespace Swole.Morphing
                                     baseDatas = additionalBaseDatas,
 
                                     treatAsMeshIslands = objectSetup.treatAsMeshIslands,
+                                    meshIslandBlendWeights = meshIslandBlendVertexGroup,
+                                    meshIslandRootWeights = meshIslandRootVertexGroup,
 
                                     transferNormals = objectSetup.transferNormals,
                                     transferNormalsWeight = objectSetup.transferNormalsWeight,
@@ -1637,6 +1687,7 @@ namespace Swole.Morphing
                                 if (group.isComposite) continue;
 
                                 var target = group.initialShapeTarget;
+                                target.animatable = target.animatable || group.animatable;
                                 if (string.IsNullOrWhiteSpace(target.newName)) target.newName = group.name;
                                 tempBlendShapeTargets.Add(target);
                             }
@@ -1987,7 +2038,13 @@ namespace Swole.Morphing
                                         for (int v = 0; v < surfaceDataTransferVertexData.Length; v++)
                                         {
                                             var transferData = surfaceDataTransferVertexData[v];
+                                            if (transferData.closestMesh != 0 || (transferData.hasSecondaryBinding && transferData.closestSecondaryMesh != 0)) continue;
+
                                             float weight = (tempWeights[transferData.closestIndex0] * transferData.closestWeight0) + (tempWeights[transferData.closestIndex1] * transferData.closestWeight1) + (tempWeights[transferData.closestIndex2] * transferData.closestWeight2);
+                                            if (transferData.hasSecondaryBinding)
+                                            {
+                                                weight += (tempWeights[transferData.closestSecondaryIndex0] * transferData.closestSecondaryWeight0) + (tempWeights[transferData.closestSecondaryIndex1] * transferData.closestSecondaryWeight1) + (tempWeights[transferData.closestSecondaryIndex2] * transferData.closestSecondaryWeight2);
+                                            }
                                             if (weight != 0f) vertexGroup.SetWeight(v, weight);
                                         }
                                     }
@@ -2013,7 +2070,13 @@ namespace Swole.Morphing
                                                 for (int v = 0; v < surfaceDataTransferVertexData.Length; v++)
                                                 {
                                                     var transferData = surfaceDataTransferVertexData[v];
+                                                    if (transferData.closestMesh != 0 || (transferData.hasSecondaryBinding && transferData.closestSecondaryMesh != 0)) continue;
+
                                                     localFrame.deltas[v] = (refFrame.deltas[transferData.closestIndex0] * transferData.closestWeight0) + (refFrame.deltas[transferData.closestIndex1] * transferData.closestWeight1) + (refFrame.deltas[transferData.closestIndex2] * transferData.closestWeight2);
+                                                    if (transferData.hasSecondaryBinding)
+                                                    {
+                                                        localFrame.deltas[v] = localFrame.deltas[v] + ((refFrame.deltas[transferData.closestSecondaryIndex0] * transferData.closestSecondaryWeight0) + (refFrame.deltas[transferData.closestSecondaryIndex1] * transferData.closestSecondaryWeight1) + (refFrame.deltas[transferData.closestSecondaryIndex2] * transferData.closestSecondaryWeight2));
+                                                    }
                                                 }
                                                 meshShape.frames[f] = localFrame;
                                             }
@@ -2266,6 +2329,30 @@ namespace Swole.Morphing
                 }
             }
 
+            if (ikBonesToFloat != null)
+            {
+                Transform ikParent = prefabRoot;
+                if (ikBonesParent != null)
+                {
+                    string path = ikBonesParent.GetPathString(true);
+                    ikParent = prefabRoot.GetTransformByPath(path);
+                }
+
+                foreach (var ikBone in ikBonesToFloat)
+                {
+                    if (ikBone == null) continue;
+
+                    string path = ikBone.GetPathString(true);
+                    Transform instantiatedTransform = prefabRoot.GetTransformByPath(path); 
+
+                    if (instantiatedTransform != null)
+                    {
+                        instantiatedTransform.SetParent(ikParent, true);
+                    }
+                }
+            }
+
+            if (animator != null /*&& !animator.HasPreInitializedBindPose*/) animator.ReinitializeBindPose(); 
 
             PostSetup();
 

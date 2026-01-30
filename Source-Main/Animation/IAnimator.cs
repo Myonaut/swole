@@ -91,6 +91,10 @@ namespace Swole.Animation
 
         #endregion
 
+        public float GetCurrentBoneHeight(string boneName);
+        public float GetBoneHeight(string boneName, float timeOffset);
+        public float GetBoneHeightAtTime(string boneName, float time);
+
     }
 
     public class TransformHierarchy

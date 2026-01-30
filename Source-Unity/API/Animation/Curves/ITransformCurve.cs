@@ -244,6 +244,9 @@ namespace Swole.API.Unity.Animation
         public bool3 ValidityScale { get; }
 
         public bool HasKeyframes { get; }
+        public bool HasPositionKeyframes { get; }
+        public bool HasRotationKeyframes { get; }
+        public bool HasScaleKeyframes { get; }
         public float GetClosestKeyframeTime(float referenceTime, int framesPerSecond, bool includeReferenceTime = true, IntFromDecimalDelegate getFrameIndex = null);
 
         public List<float> GetFrameTimes(int framesPerSecond, List<float> inputList = null);
@@ -251,6 +254,8 @@ namespace Swole.API.Unity.Animation
 
         public void ClearKeys();
         public void ClearTransformKeys();
+
+        public void Optimize(bool includePosition = true, float positionTolerance = 0.005f, bool includeRotation = true, float rotationToleranceDeg = 1f, bool includeScale = true, float scaleTolerance = 0.005f);
 
     }
 }

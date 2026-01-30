@@ -415,19 +415,21 @@ namespace Swole
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static bool IsInTriangle(float3 barycentricCoords, float errorMargin = 0) 
+        public static bool IsInTriangle(float3 barycentricCoords, float errorMargin = 0f)  
         { 
-            float upperBound = 1 + errorMargin; 
-            return barycentricCoords.x >= -errorMargin & barycentricCoords.y >= -errorMargin & barycentricCoords.z >= -errorMargin & barycentricCoords.x <= upperBound & barycentricCoords.y <= upperBound & barycentricCoords.z <= upperBound; 
+            float lowerBound = -errorMargin;
+            float upperBound = 1f + errorMargin; 
+            return barycentricCoords.x >= lowerBound & barycentricCoords.y >= lowerBound & barycentricCoords.z >= lowerBound & barycentricCoords.x <= upperBound & barycentricCoords.y <= upperBound & barycentricCoords.z <= upperBound; 
         }
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static bool IsInTriangle(float3 p, float3 a, float3 b, float3 c, float errorMargin = 0) => IsInTriangle(BarycentricCoords(p, a, b, c), errorMargin);
 
         [Obsolete("Not giving expected results. Fix."), MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static bool2 IsInTriangle_x2(float2x3 barycentricCoords, float errorMargin = 0)
+        public static bool2 IsInTriangle_x2(float2x3 barycentricCoords, float errorMargin = 0f)
         {
-            float upperBound = 1 + errorMargin;
-            return barycentricCoords.c0 >= -errorMargin & barycentricCoords.c1 >= -errorMargin & barycentricCoords.c2 >= -errorMargin & barycentricCoords.c0 <= upperBound & barycentricCoords.c1 <= upperBound & barycentricCoords.c2 <= upperBound;
+            float2 lowerBound = -errorMargin;
+            float2 upperBound = 1f + errorMargin;
+            return barycentricCoords.c0 >= lowerBound & barycentricCoords.c1 >= lowerBound & barycentricCoords.c2 >= lowerBound & barycentricCoords.c0 <= upperBound & barycentricCoords.c1 <= upperBound & barycentricCoords.c2 <= upperBound;
         }
         #endregion
 
@@ -849,23 +851,23 @@ namespace Swole
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static Vector3 Mirror(Vector3 v3, Vector3 axis) => Mirror((float3)v3, (float3)axis);
+        public static Vector3 Mirror(this Vector3 v3, Vector3 axis) => Mirror((float3)v3, (float3)axis);
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static float3 Mirror(float3 v3, float3 axis)
+        public static float3 Mirror(this float3 v3, float3 axis)
         {
             float dot = math.dot(v3, axis);
             return v3 - 2 * dot * axis;
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static Vector3 MirrorEuler(Vector3 eulerAngles, Vector3 axis) => MirrorEuler((float3)eulerAngles, (float3)axis);
+        public static Vector3 MirrorEuler(this Vector3 eulerAngles, Vector3 axis) => MirrorEuler((float3)eulerAngles, (float3)axis);
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static float3 MirrorEuler(float3 eulerAngles, float3 axis) => Mirror((quaternion)Quaternion.Euler(eulerAngles), axis).ToEuler();
+        public static float3 MirrorEuler(this float3 eulerAngles, float3 axis) => Mirror((quaternion)Quaternion.Euler(eulerAngles), axis).ToEuler();
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static Quaternion Mirror(Quaternion rotation, Vector3 axis) => Mirror((quaternion)rotation, (float3)axis);
+        public static Quaternion Mirror(this Quaternion rotation, Vector3 axis) => Mirror((quaternion)rotation, (float3)axis);
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static quaternion Mirror(quaternion rotation, float3 axis)
+        public static quaternion Mirror(this quaternion rotation, float3 axis)
         {
             quaternion mirrorNormalQuat = new quaternion(axis.x, axis.y, axis.z, 0f);
             return math.mul(mirrorNormalQuat, math.mul(rotation, mirrorNormalQuat));
@@ -1170,49 +1172,53 @@ namespace Swole
         /// Source: https://stackoverflow.com/a/42752998
         /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static bool ray_intersect_triangle(float3 rayOrigin, float3 rayDir, float3 A, float3 B, float3 C, out float t, out float u, out float v, out float3 N)
+        public static bool ray_intersect_triangle(float3 rayOrigin, float3 rayDir, float3 A, float3 B, float3 C, out float t, out float u, out float v, out float3 N, float errorMargin = 0f)
         {
             prep_intersect_triangle(A, B, C, out float3 E1, out float3 E2, out N);
-            return ray_intersect_triangle(E1, E2, N, rayOrigin, rayDir, A, B, C, out t, out u, out v);
+            return ray_intersect_triangle(E1, E2, N, rayOrigin, rayDir, A, B, C, out t, out u, out v, errorMargin);
         }
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static bool ray_intersect_triangle(float3 rayOrigin, float3 rayDir, float3 A, float3 B, float3 C, out float3 intersectionPoint)
+        public static bool ray_intersect_triangle(float3 rayOrigin, float3 rayDir, float3 A, float3 B, float3 C, out float3 intersectionPoint, float errorMargin = 0f)
         {
             prep_intersect_triangle(A, B, C, out float3 E1, out float3 E2, out float3 N);
-            return ray_intersect_triangle(E1, E2, N, rayOrigin, rayDir, A, B, C, out intersectionPoint);
+            return ray_intersect_triangle(E1, E2, N, rayOrigin, rayDir, A, B, C, out intersectionPoint, errorMargin);
         }
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static bool ray_intersect_triangle(float3 rayOrigin, float3 rayDir, float3 A, float3 B, float3 C, out RaycastHitResult hit)
+        public static bool ray_intersect_triangle(float3 rayOrigin, float3 rayDir, float3 A, float3 B, float3 C, out RaycastHitResult hit, float errorMargin = 0f)
         {
             prep_intersect_triangle(A, B, C, out float3 E1, out float3 E2, out float3 N);
-            return ray_intersect_triangle(E1, E2, N, rayOrigin, rayDir, A, B, C, out hit);
+            return ray_intersect_triangle(E1, E2, N, rayOrigin, rayDir, A, B, C, out hit, errorMargin);
         }
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static bool ray_intersect_triangle(float3 E1, float3 E2, float3 N, float3 rayOrigin, float3 rayDir, float3 A, float3 B, float3 C, out float t, out float u, out float v)
+        public static bool ray_intersect_triangle(float3 E1, float3 E2, float3 N, float3 rayOrigin, float3 rayDir, float3 A, float3 B, float3 C, out float t, out float u, out float v, float errorMargin = 0f)
         {
+            float min = 0.0f - errorMargin;
+            float max = 1.0f + errorMargin;
             intersect_triangle(E1, E2, N, rayOrigin, rayDir, A, B, C, out t, out u, out v, out float det);
-            return (math.abs(det) >= 1e-6f & t >= 0.0f & u >= 0.0f & v >= 0.0f & (u + v) <= 1.0f);
+            return (math.abs(det) >= 1e-6f & t >= min & u >= min & v >= min & (u + v) <= max);
         }
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static bool ray_intersect_triangle_one_side(float3 E1, float3 E2, float3 N, float3 rayOrigin, float3 rayDir, float3 A, float3 B, float3 C, out float t, out float u, out float v)
+        public static bool ray_intersect_triangle_one_side(float3 E1, float3 E2, float3 N, float3 rayOrigin, float3 rayDir, float3 A, float3 B, float3 C, out float t, out float u, out float v, float errorMargin = 0f)
         {
+            float min = 0.0f - errorMargin;
+            float max = 1.0f + errorMargin;
             intersect_triangle(E1, E2, N, rayOrigin, rayDir, A, B, C, out t, out u, out v, out float det);
-            return (det >= 1e-6f & t >= 0.0f & u >= 0.0f & v >= 0.0f & (u + v) <= 1.0f);
+            return (det >= 1e-6f & t >= min & u >= min & v >= min & (u + v) <= max);
         }
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static bool ray_intersect_triangle(float3 E1, float3 E2, float3 N, float3 rayOrigin, float3 rayDir, float3 A, float3 B, float3 C, out float3 intersectionPoint)
+        public static bool ray_intersect_triangle(float3 E1, float3 E2, float3 N, float3 rayOrigin, float3 rayDir, float3 A, float3 B, float3 C, out float3 intersectionPoint, float errorMargin = 0f)
         {
-            bool flag = ray_intersect_triangle(E1, E2, N, rayOrigin, rayDir, A, B, C, out float t, out float u, out float v);
+            bool flag = ray_intersect_triangle(E1, E2, N, rayOrigin, rayDir, A, B, C, out float t, out float u, out float v, errorMargin);
             intersectionPoint = rayOrigin + t * rayDir;
 
             return flag;
         }
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static bool ray_intersect_triangle(float3 E1, float3 E2, float3 N, float3 rayOrigin, float3 rayDir, float3 A, float3 B, float3 C, out RaycastHitResult hit)
+        public static bool ray_intersect_triangle(float3 E1, float3 E2, float3 N, float3 rayOrigin, float3 rayDir, float3 A, float3 B, float3 C, out RaycastHitResult hit, float errorMargin = 0f)
         {
             hit = default;
 
-            bool flag = ray_intersect_triangle(E1, E2, N, rayOrigin, rayDir, A, B, C, out float t, out float u, out float v);
+            bool flag = ray_intersect_triangle(E1, E2, N, rayOrigin, rayDir, A, B, C, out float t, out float u, out float v, errorMargin);
             hit.point = rayOrigin + t * rayDir;
             hit.normal = math.normalize(N);
             hit.UV = new float2(u, v);
@@ -1221,49 +1227,53 @@ namespace Swole
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static bool seg_intersect_triangle(float3 rayOrigin, float3 rayOffset, float3 A, float3 B, float3 C, out float t, out float u, out float v, out float3 N)
+        public static bool seg_intersect_triangle(float3 rayOrigin, float3 rayOffset, float3 A, float3 B, float3 C, out float t, out float u, out float v, out float3 N, float errorMargin = 0f)
         {
             prep_intersect_triangle(A, B, C, out float3 E1, out float3 E2, out N);
-            return seg_intersect_triangle(E1, E2, N, rayOrigin, rayOffset, A, B, C, out t, out u, out v);
+            return seg_intersect_triangle(E1, E2, N, rayOrigin, rayOffset, A, B, C, out t, out u, out v, errorMargin);
         }
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static bool seg_intersect_triangle(float3 rayOrigin, float3 rayOffset, float3 A, float3 B, float3 C, out float3 intersectionPoint)
+        public static bool seg_intersect_triangle(float3 rayOrigin, float3 rayOffset, float3 A, float3 B, float3 C, out float3 intersectionPoint, float errorMargin = 0f)
         {
             prep_intersect_triangle(A, B, C, out float3 E1, out float3 E2, out float3 N);
-            return seg_intersect_triangle(E1, E2, N, rayOrigin, rayOffset, A, B, C, out intersectionPoint);
+            return seg_intersect_triangle(E1, E2, N, rayOrigin, rayOffset, A, B, C, out intersectionPoint, errorMargin);
         }
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static bool seg_intersect_triangle(float3 rayOrigin, float3 rayOffset, float3 A, float3 B, float3 C, out RaycastHitResult hit)
+        public static bool seg_intersect_triangle(float3 rayOrigin, float3 rayOffset, float3 A, float3 B, float3 C, out RaycastHitResult hit, float errorMargin = 0f)
         {
             prep_intersect_triangle(A, B, C, out float3 E1, out float3 E2, out float3 N);
-            return seg_intersect_triangle(E1, E2, N, rayOrigin, rayOffset, A, B, C, out hit);
+            return seg_intersect_triangle(E1, E2, N, rayOrigin, rayOffset, A, B, C, out hit, errorMargin);
         }
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static bool seg_intersect_triangle(float3 E1, float3 E2, float3 N, float3 rayOrigin, float3 rayOffset, float3 A, float3 B, float3 C, out float t, out float u, out float v)
+        public static bool seg_intersect_triangle(float3 E1, float3 E2, float3 N, float3 rayOrigin, float3 rayOffset, float3 A, float3 B, float3 C, out float t, out float u, out float v, float errorMargin = 0f)
         {
+            float min = 0.0f - errorMargin;
+            float max = 1.0f + errorMargin;
             intersect_triangle(E1, E2, N, rayOrigin, rayOffset, A, B, C, out t, out u, out v, out float det);
-            return (math.abs(det) >= 1e-6f & t >= 0.0f & t <= 1.0f & u >= 0.0f & v >= 0.0f & (u + v) <= 1.0f); 
+            return (math.abs(det) >= 1e-6f & t >= min & t <= max & u >= min & v >= min & (u + v) <= max); 
         }
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static bool seg_intersect_triangle_one_side(float3 E1, float3 E2, float3 N, float3 rayOrigin, float3 rayOffset, float3 A, float3 B, float3 C, out float t, out float u, out float v)
+        public static bool seg_intersect_triangle_one_side(float3 E1, float3 E2, float3 N, float3 rayOrigin, float3 rayOffset, float3 A, float3 B, float3 C, out float t, out float u, out float v, float errorMargin = 0f)
         {
+            float min = 0.0f - errorMargin;
+            float max = 1.0f + errorMargin;
             intersect_triangle(E1, E2, N, rayOrigin, rayOffset, A, B, C, out t, out u, out v, out float det);
-            return (det >= 1e-6f & t >= 0.0f & t <= 1.0f & u >= 0.0f & v >= 0.0f & (u + v) <= 1.0f);
+            return (det >= 1e-6f & t >= min & t <= max & u >= min & v >= min & (u + v) <= max);
         }
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static bool seg_intersect_triangle(float3 E1, float3 E2, float3 N, float3 rayOrigin, float3 rayOffset, float3 A, float3 B, float3 C, out float3 intersectionPoint)
+        public static bool seg_intersect_triangle(float3 E1, float3 E2, float3 N, float3 rayOrigin, float3 rayOffset, float3 A, float3 B, float3 C, out float3 intersectionPoint, float errorMargin = 0f)
         {
-            bool flag = seg_intersect_triangle(E1, E2, N, rayOrigin, rayOffset, A, B, C, out float t, out float u, out float v);
+            bool flag = seg_intersect_triangle(E1, E2, N, rayOrigin, rayOffset, A, B, C, out float t, out float u, out float v, errorMargin);
             intersectionPoint = rayOrigin + t * rayOffset;
 
             return flag;
         }
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static bool seg_intersect_triangle(float3 E1, float3 E2, float3 N, float3 rayOrigin, float3 rayOffset, float3 A, float3 B, float3 C, out RaycastHitResult hit)
+        public static bool seg_intersect_triangle(float3 E1, float3 E2, float3 N, float3 rayOrigin, float3 rayOffset, float3 A, float3 B, float3 C, out RaycastHitResult hit, float errorMargin = 0f)
         {
             hit = default;
 
-            bool flag = seg_intersect_triangle(E1, E2, N, rayOrigin, rayOffset, A, B, C, out float t, out float u, out float v);
+            bool flag = seg_intersect_triangle(E1, E2, N, rayOrigin, rayOffset, A, B, C, out float t, out float u, out float v, errorMargin);
             hit.point = rayOrigin + t * rayOffset;
             hit.normal = math.normalize(N);
             hit.UV = new float2(u, v);

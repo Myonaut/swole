@@ -750,6 +750,8 @@ namespace Swole.Morphing
             if (!Application.isPlaying) return;
 #endif
 
+            if (!animatablePropertiesController.IsInitialized) animatablePropertiesController.Initialize();
+
             if (dynamicAnimationProperties == null) dynamicAnimationProperties = new List<DynamicAnimationProperties.Property>();;
 
             string id = GetInstanceID().ToString();

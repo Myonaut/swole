@@ -215,8 +215,9 @@ namespace Swole.API.Unity.Animation
         public Transition GetTransition(int index)
         {
             if (transitions == null || index < 0 || index >= transitions.Length) return null;
-            return transitions[index];
+            return GetTransitionUnsafe(index);
         }
+        public Transition GetTransitionUnsafe(int index) => transitions[index];
         public int GetTransitionIndex(Transition transition)
         {
             if (transitions == null || transition == null) return -1;
@@ -676,6 +677,26 @@ namespace Swole.API.Unity.Animation
             }
 
             return parameterIndices;
+        }
+
+        public float GetCurrentBoneHeight(string boneName) => GetBoneHeight(boneName, 0f);
+        public float GetBoneHeight(string boneName, float timeOffset)
+        {
+
+            var controller = Layer.GetMotionController(MotionControllerIndex);
+            if (controller == null) return 0f;
+
+            return controller.GetBoneHeight(Layer, boneName, timeOffset);
+
+        }
+        public float GetBoneHeightAtTime(string boneName, float time)
+        {
+
+            var controller = Layer.GetMotionController(MotionControllerIndex);
+            if (controller == null) return 0f;
+
+            return controller.GetBoneHeightAtTime(Layer, boneName, time);
+
         }
 
     }

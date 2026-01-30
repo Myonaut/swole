@@ -52,6 +52,7 @@ namespace Swole.API.Unity.Animation
             foreach (var member in members) if (member != null && member.enabled) member.UpdateStep();
         }
     }
+    [AnimatablePropertyPrefix("IK", true)]
     public class CustomIKManager : MonoBehaviour
     {
 
@@ -113,9 +114,44 @@ namespace Swole.API.Unity.Animation
         public class FinalIKComponent : IKController
         {
 
-            public float baseWeight = 1;
-            public float positionWeight = 1;
-            public float rotationWeight = 1;
+            public float baseWeight = 1f;
+            public float positionWeight = 1f;
+            public float rotationWeight = 1f;
+
+            [AnimatableProperty(true, 0f)]
+            public float Activation
+            {
+                get => disable ? 0f : 1f;
+                set
+                {
+                    if (disable)
+                    {
+                        if (value >= 0.5f) SetActive(true);
+                    }
+                    else
+                    {
+                        if (value < 0.5f) SetActive(false);   
+                    }
+                }
+            }
+            [AnimatableProperty(true, 1f)]
+            public float Weight
+            {
+                get => baseWeight;
+                set => SetWeight(value); 
+            }
+            [AnimatableProperty(true, 1f)]
+            public float PositionWeight
+            {
+                get => positionWeight;
+                set => SetPositionWeight(value);
+            }
+            [AnimatableProperty(true, 1f)]
+            public float RotationWeight
+            {
+                get => rotationWeight;
+                set => SetRotationWeight(value);
+            }
 
             public bool disable;
             public IK component;
@@ -383,13 +419,13 @@ namespace Swole.API.Unity.Animation
         public void DisableAllTogglableControllers() => IterateTogglableControllers(DisableController);
         public void EnableAllTogglableControllers() => IterateTogglableControllers(EnableController);
 
-        protected void ResetControllerPositionWeight(int index, IKController controller) { if (controller != null) controller.SetPositionWeight(1); }
+        protected void ResetControllerPositionWeight(int index, IKController controller) { if (controller != null) controller.SetPositionWeight(1f); }
         public void ResetPositionWeightOfAllControllers() => IterateControllers(ResetControllerPositionWeight);
         public void ResetPositionWeightOfAllTogglableControllers() => IterateTogglableControllers(ResetControllerPositionWeight);
-        protected void ResetControllerRotationWeight(int index, IKController controller) { if (controller != null) controller.SetRotationWeight(1); }
+        protected void ResetControllerRotationWeight(int index, IKController controller) { if (controller != null) controller.SetRotationWeight(1f); }
         public void ResetRotationWeightOfAllControllers() => IterateControllers(ResetControllerRotationWeight);
         public void ResetRotationWeightOfAllTogglableControllers() => IterateTogglableControllers(ResetControllerRotationWeight);
-        protected void ResetControllerBendGoalWeight(int index, IKController controller) { if (controller != null) controller.SetBendGoalWeight(1); } 
+        protected void ResetControllerBendGoalWeight(int index, IKController controller) { if (controller != null) controller.SetBendGoalWeight(1f); } 
         public void ResetBendGoalWeightOfAllControllers() => IterateControllers(ResetControllerBendGoalWeight); 
         public void ResetBendGoalWeightOfAllTogglableControllers() => IterateTogglableControllers(ResetControllerBendGoalWeight); 
 

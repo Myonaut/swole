@@ -671,6 +671,9 @@ namespace Swole.API.Unity
             public float2 shoulderWidthContribution;
             public float2 hipWidthContribution;
 
+            public float overflowExponentShoulder = 1.75f;
+            public float overflowExponentHip = 1.4f;
+
             public float minMass = 0f;
             public float maxMass = 1f;
             public bool clampMassContribution;
@@ -753,9 +756,9 @@ namespace Swole.API.Unity
 
                         if (skip) continue;
 
-                        float2 contr = flexContr * massContr;   
-                        float2 shoulderWidthContr = math.lerp(muscle.shoulderWidthContribution.x, muscle.shoulderWidthContribution.y, contr);  
-                        float2 hipWidthContr = math.lerp(muscle.hipWidthContribution.x, muscle.hipWidthContribution.y, contr);
+                        float2 contr = flexContr * massContr;
+                        float2 shoulderWidthContr = math.lerp(muscle.shoulderWidthContribution.x, muscle.shoulderWidthContribution.y, math.select(contr, math.pow(contr, muscle.overflowExponentShoulder), contr > 1f & muscle.overflowExponentShoulder > 0f));  
+                        float2 hipWidthContr = math.lerp(muscle.hipWidthContribution.x, muscle.hipWidthContribution.y, math.select(contr, math.pow(contr, muscle.overflowExponentHip), contr > 1f & muscle.overflowExponentHip > 0f));
 
                         currentContribution.x += shoulderWidthContr.x;
                         currentContribution.y += shoulderWidthContr.y;
@@ -767,6 +770,7 @@ namespace Swole.API.Unity
                 return currentContribution; 
             }
         }
+
 
         protected Dictionary<int, List<WidthContributionGroup>> widthContributionGroupsByMuscleIndices;
         [SerializeField]

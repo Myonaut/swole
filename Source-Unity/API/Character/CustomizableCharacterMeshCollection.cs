@@ -13,11 +13,13 @@ namespace Swole.Morphing
 
         #region Sub Types
 
+        [Serializable]
         public struct V1
         {
             public string id;
             public CustomizableCharacterMesh mesh;
         }
+        [Serializable]
         public struct V2
         {
             public string id;

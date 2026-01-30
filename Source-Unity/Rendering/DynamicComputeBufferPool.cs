@@ -237,7 +237,6 @@ namespace Swole
         public void Write(NativeArray<T> data, int srcIndex, int dstIndex, int count)
         {
             TrySetWriteIndices(dstIndex, count);
-            Debug.Log($"{count} -> {internalData.Length}");
             NativeArray<T>.Copy(data, srcIndex, internalData.AsArray(), dstIndex, count);
             RequestUpload();
         }

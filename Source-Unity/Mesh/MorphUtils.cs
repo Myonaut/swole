@@ -747,6 +747,11 @@ namespace Swole.Morphing
 
             public bool treatAsMeshIslands;
 
+            public float[] meshIslandRootWeights;
+            public bool HasMeshIslandRootWeights => meshIslandRootWeights != null && meshIslandRootWeights.Length > 0;
+            public float[] meshIslandBlendWeights;
+            public bool HasMeshIslandBlendWeights => meshIslandBlendWeights != null && meshIslandBlendWeights.Length > 0;
+
             public bool transferNormals;
             public float transferNormalsWeight;
 
@@ -827,13 +832,25 @@ namespace Swole.Morphing
             public int closestIndex0;
             public int closestIndex1;
             public int closestIndex2;
-
+            
             public float closestWeight0;
             public float closestWeight1;
             public float closestWeight2;
+
+            public bool hasSecondaryBinding;
+
+            public int closestSecondaryMesh;
+
+            public int closestSecondaryIndex0;
+            public int closestSecondaryIndex1;
+            public int closestSecondaryIndex2;
+
+            public float closestSecondaryWeight0;
+            public float closestSecondaryWeight1;
+            public float closestSecondaryWeight2;
         }
 
-        private struct TempVertexInfo
+        public struct TempVertexInfo
         {
             public Vector3 centerPoint;
 
@@ -855,12 +872,38 @@ namespace Swole.Morphing
             public float closestWeight1;
             public float closestWeight2;
 
+            public bool hasSecondaryBinding;
+            public int closestSecondaryBaseIndex;
+            public int closestSecondaryIndex0;
+            public int closestSecondaryIndex1;
+            public int closestSecondaryIndex2;
+            public float closestSecondaryWeight0;
+            public float closestSecondaryWeight1;
+            public float closestSecondaryWeight2;
+
             public static TempVertexInfo Default => new TempVertexInfo()
             {
                 closestIndex0 = -1,
                 closestIndex1 = -1,
-                closestIndex2 = 1
+                closestIndex2 = -1,
+                closestSecondaryIndex0 = -1,
+                closestSecondaryIndex1 = -1,
+                closestSecondaryIndex2 = -1
             };
+        }
+
+        /// <summary>
+        /// basically if the surface that a vertex is bound to changes normal direction, rotate the vertex around the center point accordingly
+        /// </summary>
+        public static Vector3 AddNormalBasedRotationToDelta(TempVertexInfo vertexInfo, Vector3 localVertexPosition, Vector3 dependencyNormal, Vector3 deltaVertex, Vector3 deltaNormal, float weight)
+        {
+            if (vertexInfo.hasOrigin)
+            {
+                Quaternion rotOffset = Quaternion.FromToRotation(dependencyNormal, (dependencyNormal + deltaNormal).normalized);
+                deltaVertex = deltaVertex + ((vertexInfo.centerPoint + (rotOffset * vertexInfo.originOffset) * vertexInfo.originOffsetDist) - localVertexPosition) * weight;
+            }
+
+            return deltaVertex;
         }
 
         public static Mesh TransferSurfaceData(
@@ -873,6 +916,10 @@ namespace Swole.Morphing
 
                 int baseDataCount = settings.BaseDataCount;
 
+                bool hasRootWeights = settings.HasMeshIslandRootWeights;
+                bool hasIslandBlendWeights = settings.HasMeshIslandBlendWeights;
+
+                Dictionary<BlendShape.Frame, Vector3> tempFrameNormals = new Dictionary<BlendShape.Frame, Vector3>();
                 List<string> originalBlendShapes = new List<string>();
                 List<BlendShape> blendShapes = mesh.GetBlendShapes();
                 foreach (var shape in blendShapes) originalBlendShapes.Add(shape.name);
@@ -992,6 +1039,13 @@ namespace Swole.Morphing
 
                                 meshIslandBindings[localIndex] = c;
 
+                                if (hasRootWeights)
+                                {
+                                    float rootWeight = settings.meshIslandRootWeights[localIndex];
+                                    if (rootWeight <= 0.001f) continue;
+
+                                    distanceWeight = distanceWeight + Mathf.Max(0f, (10f * (1f - rootWeight)));
+                                }
                                 for (int e = 0; e < baseDataCount; e++)
                                 {
                                     var baseData = settings.GetBaseData(e);
@@ -1121,8 +1175,21 @@ namespace Swole.Morphing
                         vertexInfo.closestWeight1 = 0;
                         vertexInfo.closestWeight2 = 0;
 
-                        if (vertexInfo.meshIslandIndex < 0)
+                        vertexInfo.hasSecondaryBinding = false;
+                        vertexInfo.closestSecondaryBaseIndex = 0;
+                        vertexInfo.closestSecondaryIndex0 = -1;
+                        vertexInfo.closestSecondaryIndex1 = -1;
+                        vertexInfo.closestSecondaryIndex2 = -1;
+                        vertexInfo.closestSecondaryWeight0 = 0;
+                        vertexInfo.closestSecondaryWeight1 = 0;
+                        vertexInfo.closestSecondaryWeight2 = 0;
+
+                        float meshIslandBlend = 1f;
+                        if (hasIslandBlendWeights) meshIslandBlend = math.saturate(settings.meshIslandBlendWeights[vIndex]);
+                        if (vertexInfo.meshIslandIndex < 0 || meshIslandBlend < 1f)
                         {
+                            bool isSecondary = vertexInfo.meshIslandIndex >= 0 && meshIslandBlend > 0f;
+                            float meshIslandInverseBlend = 1f - meshIslandBlend;
 
                             for (int e = 0; e < baseDataCount; e++)
                             {
@@ -1135,13 +1202,27 @@ namespace Swole.Morphing
                                         if (cost < vertexInfo.closestDistance)
                                         {
                                             vertexInfo.closestDistance = cost;
-                                            vertexInfo.closestBaseIndex = e;
-                                            vertexInfo.closestIndex0 = index0;
-                                            vertexInfo.closestIndex1 = index1;
-                                            vertexInfo.closestIndex2 = index2;
-                                            vertexInfo.closestWeight0 = weight0;
-                                            vertexInfo.closestWeight1 = weight1;
-                                            vertexInfo.closestWeight2 = weight2;
+                                            if (isSecondary)
+                                            {
+                                                vertexInfo.hasSecondaryBinding = true;
+                                                vertexInfo.closestSecondaryBaseIndex = e;
+                                                vertexInfo.closestSecondaryIndex0 = index0;
+                                                vertexInfo.closestSecondaryIndex1 = index1;
+                                                vertexInfo.closestSecondaryIndex2 = index2;
+                                                vertexInfo.closestSecondaryWeight0 = weight0 * meshIslandInverseBlend;
+                                                vertexInfo.closestSecondaryWeight1 = weight1 * meshIslandInverseBlend;
+                                                vertexInfo.closestSecondaryWeight2 = weight2 * meshIslandInverseBlend;
+                                            }
+                                            else
+                                            {
+                                                vertexInfo.closestBaseIndex = e;
+                                                vertexInfo.closestIndex0 = index0;
+                                                vertexInfo.closestIndex1 = index1;
+                                                vertexInfo.closestIndex2 = index2;
+                                                vertexInfo.closestWeight0 = weight0;
+                                                vertexInfo.closestWeight1 = weight1;
+                                                vertexInfo.closestWeight2 = weight2;
+                                            }
                                         }
                                     }
                                 }
@@ -1153,28 +1234,43 @@ namespace Swole.Morphing
                                         if (cost < vertexInfo.closestDistance)
                                         {
                                             vertexInfo.closestDistance = cost;
-                                            vertexInfo.closestBaseIndex = e;
-                                            vertexInfo.closestIndex0 = index0;
-                                            vertexInfo.closestIndex1 = index1;
-                                            vertexInfo.closestIndex2 = index2;
-                                            vertexInfo.closestWeight0 = weight0;
-                                            vertexInfo.closestWeight1 = weight1;
-                                            vertexInfo.closestWeight2 = weight2;
+                                            if (isSecondary)
+                                            {
+                                                vertexInfo.closestSecondaryBaseIndex = e;
+                                                vertexInfo.closestSecondaryIndex0 = index0;
+                                                vertexInfo.closestSecondaryIndex1 = index1;
+                                                vertexInfo.closestSecondaryIndex2 = index2;
+                                                vertexInfo.closestSecondaryWeight0 = weight0 * meshIslandInverseBlend;
+                                                vertexInfo.closestSecondaryWeight1 = weight1 * meshIslandInverseBlend;
+                                                vertexInfo.closestSecondaryWeight2 = weight2 * meshIslandInverseBlend;
+                                            }
+                                            else
+                                            {
+                                                vertexInfo.closestBaseIndex = e;
+                                                vertexInfo.closestIndex0 = index0;
+                                                vertexInfo.closestIndex1 = index1;
+                                                vertexInfo.closestIndex2 = index2;
+                                                vertexInfo.closestWeight0 = weight0;
+                                                vertexInfo.closestWeight1 = weight1;
+                                                vertexInfo.closestWeight2 = weight2;
+                                            }
+
                                         }
                                     }
                                 }
                             }
 
                         }
-                        else
+                        
+                        if (vertexInfo.meshIslandIndex >= 0 && meshIslandBlend > 0f)
                         {
                             vertexInfo.closestBaseIndex = vertexInfo.meshIslandTri.closestDependency;
                             vertexInfo.closestIndex0 = vertexInfo.meshIslandTri.indexA;
                             vertexInfo.closestIndex1 = vertexInfo.meshIslandTri.indexB;
                             vertexInfo.closestIndex2 = vertexInfo.meshIslandTri.indexC;
-                            vertexInfo.closestWeight0 = vertexInfo.meshIslandTri.weightA;
-                            vertexInfo.closestWeight1 = vertexInfo.meshIslandTri.weightB;
-                            vertexInfo.closestWeight2 = vertexInfo.meshIslandTri.weightC;
+                            vertexInfo.closestWeight0 = vertexInfo.meshIslandTri.weightA * meshIslandBlend;
+                            vertexInfo.closestWeight1 = vertexInfo.meshIslandTri.weightB * meshIslandBlend;
+                            vertexInfo.closestWeight2 = vertexInfo.meshIslandTri.weightC * meshIslandBlend;
                         }
 
                         return vertexInfo;
@@ -1190,6 +1286,11 @@ namespace Swole.Morphing
                     if (defaultVertexInfo.closestBaseIndex >= 0 && defaultVertexInfo.closestIndex0 >= 0 && defaultVertexInfo.closestIndex1 >= 0 && defaultVertexInfo.closestIndex2 >= 0)
                     {
                         var defaultBaseData = settings.GetBaseData(defaultVertexInfo.closestBaseIndex);
+                        var defaultBaseData2 = defaultBaseData;
+                        if (defaultVertexInfo.hasSecondaryBinding)
+                        {
+                            defaultBaseData2 = settings.GetBaseData(defaultVertexInfo.closestSecondaryBaseIndex);
+                        }
 
                         if (vertexTransferDataArray != null && vIndex < vertexTransferDataArray.Length)
                         {
@@ -1201,7 +1302,15 @@ namespace Swole.Morphing
                                 closestIndex2 = defaultVertexInfo.closestIndex2,
                                 closestWeight0 = defaultVertexInfo.closestWeight0,
                                 closestWeight1 = defaultVertexInfo.closestWeight1,
-                                closestWeight2 = defaultVertexInfo.closestWeight2
+                                closestWeight2 = defaultVertexInfo.closestWeight2,
+                                hasSecondaryBinding = defaultVertexInfo.hasSecondaryBinding,
+                                closestSecondaryMesh = defaultVertexInfo.closestSecondaryBaseIndex,
+                                closestSecondaryIndex0 = defaultVertexInfo.closestSecondaryIndex0,
+                                closestSecondaryIndex1 = defaultVertexInfo.closestSecondaryIndex1,
+                                closestSecondaryIndex2 = defaultVertexInfo.closestSecondaryIndex2,
+                                closestSecondaryWeight0 = defaultVertexInfo.closestSecondaryWeight0,
+                                closestSecondaryWeight1 = defaultVertexInfo.closestSecondaryWeight1,
+                                closestSecondaryWeight2 = defaultVertexInfo.closestSecondaryWeight2
                             };
                         }
                         if (perShapeVertexTransferDataArrays != null)
@@ -1225,7 +1334,15 @@ namespace Swole.Morphing
                                         closestIndex2 = vertexInfo.closestIndex2,
                                         closestWeight0 = vertexInfo.closestWeight0,
                                         closestWeight1 = vertexInfo.closestWeight1,
-                                        closestWeight2 = vertexInfo.closestWeight2 
+                                        closestWeight2 = vertexInfo.closestWeight2,
+                                        hasSecondaryBinding = vertexInfo.hasSecondaryBinding,
+                                        closestSecondaryMesh = vertexInfo.closestSecondaryBaseIndex,
+                                        closestSecondaryIndex0 = vertexInfo.closestSecondaryIndex0,
+                                        closestSecondaryIndex1 = vertexInfo.closestSecondaryIndex1,
+                                        closestSecondaryIndex2 = vertexInfo.closestSecondaryIndex2,
+                                        closestSecondaryWeight0 = vertexInfo.closestSecondaryWeight0,
+                                        closestSecondaryWeight1 = vertexInfo.closestSecondaryWeight1,
+                                        closestSecondaryWeight2 = vertexInfo.closestSecondaryWeight2
                                     };
                                 }
                             }
@@ -1233,18 +1350,6 @@ namespace Swole.Morphing
 
                         if (settings.transferBlendShapes)
                         {
-                            // basically if the surface that a vertex is bound to changes normal direction, rotate the vertex around the center point accordingly
-                            Vector3 AddNormalBasedRotationToDelta(TempVertexInfo vertexInfo, Vector3 dependencyNormal, Vector3 deltaVertex, Vector3 deltaNormal)
-                            {
-                                if (vertexInfo.hasOrigin)
-                                {
-                                    Quaternion rotOffset = Quaternion.FromToRotation(dependencyNormal, (dependencyNormal + deltaNormal).normalized);
-                                    deltaVertex = deltaVertex + ((vertexInfo.centerPoint + (rotOffset * vertexInfo.originOffset) * vertexInfo.originOffsetDist) - localVertex);
-                                }
-
-                                return deltaVertex;
-                            }
-
                             for (int d = 0; d < defaultBaseData.baseMeshBlendShapes.Count; d++)
                             {
                                 var shape = defaultBaseData.baseMeshBlendShapes[d];
@@ -1259,6 +1364,7 @@ namespace Swole.Morphing
                                         if (perShapeVertexInfos.TryGetValue(blendShape.name, out vertexInfo))
                                         {
                                             baseData = settings.GetBaseData(vertexInfo.closestBaseIndex);
+
                                             if (baseData.TryGetBlendShape(shape.name, out var shape_))
                                             {
                                                 shape = shape_;
@@ -1275,9 +1381,19 @@ namespace Swole.Morphing
                                             baseData = defaultBaseData;
                                         }
 
-                                        var dependencyNormal = baseData.baseMeshNormals == null ? Vector3.zero : ((baseData.baseMeshNormals[vertexInfo.closestIndex0] * vertexInfo.closestWeight0) + (baseData.baseMeshNormals[vertexInfo.closestIndex1] * vertexInfo.closestWeight1) + (baseData.baseMeshNormals[vertexInfo.closestIndex2] * vertexInfo.closestWeight2)).normalized;
+                                        Vector3 dependencyNormal = Vector3.zero;
+                                        if (baseData.baseMeshNormals != null)
+                                        {
+                                            dependencyNormal = (baseData.baseMeshNormals[vertexInfo.closestIndex0] * vertexInfo.closestWeight0) + (baseData.baseMeshNormals[vertexInfo.closestIndex1] * vertexInfo.closestWeight1) + (baseData.baseMeshNormals[vertexInfo.closestIndex2] * vertexInfo.closestWeight2);
+                                            dependencyNormal = dependencyNormal.normalized;
+                                        }
 
-                                        for (int e = 0; e < blendShape.frames.Length; e++)
+                                        float dependencyWeight = 1f;
+                                        if (vertexInfo.hasSecondaryBinding)
+                                        {
+                                            dependencyWeight = vertexInfo.closestWeight0 + vertexInfo.closestWeight1 + vertexInfo.closestWeight2;
+                                        }
+                                        for (int e = 0; e < shape.frames.Length; e++)
                                         {
                                             var frame = blendShape.frames[Mathf.Min(e, blendShape.frames.Length - 1)];
                                             var baseFrame = shape.frames[e];
@@ -1286,7 +1402,7 @@ namespace Swole.Morphing
                                             var deltaNormal = (baseFrame.deltaNormals[vertexInfo.closestIndex0] * vertexInfo.closestWeight0) + (baseFrame.deltaNormals[vertexInfo.closestIndex1] * vertexInfo.closestWeight1) + (baseFrame.deltaNormals[vertexInfo.closestIndex2] * vertexInfo.closestWeight2);
                                             var deltaTangent = (baseFrame.deltaTangents[vertexInfo.closestIndex0] * vertexInfo.closestWeight0) + (baseFrame.deltaTangents[vertexInfo.closestIndex1] * vertexInfo.closestWeight1) + (baseFrame.deltaTangents[vertexInfo.closestIndex2] * vertexInfo.closestWeight2);
 
-                                            deltaVertex = AddNormalBasedRotationToDelta(vertexInfo, dependencyNormal, deltaVertex, deltaNormal);
+                                            deltaVertex = AddNormalBasedRotationToDelta(vertexInfo, localVertex, dependencyNormal, deltaVertex, deltaNormal, dependencyWeight);
 
                                             frame.deltaVertices[vIndex] = deltaVertex;
                                             frame.deltaNormals[vIndex] = deltaNormal;
@@ -1295,15 +1411,83 @@ namespace Swole.Morphing
                                     }
                                 }
                             }
+
+                            if (defaultVertexInfo.hasSecondaryBinding)
+                            {
+                                for (int d = 0; d < defaultBaseData2.baseMeshBlendShapes.Count; d++)
+                                {
+                                    var shape = defaultBaseData2.baseMeshBlendShapes[d];
+                                    if (shape != null && (!settings.preserveExistingBlendShapeData || !IsOriginalBlendShape(shape.name)))
+                                    {
+                                        var blendShape = AddOrGetBlendShape(shape.name, shape.frames);
+                                        if (blendShape != null)
+                                        {
+                                            var vertexInfo = defaultVertexInfo;
+                                            var baseData = defaultBaseData2;
+
+                                            if (perShapeVertexInfos.TryGetValue(blendShape.name, out vertexInfo) && vertexInfo.hasSecondaryBinding)
+                                            {
+                                                baseData = settings.GetBaseData(vertexInfo.closestSecondaryBaseIndex);
+
+                                                if (baseData.TryGetBlendShape(shape.name, out var shape_))
+                                                {
+                                                    shape = shape_;
+                                                }
+                                                else
+                                                {
+                                                    vertexInfo = defaultVertexInfo;
+                                                    baseData = defaultBaseData2;
+                                                }
+                                            }
+                                            else
+                                            {
+                                                vertexInfo = defaultVertexInfo;
+                                                baseData = defaultBaseData2;
+                                            }
+
+                                            Vector3 dependencyNormal = Vector3.zero;
+                                            if (baseData.baseMeshNormals != null)
+                                            {
+                                                dependencyNormal = (baseData.baseMeshNormals[vertexInfo.closestSecondaryIndex0] * vertexInfo.closestSecondaryWeight0) + (baseData.baseMeshNormals[vertexInfo.closestSecondaryIndex1] * vertexInfo.closestSecondaryWeight1) + (baseData.baseMeshNormals[vertexInfo.closestSecondaryIndex2] * vertexInfo.closestSecondaryWeight2);
+                                                dependencyNormal = dependencyNormal.normalized;
+                                            }
+
+                                            float dependencyWeight = vertexInfo.closestSecondaryWeight0 + vertexInfo.closestSecondaryWeight1 + vertexInfo.closestSecondaryWeight2;
+
+                                            for (int e = 0; e < shape.frames.Length; e++)
+                                            {
+                                                var frame = blendShape.frames[Mathf.Min(e, blendShape.frames.Length - 1)];
+                                                var baseFrame = shape.frames[e];
+
+                                                var deltaVertex = (baseFrame.deltaVertices[vertexInfo.closestSecondaryIndex0] * vertexInfo.closestSecondaryWeight0) + (baseFrame.deltaVertices[vertexInfo.closestSecondaryIndex1] * vertexInfo.closestSecondaryWeight1) + (baseFrame.deltaVertices[vertexInfo.closestSecondaryIndex2] * vertexInfo.closestSecondaryWeight2);
+                                                var deltaNormal = (baseFrame.deltaNormals[vertexInfo.closestSecondaryIndex0] * vertexInfo.closestSecondaryWeight0) + (baseFrame.deltaNormals[vertexInfo.closestSecondaryIndex1] * vertexInfo.closestSecondaryWeight1) + (baseFrame.deltaNormals[vertexInfo.closestSecondaryIndex2] * vertexInfo.closestSecondaryWeight2);
+                                                var deltaTangent = (baseFrame.deltaTangents[vertexInfo.closestSecondaryIndex0] * vertexInfo.closestSecondaryWeight0) + (baseFrame.deltaTangents[vertexInfo.closestSecondaryIndex1] * vertexInfo.closestSecondaryWeight1) + (baseFrame.deltaTangents[vertexInfo.closestSecondaryIndex2] * vertexInfo.closestSecondaryWeight2);
+
+                                                deltaVertex = AddNormalBasedRotationToDelta(vertexInfo, localVertex, dependencyNormal, deltaVertex, deltaNormal, dependencyWeight);
+
+                                                frame.deltaVertices[vIndex] = frame.deltaVertices[vIndex] + deltaVertex;
+                                                frame.deltaNormals[vIndex] = frame.deltaNormals[vIndex] + deltaNormal;
+                                                frame.deltaTangents[vIndex] = frame.deltaTangents[vIndex] + deltaTangent;
+                                            }
+                                        }
+                                    }
+                                }
+                            }
                         }
+                    
 
                         if (settings.transferNormals)
                         {
-                            if (defaultBaseData.baseMeshNormals != null)
+                            var origNormal = localNormals[vIndex];
+                            
+                            localNormals[vIndex] = defaultBaseData.baseMeshNormals == null ? Vector3.zero : ((defaultBaseData.baseMeshNormals[defaultVertexInfo.closestIndex0] * defaultVertexInfo.closestWeight0) + (defaultBaseData.baseMeshNormals[defaultVertexInfo.closestIndex1] * defaultVertexInfo.closestWeight1) + (defaultBaseData.baseMeshNormals[defaultVertexInfo.closestIndex2] * defaultVertexInfo.closestWeight2));
+                            if (defaultVertexInfo.hasSecondaryBinding && defaultBaseData2.baseMeshNormals != null)
                             {
-                                localNormals[vIndex] = Vector3.LerpUnclamped(localNormals[vIndex], (defaultBaseData.baseMeshNormals[defaultVertexInfo.closestIndex0] * defaultVertexInfo.closestWeight0) + (defaultBaseData.baseMeshNormals[defaultVertexInfo.closestIndex1] * defaultVertexInfo.closestWeight1) + (defaultBaseData.baseMeshNormals[defaultVertexInfo.closestIndex2] * defaultVertexInfo.closestWeight2), settings.transferNormalsWeight).normalized;
-                            }
+                                localNormals[vIndex] = localNormals[vIndex] + ((defaultBaseData2.baseMeshNormals[defaultVertexInfo.closestSecondaryIndex0] * defaultVertexInfo.closestSecondaryWeight0) + (defaultBaseData2.baseMeshNormals[defaultVertexInfo.closestSecondaryIndex1] * defaultVertexInfo.closestSecondaryWeight1) + (defaultBaseData2.baseMeshNormals[defaultVertexInfo.closestSecondaryIndex2] * defaultVertexInfo.closestSecondaryWeight2));
+                            }                                                     
+                            localNormals[vIndex] = Vector3.LerpUnclamped(origNormal, localNormals[vIndex], settings.transferNormalsWeight).normalized;
 
+                            tempFrameNormals.Clear();
                             for (int d = 0; d < defaultBaseData.baseMeshBlendShapes.Count; d++)
                             {
                                 var shape = defaultBaseData.baseMeshBlendShapes[d];
@@ -1341,16 +1525,69 @@ namespace Swole.Morphing
 
                                             var deltaNormal = (baseFrame.deltaNormals[vertexInfo.closestIndex0] * vertexInfo.closestWeight0) + (baseFrame.deltaNormals[vertexInfo.closestIndex1] * vertexInfo.closestWeight1) + (baseFrame.deltaNormals[vertexInfo.closestIndex2] * vertexInfo.closestWeight2);
 
-                                            Vector3.LerpUnclamped(frame.deltaNormals[vIndex], deltaNormal, settings.transferNormalsWeight);
+                                            //Vector3.LerpUnclamped(frame.deltaNormals[vIndex], deltaNormal, settings.transferNormalsWeight);
 
-                                            frame.deltaNormals[vIndex] = deltaNormal;
+                                            //frame.deltaNormals[vIndex] = deltaNormal;
+                                            tempFrameNormals[frame] = deltaNormal;
                                         }
                                     }
                                 }
                             }
+                            if (defaultVertexInfo.hasSecondaryBinding)
+                            {
+                                for (int d = 0; d < defaultBaseData2.baseMeshBlendShapes.Count; d++)
+                                {
+                                    var shape = defaultBaseData2.baseMeshBlendShapes[d];
+                                    if (shape != null)
+                                    {
+                                        var blendShape = AddOrGetBlendShape(shape.name, shape.frames);
+                                        if (blendShape != null)
+                                        {
+                                            var vertexInfo = defaultVertexInfo;
+                                            var baseData = defaultBaseData2;
+
+                                            if (perShapeVertexInfos.TryGetValue(blendShape.name, out vertexInfo) && vertexInfo.hasSecondaryBinding)
+                                            {
+                                                baseData = settings.GetBaseData(vertexInfo.closestSecondaryBaseIndex);
+                                                if (baseData.TryGetBlendShape(shape.name, out var shape_))
+                                                {
+                                                    shape = shape_;
+                                                }
+                                                else
+                                                {
+                                                    vertexInfo = defaultVertexInfo;
+                                                    baseData = defaultBaseData2;
+                                                }
+                                            }
+                                            else
+                                            {
+                                                vertexInfo = defaultVertexInfo;
+                                                baseData = defaultBaseData2;
+                                            }
+
+                                            for (int e = 0; e < blendShape.frames.Length; e++)
+                                            {
+                                                var frame = blendShape.frames[Mathf.Min(e, blendShape.frames.Length - 1)];
+                                                var baseFrame = shape.frames[e];
+
+                                                var deltaNormal = (baseFrame.deltaNormals[vertexInfo.closestSecondaryIndex0] * vertexInfo.closestSecondaryWeight0) + (baseFrame.deltaNormals[vertexInfo.closestSecondaryIndex1] * vertexInfo.closestSecondaryWeight1) + (baseFrame.deltaNormals[vertexInfo.closestSecondaryIndex2] * vertexInfo.closestSecondaryWeight2);
+
+                                                tempFrameNormals.TryGetValue(frame, out var existingDeltaNormal);
+                                                tempFrameNormals[frame] = existingDeltaNormal + deltaNormal;
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+
+                            foreach(var entry in tempFrameNormals)
+                            {
+                                var frame = entry.Key;
+                                frame.deltaNormals[vIndex] = Vector3.LerpUnclamped(frame.deltaNormals[vIndex], entry.Value, settings.transferNormalsWeight);
+                            }
                         }
 
-                        if (settings.transferUVs && defaultBaseData.baseMeshUVs != null)
+                        if (settings.transferUVs)
                         {
                             for (int a = 0; a < uvTransferCount; a++)
                             {
@@ -1360,17 +1597,28 @@ namespace Swole.Morphing
                                 int localIndex = a + settings.uvChannelIndexTransferOffset;
                                 if (localIndex < 0 || localIndex >= 8) continue;
 
-                                var uvsBase = defaultBaseData.baseMeshUVs[baseIndex];
                                 var uvsLocal = localUVs[localIndex];
                                 if ((settings.preserveExistingUVData && initialUVDataStates[localIndex]) || uvsLocal == null) continue;
 
-                                uvsLocal[vIndex] = (uvsBase[defaultVertexInfo.closestIndex0] * defaultVertexInfo.closestWeight0) + (uvsBase[defaultVertexInfo.closestIndex1] * defaultVertexInfo.closestWeight1) + (uvsBase[defaultVertexInfo.closestIndex2] * defaultVertexInfo.closestWeight2);
+                                var uvsBase = defaultBaseData.baseMeshUVs != null && baseIndex < defaultBaseData.baseMeshUVs.Count ? defaultBaseData.baseMeshUVs[baseIndex] : null;
+                                uvsLocal[vIndex] = uvsBase == null ? Vector4.zero : ((uvsBase[defaultVertexInfo.closestIndex0] * defaultVertexInfo.closestWeight0) + (uvsBase[defaultVertexInfo.closestIndex1] * defaultVertexInfo.closestWeight1) + (uvsBase[defaultVertexInfo.closestIndex2] * defaultVertexInfo.closestWeight2));
+                                
+                                if (defaultVertexInfo.hasSecondaryBinding)
+                                {
+                                    uvsBase = defaultBaseData2.baseMeshUVs != null && baseIndex < defaultBaseData2.baseMeshUVs.Count ? defaultBaseData2.baseMeshUVs[baseIndex] : null;
+                                    uvsLocal[vIndex] = uvsLocal[vIndex] + (uvsBase == null ? Vector4.zero : ((uvsBase[defaultVertexInfo.closestSecondaryIndex0] * defaultVertexInfo.closestSecondaryWeight0) + (uvsBase[defaultVertexInfo.closestSecondaryIndex1] * defaultVertexInfo.closestSecondaryWeight1) + (uvsBase[defaultVertexInfo.closestSecondaryIndex2] * defaultVertexInfo.closestSecondaryWeight2)));
+                                }
                             }
                         }
 
-                        if (settings.transferVertexColors && defaultBaseData.baseMeshVertexColors != null)
+                        if (settings.transferVertexColors)
                         {
-                            localColors[vIndex] = (defaultBaseData.baseMeshVertexColors[defaultVertexInfo.closestIndex0] * defaultVertexInfo.closestWeight0) + (defaultBaseData.baseMeshVertexColors[defaultVertexInfo.closestIndex1] * defaultVertexInfo.closestWeight1) + (defaultBaseData.baseMeshVertexColors[defaultVertexInfo.closestIndex2] * defaultVertexInfo.closestWeight2);
+                            localColors[vIndex] = defaultBaseData.baseMeshVertexColors == null ? Color.clear : ((defaultBaseData.baseMeshVertexColors[defaultVertexInfo.closestIndex0] * defaultVertexInfo.closestWeight0) + (defaultBaseData.baseMeshVertexColors[defaultVertexInfo.closestIndex1] * defaultVertexInfo.closestWeight1) + (defaultBaseData.baseMeshVertexColors[defaultVertexInfo.closestIndex2] * defaultVertexInfo.closestWeight2));
+                        
+                            if (defaultVertexInfo.hasSecondaryBinding && defaultBaseData2.baseMeshVertexColors != null)
+                            {
+                                localColors[vIndex] = localColors[vIndex] + ((defaultBaseData2.baseMeshVertexColors[defaultVertexInfo.closestSecondaryIndex0] * defaultVertexInfo.closestSecondaryWeight0) + (defaultBaseData2.baseMeshVertexColors[defaultVertexInfo.closestSecondaryIndex1] * defaultVertexInfo.closestSecondaryWeight1) + (defaultBaseData2.baseMeshVertexColors[defaultVertexInfo.closestSecondaryIndex2] * defaultVertexInfo.closestSecondaryWeight2));
+                            }
                         }
 
                         if (settings.transferBoneWeights)
@@ -1418,6 +1666,55 @@ namespace Swole.Morphing
 
                                     newBoneWeights.TryGetValue(i, out float currentWeight);
                                     newBoneWeights[i] = currentWeight + (bw.weight * defaultVertexInfo.closestWeight2);
+                                }
+                            }
+
+                            if (defaultVertexInfo.hasSecondaryBinding)
+                            {
+                                boneWeights = defaultBaseData2.baseMeshBoneWeights;
+                                bonesPerVertex = defaultBaseData2.baseMeshBonesPerVertex;
+                                boneWeightStartIndices = defaultBaseData2.baseMeshBoneWeightStartIndices;
+
+                                if (boneWeights.IsCreated && bonesPerVertex.IsCreated && boneWeightStartIndices != null)
+                                {
+                                    int startIndex = boneWeightStartIndices[defaultVertexInfo.closestSecondaryIndex0];
+                                    int count = bonesPerVertex[defaultVertexInfo.closestSecondaryIndex0];
+                                    for (int d = 0; d < count; d++)
+                                    {
+                                        int index = startIndex + d;
+                                        var bw = boneWeights[index];
+
+                                        int2 i = new int2(vIndex, bw.boneIndex);
+
+                                        newBoneWeights.TryGetValue(i, out float currentWeight);
+                                        newBoneWeights[i] = currentWeight + (bw.weight * defaultVertexInfo.closestSecondaryWeight0);
+                                    }
+
+                                    startIndex = boneWeightStartIndices[defaultVertexInfo.closestSecondaryIndex1];
+                                    count = bonesPerVertex[defaultVertexInfo.closestSecondaryIndex1];
+                                    for (int d = 0; d < count; d++)
+                                    {
+                                        int index = startIndex + d;
+                                        var bw = boneWeights[index];
+
+                                        int2 i = new int2(vIndex, bw.boneIndex);
+
+                                        newBoneWeights.TryGetValue(i, out float currentWeight);
+                                        newBoneWeights[i] = currentWeight + (bw.weight * defaultVertexInfo.closestSecondaryWeight1);
+                                    }
+
+                                    startIndex = boneWeightStartIndices[defaultVertexInfo.closestSecondaryIndex2];
+                                    count = bonesPerVertex[defaultVertexInfo.closestSecondaryIndex2];
+                                    for (int d = 0; d < count; d++)
+                                    {
+                                        int index = startIndex + d;
+                                        var bw = boneWeights[index];
+
+                                        int2 i = new int2(vIndex, bw.boneIndex);
+
+                                        newBoneWeights.TryGetValue(i, out float currentWeight);
+                                        newBoneWeights[i] = currentWeight + (bw.weight * defaultVertexInfo.closestSecondaryWeight2);
+                                    }
                                 }
                             }
                         }
@@ -1590,6 +1887,7 @@ namespace Swole.Morphing
 
     }
 
+    [NonAnimatable]
     public class BaseMeshData : IDisposable
     {
         public Mesh baseMesh;
@@ -1822,7 +2120,7 @@ namespace Swole.Morphing
         public BoneWeight8 deltaWeightsB;
     }
 
-    [Serializable]
+    [Serializable, NonAnimatable]
     public class MorphShape : IDisposable
     {
 
@@ -2055,7 +2353,7 @@ namespace Swole.Morphing
 
     }
 
-    [Serializable]
+    [Serializable, NonAnimatable]
     public class MeshShape
     {
         public string name;
@@ -2182,7 +2480,7 @@ namespace Swole.Morphing
         }
 
     }
-    [Serializable]
+    [Serializable, NonAnimatable]
     public struct MeshShapeFrame
     {
         public float weight;
@@ -2191,7 +2489,7 @@ namespace Swole.Morphing
         public MorphShapeVertex[] deltas;
     }
 
-    [Serializable]
+    [Serializable, NonAnimatable]
     public class SkinningBlend
     {
         public string name;
@@ -2200,7 +2498,7 @@ namespace Swole.Morphing
 
         public MeshShapeFrame[] frames;
     }
-    [Serializable]
+    [Serializable, NonAnimatable]
     public struct SkinningBlendFrame
     {
         public float weight;
@@ -2208,20 +2506,20 @@ namespace Swole.Morphing
         [HideInInspector]
         public SkinningBlendVertex[] deltas;
     }
-    [Serializable]
+    [Serializable, NonAnimatable]
     public struct BlendShapeMix
     {
         public string shapeName;
         public float weight;
     }
-    [Serializable]
+    [Serializable, NonAnimatable]
     public struct BlendShapeBase
     {
         public string shapeName;
         public bool recalculateNormals;
         public bool recalculateTangents;
     }
-    [Serializable]
+    [Serializable, NonAnimatable]
     public struct BlendShapeBaseMix
     {
         public string shapeName;
@@ -2229,7 +2527,7 @@ namespace Swole.Morphing
         public bool recalculateTangents;
         public float weight;
     }
-    [Serializable]
+    [Serializable, NonAnimatable]
     public struct BlendShapeTarget
     {
         public string newName;
@@ -2690,6 +2988,8 @@ namespace Swole.Morphing
         public bool recalculateTangents;
 
         public bool treatAsMeshIslands;
+        public BlendShapeTarget meshIslandRootsVertexGroup;
+        public BlendShapeTarget meshIslandBlendVertexGroup;
 
         public bool mergeSeam;
         public string seamShape;

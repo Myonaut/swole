@@ -34,6 +34,40 @@ namespace Swole.API.Unity.Animation
                 return false;
             }    
         }
+        public bool HasPositionKeyframes
+        {
+            get
+            {
+                if (localPositionCurveX != null && localPositionCurveX.length > 0) return true;
+                if (localPositionCurveY != null && localPositionCurveY.length > 0) return true;
+                if (localPositionCurveZ != null && localPositionCurveZ.length > 0) return true;
+
+                return false;
+            }
+        }
+        public bool HasRotationKeyframes
+        {
+            get
+            {
+                if (localRotationCurveX != null && localRotationCurveX.length > 0) return true;
+                if (localRotationCurveY != null && localRotationCurveY.length > 0) return true;
+                if (localRotationCurveZ != null && localRotationCurveZ.length > 0) return true;
+                if (localRotationCurveW != null && localRotationCurveW.length > 0) return true;
+
+                return false;
+            }
+        }
+        public bool HasScaleKeyframes
+        {
+            get
+            {
+                if (localScaleCurveX != null && localScaleCurveX.length > 0) return true;
+                if (localScaleCurveY != null && localScaleCurveY.length > 0) return true;
+                if (localScaleCurveZ != null && localScaleCurveZ.length > 0) return true; 
+
+                return false;
+            }
+        }
         public float GetClosestKeyframeTime(float referenceTime, int framesPerSecond, bool includeReferenceTime = true, IntFromDecimalDelegate getFrameIndex = null)
         {
             float closestTime = 0;
@@ -425,12 +459,25 @@ namespace Swole.API.Unity.Animation
 
             ITransformCurve.Data data = default;
             
-            data.localPosition = new float3(!Validate(localPositionCurveX) ? 0 : localPositionCurveX.Evaluate(timePos), !Validate(localPositionCurveY) ? 0 : localPositionCurveY.Evaluate(timePos), !Validate(localPositionCurveZ) ? 0 : localPositionCurveZ.Evaluate(timePos)); 
-            data.localRotation = new quaternion(!Validate(localRotationCurveX) ? 0 : localRotationCurveX.Evaluate(timeRot), !Validate(localRotationCurveY) ? 0 : localRotationCurveY.Evaluate(timeRot), !Validate(localRotationCurveZ) ? 0 : localRotationCurveZ.Evaluate(timeRot), !Validate(localRotationCurveW) ? 0 : localRotationCurveW.Evaluate(timeRot));
-            data.localScale = new float3(!Validate(localScaleCurveX) ? 1 : localScaleCurveX.Evaluate(timeScale), !Validate(localScaleCurveY) ? 1 : localScaleCurveY.Evaluate(timeScale), !Validate(localScaleCurveZ) ? 1 : localScaleCurveZ.Evaluate(timeScale));
+            data.localPosition = GetPositionRaw(timePos);
+            data.localRotation = GetRotationRaw(timeRot);
+            data.localScale = GetScaleRaw(timeScale);
 
             return data;
 
+        }
+
+        public float3 GetPositionRaw(float time)
+        {
+            return new float3(!Validate(localPositionCurveX) ? 0f : localPositionCurveX.Evaluate(time), !Validate(localPositionCurveY) ? 0f : localPositionCurveY.Evaluate(time), !Validate(localPositionCurveZ) ? 0f : localPositionCurveZ.Evaluate(time));
+        }
+        public quaternion GetRotationRaw(float time)
+        {
+            return new quaternion(!Validate(localRotationCurveX) ? 0f : localRotationCurveX.Evaluate(time), !Validate(localRotationCurveY) ? 0f : localRotationCurveY.Evaluate(time), !Validate(localRotationCurveZ) ? 0f : localRotationCurveZ.Evaluate(time), !Validate(localRotationCurveW) ? 0f : localRotationCurveW.Evaluate(time));
+        }
+        public float3 GetScaleRaw(float time)
+        {
+            return new float3(!Validate(localScaleCurveX) ? 1f : localScaleCurveX.Evaluate(time), !Validate(localScaleCurveY) ? 1f : localScaleCurveY.Evaluate(time), !Validate(localScaleCurveZ) ? 1f : localScaleCurveZ.Evaluate(time));
         }
 
         public float GetLengthInSeconds(int framesPerSecond)
@@ -627,6 +674,191 @@ namespace Swole.API.Unity.Animation
             if (localScaleCurveX != null) localScaleCurveX.AddKey(new AnimationCurveEditor.KeyframeState() { data = new Keyframe() { value = data.localScale.x, time = time, inTangent = inTangent, outTangent = outTangent, inWeight = inWeight, outWeight = outWeight } });
             if (localScaleCurveY != null) localScaleCurveY.AddKey(new AnimationCurveEditor.KeyframeState() { data = new Keyframe() { value = data.localScale.y, time = time, inTangent = inTangent, outTangent = outTangent, inWeight = inWeight, outWeight = outWeight } });
             if (localScaleCurveZ != null) localScaleCurveZ.AddKey(new AnimationCurveEditor.KeyframeState() { data = new Keyframe() { value = data.localScale.z, time = time, inTangent = inTangent, outTangent = outTangent, inWeight = inWeight, outWeight = outWeight } });
+        }
+
+        private static readonly List<float> tempTimes = new List<float>();
+        private static void AddCurveKeyTimes(EditableAnimationCurve curve, List<float> outputList)
+        {
+            if (curve != null)
+            {
+                for (int a = 0; a < curve.length; a++)
+                {
+                    float t = curve[a].time;
+                    if (!outputList.Contains(t)) outputList.Add(t);
+                }
+            }
+        }
+        private static int SortKeyframeTimes(float x, float y) => (int)Mathf.Sign(x - y);
+        private static void RemoveUnlistedTimes(List<float> keyTimes, EditableAnimationCurve curve)
+        {
+            if (curve != null)
+            {
+                int ind = 0;
+                while(ind < curve.length)
+                {
+                    var key = curve[ind];
+                    if (keyTimes.Contains(key.time)) ind++; else curve.DeleteKeysAt(key.time); 
+                }
+            }
+        }
+        public void Optimize(bool includePosition = true, float positionTolerance = 0.005f, bool includeRotation = true, float rotationToleranceDeg = 1f, bool includeScale = true, float scaleTolerance = 0.005f)
+        {
+            if (includePosition && HasPositionKeyframes)
+            {
+                tempTimes.Clear();
+                AddCurveKeyTimes(localPositionCurveX, tempTimes); 
+                AddCurveKeyTimes(localPositionCurveY, tempTimes);
+                AddCurveKeyTimes(localPositionCurveZ, tempTimes);
+
+                tempTimes.Sort(SortKeyframeTimes);
+
+                int startKeyIndex = 0;
+                var startTime = tempTimes[startKeyIndex];
+                var startValue = GetPositionRaw(startTime);
+                while (startKeyIndex < tempTimes.Count - 2)
+                {
+                    int endKeyIndex = startKeyIndex;
+                    for (int b = startKeyIndex + 2; b < tempTimes.Count; b++) 
+                    {
+                        var time = tempTimes[b];
+                        var value = GetPositionRaw(time);
+                        float timeRange = time - startTime;
+                        bool invalid = false;
+                        for (int c = startKeyIndex + 1; c < b; c++)
+                        {
+                            var midTime = tempTimes[c];
+                            var midValue = GetPositionRaw(midTime);
+                            float t = (midTime - startTime) / timeRange;
+                            float3 expectedValue = math.lerp(startValue, value, t);
+                            if (math.length(midValue - expectedValue) > positionTolerance) // compare mid key value to interpolated value of start and end keys
+                            {
+                                invalid = true;
+                                break;
+                            }
+                        }
+                        if (invalid) break;
+
+                        endKeyIndex = b;
+                    }
+
+                    if (endKeyIndex > startKeyIndex)
+                    {
+                        tempTimes.RemoveRange(startKeyIndex + 1, endKeyIndex - startKeyIndex);
+                    }
+
+                    startKeyIndex++;
+                }
+
+                RemoveUnlistedTimes(tempTimes, localPositionCurveX);
+                RemoveUnlistedTimes(tempTimes, localPositionCurveY);
+                RemoveUnlistedTimes(tempTimes, localPositionCurveZ);
+            }
+
+            if (includeRotation && HasRotationKeyframes)
+            {
+                tempTimes.Clear();
+                AddCurveKeyTimes(localRotationCurveX, tempTimes);
+                AddCurveKeyTimes(localRotationCurveY, tempTimes);
+                AddCurveKeyTimes(localRotationCurveZ, tempTimes);
+                AddCurveKeyTimes(localRotationCurveW, tempTimes);
+
+                tempTimes.Sort(SortKeyframeTimes);
+
+                float rotationToleranceRad = rotationToleranceDeg * Mathf.Deg2Rad;
+
+                int startKeyIndex = 0;
+                var startTime = tempTimes[startKeyIndex];
+                var startValue = GetRotationRaw(startTime);
+                while (startKeyIndex < tempTimes.Count - 2)
+                {
+                    int endKeyIndex = startKeyIndex;
+                    for (int b = startKeyIndex + 2; b < tempTimes.Count; b++)
+                    {
+                        var time = tempTimes[b];
+                        var value = GetRotationRaw(time);
+                        float timeRange = time - startTime;
+                        bool invalid = false;
+                        for (int c = startKeyIndex + 1; c < b; c++)
+                        {
+                            var midTime = tempTimes[c];
+                            var midValue = GetRotationRaw(midTime);
+                            float t = (midTime - startTime) / timeRange;
+                            quaternion expectedValue = math.slerp(startValue, value, t);
+                            if (math.angle(midValue, expectedValue) > rotationToleranceRad) // compare mid key value to interpolated value of start and end keys
+                            {
+                                invalid = true;
+                                break;
+                            }
+                        }
+                        if (invalid) break;
+
+                        endKeyIndex = b;
+                    }
+
+                    if (endKeyIndex > startKeyIndex)
+                    {
+                        tempTimes.RemoveRange(startKeyIndex + 1, endKeyIndex - startKeyIndex); 
+                    }
+
+                    startKeyIndex++;
+                }
+
+                RemoveUnlistedTimes(tempTimes, localRotationCurveX);
+                RemoveUnlistedTimes(tempTimes, localRotationCurveY);
+                RemoveUnlistedTimes(tempTimes, localRotationCurveZ);
+                RemoveUnlistedTimes(tempTimes, localRotationCurveW);
+            }
+
+            if (includeScale && HasScaleKeyframes)
+            {
+                tempTimes.Clear();
+                AddCurveKeyTimes(localScaleCurveX, tempTimes);
+                AddCurveKeyTimes(localScaleCurveY, tempTimes);
+                AddCurveKeyTimes(localScaleCurveZ, tempTimes);
+
+                tempTimes.Sort(SortKeyframeTimes);
+
+                int startKeyIndex = 0;
+                var startTime = tempTimes[startKeyIndex];
+                var startValue = GetScaleRaw(startTime);
+                while (startKeyIndex < tempTimes.Count - 2)
+                {
+                    int endKeyIndex = startKeyIndex;
+                    for (int b = startKeyIndex + 2; b < tempTimes.Count; b++) 
+                    {
+                        var time = tempTimes[b];
+                        var value = GetScaleRaw(time);
+                        float timeRange = time - startTime;
+                        bool invalid = false;
+                        for (int c = startKeyIndex + 1; c < b; c++)
+                        {
+                            var midTime = tempTimes[c];
+                            var midValue = GetScaleRaw(midTime);
+                            float t = (midTime - startTime) / timeRange;
+                            float3 expectedValue = math.lerp(startValue, value, t);
+                            if (math.length(midValue - expectedValue) > scaleTolerance) // compare mid key value to interpolated value of start and end keys
+                            {
+                                invalid = true;
+                                break;
+                            }
+                        }
+                        if (invalid) break;
+
+                        endKeyIndex = b;
+                    }
+
+                    if (endKeyIndex > startKeyIndex)
+                    {
+                        tempTimes.RemoveRange(startKeyIndex + 1, endKeyIndex - startKeyIndex);
+                    }
+
+                    startKeyIndex++;
+                }
+
+                RemoveUnlistedTimes(tempTimes, localScaleCurveX);
+                RemoveUnlistedTimes(tempTimes, localScaleCurveY);
+                RemoveUnlistedTimes(tempTimes, localScaleCurveZ);
+            }
         }
 
     }

@@ -33,7 +33,8 @@ namespace Swole.API.Unity
     public class ObjectPoolBehaviour<T> : MonoBehaviour, IObjectPool where T : UnityEngine.Object
     {
 
-        protected readonly ObjectPool<T> pool = new ObjectPool<T>();
+        [SerializeField] 
+        protected ObjectPool<T> pool = new ObjectPool<T>();
 
         public void SetDontDestroyInstances(bool dontDestroy) => pool.dontDestroyInstances = dontDestroy;
         public bool DontDestroyInstances
@@ -50,7 +51,18 @@ namespace Swole.API.Unity
             DestroyImmediate(this);
         }
 
-        public T Prototype => pool.Prototype;
+        [SerializeField]
+        protected T prototype;
+
+        public T Prototype
+        {
+            get => pool.Prototype;
+            set
+            {
+                if (prototype != null) prototype = value;
+                pool.Prototype = value;
+            }
+        }
 
         public bool IsValid => pool.IsValid;
 
@@ -63,12 +75,18 @@ namespace Swole.API.Unity
 
         //private T CreateNewInstance() => pool.CreateNewInstance();
 
-        public void Initialize() => pool.Initialize();
+        public virtual void Initialize() => pool.Initialize();
 
-        public void Reinitialize(T prototype, PoolGrowthMethod growthMethod, int growthFactor, int initialSize, int maxSize) => pool.Reinitialize(prototype, growthMethod, growthFactor, initialSize, maxSize);
+        public virtual void Reinitialize(T prototype, PoolGrowthMethod growthMethod, int growthFactor, int initialSize, int maxSize) => pool.Reinitialize(prototype, growthMethod, growthFactor, initialSize, maxSize);
 
         private void Awake()
         {
+            if (pool.Prototype == null) pool.Prototype = prototype;
+
+            if (pool.growthFactor <= 0) pool.growthFactor = pool.growthMethod == PoolGrowthMethod.Multiplicative ? 2 : 1;
+            if (pool.maxSize <= 0) pool.maxSize = 1024;
+            if (pool.initialSize <= 0) pool.initialSize = 1;
+
             pool.OnCreateNewInstance += OnCreateNew;
             pool.OnClaimInstance += OnClaim;
             pool.OnReleaseInstance += OnRelease;
@@ -117,6 +135,7 @@ namespace Swole.API.Unity
         public void Invalidate(PooledObject pooledObject) => pool.Invalidate(pooledObject);
     }
 
+    [Serializable]
     public class ObjectPool<T> : IObjectPool where T : UnityEngine.Object
     {
         /// <summary>
@@ -165,19 +184,23 @@ namespace Swole.API.Unity
 
         [SerializeField]
         private T prototype;
-        public T Prototype => prototype;
+        public T Prototype
+        {
+            get => prototype;
+            set => prototype = value;
+        }
 
         [SerializeField]
-        private PoolGrowthMethod growthMethod;
+        public PoolGrowthMethod growthMethod;
 
         [SerializeField]
-        private int growthFactor;
+        public int growthFactor;
 
         [SerializeField]
-        private int initialSize;
+        public int initialSize;
 
         [SerializeField]
-        private int maxSize;
+        public int maxSize;
 
         public delegate void PooledObjectDelegate(T pooledObject);
 

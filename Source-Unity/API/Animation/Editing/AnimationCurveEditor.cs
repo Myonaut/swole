@@ -349,6 +349,68 @@ namespace Swole.API.Unity.Animation
             }
             return null;
         }
+
+        private static readonly List<Keyframe> tempKeyframes = new List<Keyframe>();
+        public static void Optimize(this AnimationCurve curve, float tolerance = 0.01f)
+        {
+            if (curve == null || curve.length <= 2) return;
+
+            tempKeyframes.Clear();
+            for(int a = 0; a < curve.length; a++) tempKeyframes.Add(curve[a]);
+
+            Optimize(tempKeyframes, tolerance);
+
+            curve.keys = tempKeyframes.ToArray();
+        }
+        public static void Optimize(this EditableAnimationCurve curve, float tolerance = 0.01f)
+        {
+            if (curve == null || curve.length <= 2) return;
+
+            tempKeyframes.Clear();
+            for (int a = 0; a < curve.length; a++) tempKeyframes.Add(curve[a]);
+
+            Optimize(tempKeyframes, tolerance);
+
+            curve.keys = tempKeyframes.ToArray();
+        }
+        public static void Optimize(this List<Keyframe> keyframes, float tolerance = 0.01f)
+        {
+            if (keyframes == null) return;
+             
+            int startKeyIndex = 0;
+            var startKey = keyframes[startKeyIndex];
+            while (startKeyIndex < keyframes.Count - 2)
+            {
+                int endKeyIndex = startKeyIndex;
+                for (int b = startKeyIndex + 2; b < keyframes.Count; b++)
+                {
+                    var key = keyframes[b];
+                    float timeRange = key.time - startKey.time;
+                    bool invalid = false;
+                    for (int c = startKeyIndex + 1; c < b; c++) 
+                    {                         
+                        var midKey = keyframes[c];
+                        float t = (midKey.time - startKey.time) / timeRange;
+                        float expectedValue = Mathf.LerpUnclamped(startKey.value, key.value, t);
+                        if (Mathf.Abs(midKey.value - expectedValue) > tolerance) // compare mid key value to interpolated value of start and end keys
+                        {
+                            invalid = true;
+                            break;
+                        }
+                    }
+                    if (invalid) break;
+
+                    endKeyIndex = b;
+                }
+
+                if (endKeyIndex > startKeyIndex)
+                {
+                    keyframes.RemoveRange(startKeyIndex + 1, endKeyIndex - startKeyIndex);
+                }
+
+                startKeyIndex++;
+            }
+        }
     }
 
     public class AnimationCurveEditorInput

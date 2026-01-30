@@ -178,8 +178,16 @@ namespace Swole.API.Unity.Animation
             SetValueUnsafe(propertyIndex, value);
         }
 
-        protected virtual void Awake()
+        [NonSerialized]
+        protected bool initialized;
+        public bool IsInitialized => initialized;
+
+        public void Initialize()
         {
+            if (initialized) return;
+
+            initialized = true;
+
             if (creators != null)
             {
                 foreach (var creator in creators)
@@ -391,13 +399,13 @@ namespace Swole.API.Unity.Animation
                                 prop.defaultValue = prop.GetValue();
                             }
                         }
-                    } 
+                    }
                     else
                     {
                         prop.defaultValue = creator.defaultValue;
                     }
 
-                    if (creator.overrideDefaultValue) prop.defaultValue = creator.defaultValue;  
+                    if (creator.overrideDefaultValue) prop.defaultValue = creator.defaultValue;
                     prop.Init();
 
                     prop.OnValueChange = creator.OnValueChange;
@@ -407,12 +415,17 @@ namespace Swole.API.Unity.Animation
             }
 
             propertiesLookup = new Dictionary<string, int>();
-            for(int a = 0; a < properties.Count; a++)
+            for (int a = 0; a < properties.Count; a++)
             {
                 var prop = properties[a];
                 prop.Index = a;
                 propertiesLookup[prop.name] = a;
             }
+        }
+
+        protected virtual void Awake()
+        {
+            Initialize();
         }
 
         public Property CreateProperty(string name, GetPropertyValueDelegate getValue, SetPropertyValueDelegate setValue, float defaultValue = 0, string displayName = null)

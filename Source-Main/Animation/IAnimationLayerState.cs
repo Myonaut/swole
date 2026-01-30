@@ -13,6 +13,10 @@ namespace Swole.Animation
         /// </summary>
         public int MotionControllerIndex { get; set; }
         public Transition[] Transitions { get; set; }
+        public int TransitionCount { get; }
+        public Transition GetTransition(int index);
+        public Transition GetTransitionUnsafe(int index);
+        public int GetTransitionIndex(Transition transition);
 
         public bool IsActive();
 
@@ -53,6 +57,10 @@ namespace Swole.Animation
         public void CompletedTransition();
 
         public HashSet<int> GetActiveParameters(IAnimationLayer layer, HashSet<int> indices);
+
+        public float GetCurrentBoneHeight(string boneName);
+        public float GetBoneHeight(string boneName, float timeOffset);
+        public float GetBoneHeightAtTime(string boneName, float time);
 
     }
 
@@ -201,6 +209,21 @@ namespace Swole.Animation
 
         }
 
+        public bool RequiresParameter(string parameterName)
+        {
+            if (parameters == null) return false;
+
+            foreach(var parameter in parameters) if (parameter.parameterName == parameterName) return true;
+            return false;
+        }
+        public bool RequiresParameter(string parameterName, TransitionComparisonType compType)
+        {
+            if (parameters == null) return false;
+
+            foreach (var parameter in parameters) if (parameter.parameterName == parameterName && parameter.comparisonType == compType) return true;
+            return false;
+        }
+
     }
 
     [Serializable]
@@ -262,7 +285,7 @@ namespace Swole.Animation
         public bool mustBeFirstInChain;
 
 #if UNITY_EDITOR
-        [UnityEngine.Tooltip("How long the transition lasts. Value of zero is instant.")]
+        [UnityEngine.Tooltip("How long the transition lasts. Value of zero is instant. NOT NORMALIZED TIME.")]
 #endif
         public float transitionTime;
 
@@ -393,6 +416,21 @@ namespace Swole.Animation
 
             return false;
 
+        }
+
+        public bool HasRequirementParameter(string parameterName)
+        {
+            if (validRequirementPaths == null) return false;
+
+            foreach (var path in validRequirementPaths) if (path.RequiresParameter(parameterName)) return true;
+            return false;
+        }
+        public bool HasRequirementParameter(string parameterName, TransitionComparisonType compType)
+        {
+            if (validRequirementPaths == null) return false;
+
+            foreach (var path in validRequirementPaths) if (path.RequiresParameter(parameterName, compType)) return true; 
+            return false;
         }
 
 #if UNITY_EDITOR
