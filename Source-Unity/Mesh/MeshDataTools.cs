@@ -2028,7 +2028,7 @@ namespace Swole
                 {
                     var f = outputs[i + startIndex];
 
-                    if (f.distance > 0f && f.distance < min.distance)
+                    if (f.distance > 0f & f.distance < min.distance)
                     {
                         min = f;
                     }

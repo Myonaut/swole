@@ -18,7 +18,7 @@ namespace Swole.API.Unity.Animation
     /// <summary>
     /// Used to identify bone transforms in a transform hierarchy.
     /// </summary>
-    [CreateAssetMenu(fileName = "CustomAvatar", menuName = "Swole/Rigs/CustomAvatar", order = 0)]
+    [CreateAssetMenu(fileName = "CustomAvatar", menuName = "Swole/Rigs/CustomAvatar", order = 0), NonAnimatable]
     public class CustomAvatar : ScriptableObject, IAvatarAsset<CustomAvatar, CustomAvatar.Serialized>
     {
 

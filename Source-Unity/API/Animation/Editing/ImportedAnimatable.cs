@@ -686,7 +686,7 @@ namespace Swole.API.Unity.Animation
 
                     _tempReferenceChain.Clear();
                     _tempInfoChain.Clear();
-                    var components = rootTransform.GetComponentsInChildren<Component>();
+                    var components = rootTransform.GetComponentsInChildren<MonoBehaviour>(); //rootTransform.GetComponentsInChildren<Component>(); // avoid fetching Unity internal components
                     foreach (var component in components)
                     {
                         if (component != null)

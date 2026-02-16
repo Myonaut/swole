@@ -127,6 +127,15 @@ namespace Swole.Unity.InputSystem
                     ""processors"": """",
                     ""interactions"": """",
                     ""initialStateCheck"": false
+                },
+                {
+                    ""name"": ""Crouch"",
+                    ""type"": ""Button"",
+                    ""id"": ""a4a56850-2e54-4b19-97ab-520291d0f28d"",
+                    ""expectedControlType"": """",
+                    ""processors"": """",
+                    ""interactions"": """",
+                    ""initialStateCheck"": false
                 }
             ],
             ""bindings"": [
@@ -292,6 +301,28 @@ namespace Swole.Unity.InputSystem
                     ""processors"": """",
                     ""groups"": "";Gamepad"",
                     ""action"": ""Sprint"",
+                    ""isComposite"": false,
+                    ""isPartOfComposite"": false
+                },
+                {
+                    ""name"": """",
+                    ""id"": ""0e69f4c4-4d7f-456f-9cc1-481ccf492619"",
+                    ""path"": ""<Keyboard>/leftCtrl"",
+                    ""interactions"": """",
+                    ""processors"": """",
+                    ""groups"": "";Keyboard"",
+                    ""action"": ""Crouch"",
+                    ""isComposite"": false,
+                    ""isPartOfComposite"": false
+                },
+                {
+                    ""name"": """",
+                    ""id"": ""d229aded-766f-49a0-a684-b74cca38e2e8"",
+                    ""path"": ""<Gamepad>/leftStickPress"",
+                    ""interactions"": """",
+                    ""processors"": """",
+                    ""groups"": "";Gamepad"",
+                    ""action"": ""Crouch"",
                     ""isComposite"": false,
                     ""isPartOfComposite"": false
                 }
@@ -551,6 +582,45 @@ namespace Swole.Unity.InputSystem
                     ""isPartOfComposite"": true
                 }
             ]
+        },
+        {
+            ""name"": ""Camera"",
+            ""id"": ""14101762-0455-47c3-bdbb-75eb6f1e3b05"",
+            ""actions"": [
+                {
+                    ""name"": ""InitiateZoom"",
+                    ""type"": ""Button"",
+                    ""id"": ""64f305dc-6fec-4496-a143-96c0acba67d4"",
+                    ""expectedControlType"": """",
+                    ""processors"": """",
+                    ""interactions"": """",
+                    ""initialStateCheck"": false
+                }
+            ],
+            ""bindings"": [
+                {
+                    ""name"": """",
+                    ""id"": ""5387418d-b297-4181-81b5-e0fc00c5d7d7"",
+                    ""path"": ""<Gamepad>/rightStickPress"",
+                    ""interactions"": """",
+                    ""processors"": """",
+                    ""groups"": "";Gamepad"",
+                    ""action"": ""InitiateZoom"",
+                    ""isComposite"": false,
+                    ""isPartOfComposite"": false
+                },
+                {
+                    ""name"": """",
+                    ""id"": ""bff97dfd-ba9c-4804-ab1d-83879cf471f1"",
+                    ""path"": ""<Keyboard>/leftAlt"",
+                    ""interactions"": """",
+                    ""processors"": """",
+                    ""groups"": "";Keyboard"",
+                    ""action"": ""InitiateZoom"",
+                    ""isComposite"": false,
+                    ""isPartOfComposite"": false
+                }
+            ]
         }
     ],
     ""controlSchemes"": [
@@ -591,6 +661,7 @@ namespace Swole.Unity.InputSystem
             m_Standard_Pause = m_Standard.FindAction("Pause", throwIfNotFound: true);
             m_Standard_Roll = m_Standard.FindAction("Roll", throwIfNotFound: true);
             m_Standard_Sprint = m_Standard.FindAction("Sprint", throwIfNotFound: true);
+            m_Standard_Crouch = m_Standard.FindAction("Crouch", throwIfNotFound: true);
             // MOBA
             m_MOBA = asset.FindActionMap("MOBA", throwIfNotFound: true);
             m_MOBA_AbilityQ = m_MOBA.FindAction("AbilityQ", throwIfNotFound: true);
@@ -602,6 +673,9 @@ namespace Swole.Unity.InputSystem
             m_Driving_ThrottleForward = m_Driving.FindAction("ThrottleForward", throwIfNotFound: true);
             m_Driving_BrakeThrottleReverse = m_Driving.FindAction("BrakeThrottleReverse", throwIfNotFound: true);
             m_Driving_SteeringAxis = m_Driving.FindAction("SteeringAxis", throwIfNotFound: true);
+            // Camera
+            m_Camera = asset.FindActionMap("Camera", throwIfNotFound: true);
+            m_Camera_InitiateZoom = m_Camera.FindAction("InitiateZoom", throwIfNotFound: true);
         }
 
         ~@DefaultSwoleControls()
@@ -609,6 +683,7 @@ namespace Swole.Unity.InputSystem
             UnityEngine.Debug.Assert(!m_Standard.enabled, "This will cause a leak and performance issues, DefaultSwoleControls.Standard.Disable() has not been called.");
             UnityEngine.Debug.Assert(!m_MOBA.enabled, "This will cause a leak and performance issues, DefaultSwoleControls.MOBA.Disable() has not been called.");
             UnityEngine.Debug.Assert(!m_Driving.enabled, "This will cause a leak and performance issues, DefaultSwoleControls.Driving.Disable() has not been called.");
+            UnityEngine.Debug.Assert(!m_Camera.enabled, "This will cause a leak and performance issues, DefaultSwoleControls.Camera.Disable() has not been called.");
         }
 
         public void Dispose()
@@ -681,6 +756,7 @@ namespace Swole.Unity.InputSystem
         private readonly InputAction m_Standard_Pause;
         private readonly InputAction m_Standard_Roll;
         private readonly InputAction m_Standard_Sprint;
+        private readonly InputAction m_Standard_Crouch;
         public struct StandardActions
         {
             private @DefaultSwoleControls m_Wrapper;
@@ -696,6 +772,7 @@ namespace Swole.Unity.InputSystem
             public InputAction @Pause => m_Wrapper.m_Standard_Pause;
             public InputAction @Roll => m_Wrapper.m_Standard_Roll;
             public InputAction @Sprint => m_Wrapper.m_Standard_Sprint;
+            public InputAction @Crouch => m_Wrapper.m_Standard_Crouch;
             public InputActionMap Get() { return m_Wrapper.m_Standard; }
             public void Enable() { Get().Enable(); }
             public void Disable() { Get().Disable(); }
@@ -738,6 +815,9 @@ namespace Swole.Unity.InputSystem
                 @Sprint.started += instance.OnSprint;
                 @Sprint.performed += instance.OnSprint;
                 @Sprint.canceled += instance.OnSprint;
+                @Crouch.started += instance.OnCrouch;
+                @Crouch.performed += instance.OnCrouch;
+                @Crouch.canceled += instance.OnCrouch;
             }
 
             private void UnregisterCallbacks(IStandardActions instance)
@@ -775,6 +855,9 @@ namespace Swole.Unity.InputSystem
                 @Sprint.started -= instance.OnSprint;
                 @Sprint.performed -= instance.OnSprint;
                 @Sprint.canceled -= instance.OnSprint;
+                @Crouch.started -= instance.OnCrouch;
+                @Crouch.performed -= instance.OnCrouch;
+                @Crouch.canceled -= instance.OnCrouch;
             }
 
             public void RemoveCallbacks(IStandardActions instance)
@@ -924,6 +1007,52 @@ namespace Swole.Unity.InputSystem
             }
         }
         public DrivingActions @Driving => new DrivingActions(this);
+
+        // Camera
+        private readonly InputActionMap m_Camera;
+        private List<ICameraActions> m_CameraActionsCallbackInterfaces = new List<ICameraActions>();
+        private readonly InputAction m_Camera_InitiateZoom;
+        public struct CameraActions
+        {
+            private @DefaultSwoleControls m_Wrapper;
+            public CameraActions(@DefaultSwoleControls wrapper) { m_Wrapper = wrapper; }
+            public InputAction @InitiateZoom => m_Wrapper.m_Camera_InitiateZoom;
+            public InputActionMap Get() { return m_Wrapper.m_Camera; }
+            public void Enable() { Get().Enable(); }
+            public void Disable() { Get().Disable(); }
+            public bool enabled => Get().enabled;
+            public static implicit operator InputActionMap(CameraActions set) { return set.Get(); }
+            public void AddCallbacks(ICameraActions instance)
+            {
+                if (instance == null || m_Wrapper.m_CameraActionsCallbackInterfaces.Contains(instance)) return;
+                m_Wrapper.m_CameraActionsCallbackInterfaces.Add(instance);
+                @InitiateZoom.started += instance.OnInitiateZoom;
+                @InitiateZoom.performed += instance.OnInitiateZoom;
+                @InitiateZoom.canceled += instance.OnInitiateZoom;
+            }
+
+            private void UnregisterCallbacks(ICameraActions instance)
+            {
+                @InitiateZoom.started -= instance.OnInitiateZoom;
+                @InitiateZoom.performed -= instance.OnInitiateZoom;
+                @InitiateZoom.canceled -= instance.OnInitiateZoom;
+            }
+
+            public void RemoveCallbacks(ICameraActions instance)
+            {
+                if (m_Wrapper.m_CameraActionsCallbackInterfaces.Remove(instance))
+                    UnregisterCallbacks(instance);
+            }
+
+            public void SetCallbacks(ICameraActions instance)
+            {
+                foreach (var item in m_Wrapper.m_CameraActionsCallbackInterfaces)
+                    UnregisterCallbacks(item);
+                m_Wrapper.m_CameraActionsCallbackInterfaces.Clear();
+                AddCallbacks(instance);
+            }
+        }
+        public CameraActions @Camera => new CameraActions(this);
         private int m_KeyboardSchemeIndex = -1;
         public InputControlScheme KeyboardScheme
         {
@@ -955,6 +1084,7 @@ namespace Swole.Unity.InputSystem
             void OnPause(InputAction.CallbackContext context);
             void OnRoll(InputAction.CallbackContext context);
             void OnSprint(InputAction.CallbackContext context);
+            void OnCrouch(InputAction.CallbackContext context);
         }
         public interface IMOBAActions
         {
@@ -968,6 +1098,10 @@ namespace Swole.Unity.InputSystem
             void OnThrottleForward(InputAction.CallbackContext context);
             void OnBrakeThrottleReverse(InputAction.CallbackContext context);
             void OnSteeringAxis(InputAction.CallbackContext context);
+        }
+        public interface ICameraActions
+        {
+            void OnInitiateZoom(InputAction.CallbackContext context);
         }
     }
 }

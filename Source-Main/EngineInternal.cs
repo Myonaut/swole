@@ -3596,6 +3596,15 @@ namespace Swole
                 }
             }
 
+            public bool HasAvatarMask
+            {
+                get
+                {
+                    if (instance == null) return false;
+                    return instance.HasAvatarMask;
+                }
+            }
+
             public void SetAvatarMask(WeightedAvatarMask mask, bool invertMask)
             {
                 if (instance == null) return; 
@@ -3634,6 +3643,12 @@ namespace Swole
             {
                 if (instance == null) return 0f;
                 return instance.GetBoneHeightAtTime(boneName, time);
+            }
+
+            public void NonAdditivePrepass(bool useMultithreading)
+            {
+                if (instance == null) return;
+                instance.NonAdditivePrepass(useMultithreading);
             }
 
             #endregion
@@ -3809,6 +3824,31 @@ namespace Swole
                 return instance.GetParameters(instantiate);
             }
 
+            public bool HasParemeter(string name)
+            {
+                if (IsDestroyed) return false;
+                return instance.HasParemeter(name);
+            }
+            public bool HasParemeter(string name, AnimationParameterValueType type)
+            {
+                if (IsDestroyed) return false;
+                return instance.HasParemeter(name, type);
+            }
+            public bool HasFloatParameter(string name)
+            {
+                if (IsDestroyed) return false;
+                return instance.HasFloatParameter(name);
+            }
+            public bool HasBoolParameter(string name)
+            {
+                if (IsDestroyed) return false;
+                return instance.HasBoolParameter(name);
+            }
+            public bool HasTriggerParameter(string name)
+            {
+                if (IsDestroyed) return false;
+                return instance.HasTriggerParameter(name); 
+            }
             public IAnimationParameter GetAnimationParameter(AnimationParameterIdentifier identifier)
             {
                 if (IsDestroyed) return null;
@@ -4068,6 +4108,12 @@ namespace Swole
             {
                 if (instance == null) return 0f;
                 return instance.GetBoneHeightAtTime(boneName, time);
+            }
+
+            public void NonAdditivePrepass(bool useMultithreading)
+            {
+                if (instance == null) return;
+                instance.NonAdditivePrepass(useMultithreading);
             }
 
             #endregion
@@ -4364,10 +4410,29 @@ namespace Swole
                 return instance.GetBoneHeightAtTime(layer, boneName, time);
             }
 
+            public void NonAdditivePrepass(bool useMultithreading, IAnimationLayer layer)
+            {
+                if (instance == null) return;
+                instance.NonAdditivePrepass(useMultithreading, layer);
+            }
+
             #endregion
 
             #region IAnimationReference
 
+            public float NormalizedTimeStart
+            {
+                get
+                {
+                    if (instance == null) return default;
+                    return instance.NormalizedTimeStart; 
+                }
+                set
+                {
+                    if (instance == null) return;
+                    instance.NormalizedTimeStart = value;
+                }
+            }
             public AnimationLoopMode LoopMode 
             { 
                 get
@@ -4538,7 +4603,7 @@ namespace Swole
                 }
             }
 
-            public IAnimator Animator => instance == null ? null : instance.Animator;
+            public IAnimator Animator => instance == null ? null : instance.Animator; 
 
             public IAnimationAsset Animation => instance == null ? null : instance.Animation;
 
@@ -4749,6 +4814,12 @@ namespace Swole
             {
                 if (instance == null) return;
                 instance.SetAvatarMask(mask, invertMask);
+            }
+
+            public void NonAdditivePrepass(bool useMultithreading, IAnimationLayer layer)
+            {
+                if (instance == null) return;
+                instance.NonAdditivePrepass(useMultithreading, layer);
             }
 
             #endregion

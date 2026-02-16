@@ -964,8 +964,10 @@ namespace Swole.API.Unity.Animation
             m_bones = null;
 
             if (m_transformStates.IsCreated) m_transformStates.Dispose();
-
             m_transformStates = default;
+
+            if (m_prePassResetWeights.IsCreated) m_prePassResetWeights.Dispose();
+            m_prePassResetWeights = default;
 
             if (m_transforms.isCreated) m_transforms.Dispose();
 
@@ -1347,6 +1349,9 @@ namespace Swole.API.Unity.Animation
             public int ElementIndex => elementIndex == null ? 0 : elementIndex.Length <= 0 ? 0 : (int)elementIndex[0];
             public PropertyInfo indexer;
 
+            public bool hasDefaultFloatValue;
+            public float defaultFloatValue;
+
             public void SetElementValue(object instance, object value)
             {
                 if (elementType == null) return;
@@ -1391,6 +1396,19 @@ namespace Swole.API.Unity.Animation
                 {
                     indexer = null; 
                 }
+
+                hasDefaultFloatValue = false;
+                defaultFloatValue = 0f;
+
+                if (info != null)
+                {
+                    var attr = info.GetCustomAttribute<AnimatablePropertyAttribute>();
+                    if (attr != null && attr.hasDefaultValue) 
+                    {
+                        hasDefaultFloatValue = true;
+                        defaultFloatValue = attr.defaultValue;  
+                    }
+                }
             }
         }
         [Serializable]
@@ -1409,6 +1427,8 @@ namespace Swole.API.Unity.Animation
             public float unmodifiedValue;
 
             public float modifiedValue;
+
+            public float resetWeight;
 
 
             public PropertyState(string path)
@@ -1520,7 +1540,7 @@ namespace Swole.API.Unity.Animation
                     return GetFloatValue(field.FieldType, field.GetValue(instance));
                 }
 
-                return 0;
+                return 0f;
             }
             public static float GetValueFromIndexer(MemberInfo info, object instance, object[] indices)
             {
@@ -1529,7 +1549,7 @@ namespace Swole.API.Unity.Animation
                     return GetFloatValue(prop.PropertyType, prop.GetValue(instance, indices));
                 }
 
-                return 0;
+                return 0f;
             }
             public static float GetFloatValue(Type type, object value)
             {
@@ -1568,6 +1588,70 @@ namespace Swole.API.Unity.Animation
                     return Activator.CreateInstance(type);
                 }
                 return null;
+            }
+
+            public static float GetDefaultValue(PropertyMemberInfo[] info, object instance, int index)
+            {
+                if (info == null || info.Length <= 0)
+                {
+                    if (index >= 0 && instance is DynamicAnimationProperties dap)
+                    {
+                        return dap.GetDefaultValueUnsafe(index);
+                    }
+
+                    return 0f;
+                }
+
+                int lengthM1 = info.Length - 1;
+                object finalInstance = instance;
+                for (int a = 0; a < lengthM1; a++)
+                {
+                    var member = info[a];
+                    if (member.info is PropertyInfo prop)
+                    {
+                        finalInstance = prop.GetValue(finalInstance);
+                    }
+                    else if (member.info is FieldInfo field)
+                    {
+                        finalInstance = field.GetValue(finalInstance);
+                    }
+
+                    if (member.IsElement)
+                    {
+                        finalInstance = member.GetElementValue(finalInstance);
+                    }
+                }
+
+                var finalInfo = info[lengthM1];
+                if (finalInfo.hasDefaultFloatValue) return finalInfo.defaultFloatValue;
+
+                var finalMemInfo = finalInfo.info;
+                if (finalInfo.IsElement)
+                {
+                    return GetFloatValue(finalInfo.elementType, finalInfo.GetElementValue(finalInstance)); 
+                }
+
+                return GetDefaultValue(finalMemInfo, finalInstance, index);
+            }
+            public static float GetDefaultValue(MemberInfo info, object instance, int index)
+            {
+
+                if (instance is DynamicAnimationProperties dap)
+                {
+                    return index >= 0 ? dap.GetDefaultValueUnsafe(index) : 0f;
+                }
+                else if (info is PropertyInfo prop)
+                {
+                    var attr = prop.GetCustomAttribute<AnimatablePropertyAttribute>(); 
+                    return attr != null && attr.hasDefaultValue ? attr.defaultValue : GetFloatValue(prop.PropertyType, prop.GetValue(instance));
+                }
+                else if (info is FieldInfo field)
+                {
+                    var attr = field.GetCustomAttribute<AnimatablePropertyAttribute>(); 
+                    return attr != null && attr.hasDefaultValue ? attr.defaultValue : GetFloatValue(field.FieldType, field.GetValue(instance));
+                }
+
+                return 0f;
             }
 
             public static void SetValue(PropertyMemberInfo[] info, object instance, float value, int index)
@@ -1665,7 +1749,7 @@ namespace Swole.API.Unity.Animation
             public void Reset(object instance)
             {
 
-                unmodifiedValue = GetValue(info, instance, index);
+                unmodifiedValue = GetDefaultValue(info, instance, index);
 
                 ResetModifiedData();
 
@@ -1742,6 +1826,51 @@ namespace Swole.API.Unity.Animation
         [NonSerialized]
         protected TransformAccessArray m_transforms;
 
+        [NonSerialized]
+        protected NativeList<float> m_prePassResetWeights;
+
+        public void ResetPrepassResetWeights()
+        {
+            if (m_prePassResetWeights.IsCreated) 
+            {
+                for (int a = 0; a < m_prePassResetWeights.Length; a++) m_prePassResetWeights[a] = 0f;
+            }
+            if (m_propertyStates != null)
+            {
+                foreach (var entry in m_propertyStates) entry.Value.resetWeight = 0f;
+            }
+        }
+
+        public void ApplyPrepassResetWeights()
+        {
+            m_jobHandle.Complete(); 
+
+            if (m_transformStates.IsCreated && m_prePassResetWeights.IsCreated)
+            {
+                for(int a = 0; a < m_transformStates.Length; a++)
+                {
+                    var resetWeight = m_prePassResetWeights[a]; 
+
+                    var state = m_transformStates[a]; 
+
+                    state.modifiedLocalPosition = math.lerp(state.modifiedLocalPosition, state.unmodifiedLocalPosition, resetWeight);
+                    state.modifiedLocalRotation = math.slerp(state.modifiedLocalRotation, state.unmodifiedLocalRotation, resetWeight);
+                    state.modifiedLocalScale = math.lerp(state.modifiedLocalScale, state.unmodifiedLocalScale, resetWeight);
+
+                    m_transformStates[a] = state;
+
+                    m_prePassResetWeights[a] = 0f;
+                }
+            }
+
+            foreach(var entry in m_propertyStates)
+            {
+                var state = entry.Value;
+                state.modifiedValue = math.lerp(state.modifiedValue, state.unmodifiedValue, state.resetWeight);
+                state.resetWeight = 0f;
+            }
+        }
+
         public int AffectedTransformCount => m_transforms.isCreated ? m_transforms.length : 0;
         public Transform GetTransform(int index)
         {
@@ -1780,6 +1909,17 @@ namespace Swole.API.Unity.Animation
 
             m_transformStates[index] = state;
 
+        }
+
+        public float GetResetPrepassWeight(int index)
+        {
+            if (!m_prePassResetWeights.IsCreated || index < 0 || index >= m_prePassResetWeights.Length) return default;
+            return m_prePassResetWeights[index];
+        }
+        public void SetResetPrepassWeight(int index, float weight)
+        {
+            if (!m_prePassResetWeights.IsCreated || index < 0 || index >= m_prePassResetWeights.Length) return;
+            m_prePassResetWeights[index] = weight;
         }
 
         protected Dictionary<string, PropertyState> m_propertyStates = new Dictionary<string, PropertyState>();
@@ -1879,6 +2019,14 @@ namespace Swole.API.Unity.Animation
                 m_jobHandle.Complete();
 
                 if (!m_transformStates.IsCreated) m_transformStates = new NativeList<TransformAnimationState>(Allocator.Persistent);
+                if (!m_prePassResetWeights.IsCreated) 
+                { 
+                    m_prePassResetWeights = new NativeList<float>(Allocator.Persistent); 
+                    if (m_prePassResetWeights.Length != m_transformStates.Length)
+                    {
+                        for (int a = 0; a < m_transformStates.Length; a++) m_prePassResetWeights.Add(0f);
+                    }
+                }
 
                 state = new TransformStateReference(this);
                 state.index = m_transformStates.Length;
@@ -1888,6 +2036,7 @@ namespace Swole.API.Unity.Animation
                     modifiedLocalRotation = quaternion.identity,
                     previousRotationMod = quaternion.identity
                 });
+                m_prePassResetWeights.Add(0f);
 
                 if (!m_transforms.isCreated)
                 {
@@ -1959,7 +2108,7 @@ namespace Swole.API.Unity.Animation
 
                 m_propertyStates[propertyId] = state;
 
-                if (m_propertyStateBehaviours != null && m_propertyStateBehaviours.TryGetValue(propertyId, out var instance)) state.Reset(instance);
+                if (m_propertyStateBehaviours != null && m_propertyStateBehaviours.TryGetValue(propertyId, out var instance)) state.Reset(instance); 
 
             }
 
@@ -2875,20 +3024,52 @@ namespace Swole.API.Unity.Animation
             int nextIndex = -1;
             TransformHierarchy nextHierarchy = null;
 
-            if (m_animationLayers != null)
+            if (m_animationLayers != null && m_animationLayers.Count > 0)
             {
-                for (int a = 0; a < m_animationLayers.Count; a++)
+                /*int startLayerIndex = m_animationLayers.Count - 1; // used to skip layers that are below a full mix non-additive layer
+                for (int a = m_animationLayers.Count - 1; a >= 0; a--)
                 {
 
                     var layer = m_animationLayers[a];
-                    if (layer is not CustomAnimationLayer cal || !layer.IsActive) continue;
+                    if (!layer.IsActive) continue;
+
+                    startLayerIndex = a;
+
+                    if (!layer.IsAdditive && !layer.HasAvatarMask)
+                    {
+                        if (layer.Mix >= 0.9999f) break;
+                    }
+
+                }*/
+                int startLayerIndex = 0;
+                
+                for (int a = startLayerIndex; a < m_animationLayers.Count; a++)
+                {
+
+                    var layer = m_animationLayers[a];
+                    if (layer is not CustomAnimationLayer cal || !layer.IsActive) continue; 
 
                     TransformHierarchy localHierarchy = a == nextIndex ? nextHierarchy : null;
                     if (nextIndex <= a) nextHierarchy = GetNextLayerTransformHierarchy(a + 1, out nextIndex);
+                    
+                    if (!layer.IsAdditive)
+                    {
+                        GetRootMotion(out var rootMotionPos, out var rootMotionRot);
+                        float mixInv = math.saturate(1f - (1f * layer.Mix));
+                        rootMotionPos = rootMotionPos * mixInv;
+                        rootMotionRot = Quaternion.SlerpUnclamped(Quaternion.identity, rootMotionRot, mixInv); 
+                        SetRootMotion(rootMotionPos, rootMotionRot);
 
+                        //if (layer.Mix != 1f)
+                        //{
+                            layer.NonAdditivePrepass(!disableMultithreading);
+                            ApplyPrepassResetWeights();
+                        //}
+                    }
+                     
                     var nextLayer = (nextIndex <= a || nextIndex >= m_animationLayers.Count) ? null : m_animationLayers[nextIndex];
-                    m_jobHandle = cal.Progress(nextHierarchy, nextLayer == null ? true : (nextLayer.IsAdditive || nextLayer.Mix != 1 || nextLayer.Deactivate), deltaTime, disableMultithreading, false, m_jobHandle, localHierarchy);
-
+                    m_jobHandle = cal.Progress(nextHierarchy, nextLayer == null ? true : (nextLayer.IsAdditive || nextLayer.Mix != 1f || nextLayer.Deactivate), deltaTime, disableMultithreading, false, m_jobHandle, localHierarchy);
+                    
                 }
             }
 

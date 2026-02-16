@@ -86,6 +86,7 @@ namespace Swole.API.Unity.Animation
 
         }
 
+        [NonAnimatable]
         public class ComputeBufferWithStartIndex
         {
             protected ComputeBuffer buffer;
@@ -99,6 +100,7 @@ namespace Swole.API.Unity.Animation
                 this.startIndex = startIndex;
             }
         }
+        [NonAnimatable]
         public class InstanceBufferWithStartIndex
         {
             protected IInstanceBuffer buffer;
@@ -113,6 +115,7 @@ namespace Swole.API.Unity.Animation
             }
         }
 
+        [NonAnimatable]
         public class Sampler : IDisposable
         {
 
@@ -312,6 +315,7 @@ namespace Swole.API.Unity.Animation
             }
 
             protected TrackedTransformGroup trackingGroup;
+            public TrackedTransformGroup TrackingGroup => trackingGroup;
 
             public void StartTrackingPoseData()
             {
@@ -355,6 +359,7 @@ namespace Swole.API.Unity.Animation
 
         }
 
+        [NonAnimatable]
         /// <summary>
         /// Uses a provided bone array instead of fetching it from a skinned renderer
         /// </summary>
@@ -551,6 +556,7 @@ namespace Swole.API.Unity.Animation
             instance.UntrackNullTransformsLocal();
         }
 
+        [NonAnimatable]
         public class TrackedTransformGroup
         {
 
@@ -627,13 +633,15 @@ namespace Swole.API.Unity.Animation
                 var instance = InstanceOrNull;
                 if (instance == null) return;
 
+                OutputDependency.Complete();
+
                 if (isSequential)
                 {
                     NativeArray<float4x4>.Copy(instance.globalPoseData.AsArray(), trackingIndices[0], poseArray, startIndex, trackingIndices.Count);
                 }
                 else
                 {
-                    for (int a = 0; a < trackingIndices.Count; a++)
+                    for (int a = 0; a < trackingIndices.Count; a++) 
                     {
                         var ind = trackingIndices[a];
                         poseArray[startIndex + a] = instance.globalPoseData[ind];
@@ -643,6 +651,8 @@ namespace Swole.API.Unity.Animation
             public void CopyIntoArrayNoChecks(NativeArray<float4x4> poseArray, int startIndex)
             {
                 var instance = InstanceOrNull;
+
+                OutputDependency.Complete();
 
                 if (isSequential)
                 {
@@ -659,11 +669,15 @@ namespace Swole.API.Unity.Animation
             }
             public void CopyIntoArrayNoChecksSequential(NativeArray<float4x4> poseArray, int startIndex)
             {
+                OutputDependency.Complete();
+
                 var instance = InstanceOrNull;
                 NativeArray<float4x4>.Copy(instance.globalPoseData.AsArray(), trackingIndices[0], poseArray, startIndex, trackingIndices.Count);
             }
             public void CopyIntoArrayNoChecksNonSequential(NativeArray<float4x4> poseArray, int startIndex)
             {
+                OutputDependency.Complete();
+
                 var instance = InstanceOrNull;
                 for (int a = 0; a < trackingIndices.Count; a++)
                 {
@@ -675,6 +689,8 @@ namespace Swole.API.Unity.Animation
             {
                 var instance = InstanceOrNull;
                 if (instance == null) return;
+
+                OutputDependency.Complete();
 
                 var tempArray = buffer.BeginWrite<float4x4>(startIndex, trackingIndices.Count);
                 if (isSequential)
@@ -696,6 +712,8 @@ namespace Swole.API.Unity.Animation
             {
                 var instance = InstanceOrNull;
                 if (instance == null) return;
+
+                OutputDependency.Complete();
 
                 if (isSequential)
                 {
@@ -813,6 +831,8 @@ namespace Swole.API.Unity.Animation
             {
                 var instance = InstanceOrNull;
                 if (instance == null) return;
+
+                OutputDependency.Complete();
 
                 /*tempArrays.Clear();
                 foreach (var buffer in buffers)

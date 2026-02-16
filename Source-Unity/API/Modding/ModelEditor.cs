@@ -3099,7 +3099,7 @@ namespace Swole
 
             var errorObj = animationBakeWindow.FindDeepChildLiberal("error");
             UIPopupMessageFadable errorMsg = null;
-            if (errorObj != null) errorMsg = errorObj.GetComponentInChildren<UIPopupMessageFadable>(true);
+            if (errorObj != null) errorMsg = errorObj.GetComponentInChildren<UIPopupMessageFadable>(true); 
 
             CustomEditorUtils.SetButtonOnClickActionByName(animationBakeWindow, "start", () =>
             {

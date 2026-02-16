@@ -21,7 +21,7 @@ namespace Swole.API.Unity.Animation
     public abstract class CustomMotionController : IAnimationMotionController
     {
 
-        protected static void CloneBase(CustomMotionController reference, CustomMotionController clone)
+        protected static void CloneBase(CustomMotionController reference, CustomMotionController clone) 
         {
 
             clone.name = reference.name;
@@ -290,6 +290,8 @@ namespace Swole.API.Unity.Animation
         public abstract float GetBoneHeight(IAnimationLayer layer, string boneName, float timeOffset);
         public abstract float GetBoneHeightAtTime(IAnimationLayer layer, string boneName, float time);
 
+        public abstract void NonAdditivePrepass(bool useMultithreading, IAnimationLayer layer);
+
     }
 
     [Serializable]
@@ -383,10 +385,11 @@ namespace Swole.API.Unity.Animation
 
         public AnimationReference() { }
 
-        public AnimationReference(string name, IAnimationAsset animation, AnimationLoopMode loopMode)
+        public AnimationReference(string name, IAnimationAsset animation, AnimationLoopMode loopMode, float normalizedTimeStart = 0f)
         {
             this.name = name;
             if (animation is CustomAnimationAsset asset) this.animationAsset = asset; else this.animation = animation;
+            this.normalizedTimeStart = normalizedTimeStart;
             this.loopMode = loopMode;
         }
 
@@ -398,13 +401,23 @@ namespace Swole.API.Unity.Animation
 
             CustomMotionController.CloneBase(this, clone);
 
+            clone.normalizedTimeStart = normalizedTimeStart;
             clone.loopMode = loopMode;
             clone.animation = animation;
             clone.animationAsset = animationAsset;
             clone.timeOverrideParameter = timeOverrideParameter;
+            clone.useNormalizedTimeForOverriding = useNormalizedTimeForOverriding;
 
             return clone;
 
+        }
+
+        [SerializeField]
+        public float normalizedTimeStart;
+        public float NormalizedTimeStart
+        {
+            get => normalizedTimeStart;
+            set => normalizedTimeStart = value;
         }
 
         [SerializeField]
@@ -457,6 +470,14 @@ namespace Swole.API.Unity.Animation
         {
             get => timeOverrideParameter;
             set => timeOverrideParameter = value;
+        }
+
+        [SerializeField]
+        public bool useNormalizedTimeForOverriding = false;
+        public bool UseNormalizedTimeForOverriding
+        {
+            get => useNormalizedTimeForOverriding;
+            set => useNormalizedTimeForOverriding = value; 
         }
 
         public override void RemapParameterIndices(IAnimationLayer layer, Dictionary<int, int> remapper, bool invalidateNonRemappedIndices = false)
@@ -558,6 +579,7 @@ namespace Swole.API.Unity.Animation
                 m_animationPlayer.Paused = false;
                 m_animationPlayer.LoopMode = loopMode;
                 m_animationPlayer.OverrideTime = false;
+                m_animationPlayer.SetTime(normalizedTimeStart * m_animationPlayer.LengthInSeconds, true);
 
                 if (combineMasks)
                 {
@@ -586,7 +608,7 @@ namespace Swole.API.Unity.Animation
 
             if (m_animationPlayer == null) return;
 
-            m_animationPlayer.Mix = GetWeight();
+            m_animationPlayer.Mix = GetWeight(); 
 
         }
 
@@ -653,7 +675,7 @@ namespace Swole.API.Unity.Animation
             if (AnimationPlayer is not CustomAnimation.Player cap) return;
 
             cap.Speed = GetSpeed(layer);
-            //cap.Mix = GetWeight(); // shouldn't be necessary
+            //cap.Mix = GetWeight(); // shouldn't be necessary because SetWeight updates Mix
 
             if (timeOverrideParameter >= 0)
             {
@@ -662,7 +684,8 @@ namespace Swole.API.Unity.Animation
                 var p = layer.GetParameter(timeOverrideParameter);
                 if (p != null)
                 {
-                    cap.TimeOverride = p.UpdateAndGetValue();
+                    float val = p.UpdateAndGetValue();
+                    cap.TimeOverride = val * (useNormalizedTimeForOverriding ? cap.LengthInSeconds : 1f); 
                 }
             }
 
@@ -699,6 +722,13 @@ namespace Swole.API.Unity.Animation
             }
 
             return 0f;
+        }
+
+        public override void NonAdditivePrepass(bool useMultithreading, IAnimationLayer layer)
+        {
+            if (AnimationPlayer is not CustomAnimation.Player cap) return;
+
+            cap.NonAdditivePrepass(useMultithreading, layer);
         }
 
     }
@@ -1711,6 +1741,20 @@ namespace Swole.API.Unity.Animation
             return height;
         }
 
+        public override void NonAdditivePrepass(bool useMultithreading, IAnimationLayer layer)
+        {
+            if (MotionParts == null) return;
+
+            for (int a = 0; a < MotionParts.Length; a++)
+            {
+                var motionPart = MotionParts[a];
+                var controller = layer.GetMotionController(motionPart.ControllerIndex);
+                if (controller == null) continue;
+
+                controller.NonAdditivePrepass(useMultithreading, layer);
+            }
+        }
+
     }
 
     [Serializable]
@@ -2515,6 +2559,20 @@ namespace Swole.API.Unity.Animation
             }
 
             return height;
+        }
+
+        public override void NonAdditivePrepass(bool useMultithreading, IAnimationLayer layer)
+        {
+            if (BaseMotionFields == null) return;
+
+            for (int a = 0; a < BaseMotionFields.Length; a++)
+            {
+                var part = BaseMotionFields[a];
+                var controller = layer.GetMotionController(part.ControllerIndex);
+                if (controller == null) continue;
+
+                controller.NonAdditivePrepass(useMultithreading, layer);
+            }
         }
 
     }

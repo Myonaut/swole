@@ -20,6 +20,11 @@ namespace Swole.Animation
         public IAnimationParameter[] Parameters { get; }
         public IAnimationParameter[] GetParameters(bool instantiate = false);
         public IAnimationParameter GetAnimationParameter(AnimationParameterIdentifier identifier);
+        public bool HasParemeter(string name);
+        public bool HasParemeter(string name, AnimationParameterValueType type);
+        public bool HasFloatParameter(string name);
+        public bool HasBoolParameter(string name);
+        public bool HasTriggerParameter(string name);
 
         public IAnimationReference[] AnimationReferences { get; set; }
         public IBlendTree1D[] BlendTrees1D { get; set; }

@@ -74,6 +74,8 @@ namespace Swole
 
         public string name;
 
+        public bool IsValid => !string.IsNullOrEmpty(package) && !string.IsNullOrEmpty(name);
+
         public static implicit operator PackageIdentifier(AssetIdentifier asset) => new PackageIdentifier(asset.package);
         public override string ToString() => $"{package}/{name}";
 

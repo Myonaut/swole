@@ -90,6 +90,8 @@ namespace Swole.API.Unity
         {
             public string name;
 
+            public bool preIK;
+
             [AnimatableProperty(true, 1f), Range(0, 2f)]
             public float autoFlexMixLeft = 1f;
             [AnimatableProperty(true, 1f), Range(0, 2f)]
@@ -527,7 +529,11 @@ namespace Swole.API.Unity
         public static int ExecutionPriority => CustomAnimatorUpdater.FinalAnimationBehaviourPriority + 1; // update once bones are in their final positions
         public override int Priority => ExecutionPriority;
 
+        private static int PreIkExecutionPriority => CustomIKManagerUpdater.ExecutionPriority - 1;
+
         protected readonly List<CharacterMuscleAutoFlexer> flexers = new List<CharacterMuscleAutoFlexer>();
+        protected readonly List<int> standardFlexers = new List<int>();
+        protected readonly List<int> preIkFlexers = new List<int>();
         public static bool Register(CharacterMuscleAutoFlexer flexer)
         {
             var instance = Instance;
@@ -539,15 +545,23 @@ namespace Swole.API.Unity
             {
                 if (flexer.autoFlexers != null && flexer.autoFlexers.Length > 0)
                 {
+                    bool isStandard = false;
+                    bool isPreIk = false;
                     foreach (var autoFlexer in flexer.autoFlexers)
                     {
-                        var indices = instance.AddBindings(autoFlexer.bindingA, autoFlexer.bindingB, autoFlexer.bindingC, autoFlexer.bindingD);
+                        if (autoFlexer.preIK) isPreIk = true;
+                        else isStandard = true;
+
+                        var indices = instance.AddBindings(autoFlexer.preIK, autoFlexer.bindingA, autoFlexer.bindingB, autoFlexer.bindingC, autoFlexer.bindingD);
 
                         autoFlexer.jobIndexLeft = indices.x;
                         autoFlexer.jobIndexRight = indices.y;
                     }
 
+                    int flexerIndex = instance.flexers.Count;
                     instance.flexers.Add(flexer);
+                    if (isStandard) instance.standardFlexers.Add(flexerIndex);
+                    if (isPreIk) instance.preIkFlexers.Add(flexerIndex);
                 }
             }
 
@@ -560,101 +574,121 @@ namespace Swole.API.Unity
 
             instance.FinalizeAllJobsLocal();
 
-            bool flag = instance.flexers.Contains(flexer);
+            int flexerIndex = instance.flexers.IndexOf(flexer);
+            bool flag = flexerIndex >= 0;
             if (flag)
             {
                 if (flexer.autoFlexers != null)
                 {
                     foreach(var autoFlexer in flexer.autoFlexers)
                     {
-                        if (autoFlexer.jobIndexLeft >= 0) instance.RemoveBinding(autoFlexer.jobIndexLeft);
-                        if (autoFlexer.jobIndexRight >= 0) instance.RemoveBinding(autoFlexer.jobIndexRight);
+                        if (autoFlexer.jobIndexLeft >= 0) instance.RemoveBinding(autoFlexer.preIK, autoFlexer.jobIndexLeft);
+                        if (autoFlexer.jobIndexRight >= 0) instance.RemoveBinding(autoFlexer.preIK, autoFlexer.jobIndexRight);
 
                         autoFlexer.jobIndexLeft = -1;
                         autoFlexer.jobIndexRight = -1;
                     }
                 }
 
+                instance.standardFlexers.Remove(flexerIndex);
+                instance.preIkFlexers.Remove(flexerIndex);
+
                 instance.flexers.Remove(flexer); // wait until after so job index changes are applied to the flexer still
             }
             return flag;
         }
 
+        private readonly Dictionary<Transform, int2> transformIndicesPreIk = new Dictionary<Transform, int2>();
+        private TransformAccessArray transformsPreIk;
+
         private readonly Dictionary<Transform, int2> transformIndices = new Dictionary<Transform, int2>();
         private TransformAccessArray transforms;
-        private int RegisterTransformUser(Transform transform)
+        private int RegisterTransformUser(Transform transform, bool preIk)
         {
             if (transform == null) return -1;
 
-            if (!transformIndices.TryGetValue(transform, out int2 index))
+            var indicesDict = preIk ? transformIndicesPreIk : transformIndices;
+            var transformsArray = preIk ? transformsPreIk : transforms;
+            var transformStatesList = preIk ? transformStatesPreIk : transformStates;
+
+            if (!indicesDict.TryGetValue(transform, out int2 index))
             {
-                index.x = transforms.length;
-                transforms.Add(transform);
-                transformStates.Add(new TransformDataStateTemporal(transform, false));
+                index.x = transformsArray.length;
+                transformsArray.Add(transform);
+                transformStatesList.Add(new TransformDataStateTemporal(transform, false));
             }
 
             index.y = index.y + 1;
-            transformIndices[transform] = index;
+            indicesDict[transform] = index;
             return index.x;
         }
-        private void UnregisterTransformUser(Transform transform)
+        private void UnregisterTransformUser(Transform transform, bool preIk)
         {
-            if (transformIndices.TryGetValue(transform, out int2 index))
+            var indicesDict = preIk ? transformIndicesPreIk : transformIndices;
+
+            if (indicesDict.TryGetValue(transform, out int2 index))
             {
                 index.y = index.y - 1;
                 if (index.y <= 0)
                 {
                     if (index.x >= 0)
                     {
-                        RemoveTransform(index.x);
+                        RemoveTransform(index.x, preIk);
                     } 
                     else
                     {
-                        transformIndices.Remove(transform);
+                        indicesDict.Remove(transform);
                     }
                 } 
                 else
                 {
-                    transformIndices[transform] = index;
+                    indicesDict[transform] = index;
                 }
             }
         }
-        private void RemoveTransform(int index)
+        private void RemoveTransform(int index, bool preIk)
         {
             if (index >= 0)
             {
-                var toRemove = transforms[index];
+                var indicesDict = preIk ? transformIndicesPreIk : transformIndices;
+                var transformsArray = preIk ? transformsPreIk : transforms;
+                var transformStatesList = preIk ? transformStatesPreIk : transformStates;
+                var bindingsList = preIk ? autoFlexBindingsPreIk : autoFlexBindings;
 
-                int swapIndex = transforms.length - 1;
+                var toRemove = transformsArray[index];
+
+                int swapIndex = transformsArray.length - 1;
                 if (swapIndex == index) swapIndex = -1;
-                transforms.RemoveAtSwapBack(index);
-                transformStates.RemoveAtSwapBack(index);
+                transformsArray.RemoveAtSwapBack(index);
+                transformStatesList.RemoveAtSwapBack(index);
 
-                for (int a = 0; a < transforms.length; a++)
+                for (int a = 0; a < transformsArray.length; a++)
                 {
-                    var transform = transforms[a];
-                    if (transformIndices.TryGetValue(transform, out int2 index_))
+                    var transform = transformsArray[a];
+                    if (indicesDict.TryGetValue(transform, out int2 index_))
                     {
                         if (index_.x == swapIndex)
                         {
                             index_.x = index;
-                            transformIndices[transform] = index_; 
+                            indicesDict[transform] = index_; 
                         }
                     }
                 }
-                for (int a = 0; a < autoFlexBindings.Length; a++)
+                for (int a = 0; a < bindingsList.Length; a++)
                 {
-                    var binding = autoFlexBindings[a];
+                    var binding = bindingsList[a];
                     binding.transformIndices = math.select(binding.transformIndices, -1, binding.transformIndices == index);
                     if (swapIndex >= 0) binding.transformIndices = math.select(binding.transformIndices, index, binding.transformIndices == swapIndex);
-                    autoFlexBindings[a] = binding; 
+                    bindingsList[a] = binding; 
                 }
 
-                transformIndices.Remove(toRemove);
+                indicesDict.Remove(toRemove);
             }
         }
-        private void RemoveNullTransforms()
+        private void RemoveNullTransforms(bool preIk)
         {
+            var indicesDict = preIk ? transformIndicesPreIk : transformIndices;
+
             bool flag = false;
             while (flag)
             {
@@ -662,7 +696,7 @@ namespace Swole.API.Unity
 
                 Transform toRemove = null;
                 int index = -1;
-                foreach (var entry in transformIndices)
+                foreach (var entry in indicesDict)
                 {
                     if (entry.Key == null)
                     {
@@ -674,14 +708,19 @@ namespace Swole.API.Unity
                     }
                 }
 
-                if (flag) RemoveTransform(index);
+                if (flag) RemoveTransform(index, preIk);
             }
         }
 
+        private NativeList<TransformDataStateTemporal> transformStatesPreIk;
+        private NativeList<AutoFlexBinding> autoFlexBindingsPreIk;
         private NativeList<TransformDataStateTemporal> transformStates;
         private NativeList<AutoFlexBinding> autoFlexBindings;
-        private int2 AddBindings(CharacterMuscleAutoFlexer.TransformBinding bindingA, CharacterMuscleAutoFlexer.TransformBinding bindingB, CharacterMuscleAutoFlexer.TransformBinding bindingC, CharacterMuscleAutoFlexer.TransformBinding bindingD)
+        private int2 AddBindings(bool preIk, CharacterMuscleAutoFlexer.TransformBinding bindingA, CharacterMuscleAutoFlexer.TransformBinding bindingB, CharacterMuscleAutoFlexer.TransformBinding bindingC, CharacterMuscleAutoFlexer.TransformBinding bindingD)
         {
+            var transformsArray = preIk ? transformsPreIk : transforms;
+            var bindingsList = preIk ? autoFlexBindingsPreIk : autoFlexBindings;
+
             int2 indices = -1;
 
             var binding = new AutoFlexBinding();
@@ -707,105 +746,114 @@ namespace Swole.API.Unity
             if (bindingA.transformLeft != null || bindingB.transformLeft != null || bindingC.transformLeft != null || bindingD.transformLeft != null)
             {
                 var bindingLeft = binding;
-                bindingLeft.transformIndices.x = RegisterTransformUser(bindingA.transformLeft);
-                bindingLeft.transformIndices.y = RegisterTransformUser(bindingB.transformLeft);
-                bindingLeft.transformIndices.z = RegisterTransformUser(bindingC.transformLeft);
-                bindingLeft.transformIndices.w = RegisterTransformUser(bindingD.transformLeft);
+                bindingLeft.transformIndices.x = RegisterTransformUser(bindingA.transformLeft, preIk);
+                bindingLeft.transformIndices.y = RegisterTransformUser(bindingB.transformLeft, preIk);
+                bindingLeft.transformIndices.z = RegisterTransformUser(bindingC.transformLeft, preIk);
+                bindingLeft.transformIndices.w = RegisterTransformUser(bindingD.transformLeft, preIk);
 
                 bindingLeft.targetStartLocalPositions = new float3x4(
-                    bindingLeft.transformIndices.x >= 0 ? ((float3)transforms[bindingLeft.transformIndices.x].localPosition + (float3)bindingA.startLocalPositionOffset) : float3.zero,
-                    bindingLeft.transformIndices.y >= 0 ? ((float3)transforms[bindingLeft.transformIndices.y].localPosition + (float3)bindingB.startLocalPositionOffset) : float3.zero,
-                    bindingLeft.transformIndices.z >= 0 ? ((float3)transforms[bindingLeft.transformIndices.z].localPosition + (float3)bindingC.startLocalPositionOffset) : float3.zero,
-                    bindingLeft.transformIndices.w >= 0 ? ((float3)transforms[bindingLeft.transformIndices.w].localPosition + (float3)bindingD.startLocalPositionOffset) : float3.zero);
+                    bindingLeft.transformIndices.x >= 0 ? ((float3)transformsArray[bindingLeft.transformIndices.x].localPosition + (float3)bindingA.startLocalPositionOffset) : float3.zero,
+                    bindingLeft.transformIndices.y >= 0 ? ((float3)transformsArray[bindingLeft.transformIndices.y].localPosition + (float3)bindingB.startLocalPositionOffset) : float3.zero,
+                    bindingLeft.transformIndices.z >= 0 ? ((float3)transformsArray[bindingLeft.transformIndices.z].localPosition + (float3)bindingC.startLocalPositionOffset) : float3.zero,
+                    bindingLeft.transformIndices.w >= 0 ? ((float3)transformsArray[bindingLeft.transformIndices.w].localPosition + (float3)bindingD.startLocalPositionOffset) : float3.zero);
 
                 bindingLeft.targetInverseStartRotations = new float4x4(
-                    ((quaternion)Quaternion.Inverse((bindingLeft.transformIndices.x >= 0 ? (Quaternion.Euler(bindingA.startLocalRotationOffsetEuler) * ((Quaternion)transforms[bindingLeft.transformIndices.x].localRotation)) : Quaternion.identity))).value,
-                    ((quaternion)Quaternion.Inverse((bindingLeft.transformIndices.y >= 0 ? (Quaternion.Euler(bindingB.startLocalRotationOffsetEuler) * ((Quaternion)transforms[bindingLeft.transformIndices.y].localRotation)) : Quaternion.identity))).value,
-                    ((quaternion)Quaternion.Inverse((bindingLeft.transformIndices.z >= 0 ? (Quaternion.Euler(bindingC.startLocalRotationOffsetEuler) * ((Quaternion)transforms[bindingLeft.transformIndices.z].localRotation)) : Quaternion.identity))).value,
-                    ((quaternion)Quaternion.Inverse((bindingLeft.transformIndices.w >= 0 ? (Quaternion.Euler(bindingD.startLocalRotationOffsetEuler) * ((Quaternion)transforms[bindingLeft.transformIndices.w].localRotation)) : Quaternion.identity))).value);
+                    ((quaternion)Quaternion.Inverse((bindingLeft.transformIndices.x >= 0 ? (Quaternion.Euler(bindingA.startLocalRotationOffsetEuler) * ((Quaternion)transformsArray[bindingLeft.transformIndices.x].localRotation)) : Quaternion.identity))).value,
+                    ((quaternion)Quaternion.Inverse((bindingLeft.transformIndices.y >= 0 ? (Quaternion.Euler(bindingB.startLocalRotationOffsetEuler) * ((Quaternion)transformsArray[bindingLeft.transformIndices.y].localRotation)) : Quaternion.identity))).value,
+                    ((quaternion)Quaternion.Inverse((bindingLeft.transformIndices.z >= 0 ? (Quaternion.Euler(bindingC.startLocalRotationOffsetEuler) * ((Quaternion)transformsArray[bindingLeft.transformIndices.z].localRotation)) : Quaternion.identity))).value,
+                    ((quaternion)Quaternion.Inverse((bindingLeft.transformIndices.w >= 0 ? (Quaternion.Euler(bindingD.startLocalRotationOffsetEuler) * ((Quaternion)transformsArray[bindingLeft.transformIndices.w].localRotation)) : Quaternion.identity))).value);
 
                 bindingLeft.targetAngleStartAxisVectors = new float3x4(
-                    bindingLeft.transformIndices.x >= 0 ? ((float3)(transforms[bindingLeft.transformIndices.x].localRotation * bindingA.angleAxis)) : float3.zero,
-                    bindingLeft.transformIndices.y >= 0 ? ((float3)(transforms[bindingLeft.transformIndices.y].localRotation * bindingB.angleAxis)) : float3.zero,
-                    bindingLeft.transformIndices.z >= 0 ? ((float3)(transforms[bindingLeft.transformIndices.z].localRotation * bindingC.angleAxis)) : float3.zero,
-                    bindingLeft.transformIndices.w >= 0 ? ((float3)(transforms[bindingLeft.transformIndices.w].localRotation * bindingD.angleAxis)) : float3.zero);
+                    bindingLeft.transformIndices.x >= 0 ? ((float3)(transformsArray[bindingLeft.transformIndices.x].localRotation * bindingA.angleAxis)) : float3.zero,
+                    bindingLeft.transformIndices.y >= 0 ? ((float3)(transformsArray[bindingLeft.transformIndices.y].localRotation * bindingB.angleAxis)) : float3.zero,
+                    bindingLeft.transformIndices.z >= 0 ? ((float3)(transformsArray[bindingLeft.transformIndices.z].localRotation * bindingC.angleAxis)) : float3.zero,
+                    bindingLeft.transformIndices.w >= 0 ? ((float3)(transformsArray[bindingLeft.transformIndices.w].localRotation * bindingD.angleAxis)) : float3.zero);
 
                 bindingLeft.targetStartVectors = new float3x4(
-                    bindingLeft.transformIndices.x >= 0 ? ((float3)(transforms[bindingLeft.transformIndices.x].localRotation * bindingA.startLocalVector)) : float3.zero,
-                    bindingLeft.transformIndices.y >= 0 ? ((float3)(transforms[bindingLeft.transformIndices.y].localRotation * bindingB.startLocalVector)) : float3.zero,
-                    bindingLeft.transformIndices.z >= 0 ? ((float3)(transforms[bindingLeft.transformIndices.z].localRotation * bindingC.startLocalVector)) : float3.zero,
-                    bindingLeft.transformIndices.w >= 0 ? ((float3)(transforms[bindingLeft.transformIndices.w].localRotation * bindingD.startLocalVector)) : float3.zero);
+                    bindingLeft.transformIndices.x >= 0 ? ((float3)(transformsArray[bindingLeft.transformIndices.x].localRotation * bindingA.startLocalVector)) : float3.zero,
+                    bindingLeft.transformIndices.y >= 0 ? ((float3)(transformsArray[bindingLeft.transformIndices.y].localRotation * bindingB.startLocalVector)) : float3.zero,
+                    bindingLeft.transformIndices.z >= 0 ? ((float3)(transformsArray[bindingLeft.transformIndices.z].localRotation * bindingC.startLocalVector)) : float3.zero,
+                    bindingLeft.transformIndices.w >= 0 ? ((float3)(transformsArray[bindingLeft.transformIndices.w].localRotation * bindingD.startLocalVector)) : float3.zero);
 
-                indices.x = autoFlexBindings.Length;
-                autoFlexBindings.Add(bindingLeft);
+                indices.x = bindingsList.Length;
+                bindingsList.Add(bindingLeft);
             }
             if (bindingA.transformRight != null || bindingB.transformRight != null || bindingC.transformRight != null || bindingD.transformRight != null) 
             {
                 var bindingRight = binding;
-                bindingRight.transformIndices.x = RegisterTransformUser(bindingA.transformRight);
-                bindingRight.transformIndices.y = RegisterTransformUser(bindingB.transformRight);
-                bindingRight.transformIndices.z = RegisterTransformUser(bindingC.transformRight);
-                bindingRight.transformIndices.w = RegisterTransformUser(bindingD.transformRight);
+                bindingRight.transformIndices.x = RegisterTransformUser(bindingA.transformRight, preIk);
+                bindingRight.transformIndices.y = RegisterTransformUser(bindingB.transformRight, preIk);
+                bindingRight.transformIndices.z = RegisterTransformUser(bindingC.transformRight, preIk);
+                bindingRight.transformIndices.w = RegisterTransformUser(bindingD.transformRight, preIk);
 
                 bindingRight.targetAnglesDegreesMin = (bindingRight.targetAnglesDegreesMin * new float4(bindingA.rightSideAngleMul, bindingB.rightSideAngleMul, bindingC.rightSideAngleMul, bindingD.rightSideAngleMul)) + new float4(bindingA.rightSideAngleAdd, bindingB.rightSideAngleAdd, bindingC.rightSideAngleAdd, bindingD.rightSideAngleAdd); 
                 bindingRight.targetAnglesDegreesMax = (bindingRight.targetAnglesDegreesMax * new float4(bindingA.rightSideAngleMul, bindingB.rightSideAngleMul, bindingC.rightSideAngleMul, bindingD.rightSideAngleMul)) + new float4(bindingA.rightSideAngleAdd, bindingB.rightSideAngleAdd, bindingC.rightSideAngleAdd, bindingD.rightSideAngleAdd);
 
                 bindingRight.targetStartLocalPositions = new float3x4(
-                    bindingRight.transformIndices.x >= 0 ? ((float3)transforms[bindingRight.transformIndices.x].localPosition + (float3)Vector3.Scale(bindingA.startLocalPositionOffset, bindingA.startLocalPositionOffsetSideMul)) : float3.zero,
-                    bindingRight.transformIndices.y >= 0 ? ((float3)transforms[bindingRight.transformIndices.y].localPosition + (float3)Vector3.Scale(bindingB.startLocalPositionOffset, bindingB.startLocalPositionOffsetSideMul)) : float3.zero,
-                    bindingRight.transformIndices.z >= 0 ? ((float3)transforms[bindingRight.transformIndices.z].localPosition + (float3)Vector3.Scale(bindingC.startLocalPositionOffset, bindingC.startLocalPositionOffsetSideMul)) : float3.zero, 
-                    bindingRight.transformIndices.w >= 0 ? ((float3)transforms[bindingRight.transformIndices.w].localPosition + (float3)Vector3.Scale(bindingD.startLocalPositionOffset, bindingD.startLocalPositionOffsetSideMul)) : float3.zero);
+                    bindingRight.transformIndices.x >= 0 ? ((float3)transformsArray[bindingRight.transformIndices.x].localPosition + (float3)Vector3.Scale(bindingA.startLocalPositionOffset, bindingA.startLocalPositionOffsetSideMul)) : float3.zero,
+                    bindingRight.transformIndices.y >= 0 ? ((float3)transformsArray[bindingRight.transformIndices.y].localPosition + (float3)Vector3.Scale(bindingB.startLocalPositionOffset, bindingB.startLocalPositionOffsetSideMul)) : float3.zero,
+                    bindingRight.transformIndices.z >= 0 ? ((float3)transformsArray[bindingRight.transformIndices.z].localPosition + (float3)Vector3.Scale(bindingC.startLocalPositionOffset, bindingC.startLocalPositionOffsetSideMul)) : float3.zero, 
+                    bindingRight.transformIndices.w >= 0 ? ((float3)transformsArray[bindingRight.transformIndices.w].localPosition + (float3)Vector3.Scale(bindingD.startLocalPositionOffset, bindingD.startLocalPositionOffsetSideMul)) : float3.zero);
                 bindingRight.targetInverseStartRotations = new float4x4(
-                    ((quaternion)Quaternion.Inverse((bindingRight.transformIndices.x >= 0 ? (Quaternion.Euler(bindingA.startLocalRotationOffsetEuler) * ((Quaternion)transforms[bindingRight.transformIndices.x].localRotation)) : Quaternion.identity))).value,
-                    ((quaternion)Quaternion.Inverse((bindingRight.transformIndices.y >= 0 ? (Quaternion.Euler(bindingB.startLocalRotationOffsetEuler) * ((Quaternion)transforms[bindingRight.transformIndices.y].localRotation)) : Quaternion.identity))).value,
-                    ((quaternion)Quaternion.Inverse((bindingRight.transformIndices.z >= 0 ? (Quaternion.Euler(bindingC.startLocalRotationOffsetEuler) * ((Quaternion)transforms[bindingRight.transformIndices.z].localRotation)) : Quaternion.identity))).value,
-                    ((quaternion)Quaternion.Inverse((bindingRight.transformIndices.w >= 0 ? (Quaternion.Euler(bindingD.startLocalRotationOffsetEuler) * ((Quaternion)transforms[bindingRight.transformIndices.w].localRotation)) : Quaternion.identity))).value);
+                    ((quaternion)Quaternion.Inverse((bindingRight.transformIndices.x >= 0 ? (Quaternion.Euler(bindingA.startLocalRotationOffsetEuler) * ((Quaternion)transformsArray[bindingRight.transformIndices.x].localRotation)) : Quaternion.identity))).value,
+                    ((quaternion)Quaternion.Inverse((bindingRight.transformIndices.y >= 0 ? (Quaternion.Euler(bindingB.startLocalRotationOffsetEuler) * ((Quaternion)transformsArray[bindingRight.transformIndices.y].localRotation)) : Quaternion.identity))).value,
+                    ((quaternion)Quaternion.Inverse((bindingRight.transformIndices.z >= 0 ? (Quaternion.Euler(bindingC.startLocalRotationOffsetEuler) * ((Quaternion)transformsArray[bindingRight.transformIndices.z].localRotation)) : Quaternion.identity))).value,
+                    ((quaternion)Quaternion.Inverse((bindingRight.transformIndices.w >= 0 ? (Quaternion.Euler(bindingD.startLocalRotationOffsetEuler) * ((Quaternion)transformsArray[bindingRight.transformIndices.w].localRotation)) : Quaternion.identity))).value);
                  
                 bindingRight.targetAngleStartAxisVectors = new float3x4(
-                    bindingRight.transformIndices.x >= 0 ? ((float3)(transforms[bindingRight.transformIndices.x].localRotation * Vector3.Scale(bindingA.angleAxis, bindingA.angleAxisRightSideMul))) : float3.zero,
-                    bindingRight.transformIndices.y >= 0 ? ((float3)(transforms[bindingRight.transformIndices.y].localRotation * Vector3.Scale(bindingB.angleAxis, bindingB.angleAxisRightSideMul))) : float3.zero,
-                    bindingRight.transformIndices.z >= 0 ? ((float3)(transforms[bindingRight.transformIndices.z].localRotation * Vector3.Scale(bindingC.angleAxis, bindingC.angleAxisRightSideMul))) : float3.zero,
-                    bindingRight.transformIndices.w >= 0 ? ((float3)(transforms[bindingRight.transformIndices.w].localRotation * Vector3.Scale(bindingD.angleAxis, bindingD.angleAxisRightSideMul))) : float3.zero);
+                    bindingRight.transformIndices.x >= 0 ? ((float3)(transformsArray[bindingRight.transformIndices.x].localRotation * Vector3.Scale(bindingA.angleAxis, bindingA.angleAxisRightSideMul))) : float3.zero,
+                    bindingRight.transformIndices.y >= 0 ? ((float3)(transformsArray[bindingRight.transformIndices.y].localRotation * Vector3.Scale(bindingB.angleAxis, bindingB.angleAxisRightSideMul))) : float3.zero,
+                    bindingRight.transformIndices.z >= 0 ? ((float3)(transformsArray[bindingRight.transformIndices.z].localRotation * Vector3.Scale(bindingC.angleAxis, bindingC.angleAxisRightSideMul))) : float3.zero,
+                    bindingRight.transformIndices.w >= 0 ? ((float3)(transformsArray[bindingRight.transformIndices.w].localRotation * Vector3.Scale(bindingD.angleAxis, bindingD.angleAxisRightSideMul))) : float3.zero);
 
                 bindingRight.targetStartVectors = new float3x4(
-                    bindingRight.transformIndices.x >= 0 ? ((float3)(transforms[bindingRight.transformIndices.x].localRotation * Vector3.Scale(bindingA.startLocalVector, bindingA.startLocalVectorRightSideMul))) : float3.zero,
-                    bindingRight.transformIndices.y >= 0 ? ((float3)(transforms[bindingRight.transformIndices.y].localRotation * Vector3.Scale(bindingB.startLocalVector, bindingB.startLocalVectorRightSideMul))) : float3.zero,
-                    bindingRight.transformIndices.z >= 0 ? ((float3)(transforms[bindingRight.transformIndices.z].localRotation * Vector3.Scale(bindingC.startLocalVector, bindingC.startLocalVectorRightSideMul))) : float3.zero,
-                    bindingRight.transformIndices.w >= 0 ? ((float3)(transforms[bindingRight.transformIndices.w].localRotation * Vector3.Scale(bindingD.startLocalVector, bindingD.startLocalVectorRightSideMul))) : float3.zero);  
+                    bindingRight.transformIndices.x >= 0 ? ((float3)(transformsArray[bindingRight.transformIndices.x].localRotation * Vector3.Scale(bindingA.startLocalVector, bindingA.startLocalVectorRightSideMul))) : float3.zero,
+                    bindingRight.transformIndices.y >= 0 ? ((float3)(transformsArray[bindingRight.transformIndices.y].localRotation * Vector3.Scale(bindingB.startLocalVector, bindingB.startLocalVectorRightSideMul))) : float3.zero,
+                    bindingRight.transformIndices.z >= 0 ? ((float3)(transformsArray[bindingRight.transformIndices.z].localRotation * Vector3.Scale(bindingC.startLocalVector, bindingC.startLocalVectorRightSideMul))) : float3.zero,
+                    bindingRight.transformIndices.w >= 0 ? ((float3)(transformsArray[bindingRight.transformIndices.w].localRotation * Vector3.Scale(bindingD.startLocalVector, bindingD.startLocalVectorRightSideMul))) : float3.zero);  
 
-                indices.y = autoFlexBindings.Length;
-                autoFlexBindings.Add(bindingRight);
+                indices.y = bindingsList.Length;
+                bindingsList.Add(bindingRight);
             }
 
             return indices;
         }
-        private int AddBinding(AutoFlexBinding binding)
+        private int AddBinding(bool preIk, AutoFlexBinding binding)
         {
-            int index = autoFlexBindings.Length;
-            autoFlexBindings.Add(binding);
+            var bindingsList = preIk ? autoFlexBindingsPreIk : autoFlexBindings;
+
+            int index = bindingsList.Length;
+            bindingsList.Add(binding);
             return index;
         }
-        private void RemoveBinding(int index)
+        private void RemoveBinding(bool preIk, int index)
         {
             if (index >= 0)
             {
-                int swapIndex = autoFlexBindings.Length - 1;
-                if (swapIndex == index) swapIndex = -1;
-                autoFlexBindings.RemoveAtSwapBack(index);
+                var bindingsList = preIk ? autoFlexBindingsPreIk : autoFlexBindings;
 
-                for (int a = 0; a < autoFlexBindings.Length; a++)
+                int swapIndex = bindingsList.Length - 1;
+                if (swapIndex == index) swapIndex = -1;
+                bindingsList.RemoveAtSwapBack(index);
+
+                for (int a = 0; a < bindingsList.Length; a++)
                 {
-                    var binding = autoFlexBindings[a];
+                    var binding = bindingsList[a];
                     binding.transformIndices = math.select(binding.transformIndices, -1, binding.transformIndices == index);
                     if (swapIndex >= 0) binding.transformIndices = math.select(binding.transformIndices, index, binding.transformIndices == swapIndex);
-                    autoFlexBindings[a] = binding;
+                    bindingsList[a] = binding;
                 }
-                foreach(var flexer in flexers)
+
+                var indexList = preIk ? preIkFlexers : standardFlexers;
+                foreach (var flexerIndex in indexList)
                 {
+                    var flexer = flexers[flexerIndex];
                     if (flexer == null || flexer.autoFlexers == null) continue;
 
                     foreach(var autoFlexer in flexer.autoFlexers)
                     {
+                        if (autoFlexer.preIK != preIk) continue;
+
                         if (autoFlexer.jobIndexLeft == index) autoFlexer.jobIndexLeft = -1;
                         if (autoFlexer.jobIndexRight == index) autoFlexer.jobIndexRight = -1;
 
@@ -818,16 +866,36 @@ namespace Swole.API.Unity
                 }
             }
         }
-        private void TransferBindingOutputsAndUpdateFlexing(float deltaTime)
+        private void PreIkTransferBindingOutputsAndUpdateFlexing(float deltaTime)
         {
-            FinalizeAllJobsLocal();
+            FinalizePreIkJobsLocal();
 
-            foreach (var flexer in flexers)
+            foreach (var flexerIndex in preIkFlexers)
             {
+                var flexer = flexers[flexerIndex];
                 if (flexer == null || flexer.autoFlexers == null) continue;
 
                 foreach (var autoFlexer in flexer.autoFlexers)
                 {
+                    if (!autoFlexer.preIK) continue;
+                    autoFlexer.UpdateFlexOutputs(deltaTime, flexer.CharacterMesh, autoFlexer.jobIndexLeft >= 0 ? autoFlexBindings[autoFlexer.jobIndexLeft].output : 0f, autoFlexer.jobIndexRight >= 0 ? autoFlexBindings[autoFlexer.jobIndexRight].output : 0f);
+                }
+
+                flexer.UpdateFlexing();
+            }
+        }
+        private void TransferBindingOutputsAndUpdateFlexing(float deltaTime)
+        {
+            FinalizeAllJobsLocal();
+
+            foreach (var flexerIndex in standardFlexers)
+            {
+                var flexer = flexers[flexerIndex];
+                if (flexer == null || flexer.autoFlexers == null) continue;
+
+                foreach (var autoFlexer in flexer.autoFlexers)
+                {
+                    if (autoFlexer.preIK) continue;
                     autoFlexer.UpdateFlexOutputs(deltaTime, flexer.CharacterMesh, autoFlexer.jobIndexLeft >= 0 ? autoFlexBindings[autoFlexer.jobIndexLeft].output : 0f, autoFlexer.jobIndexRight >= 0 ? autoFlexBindings[autoFlexer.jobIndexRight].output : 0f);
                 }
 
@@ -839,8 +907,47 @@ namespace Swole.API.Unity
 
         public override void OnUpdate() { }
 
+        private class PreIkExecutor : IExecutableBehaviour
+        {
+            public CharacterMuscleAutoFlexerUpdater updater;
+
+            public int Priority => CharacterMuscleAutoFlexerUpdater.PreIkExecutionPriority;
+
+            public int UpdatePriority => Priority;
+
+            public int LateUpdatePriority => Priority;
+
+            public int FixedUpdatePriority => Priority;
+
+            public int CompareTo(IExecutableBehaviour other) => other == null ? 1 : Priority.CompareTo(other.Priority);
+
+            public void OnFixedUpdate()
+            {
+            }
+
+            public void OnLateUpdate()
+            {
+                updater.PreIkUpdate();
+            }
+
+            public void OnPostFixedUpdate()
+            {
+            }
+
+            public void OnPreFixedUpdate()
+            {
+            }
+
+            public void OnUpdate()
+            {
+            }
+        }
+
+        private PreIkExecutor preIkExecutor;
+
+        private JobHandle currentJobHandlePreIk;
         private JobHandle currentJobHandle;
-        public JobHandle OutputDependencyLocal => currentJobHandle;
+        public JobHandle OutputDependencyLocal => JobHandle.CombineDependencies(currentJobHandlePreIk, currentJobHandle);
         public JobHandle OutputDependency
         {
             get
@@ -851,6 +958,17 @@ namespace Swole.API.Unity
                 return instance.OutputDependencyLocal;
             }
         }
+        public static void FinalizePreIkJobs()
+        {
+            var instance = InstanceOrNull;
+            if (instance == null) return;
+
+            instance.FinalizePreIkJobsLocal();
+        }
+        public void FinalizePreIkJobsLocal()
+        {
+            currentJobHandlePreIk.Complete();
+        }
         public static void FinalizeAllJobs()
         {
             var instance = InstanceOrNull;
@@ -860,14 +978,36 @@ namespace Swole.API.Unity
         }
         public void FinalizeAllJobsLocal()
         {
+            currentJobHandlePreIk.Complete();
             currentJobHandle.Complete();
+        }
+
+        protected void PreIkUpdate()
+        {
+            FinalizePreIkJobsLocal();
+
+            RemoveNullTransforms(true);
+
+            currentJobHandlePreIk = new SharedJobs.FetchTemporalTransformDataJobLocal()
+            {
+                transformData = transformStatesPreIk.AsArray()
+            }.Schedule(transformsPreIk, default);
+
+            currentJobHandlePreIk = new EvaluateAutoFlexBindings()
+            {
+                deltaTime = Time.deltaTime,
+                transformStates = transformStatesPreIk,
+                bindings = autoFlexBindingsPreIk
+            }.Schedule(autoFlexBindingsPreIk.Length, 1, currentJobHandlePreIk);
+
+            PreIkTransferBindingOutputsAndUpdateFlexing(Time.deltaTime);
         }
 
         public override void OnLateUpdate()
         {
             FinalizeAllJobsLocal();
 
-            RemoveNullTransforms();
+            RemoveNullTransforms(false);
 
             currentJobHandle = new SharedJobs.FetchTemporalTransformDataJobLocal()
             {
@@ -881,20 +1021,45 @@ namespace Swole.API.Unity
                 bindings = autoFlexBindings
             }.Schedule(autoFlexBindings.Length, 1, currentJobHandle);
 
-            TransferBindingOutputsAndUpdateFlexing(Time.deltaTime); 
+            TransferBindingOutputsAndUpdateFlexing(Time.deltaTime);
         }
 
         protected override void OnAwake()
         {
+            transformsPreIk = new TransformAccessArray(128, -1);
+            transformStatesPreIk = new NativeList<TransformDataStateTemporal>(128, Allocator.Persistent);
+            autoFlexBindingsPreIk = new NativeList<AutoFlexBinding>(32, Allocator.Persistent);
+
             transforms = new TransformAccessArray(128, -1);
             transformStates = new NativeList<TransformDataStateTemporal>(128, Allocator.Persistent);
             autoFlexBindings = new NativeList<AutoFlexBinding>(32, Allocator.Persistent);
+
+            preIkExecutor = new PreIkExecutor() { updater = this };
+            SingletonCallStack.Insert(preIkExecutor); 
         }
 
-        protected void OnDestroy() => Dispose();
+        protected void OnDestroy()
+        {
+            if (preIkExecutor != null) 
+            {
+                SingletonCallStack.Remove(preIkExecutor);
+                preIkExecutor = null;
+            }
+
+            Dispose(); 
+        }
 
         public void Dispose()
         {
+            if (transformsPreIk.isCreated) transformsPreIk.Dispose();
+            transformsPreIk = default;
+
+            if (transformStatesPreIk.IsCreated) transformStatesPreIk.Dispose();
+            transformStatesPreIk = default;
+
+            if (autoFlexBindingsPreIk.IsCreated) autoFlexBindingsPreIk.Dispose();
+            autoFlexBindingsPreIk = default;
+
             if (transforms.isCreated) transforms.Dispose();
             transforms = default;
 

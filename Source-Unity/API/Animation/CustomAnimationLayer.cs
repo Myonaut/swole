@@ -74,6 +74,7 @@ namespace Swole.API.Unity.Animation
         [SerializeField]
         protected bool invertAvatarMask;
 
+        public bool HasAvatarMask => AvatarMask != null;
         public WeightedAvatarMask AvatarMask 
         {
             get => avatarMask == null ? (avatarMaskAsset == null ? null : avatarMaskAsset.mask) : avatarMask;    
@@ -1277,6 +1278,12 @@ namespace Swole.API.Unity.Animation
             }
 
             return height;
+        }
+
+        public void NonAdditivePrepass(bool useMultithreading)
+        {
+            var activeState = ActiveState;
+            if (activeState != null) activeState.NonAdditivePrepass(useMultithreading);
         }
 
     }

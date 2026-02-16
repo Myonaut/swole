@@ -432,10 +432,51 @@ namespace Swole
             }
         }
 
+        private static KeyCode CrouchKeyCode = KeyCode.LeftControl;
+        public static bool CrouchKey { get { return Input.GetKey(CrouchKeyCode); } }
+        public static bool CrouchKeyDown { get { return Input.GetKeyDown(CrouchKeyCode); } }
+        public static bool CrouchKeyUp { get { return Input.GetKeyUp(CrouchKeyCode); } }
+
+
+        public static bool CrouchButton
+        {
+            get
+            {
+#if ENABLE_INPUT_SYSTEM
+                return InputSystemProxy.DefaultControls.Standard.Crouch.IsPressed(); 
+#else
+                return CrouchKey || Input.GetButton("Crouch");      
+#endif
+            }
+        }
+        public static bool CrouchButtonDown
+        {
+            get
+            {
+#if ENABLE_INPUT_SYSTEM
+                return InputSystemProxy.DefaultControls.Standard.Crouch.WasPressedThisFrame();
+#else
+                return CrouchKeyDown || Input.GetButtonDown("Crouch");      
+#endif
+            }
+        }
+        public static bool CrouchButtonUp
+        {
+            get
+            {
+#if ENABLE_INPUT_SYSTEM
+                return InputSystemProxy.DefaultControls.Standard.Crouch.WasReleasedThisFrame();
+#else
+                return CrouchKeyUp || Input.GetButtonUp("Crouch");      
+#endif
+            }
+        }
+
         private static KeyCode RollKeyCode = KeyCode.LeftAlt;
         public static bool RollKey { get { return Input.GetKey(RollKeyCode); } }
         public static bool RollKeyDown { get { return Input.GetKeyDown(RollKeyCode); } }
         public static bool RollKeyUp { get { return Input.GetKeyUp(RollKeyCode); } }
+
 
         public static bool RollButton
         {
@@ -722,6 +763,44 @@ namespace Swole
 
         #endregion
 
+        #region Camera
+
+        public static bool InitiateZoom
+        {
+            get
+            {
+#if ENABLE_INPUT_SYSTEM
+                return InputSystemProxy.DefaultControls.Camera.InitiateZoom.IsPressed(); 
+#else
+                return false;
+#endif
+            }
+        }
+        public static bool InitiateZoomUp
+        {
+            get
+            {
+#if ENABLE_INPUT_SYSTEM
+                return InputSystemProxy.DefaultControls.Camera.InitiateZoom.WasReleasedThisFrame();
+#else
+                return false;
+#endif
+            }
+        }
+        public static bool InitiateZoomDown
+        {
+            get
+            {
+#if ENABLE_INPUT_SYSTEM
+                return InputSystemProxy.DefaultControls.Camera.InitiateZoom.WasPressedThisFrame();
+#else
+                return false;
+#endif
+            }
+        }
+
+        #endregion
+
         public static float Scroll { get { return Input.mouseScrollDelta.y * ScrollSpeed; } }
         public static bool ScrollUp { get { return Scroll > 0; } }
         public static bool ScrollDown { get { return Scroll < 0; } }
@@ -912,7 +991,14 @@ namespace Swole
 #endif
         }
 
+        public bool disableAutoUpdates;
+
         public override void OnUpdate()
+        {
+            if (!disableAutoUpdates) UpdateInputs(); 
+        }
+
+        public virtual void UpdateInputs()
         {
 #if ENABLE_INPUT_SYSTEM
             if (InputSystem.settings.updateMode == InputSettings.UpdateMode.ProcessEventsManually) InputSystem.Update();

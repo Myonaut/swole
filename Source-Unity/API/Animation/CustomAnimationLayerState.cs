@@ -229,6 +229,24 @@ namespace Swole.API.Unity.Animation
 
             return -1;
         }
+
+        public int AddTransition(Transition t)
+        {
+            if (t == null) return -1;
+
+            if (transitions == null)
+            {
+                transitions = new Transition[1];
+            }
+            else
+            {
+                Array.Resize(ref transitions, transitions.Length + 1);
+            }
+
+            int index = transitions.Length - 1;
+            transitions[index] = t;
+            return index;
+        }
         
         [NonSerialized]
         protected Transition m_activeTransition;
@@ -580,7 +598,7 @@ namespace Swole.API.Unity.Animation
                                 }
                             }
 
-                            //                                                                                                           v --- if the current active state has a motion controller, then it will be progressed after this progress call, so don't allow finalization 
+                            //                                                                                                                                              v --- if the current active state has a motion controller, then it will be progressed after this progress call, so don't allow finalization 
                             m_transitionTarget = csm.Progress(localHierarchy, true, skipAnimation, deltaTime * targetSpeedMul, ref jobHandle, useMultithreading, isFinal && !hasController, m_activeTransition == null || !m_activeTransition.allowMultiTransition ? false : true, true, canLoop) + 1;
                         }
 
@@ -697,6 +715,26 @@ namespace Swole.API.Unity.Animation
 
             return controller.GetBoneHeightAtTime(Layer, boneName, time);
 
+        }
+
+        public void NonAdditivePrepass(bool useMultithreading)
+        {
+            var layer = Layer; 
+
+            var controller = Layer.GetMotionController(MotionControllerIndex);
+            if (controller != null)
+            {
+                controller.NonAdditivePrepass(useMultithreading, layer);
+            }
+
+            if (IsTransitioning)
+            {
+                var targetState = layer.GetState(TransitionTarget);
+                if (targetState != null)
+                {
+                    targetState.NonAdditivePrepass(useMultithreading);
+                }
+            }
         }
 
     }

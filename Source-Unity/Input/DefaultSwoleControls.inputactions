@@ -103,6 +103,15 @@
                     "processors": "",
                     "interactions": "",
                     "initialStateCheck": false
+                },
+                {
+                    "name": "Crouch",
+                    "type": "Button",
+                    "id": "a4a56850-2e54-4b19-97ab-520291d0f28d",
+                    "expectedControlType": "",
+                    "processors": "",
+                    "interactions": "",
+                    "initialStateCheck": false
                 }
             ],
             "bindings": [
@@ -268,6 +277,28 @@
                     "processors": "",
                     "groups": ";Gamepad",
                     "action": "Sprint",
+                    "isComposite": false,
+                    "isPartOfComposite": false
+                },
+                {
+                    "name": "",
+                    "id": "0e69f4c4-4d7f-456f-9cc1-481ccf492619",
+                    "path": "<Keyboard>/leftCtrl",
+                    "interactions": "",
+                    "processors": "",
+                    "groups": ";Keyboard",
+                    "action": "Crouch",
+                    "isComposite": false,
+                    "isPartOfComposite": false
+                },
+                {
+                    "name": "",
+                    "id": "d229aded-766f-49a0-a684-b74cca38e2e8",
+                    "path": "<Gamepad>/leftStickPress",
+                    "interactions": "",
+                    "processors": "",
+                    "groups": ";Gamepad",
+                    "action": "Crouch",
                     "isComposite": false,
                     "isPartOfComposite": false
                 }
@@ -525,6 +556,45 @@
                     "action": "SteeringAxis",
                     "isComposite": false,
                     "isPartOfComposite": true
+                }
+            ]
+        },
+        {
+            "name": "Camera",
+            "id": "14101762-0455-47c3-bdbb-75eb6f1e3b05",
+            "actions": [
+                {
+                    "name": "InitiateZoom",
+                    "type": "Button",
+                    "id": "64f305dc-6fec-4496-a143-96c0acba67d4",
+                    "expectedControlType": "",
+                    "processors": "",
+                    "interactions": "",
+                    "initialStateCheck": false
+                }
+            ],
+            "bindings": [
+                {
+                    "name": "",
+                    "id": "5387418d-b297-4181-81b5-e0fc00c5d7d7",
+                    "path": "<Gamepad>/rightStickPress",
+                    "interactions": "",
+                    "processors": "",
+                    "groups": ";Gamepad",
+                    "action": "InitiateZoom",
+                    "isComposite": false,
+                    "isPartOfComposite": false
+                },
+                {
+                    "name": "",
+                    "id": "bff97dfd-ba9c-4804-ab1d-83879cf471f1",
+                    "path": "<Keyboard>/leftAlt",
+                    "interactions": "",
+                    "processors": "",
+                    "groups": ";Keyboard",
+                    "action": "InitiateZoom",
+                    "isComposite": false,
+                    "isPartOfComposite": false
                 }
             ]
         }

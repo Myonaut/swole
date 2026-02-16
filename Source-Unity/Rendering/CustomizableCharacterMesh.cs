@@ -22,6 +22,20 @@ namespace Swole.Morphing
     public class CustomizableCharacterMesh : InstanceableSkinnedMeshBase, ICustomizableCharacter
     {
 
+        public bool RaycastAgainst(int lod, float3 origin, float3 offset, out Maths.RaycastHitResult result, float errorMargin = 0.01f)
+        {
+            result = default;
+            return false;
+        }
+
+        public int DefaultRaycastLOD
+        {
+            get => 1;
+            set
+            {
+            }
+        } 
+
         #region Skinned Mesh Sync
 
         protected List<BlendShapeSync>[] standaloneShapeSyncs;

@@ -15,7 +15,7 @@ using Swole.API.Unity.Animation;
 namespace Swole
 {
 
-    public interface ICustomizableCharacter
+    public interface ICustomizableCharacter : IRaycastTarget
     {
 
         public bool IsInitialized { get; }

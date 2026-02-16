@@ -62,6 +62,8 @@ namespace Swole.Animation
         public float GetBoneHeight(string boneName, float timeOffset);
         public float GetBoneHeightAtTime(string boneName, float time);
 
+        public void NonAdditivePrepass(bool useMultithreading);
+
     }
 
     [Serializable]
@@ -168,6 +170,12 @@ namespace Swole.Animation
     {
         public float minNormalizedTime;
         public float maxNormalizedTime;
+
+        public TransitionTimeRange(float minNormalizedTime, float maxNormalizedTime)
+        {
+            this.minNormalizedTime = minNormalizedTime;
+            this.maxNormalizedTime = maxNormalizedTime;
+        }
     }
 
     [Serializable]
@@ -300,6 +308,7 @@ namespace Swole.Animation
         public float maxNormalizedTime = 1f;
 
         public TransitionRequirement[] validRequirementPaths;
+        public bool HasRequirements => validRequirementPaths != null && validRequirementPaths.Length > 0;
 
         public bool setLocalNormalizedTime;
 #if UNITY_EDITOR

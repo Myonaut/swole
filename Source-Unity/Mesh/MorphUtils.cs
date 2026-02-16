@@ -1883,6 +1883,86 @@ namespace Swole.Morphing
             return output;
         }
 
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static Vector4 StoreIndexInUV(RGBAChannel nearestVertexIndexElement, Vector4 uv, int index)
+        {
+            switch (nearestVertexIndexElement)
+            {
+                case RGBAChannel.R:
+                    uv.x = index;
+                    break;
+                case RGBAChannel.G:
+                    uv.y = index;
+                    break;
+                case RGBAChannel.B:
+                    uv.z = index;
+                    break;
+                case RGBAChannel.A:
+                    uv.w = index;
+                    break;
+            }
+
+            return uv;
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static int FetchIndexFromUV(RGBAChannel nearestVertexIndexElement, Vector4 uv)
+        {
+            switch (nearestVertexIndexElement)
+            {
+                case RGBAChannel.R:
+                    return (int)uv.x;
+                case RGBAChannel.G:
+                    return (int)uv.y;
+                case RGBAChannel.B:
+                    return (int)uv.z;
+                case RGBAChannel.A:
+                    return (int)uv.w;
+            }
+
+            return 0;
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static float4 StoreIndexInUV(RGBAChannel nearestVertexIndexElement, float4 uv, int index)
+        {
+            switch (nearestVertexIndexElement)
+            {
+                case RGBAChannel.R:
+                    uv.x = index;
+                    break;
+                case RGBAChannel.G:
+                    uv.y = index;
+                    break;
+                case RGBAChannel.B:
+                    uv.z = index;
+                    break;
+                case RGBAChannel.A:
+                    uv.w = index;
+                    break;
+            }
+
+            return uv;
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static int FetchIndexFromUV(RGBAChannel nearestVertexIndexElement, float4 uv)
+        {
+            switch (nearestVertexIndexElement)
+            {
+                case RGBAChannel.R:
+                    return (int)uv.x;
+                case RGBAChannel.G:
+                    return (int)uv.y;
+                case RGBAChannel.B:
+                    return (int)uv.z;
+                case RGBAChannel.A:
+                    return (int)uv.w;
+            }
+
+            return 0;
+        }
+
         #endregion
 
     }

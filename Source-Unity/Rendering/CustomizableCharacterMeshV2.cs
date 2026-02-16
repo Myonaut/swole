@@ -327,19 +327,19 @@ namespace Swole.Morphing
 
 #endif
 
-        [Serializable]
+        [Serializable, NonAnimatable]
         public struct NamedFloat
         {
             public string name;
             public float value;
         }
-        [Serializable]
+        [Serializable, NonAnimatable]
         public struct NamedFloat2
         {
             public string name;
             public float2 value;
         }
-        [Serializable]
+        [Serializable, NonAnimatable]
         public struct NamedMuscleData
         {
             public string name;
@@ -1560,6 +1560,7 @@ namespace Swole.Morphing
             }
 
             private NativeList<MeshVertexDelta> finalVertexDeltas;
+            public NativeList<MeshVertexDelta> FinalVertexDeltas => finalVertexDeltas;
 
             private bool hasActiveJob;
             private JobHandle activeJob;
@@ -2962,6 +2963,259 @@ namespace Swole.Morphing
             public MeshLOD GetLOD(int lod) => meshLODs == null ? default : GetLODUnsafe(Mathf.Clamp(lod, 0, meshLODs.Length - 1));
             public MeshLOD GetLODUnsafe(int lod) => meshLODs[lod];
 
+            [NonSerialized]
+            private NativeArray<float3>[] meshVertices;
+            [NonSerialized]
+            private NativeArray<float4>[] meshColors;
+            [NonSerialized]
+            private NativeArray<int>[] meshTriangles;
+            [NonSerialized]
+            private NativeArray<float4>[] meshUV0s;
+            [NonSerialized]
+            private NativeArray<float4>[] meshUV1s;
+            [NonSerialized]
+            private NativeArray<float4>[] meshUV2s;
+            [NonSerialized]
+            private NativeArray<float4>[] meshUV3s;
+
+            public bool TryGetVertices(int lod, out NativeArray<float3> array)
+            {
+                array = default;
+                if (meshLODs == null || lod < 0 || lod >= meshLODs.Length) return false;
+
+                var mesh = GetMeshUnsafe(lod);
+                if (mesh == null) return false;
+
+                if (meshVertices != null && meshVertices.Length >= meshLODs.Length && meshVertices[lod].IsCreated)
+                {
+                    array = meshVertices[lod];
+                    return true;
+                }
+
+                //MeshUtils._tempV3.Clear();
+                //mesh.GetVertices(MeshUtils._tempV3);
+                array = new NativeArray<Vector3>(mesh.vertices, Allocator.Persistent).Reinterpret<float3>();
+                if (meshVertices == null || meshVertices.Length != meshLODs.Length) 
+                {
+                    if (meshVertices != null)
+                    {
+                        foreach (var array_ in meshVertices) if (array_.IsCreated) array_.Dispose();
+                    }
+
+                    meshVertices = new NativeArray<float3>[meshLODs.Length]; 
+                }
+
+                meshVertices[lod] = array;
+
+                return true;
+            }
+            public bool TryGetColors(int lod, out NativeArray<float4> array)
+            {
+                array = default;
+                if (meshLODs == null || lod < 0 || lod >= meshLODs.Length) return false;
+
+                var mesh = GetMeshUnsafe(lod);
+                if (mesh == null) return false;
+
+                if (meshColors != null && meshColors.Length >= meshLODs.Length && meshColors[lod].IsCreated)
+                {
+                    array = meshColors[lod];
+                    return true;
+                }
+
+                //MeshUtils._tempColor.Clear();
+                //mesh.GetColors(MeshUtils._tempColor);
+                array = new NativeArray<Color>(mesh.colors, Allocator.Persistent).Reinterpret<float4>();
+                if (meshColors == null || meshColors.Length != meshLODs.Length)
+                {
+                    if (meshColors != null)
+                    {
+                        foreach (var array_ in meshColors) if (array_.IsCreated) array_.Dispose();
+                    }
+
+                    meshColors = new NativeArray<float4>[meshLODs.Length];
+                }
+
+                meshColors[lod] = array;
+
+                return true;
+            }
+            public bool TryGetTriangles(int lod, out NativeArray<int> array) 
+            {
+                array = default;
+                if (meshLODs == null || lod < 0 || lod >= meshLODs.Length) return false;
+
+                var mesh = GetMeshUnsafe(lod);
+                if (mesh == null) return false;
+
+                if (meshTriangles != null && meshTriangles.Length >= meshLODs.Length && meshTriangles[lod].IsCreated)
+                {
+                    array = meshTriangles[lod]; 
+                    return true;
+                }
+
+                array = new NativeArray<int>(mesh.triangles, Allocator.Persistent);
+                if (meshTriangles == null || meshTriangles.Length != meshLODs.Length)
+                {
+                    if (meshTriangles != null)
+                    {
+                        foreach (var array_ in meshTriangles) if (array_.IsCreated) array_.Dispose();
+                    }
+
+                    meshTriangles = new NativeArray<int>[meshLODs.Length];
+                }
+
+                meshTriangles[lod] = array;
+
+                return true;
+            }
+
+            public bool TryGetUV0(int lod, out NativeArray<float4> array)
+            {
+                array = default;
+                if (meshLODs == null || lod < 0 || lod >= meshLODs.Length) return false;
+
+                var mesh = GetMeshUnsafe(lod);
+                if (mesh == null) return false;
+
+                if (meshUV0s != null && meshUV0s.Length >= meshLODs.Length && meshUV0s[lod].IsCreated)
+                {
+                    array = meshUV0s[lod];
+                    return true;
+                }
+
+                MeshUtils._tempV4.Clear();
+                mesh.GetUVs(0, MeshUtils._tempV4);
+                array = new NativeArray<Vector4>(MeshUtils._tempV4.ToArray(), Allocator.Persistent).Reinterpret<float4>();
+                if (meshUV0s == null || meshUV0s.Length != meshLODs.Length)
+                {
+                    if (meshUV0s != null)
+                    {
+                        foreach (var array_ in meshUV0s) if (array_.IsCreated) array_.Dispose();
+                    }
+
+                    meshUV0s = new NativeArray<float4>[meshLODs.Length];
+                }
+
+                meshUV0s[lod] = array;
+
+                return true;
+            }
+            public bool TryGetUV1(int lod, out NativeArray<float4> array)
+            {
+                array = default;
+                if (meshLODs == null || lod < 0 || lod >= meshLODs.Length) return false;
+
+                var mesh = GetMeshUnsafe(lod);
+                if (mesh == null) return false;
+
+                if (meshUV1s != null && meshUV1s.Length >= meshLODs.Length && meshUV1s[lod].IsCreated)
+                {
+                    array = meshUV1s[lod];
+                    return true;
+                }
+
+                MeshUtils._tempV4.Clear();
+                mesh.GetUVs(1, MeshUtils._tempV4);
+                array = new NativeArray<Vector4>(MeshUtils._tempV4.ToArray(), Allocator.Persistent).Reinterpret<float4>();
+                if (meshUV1s == null || meshUV1s.Length != meshLODs.Length)
+                {
+                    if (meshUV1s != null)
+                    {
+                        foreach (var array_ in meshUV1s) if (array_.IsCreated) array_.Dispose();
+                    }
+
+                    meshUV1s = new NativeArray<float4>[meshLODs.Length];
+                }
+
+                meshUV1s[lod] = array;
+
+                return true;
+            }
+            public bool TryGetUV2(int lod, out NativeArray<float4> array)
+            {
+                array = default;
+                if (meshLODs == null || lod < 0 || lod >= meshLODs.Length) return false;
+
+                var mesh = GetMeshUnsafe(lod);
+                if (mesh == null) return false;
+
+                if (meshUV2s != null && meshUV2s.Length >= meshLODs.Length && meshUV2s[lod].IsCreated)
+                {
+                    array = meshUV2s[lod];
+                    return true;
+                }
+
+                MeshUtils._tempV4.Clear();
+                mesh.GetUVs(2, MeshUtils._tempV4);
+                array = new NativeArray<Vector4>(MeshUtils._tempV4.ToArray(), Allocator.Persistent).Reinterpret<float4>();
+                if (meshUV2s == null || meshUV2s.Length != meshLODs.Length)
+                {
+                    if (meshUV2s != null)
+                    {
+                        foreach (var array_ in meshUV2s) if (array_.IsCreated) array_.Dispose(); 
+                    }
+
+                    meshUV2s = new NativeArray<float4>[meshLODs.Length];
+                }
+
+                meshUV2s[lod] = array;
+
+                return true;
+            }
+            public bool TryGetUV3(int lod, out NativeArray<float4> array)
+            {
+                array = default;
+                if (meshLODs == null || lod < 0 || lod >= meshLODs.Length) return false;
+
+                var mesh = GetMeshUnsafe(lod);
+                if (mesh == null) return false;
+
+                if (meshUV3s != null && meshUV3s.Length >= meshLODs.Length && meshUV3s[lod].IsCreated)
+                {
+                    array = meshUV3s[lod];
+                    return true;
+                }
+
+                MeshUtils._tempV4.Clear();
+                mesh.GetUVs(3, MeshUtils._tempV4);
+                array = new NativeArray<Vector4>(MeshUtils._tempV4.ToArray(), Allocator.Persistent).Reinterpret<float4>();
+                if (meshUV3s == null || meshUV3s.Length != meshLODs.Length)
+                {
+                    if (meshUV3s != null)
+                    {
+                        foreach (var array_ in meshUV3s) if (array_.IsCreated) array_.Dispose();
+                    }
+
+                    meshUV3s = new NativeArray<float4>[meshLODs.Length]; 
+                }
+
+                meshUV3s[lod] = array; 
+
+                return true;
+            }
+            public bool TryGetUV(int lod, UVChannelURP channel, out NativeArray<float4> array)
+            {
+                array = default;
+
+                switch(channel)
+                {
+                    case UVChannelURP.UV0:
+                        return TryGetUV0(lod, out array);
+
+                    case UVChannelURP.UV1:
+                        return TryGetUV1(lod, out array);
+
+                    case UVChannelURP.UV2:
+                        return TryGetUV2(lod, out array);
+
+                    case UVChannelURP.UV3:
+                        return TryGetUV3(lod, out array); 
+                }
+
+                return false;
+            }
+
             [SerializeField]
             public Vector3 boundsCenter;
             [SerializeField]
@@ -2972,6 +3226,21 @@ namespace Swole.Morphing
 
             [HideInInspector]
             public BoneWeight8[] baseBoneWeights;
+
+            [NonSerialized]
+            private NativeArray<BoneWeight8> baseBoneWeightsJob;
+            public NativeArray<BoneWeight8> BaseBoneWeightsJob
+            {
+                get
+                {
+                    if (!baseBoneWeightsJob.IsCreated)
+                    {
+                        baseBoneWeightsJob = new NativeArray<BoneWeight8>(baseBoneWeights == null ? new BoneWeight8[0] : baseBoneWeights, Allocator.Persistent); 
+                    }
+
+                    return baseBoneWeightsJob;
+                }
+            }
 
             [HideInInspector]
             public Matrix4x4[] baseBindPose;
@@ -3130,6 +3399,11 @@ namespace Swole.Morphing
 
 
             [Header("Other")]
+            public int raycastLod;
+            [Tooltip("The uv channel to use for determining the nearest vertex.")]
+            public UVChannelURP nearestVertexUVChannel = UVChannelURP.UV3;
+            [Tooltip("The uv element to store the nearest vertex index in.")]
+            public RGBAChannel nearestVertexIndexElement = RGBAChannel.R;
             public float2[] fatGroupModifiers;
 
             #endregion
@@ -3723,6 +3997,20 @@ namespace Swole.Morphing
 
                 try
                 {
+                    if (baseBoneWeightsJob.IsCreated)
+                    {
+                        baseBoneWeightsJob.Dispose();
+                        baseBoneWeightsJob = default;
+                    }
+                }
+                catch (Exception ex)
+                {
+#if UNITY_EDITOR
+                    Debug.LogException(ex);
+#endif
+                }
+                try
+                {
                     if (boneWeightsBuffer != null && boneWeightsBuffer.IsValid())
                     {
                         boneWeightsBuffer.Dispose();
@@ -3826,20 +4114,157 @@ namespace Swole.Morphing
 #endif
                 }
 
-                /*try
+                if (meshVertices != null)
                 {
-                    if (vertices.IsCreated)
+                    foreach (var array in meshVertices)
                     {
-                        vertices.Dispose();
-                        vertices = default;
-                    }
-                }
-                catch (Exception ex)
-                {
+                        try
+                        {
+                            if (array.IsCreated)
+                            {
+                                array.Dispose();
+                            }
+                        }
+                        catch (Exception ex)
+                        {
 #if UNITY_EDITOR
-                    Debug.LogException(ex);
+                            Debug.LogException(ex);
 #endif
-                }*/
+                        }
+                    }
+
+                    meshVertices = null;
+                }
+
+                if (meshColors != null)
+                {
+                    foreach (var array in meshColors)
+                    {
+                        try
+                        {
+                            if (array.IsCreated)
+                            {
+                                array.Dispose();
+                            }
+                        }
+                        catch (Exception ex)
+                        {
+#if UNITY_EDITOR
+                            Debug.LogException(ex);
+#endif
+                        }
+                    }
+
+                    meshColors = null;
+                }
+
+                if (meshTriangles != null)
+                {
+                    foreach (var array in meshTriangles)
+                    {
+                        try
+                        {
+                            if (array.IsCreated)
+                            {
+                                array.Dispose();
+                            }
+                        }
+                        catch (Exception ex)
+                        {
+#if UNITY_EDITOR
+                            Debug.LogException(ex);
+#endif
+                        }
+                    }
+
+                    meshTriangles = null;
+                }
+
+                if (meshUV0s != null)
+                {
+                    foreach (var array in meshUV0s)
+                    {
+                        try
+                        {
+                            if (array.IsCreated)
+                            {
+                                array.Dispose();
+                            }
+                        }
+                        catch (Exception ex)
+                        {
+#if UNITY_EDITOR
+                            Debug.LogException(ex);
+#endif
+                        }
+                    }
+
+                    meshUV0s = null; 
+                }
+                if (meshUV1s != null)
+                {
+                    foreach (var array in meshUV1s)
+                    {
+                        try
+                        {
+                            if (array.IsCreated)
+                            {
+                                array.Dispose();
+                            }
+                        }
+                        catch (Exception ex)
+                        {
+#if UNITY_EDITOR
+                            Debug.LogException(ex);
+#endif
+                        }
+                    }
+
+                    meshUV1s = null;
+                }
+                if (meshUV2s != null)
+                {
+                    foreach (var array in meshUV2s)
+                    {
+                        try
+                        {
+                            if (array.IsCreated)
+                            {
+                                array.Dispose();
+                            }
+                        }
+                        catch (Exception ex)
+                        {
+#if UNITY_EDITOR
+                            Debug.LogException(ex);
+#endif
+                        }
+                    }
+
+                    meshUV2s = null;
+                }
+                if (meshUV3s != null)
+                {
+                    foreach (var array in meshUV3s)
+                    {
+                        try
+                        {
+                            if (array.IsCreated)
+                            {
+                                array.Dispose(); 
+                            }
+                        }
+                        catch (Exception ex)
+                        {
+#if UNITY_EDITOR
+                            Debug.LogException(ex);
+#endif
+                        }
+                    }
+
+                    meshUV3s = null;
+                }
+
             }
 
             #endregion
@@ -4584,6 +5009,9 @@ namespace Swole.Morphing
 
         #endregion
 
+        /// <summary>
+        /// Handles physique update jobs and buffer writes
+        /// </summary>
         new protected InstanceV2 instance;
         public int InstanceID => instance == null ? 0 : instance.localID;
         public override int InstanceSlot => InstanceID;
@@ -6205,6 +6633,194 @@ namespace Swole.Morphing
         {
             if (OnMuscleDataChanged != null) OnMuscleDataChanged.RemoveAllListeners();
             if (OnFatDataChanged != null) OnFatDataChanged.RemoveAllListeners();
+        }
+
+        #endregion
+
+        #region Sampling
+
+        protected struct RaycastResult
+        {
+            public bool didHit;
+            public Maths.RaycastHitResult hitInfo;
+        }
+
+        public int DefaultRaycastLOD
+        {
+            get => data.SerializedData.raycastLod;
+            set
+            {
+            }
+        }
+
+        public bool RaycastAgainst(int lod, float3 origin, float3 offset, out Maths.RaycastHitResult result, float errorMargin = 0.01f)
+        {
+            result = default;
+            if (!IsInitialized) return false;
+
+            if (!Data.SerializedData.TryGetVertices(lod, out var vertices)) return false;
+            if (!Data.SerializedData.TryGetTriangles(lod, out var triangles)) return false;
+            if (!Data.SerializedData.TryGetUV(lod, Data.SerializedData.nearestVertexUVChannel, out var indexUVs)) return false;
+
+            RaycastResult finalResult = default; 
+            using (var resultQueue = new NativeQueue<RaycastResult>(Allocator.TempJob))
+            {
+                using (var skinningMatrices = new NativeArray<float4x4>(SkinningBoneCount, Allocator.TempJob))
+                {
+                    rigSampler.TrackingGroup.CopyIntoArray(skinningMatrices, 0);
+
+                    var handle = instance.OwnerGroup.ActiveJob; 
+
+                    handle = new RaycastMeshJob()
+                    {
+
+                        deltasStartIndex = Data.SerializedData.vertexCount * instance.localID,
+
+                        indexChannel = Data.SerializedData.nearestVertexIndexElement,
+
+                        errorMargin = errorMargin,
+                        origin = origin,
+                        offset = offset,
+
+                        vertices = vertices,
+                        triangles = triangles,
+                        indexUVs = indexUVs,
+
+                        deltas = instance.OwnerGroup.FinalVertexDeltas.AsArray(),
+
+                        boneWeights = Data.SerializedData.BaseBoneWeightsJob,
+                        skinningMatrices = skinningMatrices,
+
+                        results = resultQueue.AsParallelWriter()
+
+                    }.Schedule(triangles.Length / 3, 1, handle);
+                    
+                    using (var finalResultArray = new NativeArray<RaycastResult>(1, Allocator.TempJob))
+                    {
+                        handle = new ClosestRaycastHitFinalJob()
+                        {
+                            outputs = resultQueue,
+                            finalOutput = finalResultArray
+                        }.Schedule(handle);
+
+                        handle.Complete();
+                        finalResult = finalResultArray[0];
+                    }
+                }
+            }
+
+            result = finalResult.hitInfo;
+            return finalResult.didHit;
+        }
+
+        [BurstCompile]
+        protected struct RaycastMeshJob : IJobParallelFor
+        {
+            public int deltasStartIndex;
+
+            public RGBAChannel indexChannel;
+
+            public float errorMargin;
+
+            public float3 origin;
+            public float3 offset;
+
+            [ReadOnly]
+            public NativeArray<float3> vertices;
+            [ReadOnly]
+            public NativeArray<float4> indexUVs;
+            [ReadOnly]
+            public NativeArray<int> triangles;
+            [ReadOnly]
+            public NativeArray<BoneWeight8> boneWeights;
+            [ReadOnly]
+            public NativeArray<MeshVertexDelta> deltas;
+            [ReadOnly]
+            public NativeArray<float4x4> skinningMatrices;
+
+            public NativeQueue<RaycastResult>.ParallelWriter results;
+
+            public void Execute(int index)
+            {
+                int triIndex = index * 3;
+
+                int i0 = triangles[triIndex];
+                int i1 = triangles[triIndex + 1];
+                int i2 = triangles[triIndex + 2];
+
+                int baseI0 = MorphUtils.FetchIndexFromUV(indexChannel, indexUVs[i0]);
+                int baseI1 = MorphUtils.FetchIndexFromUV(indexChannel, indexUVs[i1]);
+                int baseI2 = MorphUtils.FetchIndexFromUV(indexChannel, indexUVs[i2]);
+
+                var boneWeights0 = boneWeights[baseI0];
+                var boneWeights1 = boneWeights[baseI1];
+                var boneWeights2 = boneWeights[baseI2];
+
+                var skinning0 = 
+                    (skinningMatrices[boneWeights0.boneIndex0] * boneWeights0.boneWeight0) +
+                    (skinningMatrices[boneWeights0.boneIndex1] * boneWeights0.boneWeight1) +
+                    (skinningMatrices[boneWeights0.boneIndex2] * boneWeights0.boneWeight2) +
+                    (skinningMatrices[boneWeights0.boneIndex3] * boneWeights0.boneWeight3) +
+                    (skinningMatrices[boneWeights0.boneIndex4] * boneWeights0.boneWeight4) +
+                    (skinningMatrices[boneWeights0.boneIndex5] * boneWeights0.boneWeight5) +
+                    (skinningMatrices[boneWeights0.boneIndex6] * boneWeights0.boneWeight6) +
+                    (skinningMatrices[boneWeights0.boneIndex7] * boneWeights0.boneWeight7);
+
+                var skinning1 =
+                    (skinningMatrices[boneWeights1.boneIndex0] * boneWeights1.boneWeight0) +
+                    (skinningMatrices[boneWeights1.boneIndex1] * boneWeights1.boneWeight1) +
+                    (skinningMatrices[boneWeights1.boneIndex2] * boneWeights1.boneWeight2) +
+                    (skinningMatrices[boneWeights1.boneIndex3] * boneWeights1.boneWeight3) +
+                    (skinningMatrices[boneWeights1.boneIndex4] * boneWeights1.boneWeight4) +
+                    (skinningMatrices[boneWeights1.boneIndex5] * boneWeights1.boneWeight5) +
+                    (skinningMatrices[boneWeights1.boneIndex6] * boneWeights1.boneWeight6) +
+                    (skinningMatrices[boneWeights1.boneIndex7] * boneWeights1.boneWeight7);
+
+                var skinning2 =
+                    (skinningMatrices[boneWeights2.boneIndex0] * boneWeights2.boneWeight0) +
+                    (skinningMatrices[boneWeights2.boneIndex1] * boneWeights2.boneWeight1) +
+                    (skinningMatrices[boneWeights2.boneIndex2] * boneWeights2.boneWeight2) +
+                    (skinningMatrices[boneWeights2.boneIndex3] * boneWeights2.boneWeight3) +
+                    (skinningMatrices[boneWeights2.boneIndex4] * boneWeights2.boneWeight4) +
+                    (skinningMatrices[boneWeights2.boneIndex5] * boneWeights2.boneWeight5) +
+                    (skinningMatrices[boneWeights2.boneIndex6] * boneWeights2.boneWeight6) +
+                    (skinningMatrices[boneWeights2.boneIndex7] * boneWeights2.boneWeight7); 
+
+                var v0 = math.transform(skinning0, vertices[i0] + deltas[deltasStartIndex + baseI0].positionDelta);
+                var v1 = math.transform(skinning1, vertices[i1] + deltas[deltasStartIndex + baseI1].positionDelta);
+                var v2 = math.transform(skinning2, vertices[i2] + deltas[deltasStartIndex + baseI2].positionDelta);
+
+                var output = new RaycastResult();
+                output.didHit = Maths.seg_intersect_triangle_include_dist(origin, offset, v0, v1, v2, out Maths.RaycastHitResult result, errorMargin);
+                output.hitInfo = result;
+
+                if (output.didHit) results.Enqueue(output); 
+            }
+
+        }
+
+        [BurstCompile]
+        private struct ClosestRaycastHitFinalJob : IJob
+        {
+
+            public NativeQueue<RaycastResult> outputs;
+
+            public NativeArray<RaycastResult> finalOutput;
+
+            public void Execute()
+            {
+                RaycastResult min = new RaycastResult() { hitInfo = new Maths.RaycastHitResult() { distance = float.MaxValue } };
+
+                while (outputs.TryDequeue(out var f))
+                {
+                    if (f.didHit & f.hitInfo.distance < min.hitInfo.distance)
+                    {
+                        min = f;
+                    }
+                }
+
+                finalOutput[0] = min;
+            }
         }
 
         #endregion

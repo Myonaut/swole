@@ -329,6 +329,11 @@ namespace Swole
             return array;
         }
 
+        public static readonly List<int> _tempIndices = new List<int>();
+        public static readonly List<Vector3> _tempV3 = new List<Vector3>();
+        public static readonly List<Vector4> _tempV4 = new List<Vector4>();
+        public static readonly List<Color> _tempColor = new List<Color>();
+
     }
 
 

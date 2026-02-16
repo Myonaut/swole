@@ -10,6 +10,7 @@ using static Swole.ICustomizableCharacter.Defaults;
 
 namespace Swole.Morphing
 {
+    [NonAnimatable]
     public class CustomizableCharacterMeshV2_DATA : ScriptableObject
     {
 

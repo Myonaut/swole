@@ -27,6 +27,7 @@ namespace Swole.API.Unity.Animation
 
         public delegate float GetPropertyValueDelegate();
         public delegate void SetPropertyValueDelegate(float value);
+        [NonAnimatable]
         public class Property
         {
             public string name;
@@ -51,6 +52,7 @@ namespace Swole.API.Unity.Animation
             protected GetPropertyValueDelegate getValue;
             public void SetGetter(GetPropertyValueDelegate getValue) => this.getValue = getValue;
             public float GetValue() => getValue == null ? localValue : getValue();
+            public float GetDefaultValue() => defaultValue;
 
             protected SetPropertyValueDelegate setValue;
             public void SetSetter(SetPropertyValueDelegate setValue) => this.setValue = setValue;
@@ -141,7 +143,7 @@ namespace Swole.API.Unity.Animation
                 var last = properties[properties.Count - 1];
                 last.Index = index; 
                 properties.RemoveAt(properties.Count - 1); 
-                properties[index] = last;
+                properties[index] = last; 
             } 
             else
             {
@@ -167,8 +169,15 @@ namespace Swole.API.Unity.Animation
         public float GetValueUnsafe(int propertyIndex) => properties[propertyIndex].GetValue();
         public float GetValue(int propertyIndex)
         {
-            if (propertyIndex < 0 || propertyIndex >= properties.Count) return 0;
+            if (propertyIndex < 0 || propertyIndex >= properties.Count) return 0f;
             return GetValueUnsafe(propertyIndex);
+        }
+
+        public float GetDefaultValueUnsafe(int propertyIndex) => properties[propertyIndex].GetDefaultValue(); 
+        public float GetDefaultValue(int propertyIndex)
+        {
+            if (propertyIndex < 0 || propertyIndex >= properties.Count) return 0f;
+            return GetDefaultValueUnsafe(propertyIndex); 
         }
 
         public void SetValueUnsafe(int propertyIndex, float value) => properties[propertyIndex].SetValue(value); 

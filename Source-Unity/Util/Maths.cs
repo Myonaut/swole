@@ -592,9 +592,9 @@ namespace Swole
             ang2 = NormalizeAngle(ang2);
 
             float delta = ang2 - ang1;
-            if (math.abs(delta) > 180)
+            if (math.abs(delta) > 180f)
             {
-                delta = math.sign(delta) >= 0 ? (delta - 360) : (delta + 360);
+                delta = math.sign(delta) >= 0 ? (delta - 360f) : (delta + 360f);
 
             }
 
@@ -1245,6 +1245,12 @@ namespace Swole
             return seg_intersect_triangle(E1, E2, N, rayOrigin, rayOffset, A, B, C, out hit, errorMargin);
         }
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static bool seg_intersect_triangle_include_dist(float3 rayOrigin, float3 rayOffset, float3 A, float3 B, float3 C, out RaycastHitResult hit, float errorMargin = 0f)
+        {
+            prep_intersect_triangle(A, B, C, out float3 E1, out float3 E2, out float3 N);
+            return seg_intersect_triangle_include_dist(E1, E2, N, rayOrigin, rayOffset, A, B, C, out hit, errorMargin);
+        }
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static bool seg_intersect_triangle(float3 E1, float3 E2, float3 N, float3 rayOrigin, float3 rayOffset, float3 A, float3 B, float3 C, out float t, out float u, out float v, float errorMargin = 0f)
         {
             float min = 0.0f - errorMargin;
@@ -1275,6 +1281,20 @@ namespace Swole
 
             bool flag = seg_intersect_triangle(E1, E2, N, rayOrigin, rayOffset, A, B, C, out float t, out float u, out float v, errorMargin);
             hit.point = rayOrigin + t * rayOffset;
+            hit.normal = math.normalize(N);
+            hit.UV = new float2(u, v);
+
+            return flag;
+        }
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static bool seg_intersect_triangle_include_dist(float3 E1, float3 E2, float3 N, float3 rayOrigin, float3 rayOffset, float3 A, float3 B, float3 C, out RaycastHitResult hit, float errorMargin = 0f)
+        {
+            hit = default;
+
+            bool flag = seg_intersect_triangle(E1, E2, N, rayOrigin, rayOffset, A, B, C, out float t, out float u, out float v, errorMargin);
+            var offset = t * rayOffset;
+            hit.distance = math.length(offset);
+            hit.point = rayOrigin + offset;
             hit.normal = math.normalize(N);
             hit.UV = new float2(u, v);
 

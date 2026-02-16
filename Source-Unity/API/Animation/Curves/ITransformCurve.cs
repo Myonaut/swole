@@ -115,6 +115,8 @@ namespace Swole.API.Unity.Animation
 
             }
 
+            public static Data Default => new Data() { localRotation = Quaternion.identity, localScale = Vector3.one };
+
         }
 
         [Serializable]

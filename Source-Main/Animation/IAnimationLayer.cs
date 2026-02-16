@@ -100,6 +100,7 @@ namespace Swole.Animation
 
         public TransformHierarchy GetActiveTransformHierarchy();
 
+        public bool HasAvatarMask { get; }
         public WeightedAvatarMask AvatarMask { get; set; }
         public bool InvertAvatarMask { get; set; }
 
@@ -111,6 +112,8 @@ namespace Swole.Animation
         public float GetCurrentBoneHeight(string boneName);
         public float GetBoneHeight(string boneName, float timeOffset);
         public float GetBoneHeightAtTime(string boneName, float time);
+
+        public void NonAdditivePrepass(bool useMultithreading);
 
     }
 }

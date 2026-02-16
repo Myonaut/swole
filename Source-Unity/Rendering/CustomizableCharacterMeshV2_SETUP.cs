@@ -271,42 +271,8 @@ namespace Swole.Morphing
         public UVChannelURP nearestVertexIndexUVChannel = UVChannelURP.UV3;
         [Tooltip("The uv element to store the nearest vertex index in.")]
         public RGBAChannel nearestVertexIndexElement = RGBAChannel.R;
-        protected Vector4 StoreIndexInUV(Vector4 uv, int index)
-        {
-            switch (nearestVertexIndexElement)
-            {
-                case RGBAChannel.R:
-                    uv.x = index;
-                    break;
-                case RGBAChannel.G:
-                    uv.y = index;
-                    break;
-                case RGBAChannel.B:
-                    uv.z = index;
-                    break;
-                case RGBAChannel.A:
-                    uv.w = index;
-                    break;
-            }
-
-            return uv;
-        }
-        protected int FetchIndexFromUV(Vector4 uv)
-        {
-            switch (nearestVertexIndexElement)
-            {
-                case RGBAChannel.R:
-                    return (int)uv.x;
-                case RGBAChannel.G:
-                    return (int)uv.y;
-                case RGBAChannel.B:
-                    return (int)uv.z;
-                case RGBAChannel.A:
-                    return (int)uv.w;
-            }
-
-            return 0;
-        }
+        protected Vector4 StoreIndexInUV(Vector4 uv, int index) => MorphUtils.StoreIndexInUV(nearestVertexIndexElement, uv, index);
+        protected int FetchIndexFromUV(Vector4 uv) => MorphUtils.FetchIndexFromUV(nearestVertexIndexElement, uv);
 
         public int primaryMeshObject;
 
@@ -2265,6 +2231,8 @@ namespace Swole.Morphing
                         serializedData.boundsExtents = objectSetup.boundsExtents;
                         meshLODs.Sort(CullingLODs.SortLODsDescending);
                         serializedData.meshLODs = meshLODs.ToArray();
+                        serializedData.nearestVertexUVChannel = nearestVertexUVChannel;
+                        serializedData.nearestVertexIndexElement = nearestVertexIndexElement;
 
                         if (outputData == null) outputData = CustomizableCharacterMeshV2_DATA.CreateInstance(dataName, serializedData); else outputData.ReplaceData(serializedData);
 

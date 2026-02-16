@@ -75,6 +75,8 @@ namespace Swole.Animation
 
         public int GetLongestHierarchyIndex(IAnimationLayer layer);
 
+        public void NonAdditivePrepass(bool useMultithreading, IAnimationLayer layer);
+
         public float GetCurrentBoneHeight(IAnimationLayer layer, string boneName);
         public float GetBoneHeight(IAnimationLayer layer, string boneName, float timeOffset);
         public float GetBoneHeightAtTime(IAnimationLayer layer, string boneName, float time);
@@ -151,6 +153,8 @@ namespace Swole.Animation
     public interface IAnimationReference : IAnimationMotionController
     {
 
+        public float NormalizedTimeStart { get; set; }
+
         public AnimationLoopMode LoopMode { get; set; }
 
         public IAnimationAsset Animation { get; set; }
@@ -171,6 +175,9 @@ namespace Swole.Animation
         public int LocalSyncReferenceIndex { get; set; }
         public float Mix { get; set; }
         public int MixParameterIndex { get; set; }
+        public float MixParameterMappingMin { get; set; }
+        public float MixParameterMappingMax { get; set; }
+        public bool ClampMixParameter { get; set; }
         public float GetMix(IAnimationLayer layer);
     }
 
@@ -214,12 +221,43 @@ namespace Swole.Animation
             get => mixParameterIndex;
             set => mixParameterIndex = value;
         }
+        public float mixParameterMappingMin;
+        public float MixParameterMappingMin
+        {
+            get => mixParameterMappingMin;
+            set => mixParameterMappingMin = value;
+        }
+        public float mixParameterMappingMax;
+        public float MixParameterMappingMax
+        {
+            get => mixParameterMappingMax;
+            set => mixParameterMappingMax = value;
+        }
+        public bool clampMixParameter;
+        public bool ClampMixParameter
+        {
+            get => clampMixParameter;
+            set => clampMixParameter = value;
+        }
         public float GetMix(IAnimationLayer layer)
         {
             if (mixParameterIndex < 0) return mix;
             var param = layer.GetParameter(mixParameterIndex);
             if (param == null) return mix;
-            return mix * param.Value;
+
+            float paramVal = param.Value;
+            bool mappingIsValid = mixParameterMappingMin != mixParameterMappingMax;
+            if (mappingIsValid)
+            {
+                if (clampMixParameter)
+                {
+                    paramVal = Math.Clamp(paramVal, mixParameterMappingMin, mixParameterMappingMax);
+                }
+
+                paramVal = (paramVal - mixParameterMappingMin) / (mixParameterMappingMax - mixParameterMappingMin); 
+            }
+
+            return mix * paramVal;
         }
 
         public float normalizedStartTime = 0f;

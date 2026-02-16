@@ -65,5 +65,7 @@ namespace Swole.Animation
 
         public bool HasDerivativeHierarchyOf(IAnimationPlayer other) => Hierarchy == other.Hierarchy || (Hierarchy != null && Hierarchy.IsDerivative(other.Hierarchy));
 
+        public void NonAdditivePrepass(bool useMultithreading, IAnimationLayer layer);
+
     }
 }

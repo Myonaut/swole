@@ -822,7 +822,7 @@ namespace Swole
 
     }
 
-    [Serializable]
+    [Serializable, NonAnimatable]
     public class InstancedMeshGroup : IDisposable
     {
 
@@ -1680,6 +1680,7 @@ namespace Swole
         public int ElementsPerInstance { get; }
     }
 
+    [NonAnimatable]
     public class InstanceBuffer<T> : IInstanceBuffer where T : unmanaged
     {
 
@@ -1923,7 +1924,7 @@ namespace Swole
             }
             for (int a = 0; a < renderingCameras.Length; a++) this.floatOverrides[a].Add(new InstancedRendering.MaterialPropertyInstanceOverride<float>() { propertyName = group.InstanceIDPropertyName, value = slot }); 
         }
-
+        [NonAnimatable]
         internal class RenderInstanceLOD
         {
             public int levelOfDetail;
@@ -2506,6 +2507,7 @@ namespace Swole
         }
     }
 
+    [NonAnimatable]
     public abstract class InstanceableMeshDataBase : ScriptableObject, IDisposable
     {
 

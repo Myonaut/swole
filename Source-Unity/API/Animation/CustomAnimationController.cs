@@ -257,6 +257,70 @@ namespace Swole.API.Unity.Animation
 
         }
 
+        public bool HasParemeter(string name)
+        {
+            if (parameters == null) return false;
+
+            for (int a = 0; a < parameters.Length; a++)
+            {
+                var param = GetAnimationParameter(parameters[a]);
+                if (param != null && param.Name == name) return true;
+            }
+
+            return false;
+        }
+        public bool HasParemeter(string name, AnimationParameterValueType type)
+        {
+            if (parameters == null) return false;
+
+            for (int a = 0; a < parameters.Length; a++)
+            {
+                var paramInd = parameters[a];
+                if (paramInd.type != type) continue;
+
+                var param = GetAnimationParameter(paramInd);
+                if (param != null && param.Name == name) return true;
+            }
+
+            return false;
+        }
+        public bool HasFloatParameter(string name)
+        {
+            if (floatParameters == null) return false;
+
+            for (int a = 0; a < floatParameters.Length; a++)
+            {
+                var param = floatParameters[a];
+                if (param != null && param.Name == name) return true;
+            }
+
+            return false;
+        }
+        public bool HasBoolParameter(string name)
+        {
+            if (boolParameters == null) return false;
+
+            for (int a = 0; a < boolParameters.Length; a++)
+            {
+                var param = boolParameters[a];
+                if (param != null && param.Name == name) return true;
+            }
+
+            return false;
+        }
+        public bool HasTriggerParameter(string name)
+        {
+            if (triggerParameters == null) return false;
+
+            for (int a = 0; a < triggerParameters.Length; a++)
+            {
+                var param = triggerParameters[a];
+                if (param != null && param.Name == name) return true;
+            }
+
+            return false;
+        }
+
         public CustomAnimationLayer[] layers;
         public IAnimationLayer[] Layers
         {
