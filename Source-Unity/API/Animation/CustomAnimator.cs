@@ -856,6 +856,14 @@ namespace Swole.API.Unity.Animation
 
         }
 
+        public Transform FindBoneTransform(string boneName)
+        {
+            int ind = GetBoneIndex(boneName);
+            if (ind >= 0) return m_bones.bones[ind];
+
+            return null;
+        }
+
         public int BoneCount 
         {
 

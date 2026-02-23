@@ -42,7 +42,7 @@ namespace Swole
                 Debug.Log($"Executed iteration {handler.Iteration} / {handler.IterationCount}"); 
             }
 
-            return handler.CompletedSuccessfully;
+            return handler.CompletedSuccessfully; 
         }
 
         public void Update()

@@ -21,6 +21,42 @@ namespace Swole.API.Unity.Animation
     [CreateAssetMenu(fileName = "PoseableRig", menuName = "Swole/Rigs/PoseableRig", order = 2)]
     public class PoseableRig : ScriptableObject
     {
+
+#if UNITY_EDITOR
+        [SerializeField]
+#endif
+        protected bool refreshInspector;
+#if UNITY_EDITOR
+        protected void OnValidate()
+        {
+            if (boneGroups == null || boneGroups.Length == 0) boneGroups = new BoneGroup[] { BoneGroup.Default };
+
+            if (refreshInspector)
+            {
+                refreshInspector = false;
+
+                if (fullRig != null)
+                {
+                    for (int a = 0; a < fullRig.Length; a++)
+                    {
+                        var data = fullRig[a];
+                        data.inspectorName = data.id.name;
+                        fullRig[a] = data;  
+                    }
+                }
+                if (additiveRig != null)
+                {
+                    for(int a = 0; a < additiveRig.Length; a++)
+                    {
+                        var data = additiveRig[a];
+                        data.inspectorName = data.id.name;
+                        additiveRig[a] = data;
+                    }
+                }
+            }
+        }
+#endif
+
         public static PoseableRig Create(string path = null, string fileName = null, bool incrementIfExists = false)
         {
 
@@ -37,11 +73,6 @@ namespace Swole.API.Unity.Animation
 #endif
 
             return asset;
-        }
-
-        protected void OnValidate()
-        {
-            if (boneGroups == null || boneGroups.Length == 0) boneGroups = new BoneGroup[] { BoneGroup.Default };
         }
 
         [Serializable]
@@ -81,6 +112,7 @@ namespace Swole.API.Unity.Animation
         [Serializable]
         public struct BoneInfo
         {
+            public string inspectorName;
             public BoneID id;
             public int boneGroup;
             public bool defaultChildrenToSameGroup;
@@ -106,6 +138,7 @@ namespace Swole.API.Unity.Animation
         {
             public string name;
             public string[] aliases;
+            public bool includeChildren;
 
             public bool IsBone(string boneName) => IsBone(boneName, boneName == null ? null : boneName.AsID());
             public bool IsBone(string boneName, string boneNameId)
@@ -137,23 +170,54 @@ namespace Swole.API.Unity.Animation
         /// </summary>
         public bool IsExplicit => fullRig != null && fullRig.Length > 0;
 
-        public bool ShouldExcludeBone(string boneName)
+        public delegate Transform FindBoneTransformDelegate(string boneName);
+        public bool ShouldExcludeBone(string boneName, FindBoneTransformDelegate findBoneTransform, bool asParent = false)
         {
             if (subtractiveRig == null || string.IsNullOrWhiteSpace(boneName)) return false;
 
             string boneNameId = boneName.AsID();
-            foreach (var bone in subtractiveRig) if (bone.IsBone(boneName, boneNameId)) return true;
+            foreach (var bone in subtractiveRig) if ((bone.includeChildren || !asParent) && bone.IsBone(boneName, boneNameId)) return true;
+
+            if (findBoneTransform != null)
+            {
+                bool isAddBone = false;
+                if (additiveRig != null) // dont exclude a child of a subtractive bone if it is in the additive rig
+                {
+                    foreach (var addBone in additiveRig)
+                    {
+                        if (addBone.IsBone(boneName, boneNameId))
+                        {
+                            isAddBone = true;
+                            break;
+                        }
+                    }
+                } 
+
+                if (!isAddBone)
+                {
+                    var transform = findBoneTransform(boneName);
+                    if (transform != null)
+                    {
+                        var parent = transform.parent;
+                        while (parent != null)
+                        {
+                            if (ShouldExcludeBone(parent.name, null, true)) return true;
+                            parent = parent.parent;
+                        }
+                    }
+                }
+            }
 
             return false;
         }
-        public bool TryGetBoneInfo(string boneName, out BoneInfo info)
+        public bool TryGetBoneInfo(string boneName, FindBoneTransformDelegate findBoneTransform, out BoneInfo info)
         {
             bool Internal(out BoneInfo info)
             {
                 info = BoneInfo.GetDefault(boneName);
                 if (string.IsNullOrWhiteSpace(boneName)) return false;
 
-                bool excluded = ShouldExcludeBone(boneName);
+                bool excluded = ShouldExcludeBone(boneName, findBoneTransform);
 
                 if (TryGetAuxBoneInfo(boneName, out info)) return !excluded;
 
@@ -209,7 +273,7 @@ namespace Swole.API.Unity.Animation
                 foreach (var info_ in auxiliaryRig) if (info_.IsBone(boneName, boneNameId)) 
                     { 
                         info = info_;
-                        return true;
+                        return true; 
                     }
             }
 

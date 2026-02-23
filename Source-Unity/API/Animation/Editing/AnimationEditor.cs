@@ -1621,7 +1621,7 @@ namespace Swole.API.Unity.Animation
         [Serializable]
         public enum EditMode
         {
-            GLOBAL_TIME, GLOBAL_KEYS, SELECTED_BONE_KEYS, BONE_KEYS, BONE_CURVES, PROPERTY_CURVES, ANIMATION_EVENTS
+            GLOBAL_TIME, ALL_KEYS, ALL_BONE_KEYS, ALL_PROPERTY_KEYS, SELECTED_BONE_KEYS, BONE_KEYS, BONE_CURVES, PROPERTY_CURVES, ANIMATION_EVENTS
         }
 
         [Header("Runtime"), SerializeField]
@@ -1687,12 +1687,14 @@ namespace Swole.API.Unity.Animation
                     if (propertyDropdownListRoot != null) propertyDropdownListRoot.gameObject.SetActive(false);
                     break;
 
-                case EditMode.GLOBAL_KEYS:
+                case EditMode.ALL_KEYS:
+                case EditMode.ALL_BONE_KEYS:
+                case EditMode.ALL_PROPERTY_KEYS:
                     if (timelineWindow != null) timelineWindow.SetRenderFrameMarkers(true);
                     if (boneDropdownListRoot != null) boneDropdownListRoot.gameObject.SetActive(false);
                     if (boneGroupDropdownListRoot != null) boneGroupDropdownListRoot.gameObject.SetActive(false);
                     if (boneCurveDropdownListRoot != null) boneCurveDropdownListRoot.gameObject.SetActive(false);
-                    if (propertyDropdownListRoot != null) propertyDropdownListRoot.gameObject.SetActive(false);
+                    if (propertyDropdownListRoot != null) propertyDropdownListRoot.gameObject.SetActive(false); 
                     break;
 
                 case EditMode.SELECTED_BONE_KEYS:
@@ -5165,7 +5167,7 @@ namespace Swole.API.Unity.Animation
 
                 foreach(var bone in renderedBonesManager.poseableBones)
                 {
-                    if (bone == null || bone.transform == null || !activeObj.animator.avatar.TryGetBoneInfo(bone.name, out var boneInfo)) continue;
+                    if (bone == null || bone.transform == null || !activeObj.animator.avatar.TryGetBoneInfo(bone.name, activeObj.animator.FindBoneTransform, out var boneInfo)) continue;
                     var boneGroup = activeObj.animator.avatar.GetBoneGroup(bone.transform);//activeObj.animator.avatar.GetBoneGroup(boneInfo.boneGroup);
                     bool activate = true;
                     if (activeObj.TryGetBoneGroup(boneGroup.name, out var localBoneGroup)) activate = localBoneGroup.active; 
@@ -5175,7 +5177,7 @@ namespace Swole.API.Unity.Animation
                     if (bone.parent >= 0)
                     {
                         var parent = renderedBonesManager.poseableBones[bone.parent];
-                        if (parent != null && activeObj.animator.avatar.TryGetBoneInfo(parent.name, out boneInfo)) 
+                        if (parent != null && activeObj.animator.avatar.TryGetBoneInfo(parent.name, activeObj.animator.FindBoneTransform, out boneInfo)) 
                         {
                             boneGroup = activeObj.animator.avatar.GetBoneGroup(parent.transform);//activeObj.animator.avatar.GetBoneGroup(boneInfo.boneGroup);
 
@@ -5342,7 +5344,7 @@ namespace Swole.API.Unity.Animation
                         bool boneVisible = activate;
                         if (boneVisible)
                         {
-                            if (obj.animator.avatar != null && obj.animator.avatar.TryGetBoneInfo(ikTransform.name, out var boneInfo))
+                            if (obj.animator.avatar != null && obj.animator.avatar.TryGetBoneInfo(ikTransform.name, obj.animator.FindBoneTransform, out var boneInfo))
                             {
                                 var boneGroup = obj.animator.avatar.GetBoneGroup(boneInfo.boneGroup);
                                 if (obj.TryGetBoneGroup(boneGroup.name, out var localBoneGroup)) boneVisible = localBoneGroup.active;
@@ -6121,7 +6123,9 @@ namespace Swole.API.Unity.Animation
                         }
                     }
                     break;
-                case EditMode.GLOBAL_KEYS:
+                case EditMode.ALL_KEYS:
+                case EditMode.ALL_BONE_KEYS:
+                case EditMode.ALL_PROPERTY_KEYS:
                     if (curveRenderer != null)
                     {
                         curveRenderer.gameObject.SetActive(false);
@@ -7264,6 +7268,7 @@ namespace Swole.API.Unity.Animation
         }
 
         private int keyRelocationOffset;
+        private int lastDragFrame;
         private static readonly List<TimelineKeyframe> tempKeys = new List<TimelineKeyframe>();
         public bool RelocateSelectedkeyframes(int offset)
         {
@@ -7429,6 +7434,7 @@ namespace Swole.API.Unity.Animation
 
             CommitAnimationEditRecord();
         }
+        private int lastClickedKey = -1;
         protected TimelineKeyframe GetOrCreateKeyframe(int timelinePosition)
         {
             if (keyframeInstances.TryGetValue(timelinePosition, out TimelineKeyframe key)) return key;
@@ -7452,12 +7458,35 @@ namespace Swole.API.Unity.Animation
             {
                 if (InputProxy.Modding_ModifyActionKey)
                 {
+                    if (lastClickedKey >= 0)
+                    {
+                        int min = Mathf.Min(lastClickedKey, timelinePosition);
+                        int max = Mathf.Max(lastClickedKey, timelinePosition);
+                        foreach (var key_ in keyframeInstances)
+                        {
+                            if (key_.Key < max && key_.Key > min && key_.Value != null) key_.Value.Select();
+                        }
+                    }
+                    key.Select();
+                    lastClickedKey = timelinePosition;
+                }
+                else if (InputProxy.Modding_PrimeActionKey)
+                {
                     key.IsSelected = !key.IsSelected;
+                    if (key.IsSelected)
+                    {
+                        lastClickedKey = timelinePosition;
+                    } 
+                    else
+                    {
+                        lastClickedKey = -1;
+                    }
                 }
                 else
                 {
                     foreach (var pair in keyframeInstances) pair.Value.Deselect(); // Deselect all other keys
                     key.Select();
+                    lastClickedKey = timelinePosition;
                 }
             });
             VarRef<bool> newlySelectedFlag = new VarRef<bool>(false);
@@ -7478,6 +7507,7 @@ namespace Swole.API.Unity.Animation
             {
                 draggable.OnDragStep.AddListener(() =>
                 {
+                    lastDragFrame = Time.frameCount; 
                     var canvas = timelineWindow.Canvas;
                     Vector3 cursorPos = timelineWindow.ContainerTransform.InverseTransformPoint(canvas.transform.TransformPoint(AnimationCurveEditorUtils.ScreenToCanvasPosition(canvas, CursorProxy.ScreenPosition)));
                     float posInContainer = timelineWindow.GetNormalizedPositionFromLocalPosition(cursorPos);
@@ -7527,7 +7557,7 @@ namespace Swole.API.Unity.Animation
                     var key = GetOrCreateKeyframe(frame.timelinePosition);
                     if (key != null)
                     {
-                        if (key.transformLinearCurves == null) key.transformLinearCurves = new List<TransformLinearCurve>();
+                        if (key.transformLinearCurves == null) key.transformLinearCurves = new List<TransformLinearCurve>(); 
                         key.transformLinearCurves.Add(curve);
                     }
                 }
@@ -7564,8 +7594,10 @@ namespace Swole.API.Unity.Animation
 
             switch (editMode)
             {
-                case EditMode.GLOBAL_KEYS:
-                    if (activeSource.rawAnimation.transformAnimationCurves != null)
+                case EditMode.ALL_KEYS:
+                case EditMode.ALL_BONE_KEYS:
+                case EditMode.ALL_PROPERTY_KEYS:
+                    if ((editMode == EditMode.ALL_KEYS || editMode == EditMode.ALL_BONE_KEYS) && activeSource.rawAnimation.transformAnimationCurves != null)
                     {
                         foreach (var curveInfo in activeSource.rawAnimation.transformAnimationCurves)
                         {
@@ -7599,7 +7631,7 @@ namespace Swole.API.Unity.Animation
                         }
                     }
 
-                    if (activeSource.rawAnimation.propertyAnimationCurves != null)
+                    if ((editMode == EditMode.ALL_KEYS || editMode == EditMode.ALL_PROPERTY_KEYS) && activeSource.rawAnimation.propertyAnimationCurves != null)
                     {
                         foreach (var curveInfo in activeSource.rawAnimation.propertyAnimationCurves)
                         {
@@ -7617,7 +7649,7 @@ namespace Swole.API.Unity.Animation
                                 var curve = activeSource.rawAnimation.propertyCurves[curveInfo.infoMain.curveIndex];
                                 if (curve == null) continue;
 
-                                TryAddCurve(curve.propertyValueCurve);
+                                TryAddCurve(curve.propertyValueCurve); 
                             }
                         }
                     }
@@ -9747,12 +9779,12 @@ namespace Swole.API.Unity.Animation
         {
             poseableBone = null;
 
-            if (bone == null || !animator.avatar.TryGetBoneInfo(bone.name, out var boneInfo)) return false;
+            if (bone == null || !animator.avatar.TryGetBoneInfo(bone.name, animator.FindBoneTransform, out var boneInfo)) return false;
 
             if (renderedBonesManager.boneRootPool.TryGetNewInstance(out GameObject rootInst))
             {
 
-                var nonDefaultParentBoneInfo = animator.avatar.GetNonDefaultParentBoneInfo(bone, out var nonDefaultParentBone);
+                var nonDefaultParentBoneInfo = animator.avatar.GetNonDefaultParentBoneInfo(bone, animator.FindBoneTransform, out var nonDefaultParentBone);
 
                 var boneGroup = animator.avatar.GetBoneGroup(boneInfo.isDefault && nonDefaultParentBoneInfo.defaultChildrenToSameGroup ? nonDefaultParentBoneInfo.boneGroup : boneInfo.boneGroup);
                 var filter = rootInst.GetComponentInChildren<MeshFilter>();
@@ -9831,7 +9863,7 @@ namespace Swole.API.Unity.Animation
                         childPoseable.parent = renderedBonesManager.poseableBones.Count;
                     }
 
-                    if (!animator.avatar.IsPoseableBone(childBone.name) || !animator.avatar.TryGetBoneInfo(childBone.name, out var childBoneInfo) || (childBoneInfo.dontDrawConnection || (boneInfo.dontDrawChildConnections && childBoneInfo.isDefault))) continue;
+                    if (!animator.avatar.IsPoseableBone(childBone.name, animator.FindBoneTransform) || !animator.avatar.TryGetBoneInfo(childBone.name, animator.FindBoneTransform, out var childBoneInfo) || (childBoneInfo.dontDrawConnection || (boneInfo.dontDrawChildConnections && childBoneInfo.isDefault))) continue;
 
                     if (renderedBonesManager.boneLeafPool.TryGetNewInstance(out GameObject leafInst))
                     {
@@ -10212,7 +10244,7 @@ namespace Swole.API.Unity.Animation
 
             if (!overrideRecordCall) RecordChanges(); 
 
-            if (keyRelocationOffset != 0)
+            if (keyRelocationOffset != 0 && Time.frameCount - lastDragFrame > 6) // only relocate once the drag is finished
             {
                 RelocateSelectedkeyframes(keyRelocationOffset); 
                 keyRelocationOffset = 0;
@@ -11230,7 +11262,7 @@ namespace Swole.API.Unity.Animation
             float targetTime = PlaybackPosition;
             if (keyframeInstances.Count > 0)
             {
-                int currentTimelinePosition = Mathf.FloorToInt((PlaybackPosition + (frameStep * 0.1f)) / frameStep);
+                int currentTimelinePosition = timelineWindow.CalculateFrameAtTimelinePosition((decimal)PlaybackPosition); //Mathf.FloorToInt((PlaybackPosition + (frameStep * 0.1f)) / frameStep);
                 int nextTimelinePosition = int.MaxValue;
 
                 bool flag = false;
@@ -11242,7 +11274,7 @@ namespace Swole.API.Unity.Animation
                 if (flag)
                 {
                     targetTime = nextTimelinePosition * frameStep;
-                    if (timelineWindow != null) targetTime = timelineWindow.GetTimeFromNormalizedPosition(timelineWindow.GetVisibleTimelineNormalizedFramePosition(targetTime));
+                    if (timelineWindow != null) targetTime = timelineWindow.GetTimeFromNormalizedPosition(timelineWindow.GetVisibleTimelineNormalizedFramePosition(targetTime)); 
                 }
             }
 
@@ -11263,7 +11295,7 @@ namespace Swole.API.Unity.Animation
             float targetTime = PlaybackPosition;
             if (keyframeInstances.Count > 0)
             {
-                int currentTimelinePosition = Mathf.FloorToInt((PlaybackPosition - (frameStep * 0.1f)) / frameStep); 
+                int currentTimelinePosition = timelineWindow.CalculateFrameAtTimelinePosition((decimal)PlaybackPosition); //Mathf.FloorToInt((PlaybackPosition - (frameStep * 0.1f)) / frameStep); 
                 int prevTimelinePosition = int.MinValue;
 
                 bool flag = false;
@@ -12686,6 +12718,42 @@ namespace Swole.API.Unity.Animation
             ReevaluateKeyframeAtTime(ActiveAnimatable, CurrentSource, PlaybackPosition, _tempTransforms2);
         }
 
+        public void SnapKeyframesToFrameTimes()
+        {
+            if (keyframeInstances != null)
+            {
+                float frameStep = CurrentFrameStep;
+                foreach (var entry in keyframeInstances)
+                {
+                    var key = entry.Value;
+                    if (key == null) continue;
+
+                    if (key.curves != null)
+                    {
+                        foreach(var curve in key.curves)
+                        {
+                            if (curve == null) continue;
+                            
+                            for(int a = 0; a < curve.length; a++)
+                            {
+                                var kf = curve[a];
+                                int frameTime = timelineWindow.CalculateFrameAtTimelinePosition((decimal)kf.time);
+                                float snappedTime = frameTime * frameStep;
+                                if (frameTime == entry.Key && !curve.HasKeyAtTime((decimal)snappedTime)) 
+                                {
+                                    kf.time = snappedTime; 
+                                    curve[a] = kf;
+                                } 
+                            }
+                        }
+                    }
+                }
+
+                RefreshKeyframes();
+                CurrentSource.MarkAsDirty();
+            }
+        }
+
         #endregion
 
         #region Flip Pose
@@ -13128,7 +13196,124 @@ namespace Swole.API.Unity.Animation
         public void SmoothCurvesGlobal() => SmoothCurveKeysGlobal(-1);
 
         public void SmoothKeysSelected() => SmoothCurveKeysSelected(PlaybackPosition);
-        public void SmoothKeysGlobal() => SmoothCurveKeysGlobal(PlaybackPosition);  
+        public void SmoothKeysGlobal() => SmoothCurveKeysGlobal(PlaybackPosition);
+
+        #endregion
+
+        #region Rotations
+
+        private static readonly List<float> tempFloats = new List<float>();
+
+        public void RebuildQuaternions() => RebuildQuaternions(CurrentSource);
+        public void RebuildQuaternions(AnimationSource source)
+        {
+            foreach (var info in source.rawAnimation.transformAnimationCurves)
+            {
+                if (info.infoMain.curveIndex < 0) continue;
+
+                if (info.infoMain.isLinear)
+                {
+                    var curve = source.rawAnimation.transformLinearCurves[info.infoMain.curveIndex];
+                    if (curve != null && curve.frames != null && curve.frames.Length > 1)
+                    {
+                        for(int a = 1; a < curve.frames.Length; a++)
+                        {
+                            var prevFrame = curve.frames[a - 1];
+                            var frame = curve.frames[a];
+
+                            frame.data.localRotation = Maths.EnsureQuaternionContinuity(prevFrame.data.localRotation, frame.data.localRotation);
+
+                            curve.frames[a] = frame;
+                        }
+                    }
+                }
+                else
+                {
+                    var curve = source.rawAnimation.transformCurves[info.infoMain.curveIndex];
+                    if (curve != null && (curve.localRotationCurveX != null || curve.localRotationCurveY != null || curve.localRotationCurveZ != null || curve.localRotationCurveW != null)) 
+                    {
+                        var curveX = curve.localRotationCurveX;//curve.localRotationCurveX == null ? null/*new EditableAnimationCurve(new AnimationCurveEditor.State() { keyframes = new AnimationCurveEditor.KeyframeStateRaw[] { new AnimationCurveEditor.KeyframeStateRaw() } })*/ : curve.localRotationCurveX.Duplicate();
+                        var curveY = curve.localRotationCurveY;//curve.localRotationCurveY == null ? null/*new EditableAnimationCurve(new AnimationCurveEditor.State() { keyframes = new AnimationCurveEditor.KeyframeStateRaw[] { new AnimationCurveEditor.KeyframeStateRaw() } })*/ : curve.localRotationCurveY.Duplicate();
+                        var curveZ = curve.localRotationCurveZ;//curve.localRotationCurveZ == null ? null/*new EditableAnimationCurve(new AnimationCurveEditor.State() { keyframes = new AnimationCurveEditor.KeyframeStateRaw[] { new AnimationCurveEditor.KeyframeStateRaw() } })*/ : curve.localRotationCurveZ.Duplicate();
+                        var curveW = curve.localRotationCurveW;//curve.localRotationCurveW == null ? null/*new EditableAnimationCurve(new AnimationCurveEditor.State() { keyframes = new AnimationCurveEditor.KeyframeStateRaw[] { new AnimationCurveEditor.KeyframeStateRaw() { value = 1f } } })*/ : curve.localRotationCurveW.Duplicate();
+
+                        tempFloats.Clear();
+                        if (curveX != null && curveX.length > 0)
+                        {
+                            for (int a = 0; a < curveX.length; a++) if (!tempFloats.Contains(curveX[a].time)) tempFloats.Add(curveX[a].time);
+                        }
+                        if (curveY != null && curveY.length > 0)
+                        {
+                            for (int a = 0; a < curveY.length; a++) if (!tempFloats.Contains(curveY[a].time)) tempFloats.Add(curveY[a].time);
+                        }
+                        if (curveZ != null && curveZ.length > 0)
+                        {
+                            for (int a = 0; a < curveZ.length; a++) if (!tempFloats.Contains(curveZ[a].time)) tempFloats.Add(curveZ[a].time);
+                        }
+                        if (curveW != null && curveW.length > 0)
+                        {
+                            for (int a = 0; a < curveW.length; a++) if (!tempFloats.Contains(curveW[a].time)) tempFloats.Add(curveW[a].time);
+                        }
+                        tempFloats.Sort();
+
+                        for(int a = 1; a < tempFloats.Count; a++)
+                        {
+                            var prevTime = tempFloats[a - 1];
+                            var time = tempFloats[a];
+
+                            Quaternion prevQuat = Quaternion.identity;
+                            Quaternion quat = Quaternion.identity; 
+                            if (curveX != null)
+                            {
+                                prevQuat.x = curveX.Evaluate(prevTime);
+                                quat.x = curveX.Evaluate(time);
+                            }
+                            if (curveY != null)
+                            {
+                                prevQuat.y = curveY.Evaluate(prevTime);
+                                quat.y = curveY.Evaluate(time);
+                            }
+                            if (curveZ != null)
+                            {
+                                prevQuat.z = curveZ.Evaluate(prevTime);
+                                quat.z = curveZ.Evaluate(time);
+                            }
+                            if (curveW != null)
+                            {
+                                prevQuat.w = curveW.Evaluate(prevTime);
+                                quat.w = curveW.Evaluate(time);
+                            }
+
+                            quat = Maths.EnsureQuaternionContinuity(prevQuat, quat);
+
+                            if (curveX != null && curveX.HasKeyAtTime(time))
+                            {
+                                curveX.AddOrReplaceKey(time, quat.x);
+                            }
+                            if (curveY != null && curveY.HasKeyAtTime(time))
+                            {
+                                curveY.AddOrReplaceKey(time, quat.y);
+                            }
+                            if (curveZ != null && curveZ.HasKeyAtTime(time))
+                            {
+                                curveZ.AddOrReplaceKey(time, quat.z);
+                            }
+                            if (curveW != null && curveW.HasKeyAtTime(time))
+                            {
+                                curveW.AddOrReplaceKey(time, quat.w);
+                            }
+                        }
+
+                        curve.localRotationCurveX = curveX;
+                        curve.localRotationCurveY = curveY;
+                        curve.localRotationCurveZ = curveZ;
+                        curve.localRotationCurveW = curveW;
+                    }
+                }
+            }
+
+            source.MarkAsDirty();
+        }
 
         #endregion
 

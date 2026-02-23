@@ -1532,7 +1532,18 @@ namespace Swole.API.Unity.Animation
             public bool IsUsingAsset => Asset != null; 
 
             private float m_length;
-            public float LengthInSeconds => (m_animation.timeCurve == null || m_animation.timeCurve.length <= 1 ? m_length : (m_length * m_animation.timeCurve[m_animation.timeCurve.length - 1].time));
+            public float LengthInSeconds
+            {
+                get
+                {
+                    float length = m_length;
+
+                    var anim = TypedAnimation;
+                    if (anim != null) length = (anim.timeCurve == null || anim.timeCurve.length <= 1 ? length : (length * anim.timeCurve[m_animation.timeCurve.length - 1].time)); 
+
+                    return length; 
+                }
+            }
 
             public AnimationLoopMode loopMode = AnimationLoopMode.PlayOnce;
             public AnimationLoopMode LoopMode
@@ -1910,7 +1921,7 @@ namespace Swole.API.Unity.Animation
                  
                 if (animation == null)
                 {
-                    m_length = 0;
+                    m_length = 0f;
                     return;
                 }
                 
