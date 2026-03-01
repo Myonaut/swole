@@ -36,6 +36,14 @@ namespace Swole.DataStructures
 
     }
 
+    [Serializable, Flags]
+    public enum XYZWChannel
+    {
+
+        None = 0, X = 1, Y = 2, Z = 4, W = 8
+
+    }
+
     [Serializable, StructLayout(LayoutKind.Sequential)]
     public struct WeightIndexPair
     {

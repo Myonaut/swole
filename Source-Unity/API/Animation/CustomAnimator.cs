@@ -1835,9 +1835,21 @@ namespace Swole.API.Unity.Animation
             {
                 for (int a = 0; a < m_prePassResetWeights.Length; a++) m_prePassResetWeights[a] = 0f;
             }
-            if (m_propertyStates != null)
+            /*if (m_propertyStates != null)
             {
                 foreach (var entry in m_propertyStates) entry.Value.resetWeight = 0f;
+            }*/
+
+            if (m_propertyStates != null)
+            {
+                if (m_normalPropertyStates != null)
+                {
+                    foreach (var key in m_normalPropertyStates) m_propertyStates[key].resetWeight = 0f;
+                }
+                if (m_dynamicPropertyStates != null)
+                {
+                    foreach (var key in m_dynamicPropertyStates) m_propertyStates[key].resetWeight = 0f;
+                }
             }
         }
 
@@ -1863,9 +1875,22 @@ namespace Swole.API.Unity.Animation
                 }
             }
 
-            foreach(var entry in m_propertyStates)
+            /*foreach(var entry in m_propertyStates)
             {
                 var state = entry.Value;
+                state.modifiedValue = math.lerp(state.modifiedValue, state.unmodifiedValue, state.resetWeight);
+                state.resetWeight = 0f;
+            }*/
+
+            foreach (var key in m_normalPropertyStates)
+            {
+                var state = m_propertyStates[key];
+                state.modifiedValue = math.lerp(state.modifiedValue, state.unmodifiedValue, state.resetWeight);
+                state.resetWeight = 0f;
+            }
+            foreach (var key in m_dynamicPropertyStates)
+            {
+                var state = m_propertyStates[key];
                 state.modifiedValue = math.lerp(state.modifiedValue, state.unmodifiedValue, state.resetWeight);
                 state.resetWeight = 0f;
             }
@@ -1923,6 +1948,8 @@ namespace Swole.API.Unity.Animation
         }
 
         protected Dictionary<string, PropertyState> m_propertyStates = new Dictionary<string, PropertyState>();
+        protected List<string> m_dynamicPropertyStates = new List<string>();
+        protected List<string> m_normalPropertyStates = new List<string>();
         protected Dictionary<string, Component> m_propertyStateBehaviours = new Dictionary<string, Component>();
 
         [Serializable]
@@ -2094,11 +2121,14 @@ namespace Swole.API.Unity.Animation
 
                 BindComponent(propertyId, component);
 
+                bool isDynamic = false;
                 if (component is DynamicAnimationProperties dap)
                 {
                     state = new PropertyState(memberPath);
                     state.index = dap.IndexOf(memberPath);
                     if (state.index < 0) swole.LogError($"Invalid dynamic property '{memberPath}' for component '{dap.name}'");  
+
+                    isDynamic = true;
                 } 
                 else
                 {
@@ -2107,6 +2137,14 @@ namespace Swole.API.Unity.Animation
 
 
                 m_propertyStates[propertyId] = state;
+                if (isDynamic)
+                {
+                    m_dynamicPropertyStates.Add(propertyId);
+                }
+                else
+                {
+                    m_normalPropertyStates.Add(propertyId);
+                }
 
                 if (m_propertyStateBehaviours != null && m_propertyStateBehaviours.TryGetValue(propertyId, out var instance)) state.Reset(instance); 
 
@@ -2388,7 +2426,7 @@ namespace Swole.API.Unity.Animation
             if (useDynamicBindPose)
             {
 
-                foreach (var pair in m_propertyStates)
+                /*foreach (var pair in m_propertyStates)
                 {
 
                     if (m_propertyStateBehaviours.TryGetValue(pair.Key, out var behaviour))
@@ -2401,19 +2439,77 @@ namespace Swole.API.Unity.Animation
 
                     }
 
+                }*/
+
+                foreach (var key in m_normalPropertyStates)
+                {
+
+                    if (m_propertyStateBehaviours.TryGetValue(key, out var behaviour))
+                    {
+
+                        var state = m_propertyStates[key];
+
+                        state.Unmodify(behaviour);
+                        state.Reset(behaviour);
+
+                    }
+
+                }
+                foreach (var key in m_dynamicPropertyStates)
+                {
+
+                    if (m_propertyStateBehaviours.TryGetValue(key, out var behaviour))
+                    {
+
+                        var state = m_propertyStates[key];
+
+                        state.Unmodify(behaviour);
+                        state.Reset(behaviour);
+
+                    }
+
                 }
 
             }
             else
             {
 
-                foreach (var pair in m_propertyStates)
+                /*foreach (var pair in m_propertyStates)
                 {
 
                     if (m_propertyStateBehaviours.TryGetValue(pair.Key, out var behaviour))
                     {
 
                         var state = pair.Value;
+
+                        state.UnmodifyToBindValue(behaviour);
+                        state.ResetModifiedData();
+
+                    }
+
+                }*/
+
+                foreach (var key in m_normalPropertyStates)
+                {
+
+                    if (m_propertyStateBehaviours.TryGetValue(key, out var behaviour))
+                    {
+
+                        var state = m_propertyStates[key];
+
+                        state.UnmodifyToBindValue(behaviour);
+                        state.ResetModifiedData();
+
+                    }
+
+                }
+                foreach (var key in m_dynamicPropertyStates)
+                {
+
+                    if (m_propertyStateBehaviours.TryGetValue(key, out var behaviour))
+                    {
+
+                        var state = m_propertyStates[key];
 
                         state.UnmodifyToBindValue(behaviour);
                         state.ResetModifiedData();
@@ -2475,7 +2571,7 @@ namespace Swole.API.Unity.Animation
         protected void ApplyPropertyStates()
         {
 
-            foreach (var pair in m_propertyStates)
+            /*foreach (var pair in m_propertyStates)
             {
 
                 if (m_propertyStateBehaviours.TryGetValue(pair.Key, out var behaviour))
@@ -2486,6 +2582,33 @@ namespace Swole.API.Unity.Animation
                     state.Modify(behaviour);
 
                 }
+
+            }*/
+
+            foreach (var key in m_normalPropertyStates)
+            {
+
+                if (m_propertyStateBehaviours.TryGetValue(key, out var behaviour))
+                {
+
+                    var state = m_propertyStates[key];
+
+                    state.Modify(behaviour);
+
+                }
+
+            }
+            foreach (var key in m_dynamicPropertyStates)
+            {
+
+                if (m_propertyStateBehaviours.TryGetValue(key, out var behaviour))
+                {
+
+                    var state = m_propertyStates[key];
+
+                    state.Modify(behaviour);
+
+                } 
 
             }
 

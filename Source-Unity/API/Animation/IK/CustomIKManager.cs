@@ -470,6 +470,7 @@ namespace Swole.API.Unity.Animation
                     var solver = ik.component.GetIKSolver();
                     if (solver == null) continue;
 
+                    solver.Initiate(ik.component.transform);
                     solver.Update(); // just update for now, which will initialize it
                 }
             }

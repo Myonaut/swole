@@ -6,7 +6,7 @@ using System.Collections.Generic;
 
 using UnityEngine;
 
-using static Swole.ICustomizableCharacter.Defaults;
+using static Swole.API.Unity.ICustomizableCharacter.Defaults;
 
 namespace Swole.Morphing
 {
@@ -48,7 +48,7 @@ namespace Swole.Morphing
         public MeshShape GetShapeUnsafe(int index) => serializedData.GetShapeUnsafe(index);
         public int IndexOfShape(string shapeName, bool caseSensitive = false) => serializedData.IndexOfShape(shapeName, caseSensitive);
         public List<MeshShape> GetShapes(List<MeshShape> outputList = null) => serializedData.GetShapes(outputList);
-
+        
         public int VertexGroupCount => serializedData.VertexGroupCount;
         public VertexGroup GetVertexGroup(int index) => serializedData.GetVertexGroup(index);
         public VertexGroup GetVertexGroupUnsafe(int index) => serializedData.GetVertexGroupUnsafe(index);
@@ -84,6 +84,16 @@ namespace Swole.Morphing
         public int VariationShapesCount => serializedData.VariationShapesCount;
         public int IndexOfVariationShape(string name) => serializedData.IndexOfVariationShape(name);
         public MeshShape GetVariationShape(int index) => serializedData.GetVariationShape(index);
+
+
+
+        public int VertexColorDeltaCount => serializedData.VertexColorDeltaCount;
+        public VertexColorDelta GetVertexColorDelta(int index) => serializedData.GetVertexColorDelta(index);
+        public VertexColorDelta GetVertexColorDeltaUnsafe(int index) => serializedData.GetVertexColorDeltaUnsafe(index);
+        public int IndexOfVertexColorDelta(string deltaName, bool caseSensitive = false) => serializedData.IndexOfVertexColorDelta(deltaName, caseSensitive);
+        public List<VertexColorDelta> GetVertexColorDeltas(List<VertexColorDelta> outputList = null) => serializedData.GetVertexColorDeltas(outputList);
+
+
 
         public int VariationVertexGroupCount => serializedData.VariationVertexGroupCount;
         public int IndexOfVariationGroup(string name) => serializedData.IndexOfVariationGroup(name);

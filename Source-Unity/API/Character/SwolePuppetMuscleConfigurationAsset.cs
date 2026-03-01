@@ -6,7 +6,7 @@ using System.Collections.Generic;
 
 using UnityEngine;
 
-#if BULKOUT_ENV
+#if SWOLE_ROOTMOTION
 using RootMotion;
 using RootMotion.Dynamics;
 #endif
@@ -18,7 +18,7 @@ namespace Swole.API.Unity.Animation
     {
         public SwolePuppetMuscleConfiguration configuration;
 
-#if BULKOUT_ENV
+#if SWOLE_ROOTMOTION
         public void Apply(PuppetMaster puppet) => configuration.Apply(puppet); 
 #endif
 
@@ -141,7 +141,7 @@ namespace Swole.API.Unity.Animation
             return clone;
         }
 
-#if BULKOUT_ENV
+#if SWOLE_ROOTMOTION
         public void Apply(PuppetMaster puppet) => configuration.Apply(puppet);
 #endif
 
@@ -484,7 +484,7 @@ namespace Swole.API.Unity.Animation
             return result;
         }
 
-#if BULKOUT_ENV
+#if SWOLE_ROOTMOTION
         public SwolePuppetMuscleConfiguration CacheMuscleIndices(PuppetMaster puppet)
         {
             if (muscleStates == null || puppet == null || puppet.muscles == null) return this;
@@ -807,7 +807,7 @@ namespace Swole.API.Unity.Animation
         [TooltipAttribute("The max pinning force that is considered 'unpinned' when disabling/enabling colliders.")]
         public float disableCollidersUnpinThreshold;
 
-#if BULKOUT_ENV
+#if SWOLE_ROOTMOTION
         public static implicit operator RootMotion.Dynamics.Muscle.State(SwolePuppetMuscleState state)
         {
             var state_ = RootMotion.Dynamics.Muscle.State.Default;
@@ -923,6 +923,8 @@ namespace Swole.API.Unity.Animation
         }
         public RootMotion.Dynamics.Muscle.State Apply(float globalPinWeight, RootMotion.Dynamics.Muscle muscle) => Apply(globalPinWeight, muscle, Apply(muscle.state));
         public RootMotion.Dynamics.Muscle.State Apply(float globalPinWeight, RootMotion.Dynamics.Muscle muscle, float collisionBlend) => Apply(globalPinWeight, muscle, Apply(muscle.state, collisionBlend));
+
+#endif
 
         #region Operations
 
@@ -1301,8 +1303,7 @@ namespace Swole.API.Unity.Animation
 
         public static SwolePuppetMuscleState Lerp(SwolePuppetMuscleState a, SwolePuppetMuscleState b, float t) => LerpUnclamped(a, b, Mathf.Clamp01(t));
         public static SwolePuppetMuscleState LerpUnclamped(SwolePuppetMuscleState a, SwolePuppetMuscleState b, float t) => (a * (1f - t)) + (b * t);
-        
-#endif
+
     }
 }
 

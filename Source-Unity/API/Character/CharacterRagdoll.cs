@@ -317,9 +317,10 @@ namespace Swole.API.Unity.Animation
             var characterJoints = root.GetComponentsInChildren<CharacterJoint>(true);
             if (characterJoints != null)
             {
-                foreach (var joint in characterJoints) 
+                foreach (var joint in characterJoints)
                 {
                     var dollJoint = RagdollJoint.FromComponent(joint, this.transform, muscleRoot, true, musclePrefix);
+#if SWOLE_ROOTMOTION
                     if (Puppet != null && puppet.muscles != null)
                     {
                         string jointName = SwoleUtil.ConvertToDirectorySeparators(dollJoint.name, _transformPathSeparator, false);
@@ -339,9 +340,10 @@ namespace Swole.API.Unity.Animation
                             }
                         }
                     }
+#endif
                     settingsInst.joints.Add(dollJoint);
 
-                    if (joint.connectedBody != null && !IsJoint(joint.connectedBody)) nonJointRigidbodies.Add(joint.connectedBody);  
+                    if (joint.connectedBody != null && !IsJoint(joint.connectedBody)) nonJointRigidbodies.Add(joint.connectedBody);
                 }
             }
 
@@ -351,6 +353,7 @@ namespace Swole.API.Unity.Animation
                 foreach (var joint in configurableJoints) 
                 {
                     var dollJoint = RagdollJoint.FromComponent(joint, this.transform, muscleRoot, true, musclePrefix);
+#if SWOLE_ROOTMOTION
                     if (Puppet != null && puppet.muscles != null)
                     {
                         string jointName = SwoleUtil.ConvertToDirectorySeparators(dollJoint.name, _transformPathSeparator, false); 
@@ -370,6 +373,7 @@ namespace Swole.API.Unity.Animation
                             }
                         }
                     }
+#endif
                     settingsInst.joints.Add(dollJoint);
 
                     if (joint.connectedBody != null && !IsJoint(joint.connectedBody)) nonJointRigidbodies.Add(joint.connectedBody);

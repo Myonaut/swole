@@ -602,6 +602,130 @@ namespace Swole.Morphing
             }
         }
 
+        public static void MergeVertexColorDeltasAtSeam(Mesh mesh, Mesh baseMesh, BlendShape seamShape, ICollection<VertexColorDelta> colorDeltas, ICollection<VertexColorDelta> baseColorDeltas, List<string> nonSeamMergableDeltas = null, Vector3[] baseVertices = null, Vector3[] vertices = null)
+        {
+            if (seamShape != null && seamShape.frames != null && seamShape.frames.Length > 0)
+            {
+                if (baseVertices == null) baseVertices = baseMesh.vertices;
+
+                if (vertices == null) vertices = mesh.vertices;
+
+                for (int a = 0; a < vertices.Length; a++)
+                {
+                    if (seamShape.frames[0].deltaVertices[a].sqrMagnitude <= 0.0001f) continue; // not a seam vertex
+
+                    Vector3 vertex = vertices[a];
+                    float minDist = float.MaxValue;
+                    int closestVertex = -1;
+                    for (int b = 0; b < baseVertices.Length; b++)
+                    {
+                        float dist = (vertex - baseVertices[b]).sqrMagnitude;
+                        if (dist < minDist)
+                        {
+                            minDist = dist;
+                            closestVertex = b;
+                        }
+                    }
+
+                    if (closestVertex < 0) continue;
+
+                    foreach (var delta in colorDeltas)
+                    {
+                        if (delta.deltaColors == null || delta.deltaColors.Length <= 0 || (nonSeamMergableDeltas != null && nonSeamMergableDeltas.Contains(delta.name))) continue;
+
+                        foreach (var baseDelta in baseColorDeltas)
+                        {
+                            if (baseDelta.deltaColors == null || baseDelta.deltaColors.Length <= 0 || delta.name != baseDelta.name) continue;
+
+                            delta.deltaColors[a] = baseDelta.deltaColors[closestVertex];
+
+                            break;
+                        }
+                    }
+
+                }
+            }
+        }
+
+        public static void MergeV3AtSeam(Mesh mesh, Mesh baseMesh, BlendShape seamShape, Vector3[] mainV3, Vector3[] baseV3, XYZChannel channels, Vector3[] baseVertices = null, Vector3[] vertices = null)
+        {
+            if (seamShape != null && seamShape.frames != null && seamShape.frames.Length > 0)
+            {
+                if (baseVertices == null) baseVertices = baseMesh.vertices;
+
+                if (vertices == null) vertices = mesh.vertices;
+
+                for (int a = 0; a < vertices.Length; a++)
+                {
+                    if (seamShape.frames[0].deltaVertices[a].sqrMagnitude <= 0.0001f) continue; // not a seam vertex
+
+                    Vector3 vertex = vertices[a];
+                    float minDist = float.MaxValue;
+                    int closestVertex = -1;
+                    for (int b = 0; b < baseVertices.Length; b++)
+                    {
+                        float dist = (vertex - baseVertices[b]).sqrMagnitude;
+                        if (dist < minDist)
+                        {
+                            minDist = dist;
+                            closestVertex = b;
+                        }
+                    }
+
+                    if (closestVertex < 0) continue;
+
+                    var v = mainV3[a];
+                    var baseV = baseV3[closestVertex];
+
+                    if (channels.HasFlag(XYZWChannel.X)) v.x = baseV.x;
+                    if (channels.HasFlag(XYZWChannel.Y)) v.y = baseV.y;
+                    if (channels.HasFlag(XYZWChannel.Z)) v.z = baseV.z;
+
+                    mainV3[a] = v;
+                }
+            }
+        }
+
+        public static void MergeV4AtSeam(Mesh mesh, Mesh baseMesh, BlendShape seamShape, Vector4[] mainV4, Vector4[] baseV4, XYZWChannel channels, Vector3[] baseVertices = null, Vector3[] vertices = null)
+        {
+            if (seamShape != null && seamShape.frames != null && seamShape.frames.Length > 0)
+            {
+                if (baseVertices == null) baseVertices = baseMesh.vertices;
+
+                if (vertices == null) vertices = mesh.vertices;
+
+                for (int a = 0; a < vertices.Length; a++)
+                {
+                    if (seamShape.frames[0].deltaVertices[a].sqrMagnitude <= 0.0001f) continue; // not a seam vertex
+
+                    Vector3 vertex = vertices[a];
+                    float minDist = float.MaxValue;
+                    int closestVertex = -1;
+                    for (int b = 0; b < baseVertices.Length; b++)
+                    {
+                        float dist = (vertex - baseVertices[b]).sqrMagnitude;
+                        if (dist < minDist)
+                        {
+                            minDist = dist;
+                            closestVertex = b;
+                        }
+                    }
+
+                    if (closestVertex < 0) continue;
+
+                    var v = mainV4[a];
+                    var baseV = baseV4[closestVertex];
+
+                    if (channels.HasFlag(XYZWChannel.X)) v.x = baseV.x;
+                    if (channels.HasFlag(XYZWChannel.Y)) v.y = baseV.y;
+                    if (channels.HasFlag(XYZWChannel.Z)) v.z = baseV.z;
+                    if (channels.HasFlag(XYZWChannel.W)) v.w = baseV.w;
+
+                    mainV4[a] = v;
+                }
+            }
+        }
+
         #endregion
 
         #region Surface Data Transfer
@@ -2642,22 +2766,24 @@ namespace Swole.Morphing
         public bool copyTangents;
         public BlendShapeBaseMix[] copyNormalsTangentsShapeMix;
 
+        public Mesh meshToCopyNormalsFrom;
+
         [Tooltip("Ids of meshes or mesh groups that will recalculate the normals and tangents for this shape when it's fetched")]
         public string[] idsToRecalculateNormalsAndTangents;
 
-        public bool TryGetBlendShape(string queryId, Mesh mesh, out BlendShape shape, Vector3[] vertices = null, Vector3[] normals = null, Vector4[] tangents = null, MeshDataTools.WeldedVertex[] mergedVertices = null)
+        public bool TryGetBlendShape(string queryId, Mesh mesh, out BlendShape shape, Vector3[] vertices = null, Vector3[] normals = null, Vector4[] tangents = null, MeshDataTools.WeldedVertex[] mergedVertices = null, int[] triangles = null, UVChannelURP nearVertexUVchannel = UVChannelURP.UV0, Vector2[] nearVertexUVs = null)
         {
-            return TryGetBlendShape(queryId, mesh, out shape, null, null, vertices, normals, tangents, mergedVertices);
+            return TryGetBlendShape(queryId, mesh, out shape, null, null, vertices, normals, tangents, mergedVertices, triangles, nearVertexUVchannel, nearVertexUVs);
         }
-        public bool TryGetBlendShape(string queryId, Mesh mesh, out BlendShape shape, IEnumerable<MorphShape> morphShapes, Vector3[] vertices = null, Vector3[] normals = null, Vector4[] tangents = null, MeshDataTools.WeldedVertex[] mergedVertices = null)
+        public bool TryGetBlendShape(string queryId, Mesh mesh, out BlendShape shape, IEnumerable<MorphShape> morphShapes, Vector3[] vertices = null, Vector3[] normals = null, Vector4[] tangents = null, MeshDataTools.WeldedVertex[] mergedVertices = null, int[] triangles = null, UVChannelURP nearVertexUVchannel = UVChannelURP.UV0, Vector2[] nearVertexUVs = null)
         {
-            return TryGetBlendShape(queryId, mesh, out shape, morphShapes, null, vertices, normals, tangents, mergedVertices);
+            return TryGetBlendShape(queryId, mesh, out shape, morphShapes, null, vertices, normals, tangents, mergedVertices, triangles, nearVertexUVchannel, nearVertexUVs);
         }
-        public bool TryGetBlendShape(string queryId, Mesh mesh, out BlendShape shape, IEnumerable<MeshShape> meshShapes, Vector3[] vertices = null, Vector3[] normals = null, Vector4[] tangents = null, MeshDataTools.WeldedVertex[] mergedVertices = null)
+        public bool TryGetBlendShape(string queryId, Mesh mesh, out BlendShape shape, IEnumerable<MeshShape> meshShapes, Vector3[] vertices = null, Vector3[] normals = null, Vector4[] tangents = null, MeshDataTools.WeldedVertex[] mergedVertices = null, int[] triangles = null, UVChannelURP nearVertexUVchannel = UVChannelURP.UV0, Vector2[] nearVertexUVs = null)
         {
-            return TryGetBlendShape(queryId, mesh, out shape, null, meshShapes, vertices, normals, tangents, mergedVertices);
+            return TryGetBlendShape(queryId, mesh, out shape, null, meshShapes, vertices, normals, tangents, mergedVertices, triangles, nearVertexUVchannel, nearVertexUVs);
         }
-        public bool TryGetBlendShape(string queryId, Mesh mesh, out BlendShape shape, IEnumerable<MorphShape> morphShapes, IEnumerable<MeshShape> meshShapes, Vector3[] vertices = null, Vector3[] normals = null, Vector4[] tangents = null, MeshDataTools.WeldedVertex[] mergedVertices = null)
+        public bool TryGetBlendShape(string queryId, Mesh mesh, out BlendShape shape, IEnumerable<MorphShape> morphShapes, IEnumerable<MeshShape> meshShapes, Vector3[] vertices = null, Vector3[] normals = null, Vector4[] tangents = null, MeshDataTools.WeldedVertex[] mergedVertices = null, int[] triangles = null, UVChannelURP nearVertexUVchannel = UVChannelURP.UV0, Vector2[] nearVertexUVs = null)
         {
             float deltaMultiplier = this.deltaMultiplier;
             if (deltaMultiplier == 0f) deltaMultiplier = 1f;
@@ -2791,6 +2917,43 @@ namespace Swole.Morphing
                         for (int b = 0; b < tempVertices.Length; b++) frame.deltaTangents[b] = tempTangents[b] - subTangents[b];
                     }
                 }
+            }
+
+            if (meshToCopyNormalsFrom != null)
+            {
+
+                if (triangles == null || triangles.Length <= 0) triangles = mesh.triangles;
+                if (nearVertexUVs == null || nearVertexUVs.Length <= 0) nearVertexUVs = mesh.GetUVsByChannel(nearVertexUVchannel);
+
+                var targetTriangles = meshToCopyNormalsFrom.triangles;
+                var targetNearVertexUVs = meshToCopyNormalsFrom.GetUVsByChannel(nearVertexUVchannel);
+                var targetNormals = meshToCopyNormalsFrom.normals;
+                var targetVertices = meshToCopyNormalsFrom.vertices;
+
+                if (triangles != null && nearVertexUVs != null && targetTriangles != null && targetTriangles.Length > 0 && targetNearVertexUVs != null && targetNearVertexUVs.Length > 0 && targetNormals != null && targetNormals.Length > 0)
+                { 
+                    //for (int z = 0; z < nearVertexUVs.Length; z++) Debug.DrawRay(nearVertexUVs[z] + Vector2.right * 2f, Vector3.up * 0.1f, Color.blue, 100f); 
+                    //for (int z = 0; z < targetNearVertexUVs.Length; z++) Debug.DrawRay(targetNearVertexUVs[z] - Vector2.right * 2f, Vector3.up * 0.1f, Color.cyan, 100f);  
+
+                    var closestIndices = MeshDataTools.FindClosestVerticesUV(nearVertexUVs, targetNearVertexUVs, triangles, targetTriangles, null);
+                    if (normals == null) normals = mesh.normals;
+                    Vector3[] transferredNormals = (Vector3[])normals.Clone();
+                    for (int i = 0; i < closestIndices.Length; i++) 
+                    { 
+                        transferredNormals[i] = targetNormals[closestIndices[i]];
+                        //Debug.DrawLine(vertices[i], targetVertices[closestIndices[i]], Color.red, 60f); 
+                    }
+
+                    for (int a = 0; a < shape.frames.Length; a++)
+                    {
+                        var frame = shape.frames[a];
+
+                        for (int b = 0; b < mesh.vertexCount; b++)
+                        {
+                            frame.deltaNormals[b] = transferredNormals[b] - normals[b]; 
+                        }
+                    }
+                }  
             }
 
             if ((copyNormals || copyTangents) && copyNormalsTangentsShapeMix != null && copyNormalsTangentsShapeMix.Length > 0)
@@ -3024,6 +3187,72 @@ namespace Swole.Morphing
         public bool animatable;
 
         public BlendShapeTarget[] targets;
+    }
+
+    [Serializable]
+    public struct VertexColorDeltaTarget
+    {
+        public string name;
+        [Tooltip("Optional material property to set to this delta's index")]
+        public string indexPropertyName;
+        public RGBAChannel targetChannels; 
+        public Mesh targetMesh;
+
+        public bool TryGet(Mesh localMesh, out VertexColorDelta delta, Color[] localVertexColors = null, int[] triangles = null, UVChannelURP nearVertexUVchannel = UVChannelURP.UV0, Vector2[] nearVertexUVs = null)
+        {
+            delta = null;
+
+            if (localVertexColors == null) localVertexColors = localMesh.colors;
+            if (localVertexColors == null || localVertexColors.Length <= 0) return false; 
+
+            if (triangles == null || triangles.Length <= 0) triangles = localMesh.triangles;
+            if (nearVertexUVs == null || nearVertexUVs.Length <= 0) nearVertexUVs = localMesh.GetUVsByChannel(nearVertexUVchannel); 
+
+            var targetTriangles = targetMesh.triangles;
+            var targetNearVertexUVs = targetMesh.GetUVsByChannel(nearVertexUVchannel);
+            var targetColors = targetMesh.colors;
+
+            if (triangles != null && nearVertexUVs != null && targetTriangles != null && targetTriangles.Length > 0 && targetNearVertexUVs != null && targetNearVertexUVs.Length > 0 && targetColors != null && targetColors.Length > 0)
+            {
+                var closestIndices = MeshDataTools.FindClosestVerticesUV(nearVertexUVs, targetNearVertexUVs, triangles, targetTriangles, null);
+                Color[] deltaColors = (Color[])localVertexColors.Clone();
+                for (int i = 0; i < closestIndices.Length; i++)
+                {
+                    var localC = localVertexColors[i];
+                    var deltaC = targetColors[closestIndices[i]] - localC;
+
+                    if (!targetChannels.HasFlag(RGBAChannel.R)) deltaC.r = 0f;
+                    if (!targetChannels.HasFlag(RGBAChannel.G)) deltaC.g = 0f;
+                    if (!targetChannels.HasFlag(RGBAChannel.B)) deltaC.b = 0f;
+                    if (!targetChannels.HasFlag(RGBAChannel.A)) deltaC.a = 0f;
+
+                    deltaColors[i] = deltaC;
+                }
+
+                delta = new VertexColorDelta()
+                {
+                    name = name,
+                    indexPropertyName = indexPropertyName,
+                    deltaColors = deltaColors
+                };
+
+                return true;
+            }
+
+            return false;
+        }
+    }
+
+    [Serializable]
+    public class VertexColorDelta
+    {
+        public string name;
+
+        [Tooltip("Optional material property to set to this delta's index")]
+        public string indexPropertyName;
+
+        [HideInInspector]
+        public Color[] deltaColors;
     }
 
     [Serializable]

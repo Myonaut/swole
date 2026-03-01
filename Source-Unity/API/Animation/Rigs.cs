@@ -516,6 +516,7 @@ namespace Swole.API.Unity.Animation
             return instance.TrackLocal(transform, bindPose);
         }
 
+        public bool UntrackLocal(int2 trackingIndex) => UntrackLocal(trackingIndex.x);
         public bool UntrackLocal(int trackingIndex)
         {
             if (!globalTrackedTransforms.isCreated || trackingIndex < 0 || trackingIndex >= globalTrackedTransforms.length || openIndices.Contains(trackingIndex)) return false;
@@ -560,8 +561,11 @@ namespace Swole.API.Unity.Animation
         public class TrackedTransformGroup
         {
 
-            internal readonly List<int> trackingIndices = new List<int>();
+            internal readonly List<int2> trackingIndices = new List<int2>();
             internal bool isSequential;
+            internal int transformCount;
+            public int TransformCount => transformCount;
+            public int TrackedTransformCount => trackingIndices.Count;
 
             public void UntrackAllTransforms()
             {
@@ -582,19 +586,30 @@ namespace Swole.API.Unity.Animation
                 instance.SortOpenIndicesLocal();
                 isSequential = true;
                 int prevIndex = -1;
+                int localIndex = -1;
                 using (var enu0 = transforms.GetEnumerator())
                 {
                     using (var enu1 = bindpose.GetEnumerator())
                     {
                         while (enu0.MoveNext() && enu1.MoveNext())
                         {
+                            localIndex++;
+
                             int ind = instance.TrackLocal(enu0.Current, enu1.Current);
-                            trackingIndices.Add(ind);
+                            if (ind < 0) 
+                            {
+                                isSequential = false;
+                                continue;
+                            }
+
+                            trackingIndices.Add(new int2(ind, localIndex));
                             if (prevIndex >= 0 && ind - prevIndex != 1) isSequential = false;
                             prevIndex = ind;
                         }
                     }
                 }
+
+                transformCount = localIndex + 1;
 
 #if UNITY_EDITOR
                 if (!isSequential)
@@ -608,17 +623,26 @@ namespace Swole.API.Unity.Animation
                 var instance = Instance;
                 if (instance == null) return;
 
+                transformCount = Mathf.Min(transforms.Length, bindpose.Length);
+
                 instance.SortOpenIndicesLocal();
                 isSequential = true;
                 int prevIndex = -1;
-                for (int a = 0; a < Mathf.Min(transforms.Length, bindpose.Length); a++)
+                for (int a = 0; a < transformCount; a++)
                 {
-                    int ind = instance.TrackLocal(transforms[a], bindpose[a]); 
-                    trackingIndices.Add(ind);
+                    int ind = instance.TrackLocal(transforms[a], bindpose[a]);
+                    if (ind < 0) 
+                    {
+                        isSequential = false;
+                        continue;
+                    }
+
+                    trackingIndices.Add(new int2(ind, a));
                     if (prevIndex >= 0 && ind - prevIndex != 1) isSequential = false;
                     prevIndex = ind;
 
                 }
+
 
 #if UNITY_EDITOR
                 if (!isSequential)
@@ -637,14 +661,14 @@ namespace Swole.API.Unity.Animation
 
                 if (isSequential)
                 {
-                    NativeArray<float4x4>.Copy(instance.globalPoseData.AsArray(), trackingIndices[0], poseArray, startIndex, trackingIndices.Count);
+                    NativeArray<float4x4>.Copy(instance.globalPoseData.AsArray(), trackingIndices[0].x, poseArray, startIndex, trackingIndices.Count);
                 }
                 else
                 {
                     for (int a = 0; a < trackingIndices.Count; a++) 
                     {
                         var ind = trackingIndices[a];
-                        poseArray[startIndex + a] = instance.globalPoseData[ind];
+                        poseArray[startIndex + ind.y] = instance.globalPoseData[ind.x];
                     }
                 }
             }
@@ -656,14 +680,14 @@ namespace Swole.API.Unity.Animation
 
                 if (isSequential)
                 {
-                    NativeArray<float4x4>.Copy(instance.globalPoseData.AsArray(), trackingIndices[0], poseArray, startIndex, trackingIndices.Count);
+                    NativeArray<float4x4>.Copy(instance.globalPoseData.AsArray(), trackingIndices[0].x, poseArray, startIndex, trackingIndices.Count);
                 }
                 else
                 {
                     for (int a = 0; a < trackingIndices.Count; a++)
                     {
                         var ind = trackingIndices[a];
-                        poseArray[startIndex + a] = instance.globalPoseData[ind];
+                        poseArray[startIndex + ind.y] = instance.globalPoseData[ind.x];
                     }
                 }
             }
@@ -672,9 +696,9 @@ namespace Swole.API.Unity.Animation
                 OutputDependency.Complete();
 
                 var instance = InstanceOrNull;
-                NativeArray<float4x4>.Copy(instance.globalPoseData.AsArray(), trackingIndices[0], poseArray, startIndex, trackingIndices.Count);
+                NativeArray<float4x4>.Copy(instance.globalPoseData.AsArray(), trackingIndices[0].x, poseArray, startIndex, trackingIndices.Count);
             }
-            public void CopyIntoArrayNoChecksNonSequential(NativeArray<float4x4> poseArray, int startIndex)
+            public void CopyIntoArrayNoChecksNonSequential(NativeArray<float4x4> poseArray, int startIndex) 
             {
                 OutputDependency.Complete();
 
@@ -682,27 +706,27 @@ namespace Swole.API.Unity.Animation
                 for (int a = 0; a < trackingIndices.Count; a++)
                 {
                     var ind = trackingIndices[a];
-                    poseArray[startIndex + a] = instance.globalPoseData[ind];
+                    poseArray[startIndex + ind.y] = instance.globalPoseData[ind.x];
                 }
             }
-            public void CopyIntoBuffer(ComputeBuffer buffer, int startIndex)
+            public void CopyIntoBuffer(ComputeBuffer buffer, int startIndex, bool useTrackedIndexCount = false)
             {
                 var instance = InstanceOrNull;
                 if (instance == null) return;
 
                 OutputDependency.Complete();
 
-                var tempArray = buffer.BeginWrite<float4x4>(startIndex, trackingIndices.Count);
+                var tempArray = buffer.BeginWrite<float4x4>(startIndex, useTrackedIndexCount ? trackingIndices.Count : transformCount);
                 if (isSequential)
                 {
-                    NativeArray<float4x4>.Copy(instance.globalPoseData.AsArray(), trackingIndices[0], tempArray, 0, trackingIndices.Count);
+                    NativeArray<float4x4>.Copy(instance.globalPoseData.AsArray(), trackingIndices[0].x, tempArray, 0, trackingIndices.Count);
                 }
                 else
                 {
                     for (int a = 0; a < trackingIndices.Count; a++)
                     {
                         var ind = trackingIndices[a];
-                        tempArray[a] = instance.globalPoseData[ind];
+                        tempArray[ind.y] = instance.globalPoseData[ind.x];
                     }
                 }
                 buffer.EndWrite<float4x4>(trackingIndices.Count);
@@ -723,7 +747,7 @@ namespace Swole.API.Unity.Animation
                         {
                             while (enu0.MoveNext())
                             {
-                                NativeArray<float4x4>.Copy(instance.globalPoseData.AsArray(), trackingIndices[0], enu0.Current, 0, trackingIndices.Count);
+                                NativeArray<float4x4>.Copy(instance.globalPoseData.AsArray(), trackingIndices[0].x, enu0.Current, 0, trackingIndices.Count);
                             }
                         }
                         else
@@ -732,7 +756,7 @@ namespace Swole.API.Unity.Animation
                             {
                                 while (enu0.MoveNext() && enu1.MoveNext())
                                 {
-                                    NativeArray<float4x4>.Copy(instance.globalPoseData.AsArray(), trackingIndices[0], enu0.Current, enu1.Current, trackingIndices.Count);
+                                    NativeArray<float4x4>.Copy(instance.globalPoseData.AsArray(), trackingIndices[0].x, enu0.Current, enu1.Current, trackingIndices.Count);
                                 }
                             }
                         }
@@ -751,7 +775,7 @@ namespace Swole.API.Unity.Animation
                                 for (int a = 0; a < trackingIndices.Count; a++)
                                 {
                                     var ind = trackingIndices[a];
-                                    poseArray[startIndex + a] = instance.globalPoseData[ind];
+                                    poseArray[startIndex + ind.y] = instance.globalPoseData[ind.x];
                                 }
                             }
                         }
@@ -766,7 +790,7 @@ namespace Swole.API.Unity.Animation
                                     for (int a = 0; a < trackingIndices.Count; a++)
                                     {
                                         var ind = trackingIndices[a];
-                                        poseArray[startIndex + a] = instance.globalPoseData[ind];
+                                        poseArray[startIndex + ind.y] = instance.globalPoseData[ind.x];
                                     }
                                 }
                             }
@@ -827,7 +851,7 @@ namespace Swole.API.Unity.Animation
                 foreach (var buffer in buffers) buffer.Buffer.EndWrite<float4x4>(trackingIndices.Count);
                 tempArrays.Clear();
             }*/
-            public void CopyIntoBuffers(ICollection<InstanceBufferWithStartIndex> buffers)
+            public void CopyIntoBuffers(ICollection<InstanceBufferWithStartIndex> buffers, bool useTrackedIndexCount = false)
             {
                 var instance = InstanceOrNull;
                 if (instance == null) return;
@@ -856,7 +880,7 @@ namespace Swole.API.Unity.Animation
                 {
                     foreach (var buffer in buffers)
                     {
-                        if (buffer.Buffer is InstanceBuffer<float4x4> buffer4x4) buffer4x4.WriteToBufferCallback(buffer.startIndex, trackingIndices.Count, CopyIntoArrayNoChecksNonSequential);
+                        if (buffer.Buffer is InstanceBuffer<float4x4> buffer4x4) buffer4x4.WriteToBufferCallback(buffer.startIndex, useTrackedIndexCount ? trackingIndices.Count : transformCount, CopyIntoArrayNoChecksNonSequential);
                     }
                 }
             }

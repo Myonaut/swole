@@ -66,10 +66,120 @@ namespace Swole.Morphing
         }
 
         [Serializable]
+        public struct UVSwizzle
+        {
+            public int uvChannelSource;
+            public int uvChannelTarget;
+
+            public XYZWChannel storeX;
+            public XYZWChannel storeY;
+            public XYZWChannel storeZ;
+            public XYZWChannel storeW;
+
+            public Mesh ApplyTo(Mesh mesh, bool instantiate = false)
+            {
+                if (mesh == null) return null;
+
+                if (instantiate) mesh = MeshUtils.DuplicateMesh(mesh);
+
+                if (uvChannelSource < 0 || uvChannelSource > 7 || uvChannelTarget < 0 || uvChannelTarget > 7)
+                {
+                    Debug.LogWarning($"Invalid UV channel index in {nameof(UVSwizzle)} for mesh '{mesh.name}', skipping...");
+                    return mesh;
+                }
+
+                var source = mesh.GetUVsByChannelAsListV4(uvChannelSource);
+                var target = mesh.GetUVsByChannelAsListV4(uvChannelTarget);
+
+                for(int a = 0; a < source.Count; a++)
+                {
+                    var uv = source[a];
+
+                    var swizzled = target[a];
+                    swizzled = swizzled.StoreValue(uv.x, storeX);
+                    swizzled = swizzled.StoreValue(uv.y, storeY);
+                    swizzled = swizzled.StoreValue(uv.z, storeZ);
+                    swizzled = swizzled.StoreValue(uv.w, storeW);
+
+                    target[a] = swizzled;
+                }
+
+                mesh.SetUVs(uvChannelTarget, target);
+
+                return mesh;
+            }
+
+            private static readonly Dictionary<int, List<Vector4>> tempUVs = new Dictionary<int, List<Vector4>>();
+            public static Mesh ApplyTo(ICollection<UVSwizzle> swizzles, Mesh mesh, bool instantiate = false)
+            {
+                if (mesh == null) return null;
+
+                if (instantiate) mesh = MeshUtils.DuplicateMesh(mesh);
+
+                if (swizzles != null)
+                {
+                    tempUVs.Clear();
+
+                    foreach(var swizzle in swizzles)
+                    {
+                        if (swizzle.uvChannelSource < 0 || swizzle.uvChannelSource > 7)
+                        {
+                            Debug.LogWarning($"Invalid UV channel index in {nameof(UVSwizzle)} for mesh '{mesh.name}', skipping...");
+                            continue;
+                        }
+
+                        tempUVs[swizzle.uvChannelSource] = mesh.GetUVsByChannelAsListV4(swizzle.uvChannelSource);
+                    }
+
+                    foreach(var swizzle in swizzles)
+                    {
+                        if (swizzle.uvChannelSource < 0 || swizzle.uvChannelSource > 7 || swizzle.uvChannelTarget < 0 || swizzle.uvChannelTarget > 7)
+                        {
+                            Debug.LogWarning($"Invalid UV channel index in {nameof(UVSwizzle)} for mesh '{mesh.name}', skipping...");
+                            return mesh;
+                        }
+
+                        var source = tempUVs[swizzle.uvChannelSource];
+                        var target = mesh.GetUVsByChannelAsListV4(swizzle.uvChannelTarget);
+                        if (target == null) target = new List<Vector4>();
+                        while(target.Count < source.Count) target.Add(Vector4.zero);  
+
+                        for (int a = 0; a < source.Count; a++)
+                        {
+                            var uv = source[a];
+
+                            var swizzled = target[a];
+                            swizzled = swizzled.StoreValue(uv.x, swizzle.storeX);
+                            swizzled = swizzled.StoreValue(uv.y, swizzle.storeY);
+                            swizzled = swizzled.StoreValue(uv.z, swizzle.storeZ);
+                            swizzled = swizzled.StoreValue(uv.w, swizzle.storeW); 
+
+                            target[a] = swizzled;
+                        }
+
+                        mesh.SetUVs(swizzle.uvChannelTarget, target);
+                    }
+
+                    tempUVs.Clear();
+                }
+
+                return mesh;
+            }
+        }
+
+        [Serializable]
         public struct UVTransferData
         {
             public UVChannelURP uvChannel;
             public Vector4[] data;
+        }
+
+        [Serializable]
+        public struct VertexGroupToVertexColorChannel
+        {
+            public RGBAChannel targetChannel;
+            public bool onlyWriteToIndicesWithWeight;
+            public BlendShapeTarget groupShape;
         }
 
         [Serializable]
@@ -136,6 +246,107 @@ namespace Swole.Morphing
         }
 
         [Serializable]
+        public struct BaseMeshShapePreserve
+        {
+            public string shapeName;
+            public float preserveMix;
+        }
+
+        [Serializable]
+        public struct BaseMeshEdit
+        {
+            public BlendShapeTarget[] editShapesToApply;
+
+            public bool applyNormals;
+            public bool applyTangents;
+            public float finalMix;
+
+            public BaseMeshShapePreserve[] shapesToPreserve;
+
+            public Mesh Apply(Mesh mesh, bool instantiate = false)
+            {
+                if (mesh == null) return null;
+
+                if (instantiate) mesh = MeshUtils.DuplicateMesh(mesh);
+
+                float finalMix = this.finalMix == 0f ? 1f : this.finalMix;
+                if (editShapesToApply != null)
+                {
+                    Vector3[] editPosDeltas = new Vector3[mesh.vertexCount];
+                    Vector3[] editNormalDeltas = applyNormals ? new Vector3[mesh.vertexCount] : null;
+                    Vector3[] editTangentDeltas = applyTangents ? new Vector3[mesh.vertexCount] : null;
+                    foreach (var shape in editShapesToApply)
+                    {
+                        if (shape.TryGetBlendShape(string.Empty, mesh, out var blendShape))
+                        {
+                            if (blendShape.frames != null)
+                            {
+                                foreach(var frame in blendShape.frames)
+                                {
+                                    for (int a = 0; a < mesh.vertexCount; a++)
+                                    {
+                                        editPosDeltas[a] += frame.deltaVertices[a] * finalMix;
+                                        if (applyNormals) editNormalDeltas[a] += frame.deltaNormals[a] * finalMix;
+                                        if (applyTangents) editTangentDeltas[a] += frame.deltaTangents[a] * finalMix;
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    Vector3[] vertices = mesh.vertices;
+                    Vector3[] normals = mesh.normals;
+                    Vector4[] tangents = mesh.tangents;
+
+                    var shapes = shapesToPreserve == null ? null : mesh.GetBlendShapes();
+                    Dictionary<string, BlendShape> shapesDict = shapesToPreserve == null ? null : new Dictionary<string, BlendShape>();
+                    if (shapesToPreserve != null)
+                    {
+                        foreach (var shape in shapes) shapesDict[shape.name] = shape; 
+                    }
+
+                    for (int a = 0; a < mesh.vertexCount; a++)
+                    {
+                        vertices[a] = vertices[a] + editPosDeltas[a];
+                        if (applyNormals) normals[a] = normals[a] + editNormalDeltas[a];
+                        if (applyTangents) tangents[a] = tangents[a] + (Vector4)new float4(editTangentDeltas[a], 0f);
+
+                        if (shapesToPreserve != null)
+                        {
+                            foreach (var shapePreserve in shapesToPreserve)
+                            {
+                                if (!shapesDict.TryGetValue(shapePreserve.shapeName, out var blendShape) || blendShape.frames == null) continue;
+
+                                foreach(var frame in blendShape.frames)
+                                {
+                                    frame.deltaVertices[a] = frame.deltaVertices[a] - editPosDeltas[a] * shapePreserve.preserveMix;
+                                    if (applyNormals) frame.deltaNormals[a] = frame.deltaNormals[a] - editNormalDeltas[a] * shapePreserve.preserveMix;
+                                    if (applyTangents) frame.deltaTangents[a] = frame.deltaTangents[a] - editTangentDeltas[a] * shapePreserve.preserveMix;
+                                }
+                            }
+                        }
+                    }
+
+                    mesh.vertices = vertices;
+                    mesh.normals = normals;
+                    mesh.tangents = tangents;
+
+                    mesh.ClearBlendShapes();
+                    foreach(var shape in shapes) shape.AddToMesh(mesh);
+                }
+
+                return mesh;
+            }
+        }
+
+        [Serializable]
+        public struct Vector3StoreUV
+        {
+            public UVChannelURP uvChannel;
+            public bool storeInYZW;
+        }
+
+        [Serializable]
         public struct MeshObject
         {
 
@@ -146,6 +357,8 @@ namespace Swole.Morphing
             public Material[] materials;
 
             public Mesh mainMesh;
+
+            public BaseMeshEdit[] mainMeshEdits;
 
             public MeshLOD[] lods;
             public bool preserveLodMeshVertexColors;
@@ -169,6 +382,9 @@ namespace Swole.Morphing
             public string baseMeshGroup;
             public WeightedBaseMeshGroup[] additionalBaseMeshGroups;
             public bool HasAdditionalBaseMeshGroups => additionalBaseMeshGroups != null && additionalBaseMeshGroups.Length > 0;
+
+            public bool storeRecalculatedNormalsInUV;
+            public Vector3StoreUV deltaNormalsStoreUV;
 
             public bool useUVsForBaseDataTransfers;
             public UVChannelURP baseUV_transferChannel;
@@ -202,8 +418,10 @@ namespace Swole.Morphing
 
             public bool allowSurfaceDataTransfer;
             public bool surfaceTransferFromExistingSetup;
+            [Tooltip("Vertex groups whose values should be preserved during surface snapping")]
             public List<string> vertexGroupsToPreserve;
             public bool copyMeshShapeDataFromExistingSetup;
+            [Tooltip("Mesh shapes whose values should be preserved during surface snapping")] 
             public List<string> meshShapesToPreserve;
             public ExistingSetup existingSetup;
             public WeightedExistingSetup[] additionalExistingSetups;
@@ -242,6 +460,12 @@ namespace Swole.Morphing
             public Vector3 initialRotationOffset;
 
             public float solidifyThickness;
+
+            public VertexColorDeltaTarget[] vertexColorDeltas;
+
+            public UVSwizzle[] finalUvSwizzles;
+
+            public VertexGroupToVertexColorChannel[] vertexGroupsToVertexColorChannels;
 
             public TextureToVertexColor[] textureToVertexColorBakes;
 
@@ -341,9 +565,11 @@ namespace Swole.Morphing
         public float averageFatGroupsAsPoolMaxWeight = 1f;
         public BodyMask[] fatGroups;
 
+        public CustomizableCharacterMeshV2.DefaultMuscleGroupConversion[] basicMuscleGroupConversions;
+
         [Header("Customization")]
         public BlendShapeTarget[] variationShapes;
-
+        
         public bool normalizeVariationGroupsAsPool = true;
         public float normalizeVariationGroupsAsPoolMaxWeight = 0f;
         public bool averageVariationGroupsAsPool = true;
@@ -352,6 +578,7 @@ namespace Swole.Morphing
 
         [Header("Other")]
         public List<string> nonSeamMergableBlendShapes;
+        public List<string> nonSeamMergableVertexColorDeltas;
 
         [Tooltip("Defaults to the prefab root")]
         public Transform ikBonesParent;
@@ -380,6 +607,7 @@ namespace Swole.Morphing
         protected List<CompositeVertexGroupBuilder> tempCompositeGroups = new List<CompositeVertexGroupBuilder>();
         protected List<MeshShape> tempMeshShapes = new List<MeshShape>();
         protected List<Matrix4x4> tempMatrices = new List<Matrix4x4>();
+        protected List<VertexColorDelta> tempVertexColorDeltas = new List<VertexColorDelta>();
 
         protected Dictionary<int, int> tempIndexRemapper = new Dictionary<int, int>();
 
@@ -495,6 +723,17 @@ namespace Swole.Morphing
 
                         PreMeshObjectSetup(objectIndex, objectSetup, meshObject, ref mainMesh, lodMeshes);
 
+                        if (objectSetup.mainMeshEdits != null && objectSetup.mainMeshEdits.Length > 0)
+                        {
+                            string meshName = mainMesh.name;
+                            mainMesh = MeshUtils.DuplicateMesh(mainMesh);
+                            mainMesh.name = meshName;
+                            foreach (var edit in objectSetup.mainMeshEdits)
+                            {
+                                mainMesh = edit.Apply(mainMesh, false); 
+                            }
+                        }
+
                         #region Combine Specified Meshes
 
                         if (objectSetup.meshesToCombine != null)
@@ -599,13 +838,15 @@ namespace Swole.Morphing
                                             var combineNormals = meshToCombine.normals;
                                             var combineTangents = meshToCombine.tangents;
                                             var combineWeld = MeshDataTools.WeldVertices(combineVertices);
+                                            var combineTris = meshToCombine.triangles;
+                                            var combineNearestVertexIndexUVs = useUVsToFindClosestVertex ? meshToCombine.GetUVsByChannel(nearestVertexIndexUVChannel) : null;
 
-                                            if (merger.meshIslandRootsVertexGroup.TryGetBlendShape(objectSetup.name, meshToCombine, out var blendShape_, combineVertices, combineNormals, combineTangents, combineWeld))
+                                            if (merger.meshIslandRootsVertexGroup.TryGetBlendShape(objectSetup.name, meshToCombine, out var blendShape_, combineVertices, combineNormals, combineTangents, combineWeld, combineTris, nearestVertexUVChannel))
                                             {
                                                 var vg = VertexGroup.ConvertToVertexGroup(blendShape_, true, string.Empty, 0.00001f);
                                                 meshIslandRootVertexGroup_ = vg.AsLinearWeightArray(meshToCombine.vertexCount);
                                             }
-                                            if (merger.meshIslandBlendVertexGroup.TryGetBlendShape(objectSetup.name, meshToCombine, out blendShape_, combineVertices, combineNormals, combineTangents, combineWeld))
+                                            if (merger.meshIslandBlendVertexGroup.TryGetBlendShape(objectSetup.name, meshToCombine, out blendShape_, combineVertices, combineNormals, combineTangents, combineWeld, combineTris, nearestVertexUVChannel))
                                             {
                                                 var vg = VertexGroup.ConvertToVertexGroup(blendShape_, true, string.Empty, 0.00001f);
                                                 meshIslandBlendVertexGroup_ = vg.AsLinearWeightArray(meshToCombine.vertexCount);
@@ -682,6 +923,9 @@ namespace Swole.Morphing
                         var mainVertices = mainMesh.vertices;
                         var mainNormals = mainMesh.normals;
                         var mainTangents = mainMesh.tangents;
+                        var mainTris = mainMesh.triangles;
+                        var mainNearestVertexIndexUVs = useUVsToFindClosestVertex ? mainMesh.GetUVsByChannel(nearestVertexUVChannel) : null; 
+                        var mainColors = mainMesh.colors;
 
                         MeshDataTools.WeldedVertex[] mainWeld = null;
 
@@ -696,7 +940,7 @@ namespace Swole.Morphing
 
                             foreach(var prepTarget in objectSetup.prepShapes)
                             {
-                                if (prepTarget.TryGetBlendShape(objectSetup.name, mainMesh, out var blendShape, mainVertices, mainNormals, mainTangents, mainWeld))
+                                if (prepTarget.TryGetBlendShape(objectSetup.name, mainMesh, out var blendShape, mainVertices, mainNormals, mainTangents, mainWeld, mainTris, nearestVertexUVChannel, mainNearestVertexIndexUVs))
                                 {
                                     blendShape.AddToMesh(prepMesh);
                                 }
@@ -825,12 +1069,12 @@ namespace Swole.Morphing
                             float[] meshIslandRootVertexGroup = null;
                             float[] meshIslandBlendVertexGroup = null;
 
-                            if (objectSetup.meshIslandRootsVertexGroup.TryGetBlendShape(objectSetup.name, mainMesh, out var blendShape_, mainVertices, mainNormals, mainTangents, mainWeld))
+                            if (objectSetup.meshIslandRootsVertexGroup.TryGetBlendShape(objectSetup.name, mainMesh, out var blendShape_, mainVertices, mainNormals, mainTangents, mainWeld, mainTris, nearestVertexUVChannel, mainNearestVertexIndexUVs))
                             {
                                 var vg = VertexGroup.ConvertToVertexGroup(blendShape_, true, string.Empty, 0.00001f);
                                 meshIslandRootVertexGroup = vg.AsLinearWeightArray(mainMesh.vertexCount);
                             }
-                            if (objectSetup.meshIslandBlendVertexGroup.TryGetBlendShape(objectSetup.name, mainMesh, out blendShape_, mainVertices, mainNormals, mainTangents, mainWeld))
+                            if (objectSetup.meshIslandBlendVertexGroup.TryGetBlendShape(objectSetup.name, mainMesh, out blendShape_, mainVertices, mainNormals, mainTangents, mainWeld, mainTris, nearestVertexUVChannel, mainNearestVertexIndexUVs))
                             {
                                 var vg = VertexGroup.ConvertToVertexGroup(blendShape_, true, string.Empty, 0.00001f);
                                 meshIslandBlendVertexGroup = vg.AsLinearWeightArray(mainMesh.vertexCount);
@@ -1010,7 +1254,7 @@ namespace Swole.Morphing
 
                                             foreach (var shapeTarget in snapShapeCreator.localShapesToApply) // apply local shapes
                                             {
-                                                if (!shapeTarget.TryGetBlendShape(objectSetup.name, origMesh, out var tempShape, vertices, normals, tangents, weld)) continue;
+                                                if (!shapeTarget.TryGetBlendShape(objectSetup.name, origMesh, out var tempShape, vertices, normals, tangents, weld, null, nearestVertexUVChannel, null)) continue;
 
                                                 tempShape.GetTransformedData(shapeVerts, shapeNormals, shapeTangents, shapeTarget.weight, out shapeVerts, out shapeNormals, out shapeTangents, false);
                                             }
@@ -1418,7 +1662,7 @@ namespace Swole.Morphing
                                 tempBlendShapes.Clear();
                                 foreach (var shape in tempBlendShapeTargets)
                                 {
-                                    if (shape.TryGetBlendShape(objectSetup.name, mainMesh, out var blendShape, finalMeshShapes, mainVertices, mainNormals, mainTangents, mainWeld))
+                                    if (shape.TryGetBlendShape(objectSetup.name, mainMesh, out var blendShape, finalMeshShapes, mainVertices, mainNormals, mainTangents, mainWeld, mainTris, nearestVertexUVChannel, mainNearestVertexIndexUVs))
                                     {
                                         if (shape.weight > 0f) blendShape.RemapFrameWeights(shape.weight);
                                         tempBlendShapes.Add(blendShape);
@@ -1461,7 +1705,7 @@ namespace Swole.Morphing
                                 foreach (var shape in tempBlendShapeTargets)
                                 {
                                     Debug.Log($"Processing standalone shape '{shape.targetName}' for mesh '{objectSetup.name}'...");
-                                    if (shape.TryGetBlendShape(objectSetup.name, mainMesh, out var blendShape, finalMeshShapes, mainVertices, mainNormals, mainTangents, mainWeld))
+                                    if (shape.TryGetBlendShape(objectSetup.name, mainMesh, out var blendShape, finalMeshShapes, mainVertices, mainNormals, mainTangents, mainWeld, mainTris, nearestVertexUVChannel, mainNearestVertexIndexUVs))
                                     {
                                         Debug.Log($" - Successfully extracted blend shape '{blendShape.name}' for standalone shape.");
                                         if (shape.weight > 0f) blendShape.RemapFrameWeights(shape.weight);
@@ -1502,7 +1746,7 @@ namespace Swole.Morphing
                             foreach (var shape in tempBlendShapeTargets)
                             {
                                 Debug.Log($"Processing mass shape '{shape.targetName}' for mesh '{objectSetup.name}'...");
-                                if (shape.TryGetBlendShape(objectSetup.name, mainMesh, out var blendShape, finalMeshShapes, mainVertices, mainNormals, mainTangents, mainWeld))
+                                if (shape.TryGetBlendShape(objectSetup.name, mainMesh, out var blendShape, finalMeshShapes, mainVertices, mainNormals, mainTangents, mainWeld, mainTris, nearestVertexUVChannel, mainNearestVertexIndexUVs))
                                 {
                                     Debug.Log($" - Successfully extracted blend shape '{blendShape.name}' for mass shape.");
                                     if (shape.weight > 0f) blendShape.RemapFrameWeights(shape.weight);
@@ -1530,7 +1774,7 @@ namespace Swole.Morphing
                             tempBlendShapes.Clear();
                             foreach (var shape in tempBlendShapeTargets)
                             {
-                                if (shape.TryGetBlendShape(objectSetup.name, mainMesh, out var blendShape, finalMeshShapes, mainVertices, mainNormals, mainTangents, mainWeld))
+                                if (shape.TryGetBlendShape(objectSetup.name, mainMesh, out var blendShape, finalMeshShapes, mainVertices, mainNormals, mainTangents, mainWeld, mainTris, nearestVertexUVChannel, mainNearestVertexIndexUVs))
                                 {
                                     if (shape.weight > 0f) blendShape.RemapFrameWeights(shape.weight);
                                     tempBlendShapes.Add(blendShape);
@@ -1554,7 +1798,7 @@ namespace Swole.Morphing
                             tempBlendShapes.Clear();
                             foreach (var shape in tempBlendShapeTargets)
                             {
-                                if (shape.TryGetBlendShape(objectSetup.name, mainMesh, out var blendShape, finalMeshShapes, mainVertices, mainNormals, mainTangents, mainWeld))
+                                if (shape.TryGetBlendShape(objectSetup.name, mainMesh, out var blendShape, finalMeshShapes, mainVertices, mainNormals, mainTangents, mainWeld, mainTris, nearestVertexUVChannel, mainNearestVertexIndexUVs))
                                 {
                                     if (shape.weight > 0f) blendShape.RemapFrameWeights(shape.weight);
                                     tempBlendShapes.Add(blendShape);
@@ -1578,7 +1822,7 @@ namespace Swole.Morphing
                             tempBlendShapes.Clear();
                             foreach (var shape in tempBlendShapeTargets)
                             {
-                                if (shape.TryGetBlendShape(objectSetup.name, mainMesh, out var blendShape, finalMeshShapes, mainVertices, mainNormals, mainTangents, mainWeld))
+                                if (shape.TryGetBlendShape(objectSetup.name, mainMesh, out var blendShape, finalMeshShapes, mainVertices, mainNormals, mainTangents, mainWeld, mainTris, nearestVertexUVChannel, mainNearestVertexIndexUVs))
                                 {
                                     if (shape.weight > 0f) blendShape.RemapFrameWeights(shape.weight);
                                     tempBlendShapes.Add(blendShape);
@@ -1603,7 +1847,7 @@ namespace Swole.Morphing
                             int startIndex = finalMeshShapes.Count;
                             foreach (var shape in tempBlendShapeTargets)
                             {
-                                if (shape.TryGetBlendShape(objectSetup.name, mainMesh, out var blendShape, finalMeshShapes, mainVertices, mainNormals, mainTangents, mainWeld))
+                                if (shape.TryGetBlendShape(objectSetup.name, mainMesh, out var blendShape, finalMeshShapes, mainVertices, mainNormals, mainTangents, mainWeld, mainTris, nearestVertexUVChannel, mainNearestVertexIndexUVs))
                                 {
                                     var variationShape = MeshShape.CreateFromBlendShape(blendShape);
                                     finalMeshShapes.Add(variationShape);
@@ -1630,6 +1874,40 @@ namespace Swole.Morphing
                             tempMeshShapes.Clear();
                             outputDatas[baseMeshIndex].GetShapes(tempMeshShapes);
                             MergeMeshShapesAtSeam(mainMesh, meshObjects[baseMeshIndex].mainMesh, seamShapes[0], finalMeshShapes, tempMeshShapes, nonSeamMergableBlendShapes);
+                        }
+
+                        #endregion
+
+                        #region Create Vertex Color Deltas
+
+                        if (objectSetup.vertexColorDeltas != null)
+                        {
+
+                            tempVertexColorDeltas.Clear();
+
+                            foreach (var delta in objectSetup.vertexColorDeltas)
+                            {
+                                if (delta.targetMesh == null || delta.targetChannels == RGBAChannel.None) continue;
+
+                                if (delta.TryGet(mainMesh, out var deltaObj, mainColors, mainTris, nearestVertexUVChannel, mainNearestVertexIndexUVs))
+                                {
+                                    tempVertexColorDeltas.Add(deltaObj);
+                                }
+                            }
+
+                            serializedData.vertexColorDeltas = tempVertexColorDeltas.ToArray();
+                            tempVertexColorDeltas.Clear();
+                        }
+                 
+                        #endregion
+
+                        #region Merge Vertex Color Deltas At Seam
+
+                        if (baseMeshIndex >= 0 && baseMeshIndex < objectIndex && seamShapes.Count > 0)
+                        {
+                            tempVertexColorDeltas.Clear();
+                            outputDatas[baseMeshIndex].GetVertexColorDeltas(tempVertexColorDeltas);
+                            MergeVertexColorDeltasAtSeam(mainMesh, meshObjects[baseMeshIndex].mainMesh, seamShapes[0], serializedData.vertexColorDeltas, tempVertexColorDeltas, nonSeamMergableVertexColorDeltas); 
                         }
 
                         #endregion
@@ -1702,7 +1980,7 @@ namespace Swole.Morphing
 
                         bool hasMuscleGroups = muscleGroupIndices.x <= muscleGroupIndices.y;
                         bool hasFatGroups = fatGroupIndices.x <= fatGroupIndices.y;
-                        bool hasVariationGroups = variationGroupIndices.x <= variationGroupIndices.y;
+                        bool hasVariationGroups = variationGroupIndices.x <= variationGroupIndices.y; 
 
                         #region Create And Insert Composite Vertex Groups
 
@@ -1888,10 +2166,71 @@ namespace Swole.Morphing
 
                         #endregion
 
+                        #region Store Target Vertex Groups In Vertex Colors
+
+                        if (objectSetup.vertexGroupsToVertexColorChannels != null && objectSetup.vertexGroupsToVertexColorChannels.Length > 0)
+                        {
+                            if (ReferenceEquals(objectSetup.mainMesh, mainMesh)) mainMesh = MeshUtils.DuplicateMesh(mainMesh);
+
+                            Color[] vertexColors = mainMesh.colors;
+                            if (vertexColors == null || vertexColors.Length <= 0) vertexColors = new Color[mainMesh.vertexCount]; 
+
+                            bool flag = false;
+                            foreach (var store in objectSetup.vertexGroupsToVertexColorChannels)
+                            {
+                                if (!store.groupShape.TryGetBlendShape(objectSetup.name, mainMesh, out var shape, mainVertices, mainNormals, mainTangents, mainWeld, mainTris, nearestVertexUVChannel)) continue;
+
+                                var vg = VertexGroup.ConvertToVertexGroup(shape, true, null);
+                                if (vg == null) continue;
+
+                                if (store.onlyWriteToIndicesWithWeight) 
+                                {
+                                    for (int i = 0; i < vg.EntryCount; i++)
+                                    {
+                                        vg.GetEntry(i, out int vertexIndex, out float weight);
+
+                                        var vColor = vertexColors[vertexIndex];
+
+                                        if (store.targetChannel.HasFlag(RGBAChannel.R)) vColor.r = weight;
+                                        if (store.targetChannel.HasFlag(RGBAChannel.G)) vColor.g = weight;
+                                        if (store.targetChannel.HasFlag(RGBAChannel.B)) vColor.b = weight;
+                                        if (store.targetChannel.HasFlag(RGBAChannel.A)) vColor.a = weight;
+
+                                        vertexColors[vertexIndex] = vColor;
+                                    }
+                                }
+                                else
+                                {
+                                    var weights = vg.AsLinearWeightArray(mainMesh.vertexCount);
+                                    for (int i = 0; i < weights.Length; i++)
+                                    {
+                                        var weight = weights[i];
+
+                                        var vColor = vertexColors[i];
+
+                                        if (store.targetChannel.HasFlag(RGBAChannel.R)) vColor.r = weight;
+                                        if (store.targetChannel.HasFlag(RGBAChannel.G)) vColor.g = weight;
+                                        if (store.targetChannel.HasFlag(RGBAChannel.B)) vColor.b = weight;
+                                        if (store.targetChannel.HasFlag(RGBAChannel.A)) vColor.a = weight;
+
+                                        vertexColors[i] = vColor;
+                                    }
+                                }
+
+                                flag = true;
+                            }
+
+                            if (flag) mainMesh.colors = vertexColors;
+                        }
+
+                        #endregion
+
                         #region Bake Textures To Vertex Colors
 
                         if (objectSetup.textureToVertexColorBakes != null && objectSetup.textureToVertexColorBakes.Length > 0)
                         {
+                            if (ReferenceEquals(objectSetup.mainMesh, mainMesh)) mainMesh = MeshUtils.DuplicateMesh(mainMesh);
+
                             Color[] vertexColors = mainMesh.colors;
                             if (vertexColors == null || vertexColors.Length <= 0) vertexColors = new Color[mainMesh.vertexCount];
 
@@ -2056,26 +2395,77 @@ namespace Swole.Morphing
 
                         #region Create Final Meshes
 
+                        void StoreRecalculatedNormalsInUV(Mesh mesh)
+                        {
+                            var tempMesh = MeshUtils.DuplicateMesh(mesh);
+                            tempMesh.RecalculateNormals();
+
+                            var localNormals = mesh.normals;
+                            var recNormals = tempMesh.normals;
+
+                            List<Vector4> uv = mesh.GetUVsByChannelAsListV4(objectSetup.deltaNormalsStoreUV.uvChannel);
+                            if (uv == null || uv.Count < mesh.vertexCount)
+                            {
+                                uv = new List<Vector4>();
+                                for (int b = 0; b < mesh.vertexCount; b++) uv.Add(Vector4.zero);
+                            }
+
+                            var weld = MeshDataTools.WeldVertices(mesh.vertices);
+                            for (int b = 0; b < uv.Count; b++)
+                            {
+                                var normalDelta = Vector3.zero;
+
+                                var merge = weld[b];
+                                for (int c = 0; c < merge.indices.Count; c++)
+                                {
+                                    normalDelta += recNormals[merge.indices[c]] - localNormals[b]; 
+                                }
+                                normalDelta = normalDelta / Mathf.Max(1, merge.indices.Count);
+
+                                if (objectSetup.deltaNormalsStoreUV.storeInYZW)
+                                {
+                                    uv[b] = new Vector4(uv[b].x, normalDelta.x, normalDelta.y, normalDelta.z);
+                                }
+                                else
+                                {
+                                    uv[b] = new Vector4(normalDelta.x, normalDelta.y, normalDelta.z, uv[b].w);
+                                }
+                            }
+
+                            mesh.SetUVs((int)objectSetup.deltaNormalsStoreUV.uvChannel, uv);
+                        }
+
                         Mesh outputMeshMain = null;
                         var baseVertices = mainMesh.vertices;
                         var baseColors = mainMesh.colors;
                         var baseUV = useUVsToFindClosestVertex ? mainMesh.GetUVsByChannelAsList((int)nearestVertexUVChannel) : null;
-                        if (storeNearestVertexInUV)
+                        if (objectSetup.finalUvSwizzles != null && objectSetup.finalUvSwizzles.Length > 0)
                         {
-                            List<Vector4> uv3 = mainMesh.GetUVsByChannelAsListV4(3);
-                            if (uv3 == null || uv3.Count < mainMesh.vertexCount)
-                            {
-                                uv3 = new List<Vector4>();
-                                for (int b = 0; b < mainMesh.vertexCount; b++) uv3.Add(Vector4.zero);
-                            }
-
-                            for (int b = 0; b < uv3.Count; b++) uv3[b] = StoreIndexInUV(uv3[b], b);
-
-                            if (outputMeshMain == null) 
+                            if (outputMeshMain == null)
                             {
                                 outputMeshMain = MeshUtils.DuplicateMesh(mainMesh);
                                 outputMeshMain.name = mainMesh.name;
                             }
+
+                            outputMeshMain = UVSwizzle.ApplyTo(objectSetup.finalUvSwizzles, outputMeshMain, false); 
+                        }
+                        if (storeNearestVertexInUV)
+                        {
+                            if (outputMeshMain == null)
+                            {
+                                outputMeshMain = MeshUtils.DuplicateMesh(mainMesh); 
+                                outputMeshMain.name = mainMesh.name;
+                            }
+
+                            List<Vector4> uv3 = outputMeshMain.GetUVsByChannelAsListV4(3);
+                            if (uv3 == null || uv3.Count < outputMeshMain.vertexCount)
+                            {
+                                uv3 = new List<Vector4>();
+                                for (int b = 0; b < outputMeshMain.vertexCount; b++) uv3.Add(Vector4.zero);
+                            }
+
+                            for (int b = 0; b < uv3.Count; b++) uv3[b] = StoreIndexInUV(uv3[b], b);
+
                             outputMeshMain.SetUVs(3, uv3);
                         }
 
@@ -2089,6 +2479,88 @@ namespace Swole.Morphing
                         }
                         else outputMeshMain = mainMesh;
 
+                        if (objectSetup.storeRecalculatedNormalsInUV)
+                        {
+                            StoreRecalculatedNormalsInUV(outputMeshMain);
+                            if (baseMeshIndex >= 0 && baseMeshIndex < objectIndex && seamShapes.Count > 0)
+                            {
+                                var baseMesh_ = meshObjects[baseMeshIndex].mainMesh;
+                                var localUV_ = outputMeshMain.GetUVsByChannelV4((int)objectSetup.deltaNormalsStoreUV.uvChannel);
+                                var baseUV_ = baseMesh_.GetUVsByChannelV4((int)meshObjects[baseMeshIndex].deltaNormalsStoreUV.uvChannel); 
+
+                                var localNormals = outputMeshMain.normals;
+                                var baseNormals = baseMesh_.normals;
+
+                                // add delta normals to normals before seam merge
+                                for (int i = 0; i < localNormals.Length; i++)
+                                {
+                                    var n = localNormals[i];
+                                    var uv = localUV_[i];
+
+                                    if (objectSetup.deltaNormalsStoreUV.storeInYZW)
+                                    {
+                                        uv.y = n.x + uv.y;
+                                        uv.z = n.y + uv.z;
+                                        uv.w = n.z + uv.w;
+                                    }
+                                    else
+                                    {
+                                        uv.x = n.x + uv.x;
+                                        uv.y = n.y + uv.y;
+                                        uv.z = n.z + uv.z;
+                                    }
+
+                                    localUV_[i] = uv;
+                                }
+                                for (int i = 0; i < baseNormals.Length; i++)
+                                {
+                                    var n = baseNormals[i];
+                                    var uv = baseUV_[i];
+
+                                    if (objectSetup.deltaNormalsStoreUV.storeInYZW)
+                                    {
+                                        uv.y = n.x + uv.y;
+                                        uv.z = n.y + uv.z;
+                                        uv.w = n.z + uv.w;
+                                    }
+                                    else
+                                    {
+                                        uv.x = n.x + uv.x;
+                                        uv.y = n.y + uv.y;
+                                        uv.z = n.z + uv.z;
+                                    }
+
+                                    baseUV_[i] = uv;
+                                }
+
+                                MergeV4AtSeam(outputMeshMain, baseMesh_, seamShapes[0], localUV_, baseUV_, objectSetup.deltaNormalsStoreUV.storeInYZW ? (XYZWChannel.Y | XYZWChannel.Z | XYZWChannel.W) : (XYZWChannel.X | XYZWChannel.Y | XYZWChannel.Z));
+
+                                // convert back to delta normals after seam merge
+                                for (int i = 0; i < localNormals.Length; i++)
+                                {
+                                    var n = localNormals[i];
+                                    var uv = localUV_[i];
+
+                                    if (objectSetup.deltaNormalsStoreUV.storeInYZW) 
+                                    {
+                                        uv.y = uv.y - n.x;
+                                        uv.z = uv.z - n.y;
+                                        uv.w = uv.w - n.z;
+                                    }
+                                    else
+                                    {
+                                        uv.x = uv.x - n.x;
+                                        uv.y = uv.y - n.y;
+                                        uv.z = uv.z - n.z;
+                                    }
+
+                                    localUV_[i] = uv;
+                                }
+
+                                outputMeshMain.SetUVs((int)objectSetup.deltaNormalsStoreUV.uvChannel, localUV_); 
+                            }
+                        }
+                        
                         meshLODs.Clear();
                         if (objectSetup.lods != null)
                         {
@@ -2098,22 +2570,38 @@ namespace Swole.Morphing
 
                                 Mesh lodMesh = lodMeshes[b];
                                 Mesh outputMesh = null;
+                                if (objectSetup.finalUvSwizzles != null && objectSetup.finalUvSwizzles.Length > 0)
+                                {
+                                    if (outputMesh == null)
+                                    {
+                                        outputMesh = MeshUtils.DuplicateMesh(lodMesh);
+                                        outputMesh.name = lodMesh.name;
+                                    }
+
+                                    outputMesh = UVSwizzle.ApplyTo(objectSetup.finalUvSwizzles, outputMesh, false);
+                                }
                                 if (storeNearestVertexInUV)
                                 {
                                     var lodVertices = lodMesh.vertices;
                                     var mergedVertices = MeshDataTools.WeldVertices(lodVertices);
 
-                                    List<Vector4> uv3 = lodMesh.GetUVsByChannelAsListV4(3);
-                                    if (uv3 == null || uv3.Count < lodMesh.vertexCount)
+                                    if (outputMesh == null)
                                     {
-                                        uv3 = new List<Vector4>();
-                                        for (int c = 0; c < lodMesh.vertexCount; c++) uv3.Add(Vector4.zero);
+                                        outputMesh = MeshUtils.DuplicateMesh(lodMesh);
+                                        outputMesh.name = lodMesh.name;
                                     }
 
-                                    int[] nearestVertices = new int[lodMesh.vertexCount];
+                                    List<Vector4> uv3 = outputMesh.GetUVsByChannelAsListV4(3);
+                                    if (uv3 == null || uv3.Count < outputMesh.vertexCount)
+                                    {
+                                        uv3 = new List<Vector4>();
+                                        for (int c = 0; c < outputMesh.vertexCount; c++) uv3.Add(Vector4.zero);
+                                    }
+
+                                    int[] nearestVertices = new int[outputMesh.vertexCount];
                                     if (useUVsToFindClosestVertex)
                                     {
-                                        var lodUV = lodMesh.GetUVsByChannelAsList((int)nearestVertexUVChannel);
+                                        var lodUV = outputMesh.GetUVsByChannelAsList((int)nearestVertexUVChannel);
                                         MeshDataTools.FindClosestVerticesUV(lodUV, baseUV, nearestVertices);
                                     }
                                     else
@@ -2131,11 +2619,6 @@ namespace Swole.Morphing
                                         }
                                     }
 
-                                    if (outputMesh == null) 
-                                    { 
-                                        outputMesh = MeshUtils.DuplicateMesh(lodMesh);
-                                        outputMesh.name = lodMesh.name;
-                                    }
                                     outputMesh.SetUVs(3, uv3);
 
                                     if ((!lodMesh.HasVertexAttribute(UnityEngine.Rendering.VertexAttribute.Color) || !objectSetup.preserveLodMeshVertexColors) && (baseColors != null && baseColors.Length > 0))
@@ -2169,6 +2652,11 @@ namespace Swole.Morphing
                                 }
                                 else outputMesh = lodMesh;
 
+                                if (objectSetup.storeRecalculatedNormalsInUV)
+                                {
+                                    StoreRecalculatedNormalsInUV(outputMesh);
+                                }
+
                                 meshLODs.Add(new MeshLOD() { mesh = outputMesh, screenRelativeTransitionHeight = lod.screenRelativeTransitionHeight });
                             }
 
@@ -2176,11 +2664,11 @@ namespace Swole.Morphing
                         }
                         outputMeshMain.name = objectSetup.name;
                         meshLODs.Insert(0, new MeshLOD() { mesh = outputMeshMain, screenRelativeTransitionHeight = meshLODs.Count == 0 ? 0.001f : (meshLODs[0].screenRelativeTransitionHeight < 1f ? 1f : (meshLODs[0].screenRelativeTransitionHeight + 0.1f)) });
-
-                            #endregion
+                        
+                        #endregion
 
                         #region Finalize Data
-
+                        
                         PostMeshObjectSetup(objectIndex, objectSetup, meshObject);
 
                         #region Final Dispose
@@ -2204,9 +2692,9 @@ namespace Swole.Morphing
                         serializedData.midlineVertexGroup = serializedData.IndexOfVertexGroup(midlineVertexGroup);
                         serializedData.bustVertexGroup = serializedData.IndexOfVertexGroup(bustVertexGroup);
                         serializedData.bustNerfVertexGroup = serializedData.IndexOfVertexGroup(bustNerfVertexGroup);
-                        serializedData.bustSizeShape = serializedData.IndexOfMeshShape(bustSizeShape);
-                        serializedData.bustSizeMuscleShape = serializedData.IndexOfMeshShape(bustSizeMuscleShape);
-                        serializedData.bustShapeShape = serializedData.IndexOfMeshShape(bustShapeShape);                 
+                        serializedData.bustSizeShape = serializedData.IndexOfShape(bustSizeShape);
+                        serializedData.bustSizeMuscleShape = serializedData.IndexOfShape(bustSizeMuscleShape);
+                        serializedData.bustShapeShape = serializedData.IndexOfShape(bustShapeShape);                 
                         serializedData.nippleMaskVertexGroup = serializedData.IndexOfVertexGroup(nippleMaskVertexGroup); 
                         serializedData.genitalMaskVertexGroup = serializedData.IndexOfVertexGroup(genitalMaskVertexGroup);
 
@@ -2233,6 +2721,8 @@ namespace Swole.Morphing
                         serializedData.meshLODs = meshLODs.ToArray();
                         serializedData.nearestVertexUVChannel = nearestVertexUVChannel;
                         serializedData.nearestVertexIndexElement = nearestVertexIndexElement;
+
+                        serializedData.defaultMuscleGroupConversions = basicMuscleGroupConversions == null ? null : ((CustomizableCharacterMeshV2.DefaultMuscleGroupConversion[])basicMuscleGroupConversions.Clone());
 
                         if (outputData == null) outputData = CustomizableCharacterMeshV2_DATA.CreateInstance(dataName, serializedData); else outputData.ReplaceData(serializedData);
 
@@ -2329,6 +2819,12 @@ namespace Swole.Morphing
             foreach (var mesh in outputMeshes)
             {
                 string meshSavePath = Extensions.CreateUnityAssetPathString(assetSavePath, mesh.name, ".asset");
+                string fullPath = Path.Combine(new DirectoryInfo(Application.dataPath).Parent.FullName, meshSavePath);
+                if (!Directory.Exists(Path.GetDirectoryName(fullPath)))
+                {
+                    Directory.CreateDirectory(Path.GetDirectoryName(fullPath));
+                    AssetDatabase.Refresh();
+                }
 
                 if (!AssetDatabase.IsNativeAsset(mesh))
                 {
@@ -2349,6 +2845,12 @@ namespace Swole.Morphing
             foreach (var outputData in outputDatas)
             {
                 string savePath = Extensions.CreateUnityAssetPathString(dataSavePath, outputData.name, ".asset");
+                string fullPath = Path.Combine(new DirectoryInfo(Application.dataPath).Parent.FullName, savePath);
+                if (!Directory.Exists(Path.GetDirectoryName(fullPath)))
+                {
+                    Directory.CreateDirectory(Path.GetDirectoryName(fullPath));
+                    AssetDatabase.Refresh();
+                }
 
                 if (!AssetDatabase.IsNativeAsset(outputData))
                 {
@@ -2364,8 +2866,16 @@ namespace Swole.Morphing
                 outputData.Precache();
             }
 
-            var prefab = PrefabUtility.SaveAsPrefabAsset(outputPrefab, Extensions.CreateUnityAssetPathString(prefabSavePath, outputPrefab.name, ".prefab"), out bool success);
-            if (success) outputPrefab = prefab; else Debug.LogError($"Failed to save prefab '{outputPrefab.name}'!");
+            string prefabPath = Extensions.CreateUnityAssetPathString(prefabSavePath, outputPrefab.name, ".prefab");
+            string fullPrefabPath = Path.Combine(new DirectoryInfo(Application.dataPath).Parent.FullName, prefabPath);
+            if (!Directory.Exists(Path.GetDirectoryName(fullPrefabPath)))
+            {
+                Directory.CreateDirectory(Path.GetDirectoryName(fullPrefabPath));
+                AssetDatabase.Refresh();
+            }
+
+            var prefab = PrefabUtility.SaveAsPrefabAsset(outputPrefab, prefabPath, out bool success);
+            if (success) outputPrefab = prefab; else Debug.LogError($"Failed to save prefab '{outputPrefab.name}'!"); 
 #endif
             #endregion
 

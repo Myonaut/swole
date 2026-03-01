@@ -12,7 +12,7 @@ using Unity.Mathematics;
 namespace Swole.API.Unity
 {
      
-    public class MuscularRenderedCharacter : RenderedCharacter
+    public class MuscularRenderedCharacter : RenderedCharacter, IMuscularBasic
     {
 
         public MuscularRenderedCharacter parent;

@@ -8,14 +8,14 @@ using UnityEngine;
 using UnityEngine.Events;
 
 
-#if BULKOUT_ENV
+#if SWOLE_ROOTMOTION
 using RootMotion;
 using RootMotion.Dynamics;
 #endif
 
 namespace Swole.API.Unity.Animation
 {
-#if BULKOUT_ENV
+#if SWOLE_ROOTMOTION
     public class SwoleMuscleCollisionBroadcaster : MuscleCollisionBroadcaster
 #else
     public class SwoleMuscleCollisionBroadcaster : MonoBehaviour
@@ -35,37 +35,40 @@ namespace Swole.API.Unity.Animation
         public UnityEvent<Collision> OnContinueColliding;
         public UnityEvent<Collision> OnStopColliding;
 
-#if BULKOUT_ENV
-    protected override void OnCollisionEnter(Collision collision)
-#else
-    protected void OnCollisionEnter(Collision collision)
-#endif
+#if SWOLE_ROOTMOTION
+        protected override void OnCollisionEnter(Collision collision)
         {
             base.OnCollisionEnter(collision);
+#else
+        protected void OnCollisionEnter(Collision collision)
+        {
+#endif
             OnStartColliding?.Invoke(collision);
         }
-#if BULKOUT_ENV
-    protected override void OnCollisionStay(Collision collision)
-#else
-    protected void OnCollisionStay(Collision collision)
-#endif
+#if SWOLE_ROOTMOTION
+        protected override void OnCollisionStay(Collision collision)
         {
             base.OnCollisionStay(collision);
+#else
+        protected void OnCollisionStay(Collision collision)
+        {
+#endif
             OnContinueColliding?.Invoke(collision);
         }
-#if BULKOUT_ENV
-    protected override void OnCollisionExit(Collision collision)
-#else
-    protected void OnCollisionExit(Collision collision)
-#endif
+#if SWOLE_ROOTMOTION
+        protected override void OnCollisionExit(Collision collision)
         {
             base.OnCollisionExit(collision);
+#else
+        protected void OnCollisionExit(Collision collision)
+        {
+#endif
             OnStopColliding?.Invoke(collision); 
         }
 
         public virtual void EnterTriggerMode()
         {
-#if BULKOUT_ENV
+#if SWOLE_ROOTMOTION
             /*if (colliders == null) return;
 
             foreach(var collider in colliders)
@@ -87,7 +90,7 @@ namespace Swole.API.Unity.Animation
         }
         public virtual void ExitTriggerMode()
         {
-#if BULKOUT_ENV
+#if SWOLE_ROOTMOTION
             /*if (colliders == null) return;
 
             foreach (var collider in colliders)
@@ -111,7 +114,7 @@ namespace Swole.API.Unity.Animation
         protected virtual void OnTriggerEnter(Collider collider)
         {
             if (!enabled) return;
-#if BULKOUT_ENV
+#if SWOLE_ROOTMOTION
             if (puppetMaster == null || IsSelf(collider) || puppetMaster.muscles[muscleIndex].state.isDisconnected) return;
 
             foreach (BehaviourBase behaviour in puppetMaster.behaviours)
@@ -127,7 +130,7 @@ namespace Swole.API.Unity.Animation
         protected virtual void OnTriggerStay(Collider collider)
         {
             if (!enabled) return;
-#if BULKOUT_ENV
+#if SWOLE_ROOTMOTION
             if (puppetMaster == null || IsSelf(collider) || puppetMaster.muscles[muscleIndex].state.isDisconnected) return;
 
             foreach (BehaviourBase behaviour in puppetMaster.behaviours)
@@ -143,7 +146,7 @@ namespace Swole.API.Unity.Animation
         protected virtual void OnTriggerExit(Collider collider)
         {
             if (!enabled) return;
-#if BULKOUT_ENV
+#if SWOLE_ROOTMOTION
             if (puppetMaster == null || IsSelf(collider) || puppetMaster.muscles[muscleIndex].state.isDisconnected) return;
 
             foreach (BehaviourBase behaviour in puppetMaster.behaviours)

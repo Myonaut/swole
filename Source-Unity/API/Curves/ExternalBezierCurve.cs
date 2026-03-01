@@ -83,6 +83,14 @@ namespace Swole.API.Unity
                     if (vertexSpacing <= 0) vertexSpacing = 0.1f;
                     if (vertexAccuracy <= 0) vertexAccuracy = 10;
                     vertexPath = new VertexPath(path, VertexPathUtility.SplitBezierPathEvenly(path, vertexSpacing, vertexAccuracy), null);
+
+                    for(int a = 0; a < path.NumPoints; a++)
+                    {
+                        float t = a / (path.NumPoints - 1f);
+
+                        int b = Mathf.Clamp(Mathf.RoundToInt((vertexPath.NumPoints - 1) * t), 0, vertexPath.NumPoints - 1); 
+                        Debug.Log($"CURVEP {a}: {((float3)points[a])} :: {b}: {((float3)vertexPath.GetPoint(b))}"); 
+                    }
                 }
 
                 return vertexPath;
@@ -171,6 +179,8 @@ namespace Swole.API.Unity
 
         public Vector3[] GetNormalizedPoints(float startX = 0, float endX = 1, float startY = 0, float endY = 1, float startZ = 0, float endZ = 1)
         {
+            if (path == null) return null;
+
             float minX = float.MaxValue;
             float minY = float.MaxValue;
             float minZ = float.MaxValue;
@@ -199,17 +209,23 @@ namespace Swole.API.Unity
             if (minY == maxY) maxY = minY + 1;
             if (minZ == maxZ) maxZ = minZ + 1;
 
-            var points = (Vector3[])GetPoints().Clone(); 
-            for (int a = 0; a < points.Length; a++) 
-            { 
-                var point = points[a];
-                points[a] = new Vector3(math.remap(minX, maxX, startX, endX, point.x), math.remap(minY, maxY, startY, endY, point.y), math.remap(minZ, maxZ, startZ, endZ, point.z));
+            var points = GetPoints();
+            if (points != null)
+            {
+                points = (Vector3[])points.Clone();
+                for (int a = 0; a < points.Length; a++)
+                {
+                    var point = points[a];
+                    points[a] = new Vector3(math.remap(minX, maxX, startX, endX, point.x), math.remap(minY, maxY, startY, endY, point.y), math.remap(minZ, maxZ, startZ, endZ, point.z));
+                }
             }
 
             return points;
         }
         public Vector2[] GetNormalizedPoints2D(float startX = 0, float endX = 1, float startY = 0, float endY = 1)
         {
+            if (path == null) return null;
+
             float minX = float.MaxValue;
             float minY = float.MaxValue;
 
@@ -235,11 +251,15 @@ namespace Swole.API.Unity
             if (minX == maxX) maxX = minX + 1;
             if (minY == maxY) maxY = minY + 1;
 
-            var points = (Vector2[])GetPoints2D().Clone(); 
-            for (int a = 0; a < points.Length; a++)
+            var points = GetPoints2D();
+            if (points != null)
             {
-                var point = points[a];
-                points[a] = new Vector2(math.remap(minX, maxX, startX, endX, point.x), math.remap(minY, maxY, startY, endY, point.y));
+                points = (Vector2[])points.Clone();
+                for (int a = 0; a < points.Length; a++)
+                {
+                    var point = points[a];
+                    points[a] = new Vector2(math.remap(minX, maxX, startX, endX, point.x), math.remap(minY, maxY, startY, endY, point.y));
+                }
             }
 
             return points;

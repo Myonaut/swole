@@ -764,7 +764,7 @@ namespace Swole.API.Unity.Animation
 
                 tempTimes.Sort(SortKeyframeTimes);
 
-                float rotationToleranceRad = rotationToleranceDeg * Mathf.Deg2Rad;
+                //float rotationToleranceRad = rotationToleranceDeg * Mathf.Deg2Rad;
 
                 int startKeyIndex = 0;
                 var startTime = tempTimes[startKeyIndex];
@@ -784,7 +784,9 @@ namespace Swole.API.Unity.Animation
                             var midValue = GetRotationRaw(midTime);
                             float t = (midTime - startTime) / timeRange;
                             quaternion expectedValue = math.slerp(startValue, value, t);
-                            if (math.angle(midValue, expectedValue) > rotationToleranceRad) // compare mid key value to interpolated value of start and end keys
+                            //if (math.angle(midValue, expectedValue) > rotationToleranceRad) // compare mid key value to interpolated value of start and end keys
+                            //{
+                            if (Quaternion.Angle(midValue, expectedValue) > rotationToleranceDeg)
                             {
                                 invalid = true;
                                 break;

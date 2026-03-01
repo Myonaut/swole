@@ -8,7 +8,6 @@ using UnityEngine.Events;
 using UnityEngine.UI;
 
 using Swole;
-using NUnit.Framework;
 
 namespace FCP
 {

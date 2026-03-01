@@ -12,10 +12,10 @@ using UnityEngine.Events;
 
 using Swole.API.Unity.Animation;
 
-namespace Swole
+namespace Swole.API.Unity
 {
 
-    public interface ICustomizableCharacter : IRaycastTarget
+    public interface ICustomizableCharacter : IRaycastTarget, IMuscularBasic
     {
 
         public bool IsInitialized { get; }
@@ -260,6 +260,11 @@ namespace Swole
 
             public const string _genitalMaskVertexGroupIndexDefaultPropertyName = "_GenitalMaskVertexGroupIndex";
 
+
+            public const string _bustSizeShapeIndexDefaultPropertyName = "_BustSizeShapeIndex";
+            public const string _bustSizeMuscularShapeIndexDefaultPropertyName = "_BustSizeMuscularShapeIndex";
+
+
             public const string _fatMuscleBlendShapeIndexDefaultPropertyName = "_FatMuscleBlendShapeIndex";
 
             public const string _fatMuscleBlendWeightRangeDefaultPropertyName = "_FatMuscleBlendWeightRange";
@@ -308,6 +313,10 @@ namespace Swole
             public const string _meshShapeFrameDeltasDefaultPropertyName = "_MeshShapeFrameDeltas";
             public const string _meshShapeFrameWeightsDefaultPropertyName = "_MeshShapeFrameWeights";
             public const string _meshShapeIndicesDefaultPropertyName = "_MeshShapeIndices";
+
+            public const string _vertexColorDeltasDefaultPropertyName = "_VertexColorDeltas";
+
+            public const string _minMassShapeWeightDefaultPropertyName = "_MinMassShapeWeight";  
 
             public static float2 _defaultFatGroupModifier => new float2(1f, 0f);
 

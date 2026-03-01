@@ -11,7 +11,7 @@ using Unity.Mathematics;
 
 using Swole.Morphing;
 
-using static Swole.ICustomizableCharacter.Defaults;
+using static Swole.API.Unity.ICustomizableCharacter.Defaults;
 
 namespace Swole
 {

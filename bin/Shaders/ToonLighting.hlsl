@@ -13,6 +13,16 @@ void ToonBasicLitFragmentShadows_float(half4 inColor, float3 positionWS, float3 
     outColor = inColor;
 }
 
+void ToonBasicCelLitFragment_float(half4 inColor, float3 positionWS, float3 normalWS, float dotThreshold, float falloff, float dotOffset, out half4 outColor) 
+{
+    outColor = inColor;
+}
+
+void ToonBasicCelLitFragmentShadows_float(half4 inColor, float3 positionWS, float3 normalWS, float dotThreshold, float falloff, float dotOffset, out half4 outColor) 
+{
+    outColor = inColor;
+}
+
 #else
 
 #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/RealtimeLights.hlsl"
@@ -65,10 +75,7 @@ void ToonBasicLitFragment_float(half4 inColor, float3 positionWS, float3 normalW
 
     half3 finalColor = half3(0, 0, 0); 
 
-    //half4 shadowMask = CalculateShadowMask(inputData);
-    //float4 shadowCoord = TransformWorldToShadowCoord(positionWS);
     uint meshRenderingLayers = GetMeshRenderingLayer();
-    //Light mainLight = GetMainLight(shadowCoord, positionWS, shadowMask);
     Light mainLight = GetMainLight();
 
     if (IsMatchingLightLayer(mainLight.layerMask, meshRenderingLayers))
@@ -79,7 +86,6 @@ void ToonBasicLitFragment_float(half4 inColor, float3 positionWS, float3 normalW
     uint pixelLightCount = GetAdditionalLightsCount();
 
     LIGHT_LOOP_BEGIN(pixelLightCount)
-        //Light light = GetAdditionalLight(lightIndex, positionWS, shadowMask);
         Light light = GetAdditionalLight(lightIndex, positionWS);
 
         if (IsMatchingLightLayer(light.layerMask, meshRenderingLayers))
@@ -117,6 +123,82 @@ void ToonBasicLitFragmentShadows_float(half4 inColor, float3 positionWS, float3 
         if (IsMatchingLightLayer(light.layerMask, meshRenderingLayers))
         {
             finalColor += ComputeRadiance(light, normalWS);
+        }
+    LIGHT_LOOP_END
+
+    outColor = half4(finalColor, inColor.a);
+
+}
+
+half3 ComputeCelRadiance(Light light, half3 normalWS, float dotThreshold, float dotOffset, float falloff)
+{
+    half NdotL = dot(normalWS, light.direction) + dotOffset;//saturate(dot(normalWS, light.direction) + dotOffset);
+
+    NdotL = saturate(falloff > 0 ? (((NdotL - dotThreshold) / falloff)) : (NdotL > dotThreshold ? 1 : 0));
+
+    half lightAttenuation = light.distanceAttenuation;
+
+    lightAttenuation *= light.shadowAttenuation * NdotL;
+
+    //lightAttenuation = saturate(falloff > 0 ? (0.5 + (((lightAttenuation - dotThreshold) / falloff) * 0.5)) : ((lightAttenuation - dotThreshold) > 0 ? 1 : 0));
+
+    half3 radiance = light.color * lightAttenuation;
+    return radiance;
+}
+
+void ToonBasicCelLitFragment_float(half4 inColor, float3 positionWS, float3 normalWS, float dotThreshold, float falloff, float dotOffset, out half4 outColor)
+{
+
+    half3 finalColor = half3(0, 0, 0); 
+
+    uint meshRenderingLayers = GetMeshRenderingLayer();
+    Light mainLight = GetMainLight();
+
+    if (IsMatchingLightLayer(mainLight.layerMask, meshRenderingLayers))
+    {
+        finalColor += ComputeCelRadiance(mainLight, normalWS, dotThreshold, falloff, dotOffset);
+    }
+
+    uint pixelLightCount = GetAdditionalLightsCount();
+
+    LIGHT_LOOP_BEGIN(pixelLightCount)
+        Light light = GetAdditionalLight(lightIndex, positionWS);
+
+        if (IsMatchingLightLayer(light.layerMask, meshRenderingLayers))
+        {
+            finalColor += ComputeCelRadiance(light, normalWS, dotThreshold, falloff, dotOffset);
+        }
+    LIGHT_LOOP_END
+
+    outColor = half4(finalColor, 1) * inColor;
+
+}
+
+void ToonBasicCelLitFragmentShadows_float(half4 inColor, float3 positionWS, float3 normalWS, float dotThreshold, float falloff, float dotOffset, out half4 outColor)
+{
+
+    half3 finalColor = inColor; 
+
+    InputData inputData;
+    inputData.shadowMask = half4(1, 1, 1, 1);
+    half4 shadowMask = CalculateShadowMask(inputData);
+    float4 shadowCoord = TransformWorldToShadowCoord(positionWS);
+    uint meshRenderingLayers = GetMeshRenderingLayer();
+    Light mainLight = GetMainLight(shadowCoord, positionWS, shadowMask);
+
+    if (IsMatchingLightLayer(mainLight.layerMask, meshRenderingLayers))
+    {
+        finalColor *= ComputeCelRadiance(mainLight, normalWS, dotThreshold, falloff, dotOffset);
+    }
+
+    uint pixelLightCount = GetAdditionalLightsCount();
+
+    LIGHT_LOOP_BEGIN(pixelLightCount)
+        Light light = GetAdditionalLight(lightIndex, positionWS, shadowMask);
+
+        if (IsMatchingLightLayer(light.layerMask, meshRenderingLayers))
+        {
+            finalColor += ComputeCelRadiance(light, normalWS, dotThreshold, falloff, dotOffset);
         }
     LIGHT_LOOP_END
 

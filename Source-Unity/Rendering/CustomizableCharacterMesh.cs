@@ -14,7 +14,7 @@ using Unity.Collections;
 using Swole.API.Unity;
 using Swole.API.Unity.Animation;
 
-using static Swole.ICustomizableCharacter.Defaults;
+using static Swole.API.Unity.ICustomizableCharacter.Defaults;
 
 namespace Swole.Morphing
 {
@@ -1659,6 +1659,292 @@ namespace Swole.Morphing
         }
 
         #endregion
+
+        #region IMuscularBasic
+
+        public string GetMuscleGroupName(int index) => GetMuscleGroupNameUnsafe(index);
+        public string GetMuscleGroupNameUnsafe(int index) => string.Empty;
+        public int GetMuscleGroupIndex(string muscleGroupName) => -1;
+        public int GetMuscleGroupIndex(MuscleGroupIdentifier identifier) => GetMuscleGroupIndex(identifier.ToString());
+        public int FindMuscleGroup(string muscleGroupName) => GetMuscleGroupIndex(muscleGroupName);
+        public int FindMuscleGroup(MuscleGroupIdentifier identifier) => FindMuscleGroup(identifier.ToString());
+
+        public int MuscleGroupCount => this.CharacterMeshData.MuscleVertexGroupCount * 2;
+
+        public float BreastPresence
+        {
+            get => BustSize;
+            set => BustSize = value;
+        }
+
+        public bool SetMuscleGroupValues(int muscleGroupIndex, float3 values, bool updateDependencies = true)
+        {
+            int localGroupIndex = muscleGroupIndex / 2;
+            bool isLeft = muscleGroupIndex % 2 == 0;
+
+            var data = GetMuscleData(localGroupIndex);
+            if (isLeft)
+            {
+                data.valuesLeft.mass = values.x;
+                data.valuesLeft.flex = values.y;
+                data.valuesLeft.pump = values.z;
+            }
+            else
+            {
+                data.valuesRight.mass = values.x;
+                data.valuesRight.flex = values.y;
+                data.valuesRight.pump = values.z;
+            }
+
+            SetMuscleData(muscleGroupIndex, data);
+            return true;
+        }
+        public bool SetMuscleGroupMass(int muscleGroupIndex, float mass, bool updateDependencies = true, bool hasUpdated = false)
+        {
+            int localGroupIndex = muscleGroupIndex / 2;
+            bool isLeft = muscleGroupIndex % 2 == 0;
+
+            var data = GetMuscleData(localGroupIndex);
+            if (isLeft)
+            {
+                data.valuesLeft.mass = mass;
+            }
+            else
+            {
+                data.valuesRight.mass = mass;
+            }
+
+            SetMuscleData(muscleGroupIndex, data);
+            return true;
+        }
+        public bool SetMuscleGroupFlex(int muscleGroupIndex, float flex, bool updateDependencies = true, bool hasUpdated = false)
+        {
+            int localGroupIndex = muscleGroupIndex / 2;
+            bool isLeft = muscleGroupIndex % 2 == 0;
+
+            var data = GetMuscleData(localGroupIndex);
+            if (isLeft)
+            {
+                data.valuesLeft.flex = flex;
+            }
+            else
+            {
+                data.valuesRight.flex = flex;
+            }
+
+            SetMuscleData(muscleGroupIndex, data);
+            return true;
+        }
+        public bool SetMuscleGroupPump(int muscleGroupIndex, float pump, bool updateDependencies = true, bool hasUpdated = false)
+        {
+            int localGroupIndex = muscleGroupIndex / 2;
+            bool isLeft = muscleGroupIndex % 2 == 0;
+
+            var data = GetMuscleData(localGroupIndex);
+            if (isLeft)
+            {
+                data.valuesLeft.pump = pump;
+            }
+            else
+            {
+                data.valuesRight.pump = pump;
+            }
+
+            SetMuscleData(muscleGroupIndex, data);
+            return true;
+        }
+
+        public bool SetMuscleGroupValuesUnsafe(int muscleGroupIndex, float3 values, bool updateDependencies = true) => SetMuscleGroupValues(muscleGroupIndex, values, updateDependencies);
+        public bool SetMuscleGroupMassUnsafe(int muscleGroupIndex, float mass, bool updateDependencies = true, bool hasUpdated = false) => SetMuscleGroupMass(muscleGroupIndex, mass, updateDependencies, hasUpdated);
+        public bool SetMuscleGroupFlexUnsafe(int muscleGroupIndex, float flex, bool updateDependencies = true, bool hasUpdated = false) => SetMuscleGroupFlexUnsafe(muscleGroupIndex, flex, updateDependencies, hasUpdated);
+        public bool SetMuscleGroupPumpUnsafe(int muscleGroupIndex, float pump, bool updateDependencies = true, bool hasUpdated = false) => SetMuscleGroupPumpUnsafe(muscleGroupIndex, pump, updateDependencies, hasUpdated);
+
+        public float3 GetMuscleGroupValues(int muscleGroupIndex)
+        {
+            int localGroupIndex = muscleGroupIndex / 2;
+            bool isLeft = muscleGroupIndex % 2 == 0;
+
+            var data = GetMuscleData(localGroupIndex);
+            return isLeft ? new float3(data.valuesLeft.mass, data.valuesLeft.flex, data.valuesLeft.pump) : new float3(data.valuesRight.mass, data.valuesRight.flex, data.valuesRight.pump);
+        }
+        public float3 GetMuscleGroupValuesUnsafe(int muscleGroupIndex) => GetMuscleGroupValues(muscleGroupIndex);
+
+        public float GetMuscleGroupMass(int muscleGroupIndex) => GetMuscleGroupValues(muscleGroupIndex).x;
+        public float GetMuscleGroupMassUnsafe(int muscleGroupIndex) => GetMuscleGroupMass(muscleGroupIndex);
+
+        public float GetMuscleGroupFlex(int muscleGroupIndex) => GetMuscleGroupValues(muscleGroupIndex).y;
+        public float GetMuscleGroupFlexUnsafe(int muscleGroupIndex) => GetMuscleGroupFlex(muscleGroupIndex);
+
+        public float GetMuscleGroupPump(int muscleGroupIndex) => GetMuscleGroupValues(muscleGroupIndex).z;
+        public float GetMuscleGroupPumpUnsafe(int muscleGroupIndex) => GetMuscleGroupPump(muscleGroupIndex);
+
+        public void SetGlobalMuscleValues(float3 values)
+        {
+            for (int a = 0; a < MuscleGroupCount; a++)
+            {
+                SetMuscleGroupValuesUnsafe(a, values);
+            }
+        }
+        public void SetGlobalMass(float mass)
+        {
+            for (int a = 0; a < MuscleGroupCount; a++)
+            {
+                SetMuscleGroupMassUnsafe(a, mass);
+            }
+        }
+        public void SetGlobalFlex(float flex)
+        {
+            for (int a = 0; a < MuscleGroupCount; a++)
+            {
+                SetMuscleGroupFlexUnsafe(a, flex);
+            }
+        }
+        public void SetGlobalPump(float pump)
+        {
+            for (int a = 0; a < MuscleGroupCount; a++)
+            {
+                SetMuscleGroupPumpUnsafe(a, pump);
+            }
+        }
+
+        public float3 GetAverageMuscleValues()
+        {
+            float3 values = float3.zero;
+            for (int a = 0; a < MuscleGroupCount; a++)
+            {
+                values = values + GetMuscleGroupValues(a);
+            }
+
+            return values;
+        }
+        public float GetAverageMass()
+        {
+            float mass = 0f;
+            for (int a = 0; a < MuscleGroupCount; a++)
+            {
+                mass = mass + GetMuscleGroupMass(a);
+            }
+
+            return mass;
+        }
+        public float GetAverageFlex()
+        {
+            float flex = 0f;
+            for (int a = 0; a < MuscleGroupCount; a++)
+            {
+                flex = flex + GetMuscleGroupMass(a);
+            }
+
+            return flex;
+        }
+        public float GetAveragePump()
+        {
+            float pump = 0f;
+            for (int a = 0; a < MuscleGroupCount; a++)
+            {
+                pump = pump + GetMuscleGroupMass(a);
+            }
+
+            return pump;
+        }
+
+        public void ClearEventListeners()
+        {
+            ClearListeners();
+        }
+
+        private List<MuscleValueListener>[] muscleValueListeners;
+
+        public bool Listen(int muscleGroupIndex, EngineInternal.IEngineObject listeningObject, MuscleValueListenerDelegate callback, out MuscleValueListener listener)
+        {
+
+            listener = null;
+            if (listeningObject == null || callback == null || muscleGroupIndex < 0 || muscleGroupIndex >= MuscleGroupCount) return false;
+
+            if (muscleValueListeners == null) muscleValueListeners = new List<MuscleValueListener>[MuscleGroupCount];
+
+            List<MuscleValueListener> listeners = muscleValueListeners[muscleGroupIndex];
+            if (listeners == null)
+            {
+                listeners = new List<MuscleValueListener>();
+                muscleValueListeners[muscleGroupIndex] = listeners;
+            }
+
+            listener = new MuscleValueListener() { listeningObject = listeningObject, callback = callback };
+            listeners.Add(listener);
+
+            return true;
+
+        }
+
+        public bool StopListening(int muscleGroupIndex, EngineInternal.IEngineObject listeningObject)
+        {
+
+            if (listeningObject == null || muscleValueListeners == null || muscleGroupIndex < 0 || muscleGroupIndex >= MuscleGroupCount) return false;
+
+            List<MuscleValueListener> listeners = muscleValueListeners[muscleGroupIndex];
+            if (listeners != null)
+            {
+
+                return listeners.RemoveAll(i => i.listeningObject == listeningObject) > 0;
+
+            }
+
+            return false;
+
+        }
+
+        public int StopListening(EngineInternal.IEngineObject listeningObject)
+        {
+
+            if (listeningObject == null || muscleValueListeners == null) return 0;
+
+            int removed = 0;
+
+            for (int a = 0; a < muscleValueListeners.Length; a++)
+            {
+
+                List<MuscleValueListener> listeners = muscleValueListeners[a];
+                if (listeners != null) removed += listeners.RemoveAll(i => i.listeningObject == listeningObject);
+
+            }
+
+            return removed;
+
+        }
+
+        private void NotifyDefaultMuscleGroupListeners(int muscleGroupIndex)
+        {
+            if (muscleValueListeners != null && muscleGroupIndex >= 0 && muscleGroupIndex < MuscleGroupCount)
+            {
+                List<MuscleValueListener> listeners = muscleValueListeners[muscleGroupIndex];
+                if (listeners != null)
+                {
+                    bool isLeft = muscleGroupIndex % 2 == 0;
+                    int mirrorMuscleGroupIndex = isLeft ? muscleGroupIndex + 1 : muscleGroupIndex - 1;
+                    var data = GetMuscleData(muscleGroupIndex / 2);
+
+                    foreach (var listener in listeners)
+                    {
+                        if (listener.listeningObject != null && listener.callback != null)
+                        {
+                            MuscleGroupInfo info = new MuscleGroupInfo()
+                            {
+                                mirroredIndex = mirrorMuscleGroupIndex,
+                                mass = isLeft ? data.valuesLeft.mass : data.valuesRight.mass,
+                                flex = isLeft ? data.valuesLeft.flex : data.valuesRight.flex,
+                                pump = isLeft ? data.valuesLeft.pump : data.valuesRight.pump
+                            };
+
+                            listener.callback.Invoke(info);
+                        }
+                    }
+                }
+            }
+        }
+
+        #endregion
+
     }
 
 }

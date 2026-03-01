@@ -973,7 +973,14 @@ namespace Swole
             protected NativeList<T> instanceData;
             public NativeArray<T> InstanceData => instanceData.AsArray();
             public int InstanceDataSize => instanceData.Length;
-            public void GrowInstanceData(int amount) => instanceData.AddReplicate(default, amount);
+            public void GrowInstanceData(int amount) 
+            {
+#if UNITY_2022_OR_NEWER
+                instanceData.AddReplicate(default, amount); 
+#else
+                for (int a = 0; a < amount; a++) instanceData.Add(default);
+#endif
+            } 
             public void SwapInstanceData(int fromIndex, int toIndex)
             {
                 var dat = instanceData[toIndex];

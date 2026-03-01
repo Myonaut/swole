@@ -8,20 +8,20 @@ using UnityEngine;
 using UnityEngine.Events;
 
 
-#if BULKOUT_ENV
+#if SWOLE_ROOTMOTION
 using RootMotion;
 using RootMotion.Dynamics;
 #endif
 
 namespace Swole.API.Unity.Animation
 {
-#if BULKOUT_ENV
+#if SWOLE_ROOTMOTION
     public class SwolePuppetBehaviour : RootMotion.Dynamics.BehaviourBase, ISwolePuppetBehaviour
 #else
     public class SwolePuppetBehaviour : MonoBehaviour, ISwolePuppetBehaviour
 #endif
     {
-#if !BULKOUT_ENV
+#if !SWOLE_ROOTMOTION
         [NonSerialized]
         public bool deactivated;
 #endif
@@ -40,14 +40,19 @@ namespace Swole.API.Unity.Animation
             {
                 if (rootBody == null)
                 {
+
+#if SWOLE_ROOTMOTION
                     if (puppetMaster == null)
                     {
+#endif
                         rootBody = GetComponent<Rigidbody>();
+#if SWOLE_ROOTMOTION
                     }
                     else
                     {
                         rootBody = puppetMaster.GetComponent<Rigidbody>();
                     }
+#endif
                 }
 
                 return rootBody;
@@ -59,7 +64,9 @@ namespace Swole.API.Unity.Animation
             get
             {
                 if (RootBody != null) return rootBody.transform;
+#if SWOLE_ROOTMOTION
                 if (puppetMaster is SwolePuppetMaster spm) return spm.RootTransform;
+#endif
 
                 return transform;
             }
@@ -74,6 +81,7 @@ namespace Swole.API.Unity.Animation
             {
                 mainRigBone = value;
 
+#if SWOLE_ROOTMOTION
                 if (puppetMaster != null && puppetMaster.muscles != null)
                 {
                     foreach (var muscle in puppetMaster.muscles)
@@ -87,6 +95,7 @@ namespace Swole.API.Unity.Animation
                         }
                     }
                 }
+#endif
             }
         }
         protected Transform mainRigBoneMuscleTransform;
@@ -96,6 +105,7 @@ namespace Swole.API.Unity.Animation
             {
                 if (mainRigBoneMuscleTransform == null)
                 {
+#if SWOLE_ROOTMOTION
                     if (puppetMaster != null && puppetMaster.muscles != null)
                     {
                         foreach (var muscle in puppetMaster.muscles)
@@ -109,6 +119,7 @@ namespace Swole.API.Unity.Animation
                             }
                         }
                     }
+#endif
                 }
 
                 return mainRigBoneMuscleTransform;
@@ -116,7 +127,8 @@ namespace Swole.API.Unity.Animation
         }
 
         [SerializeField]
-        protected int rootMuscleIndex = -1; 
+        protected int rootMuscleIndex = -1;
+#if SWOLE_ROOTMOTION
         public Muscle RootMuscle
         {
             get
@@ -143,6 +155,7 @@ namespace Swole.API.Unity.Animation
                 return null;
             }
         }
+#endif
 
         [SerializeField]
         protected Rigidbody rootMuscleBody;
@@ -152,6 +165,7 @@ namespace Swole.API.Unity.Animation
             {
                 if (rootMuscleBody == null)
                 {
+#if SWOLE_ROOTMOTION
                     if (puppetMaster != null && puppetMaster.muscles != null)
                     {
                         foreach (var muscle in puppetMaster.muscles)
@@ -165,6 +179,7 @@ namespace Swole.API.Unity.Animation
                             }
                         }
                     }
+#endif
                 }
                 else return rootMuscleBody;
 
@@ -176,7 +191,9 @@ namespace Swole.API.Unity.Animation
         {
             get
             {
+#if SWOLE_ROOTMOTION
                 if (this.puppetMaster is SwolePuppetMaster spm) return spm;
+#endif
 
                 return null;
             }
@@ -219,15 +236,24 @@ namespace Swole.API.Unity.Animation
         protected MuscleCollisionInfo[] muscleCollisions;
         protected void ValidateMuscleCollisionsArray()
         {
+#if SWOLE_ROOTMOTION
             if (muscleCollisions == null || muscleCollisions.Length != puppetMaster.muscles.Length)
             {
                 Array.Resize(ref muscleCollisions, puppetMaster.muscles.Length);
             }
+#endif
         }
 
         protected UnityEvent postAnimateListener;
+
+#if SWOLE_ROOTMOTION
         protected override void OnInitiate()
         {
+#else
+        protected void OnInitiate()
+        {
+#endif
+#if SWOLE_ROOTMOTION
             if (puppetMaster is SwolePuppetMaster spm)
             {
                 var animator = spm.swoleAnimator;
@@ -248,6 +274,7 @@ namespace Swole.API.Unity.Animation
                     postAnimateListener.AddListener(PostAnimate);
                 }
             }
+#endif
 
             PostAnimate();
         }
@@ -261,11 +288,17 @@ namespace Swole.API.Unity.Animation
             }
         }
 
+#if SWOLE_ROOTMOTION
         public override void OnReactivate()
         {
+#else
+        public void OnReactivate()
+        {
+#endif
+
         }
 
-#if BULKOUT_ENV
+#if SWOLE_ROOTMOTION
         public override void OnMuscleCollision(MuscleCollision collision)
         {
             ValidateMuscleCollisionsArray();
@@ -297,6 +330,7 @@ namespace Swole.API.Unity.Animation
         {
             if (muscleTriggerStates != null && !muscleTriggerStates[muscleIndex])
             {
+#if SWOLE_ROOTMOTION
                 var muscle = puppetMaster.muscles[muscleIndex];
                 muscleTriggerStates[muscleIndex] = true;
                 muscle.rigidbody.isKinematic = true;
@@ -304,11 +338,13 @@ namespace Swole.API.Unity.Animation
                 {
                     foreach (var collider in muscle.colliders) collider.isTrigger = true;
                 }
+#endif
             }
         }
         private readonly Collider[] overlapColliders = new Collider[8];
         protected void ExitTriggerMode(int muscleIndex)
         {
+#if SWOLE_ROOTMOTION
             var muscle = puppetMaster.muscles[muscleIndex];
             if (muscleTriggerStates != null && muscleTriggerStates[muscleIndex]) 
             {
@@ -379,10 +415,12 @@ namespace Swole.API.Unity.Animation
                 muscle.rigidbody.isKinematic = false;
                 foreach (var collider in muscle.colliders) collider.isTrigger = false; 
             }
+#endif
         }
 
         protected void TrySyncMusclesToTargets()
         {
+#if SWOLE_ROOTMOTION
             if (puppetMaster == null) return;
 
             if (this.puppetMaster is SwolePuppetMaster spm && spm.currentConfiguration.muscleStates != null && muscleCollisions != null && muscleCollisions.Length > 0)
@@ -429,11 +467,21 @@ namespace Swole.API.Unity.Animation
                     }
                 }
             }
+#endif
         }
 
+#if SWOLE_ROOTMOTION
         protected override void OnFixedUpdate(float deltaTime)
         {
+#else
+        protected void OnFixedUpdate(float deltaTime)
+        {
+#endif
+#if SWOLE_ROOTMOTION
             if (puppetMaster == null) return;
+#else
+            //return;
+#endif
 
             ValidateMuscleCollisionsArray();
 
@@ -446,15 +494,19 @@ namespace Swole.API.Unity.Animation
                 muscleCollisions[a] = info;
             }
 
-            TrySyncMusclesToTargets(); 
+            TrySyncMusclesToTargets();
         }
 
+#if SWOLE_ROOTMOTION
         public BehaviourUpdateDelegate OnAfterFixedUpdate;
+#endif
         public virtual void AfterFixedUpdate(float deltaTime) 
         {
             //TrySyncMusclesToTargets();
 
+#if SWOLE_ROOTMOTION
             if (OnAfterFixedUpdate != null && enabled) OnAfterFixedUpdate(deltaTime); 
+#endif
         }
 
         /// <summary>
@@ -485,9 +537,12 @@ namespace Swole.API.Unity.Animation
             var rb = RootBody;
             if (rb != null)
             {
+#if UNITY_2022_OR_NEWER
                 rb.excludeLayers = rb.excludeLayers | rootBodyIgnoreLayers;
+#endif
             }
 
+#if SWOLE_ROOTMOTION
             if (Puppet != null && puppetMaster.muscles != null)
             {
                 foreach(var muscle in puppetMaster.muscles)
@@ -499,16 +554,24 @@ namespace Swole.API.Unity.Animation
 
                 muscleTriggerStates = new bool[puppetMaster.muscles.Length];
             }
+#endif
         }
 
+        #if SWOLE_ROOTMOTION
         protected override void OnUpdate(float deltaTime)
         {
+#else
+        protected void OnUpdate(float deltaTime)
+        {
+#endif
+
         }
 
         protected void BlendCollision(SwolePuppetMaster spm, int muscleIndex, int initiatorIndex, float amount)
         {
             if (amount <= 0.001f) return;
 
+#if SWOLE_ROOTMOTION
             var muscle = spm.muscles[muscleIndex];
             if (muscle == null) return;
 
@@ -545,11 +608,19 @@ namespace Swole.API.Unity.Animation
             }
 
             muscleCollisions[muscleIndex] = info;
+#endif
         }
+
+#if SWOLE_ROOTMOTION
         public override void OnWrite(float deltaTime)
         {
+#else
+        public void OnWrite(float deltaTime)
+        {
+#endif
             PostPuppet(deltaTime);
 
+#if SWOLE_ROOTMOTION
             if (this.puppetMaster is SwolePuppetMaster spm)
             {
                 if (spm.muscles != null)
@@ -578,12 +649,14 @@ namespace Swole.API.Unity.Animation
                     }
                 }
             }
+#endif
 
             //TrySyncMusclesToTargets();
         }
 
         public void OnApplyConfigurationMix(SwolePuppetMaster spm)
         {
+#if SWOLE_ROOTMOTION
             if (spm.muscles != null)
             {
                 ValidateMuscleCollisionsArray();
@@ -615,12 +688,14 @@ namespace Swole.API.Unity.Animation
                     muscle.state = state;
                 }
             }
+#endif
         }
 
         protected readonly List<TransformState> muscleTargetAnimationTransformStates = new List<TransformState>();
         protected Vector3 mainRigBoneAnimatedPosition;
         protected void PostAnimate()
         {
+#if SWOLE_ROOTMOTION
             if (puppetMaster != null)
             {
                 if (puppetMaster is SwolePuppetMaster spm)
@@ -650,6 +725,7 @@ namespace Swole.API.Unity.Animation
                     muscleTargetAnimationTransformStates.Add(state); // used to determine balance by comparing muscle positions to animation target positions
                 }
             }
+#endif
 
             var mainRigBone = MainRigBone;
             if (mainRigBone == null) return;
@@ -661,6 +737,7 @@ namespace Swole.API.Unity.Animation
         Vector3 animationToPuppetOffset = Vector3.zero;
         protected void PostPuppet(float deltaTime)
         {
+#if SWOLE_ROOTMOTION
             if (puppetMaster.muscles != null && puppetMaster is SwolePuppetMaster spm && spm.currentConfiguration.IsValid)
             {
                 var mainRigBone = MainRigBone; // will have been syned to muscle at this point
@@ -774,6 +851,7 @@ namespace Swole.API.Unity.Animation
 
             fullMappingOverride = Mathf.MoveTowards(fullMappingOverride, puppetMaster.state != PuppetMaster.State.Alive || currentState == State.Tumbling || currentState == State.Floating ? 1f : (1f - balance), deltaTime * mappingOverrideSyncSpeed); 
             unpinningOverride = Mathf.MoveTowards(unpinningOverride, currentState == State.Tumbling ? 1f : (1f - balance), deltaTime * unpinningOverrideSyncSpeed); 
+#endif
         }
 
         protected readonly List<Vector3> tempPositions = new List<Vector3>();
@@ -790,7 +868,8 @@ namespace Swole.API.Unity.Animation
             TeleportRootBodyToPositionOffset(animationToPuppetOffset);
         }
         public void TeleportRootBodyToPuppetOffset(float deltaTime)
-        {           
+        {
+#if SWOLE_ROOTMOTION
             var rootMuscle = RootMuscle;
             if (rootMuscle == null || rootMuscle.rigidbody == null) return;
 
@@ -819,9 +898,11 @@ namespace Swole.API.Unity.Animation
             }
 
             animationToPuppetOffset = Vector3.zero; // reset offset after teleporting 
+#endif
         }
         public void TeleportRootBodyToPositionOffset(Vector3 offset/*, float minDistanceForNonKinematicTeleport = 1f*/)
         {
+#if SWOLE_ROOTMOTION
             if (puppetMaster != null)
             {
                 var rootBody = RootBody;
@@ -861,7 +942,34 @@ namespace Swole.API.Unity.Animation
 
                 //if (!rootBody.isKinematic) Physics.SyncTransforms();
             }
+#endif
         }
+
+#if !SWOLE_ROOTMOTION
+
+        public void Resurrect() { }
+        public void Freeze() { }
+        public void Unfreeze() { }
+        public void KillStart() { }
+        public void KillEnd() { }
+        public void OnTeleport(Quaternion deltaRotation, Vector3 deltaPosition, Vector3 pivot, bool moveToTarget) { }
+
+        public void Initiate() { }
+
+        public void OnFixTransforms() { }
+
+        public void OnRead(float deltaTime) { }
+
+        public void Activate() { }
+
+        public void FixedUpdateB(float deltaTime) { }
+
+        public void UpdateB(float deltaTime) { }
+
+        public void LateUpdateB(float deltaTime) { }
+
+#endif
+
     }
 
     public struct MuscleTriggerEvent
@@ -898,7 +1006,7 @@ namespace Swole.API.Unity.Animation
         public void KillEnd();
         public void OnTeleport(Quaternion deltaRotation, Vector3 deltaPosition, Vector3 pivot, bool moveToTarget);
 
-#if BULKOUT_ENV
+#if SWOLE_ROOTMOTION
         public void OnMuscleDisconnected(Muscle m);
         public void OnMuscleReconnected(Muscle m);
 
@@ -914,7 +1022,7 @@ namespace Swole.API.Unity.Animation
 
         public void OnWrite(float deltaTime);
 
-#if BULKOUT_ENV
+#if SWOLE_ROOTMOTION
         public void OnMuscleHit(MuscleHit hit);
         public void OnMuscleCollision(MuscleCollision collision);
         public void OnMuscleCollisionExit(MuscleCollision collision);
@@ -935,6 +1043,7 @@ namespace Swole.API.Unity.Animation
         public void UpdateB(float deltaTime);
 
         public void LateUpdateB(float deltaTime);
+
     } 
 
 }

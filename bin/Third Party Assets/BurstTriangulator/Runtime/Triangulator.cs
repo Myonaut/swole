@@ -1214,13 +1214,13 @@ namespace swolescr.andywiecko.BurstTriangulator
                 using var colors = new NativeArray<int>(inputTriangles.Length / 3, Allocator.Temp);
                 using var halfedges = new NativeArray<int>(inputTriangles.Length, Allocator.Temp);
 
-                GenerateHalfedges(halfedges, inputTriangles, Allocator.Temp);
-                GenerateInputPositions(positions, inputPositions.Reinterpret<float3>(), out var min, out var max);
-                GenerateTriangleColors(colors, halfedges, out var colorsCount, Allocator.Temp);
+                GenerateHalfedges(halfedges.ToSpan(), inputTriangles.ToReadOnlySpan(), Allocator.Temp);
+                GenerateInputPositions(positions.ToSpan(), inputPositions.Reinterpret<float3>().ToReadOnlySpan(), out var min, out var max);
+                GenerateTriangleColors(colors.ToSpan(), halfedges.ToReadOnlySpan(), out var colorsCount, Allocator.Temp);
 
                 if (generateInitialUVPlanarMap)
                 {
-                    GenerateUVsWithPlanarMap(inputUVs.Reinterpret<float2>(), positions, min, max);
+                    GenerateUVsWithPlanarMap(inputUVs.Reinterpret<float2>().ToSpan(), positions.ToReadOnlySpan(), min, max);
                 }
 
                 var tmpStatus = default(NativeReference<Status>);
@@ -1234,7 +1234,7 @@ namespace swolescr.andywiecko.BurstTriangulator
                 for (int i = 0; i < colorsCount; i++)
                 {
                     ProcessSubMesh(color: i,
-                        positions.AsReadOnly(), inputTriangles, colors, inputUVs.Reinterpret<float2>(),
+                        positions/*.AsReadOnly()*/.ToReadOnlySpan(), inputTriangles.ToReadOnlySpan(), colors.ToReadOnlySpan(), inputUVs.Reinterpret<float2>().ToReadOnlySpan(),
                         min, max
                     );
                     if (status.Value != Status.OK)
@@ -1253,7 +1253,7 @@ namespace swolescr.andywiecko.BurstTriangulator
                         );
                     }
 
-                    GenerateOutputPositions(inputPositions.Reinterpret<float3>(), positions);
+                    GenerateOutputPositions(inputPositions.Reinterpret<float3>().ToSpan(), positions.ToReadOnlySpan());
                     outputPositions.AddRange(inputPositions.Reinterpret<float3>());
                     outputTriangles.AddRange(inputTriangles);
                     if (outputUVs.IsCreated) outputUVs.AddRange(inputUVs.Reinterpret<float2>());
@@ -1317,9 +1317,9 @@ namespace swolescr.andywiecko.BurstTriangulator
                     if (colors[i] == color)
                     {
                         var (t0, t1, t2) = (triangles[3 * i + 0], triangles[3 * i + 1], triangles[3 * i + 2]);
-                        TryVisitPoint(t0, positions, uvs, visited, map);
-                        TryVisitPoint(t1, positions, uvs, visited, map);
-                        TryVisitPoint(t2, positions, uvs, visited, map);
+                        TryVisitPoint(t0, positions, uvs, visited.ToSpan(), map);
+                        TryVisitPoint(t1, positions, uvs, visited.ToSpan(), map);
+                        TryVisitPoint(t2, positions, uvs, visited.ToSpan(), map);
 
                         void TryVisitPoint(int p, ReadOnlySpan<double2> positions, ReadOnlySpan<float2> uvs, Span<bool> visited, Span<int> map)
                         {
@@ -1339,7 +1339,7 @@ namespace swolescr.andywiecko.BurstTriangulator
             private static NativeArray<int> GenerateConstraints(ReadOnlySpan<int> triangles, Allocator allocator)
             {
                 using var halfedges = new NativeArray<int>(triangles.Length, allocator);
-                GenerateHalfedges(halfedges, triangles, allocator);
+                GenerateHalfedges(halfedges.ToSpan(), triangles, allocator);
 
                 using var constraints = new NativeList<int>(allocator);
                 for (int i = 0; i < halfedges.Length; i++)
@@ -1359,7 +1359,7 @@ namespace swolescr.andywiecko.BurstTriangulator
             private static NativeArray<int> GenerateConstraintsAndSplitEdges(NativeList<double2> subpositions, NativeList<float2> subuvs, ReadOnlySpan<int> triangles, Allocator allocator)
             {
                 using var halfedges = new NativeArray<int>(triangles.Length, allocator);
-                GenerateHalfedges(halfedges, triangles, allocator);
+                GenerateHalfedges(halfedges.ToSpan(), triangles, allocator);
 
                 using var constraints = new NativeList<int>(allocator);
                 for (int i = 0; i < halfedges.Length; i++)
@@ -1392,9 +1392,9 @@ namespace swolescr.andywiecko.BurstTriangulator
             {
                 subuvs.Length = outputPositions.Length;
 
-                var uvs = subuvs.AsArray().AsSpan()[subpositions.Length..];
+                var uvs = subuvs.AsArray()/*.AsSpan()*/.ToSpan()[subpositions.Length..];
                 var positions = outputPositions[subpositions.Length..];
-                var inputUVs = subuvs.AsArray().AsReadOnlySpan()[..subpositions.Length];
+                var inputUVs = subuvs.AsArray()/*.AsReadOnlySpan()*/.ToReadOnlySpan()[..subpositions.Length];
 
                 switch (uvMap)
                 {
@@ -1482,15 +1482,15 @@ namespace swolescr.andywiecko.BurstTriangulator
                 using var subuvs = new NativeList<float2>(Allocator.Temp);
                 using var map = new NativeArray<int>(positions.Length, Allocator.Temp);
 
-                UnpackSubMesh(color, map, subpositions, subtriangles, subuvs, positions, triangles, colors, uvs);
+                UnpackSubMesh(color, map.ToSpan(), subpositions, subtriangles, subuvs, positions, triangles, colors, uvs);
 
                 using var subconstraints = insertEdgeMidPoints ?
-                    GenerateConstraintsAndSplitEdges(subpositions, subuvs, subtriangles.AsReadOnly(), Allocator.Temp) :
-                    GenerateConstraints(subtriangles.AsReadOnly(), Allocator.Temp);
+                    GenerateConstraintsAndSplitEdges(subpositions, subuvs, subtriangles/*.AsReadOnly()*/.ToReadOnlySpan(), Allocator.Temp) :
+                    GenerateConstraints(subtriangles/*.AsReadOnly()*/.ToReadOnlySpan(), Allocator.Temp);
 
                 if (insertTriangleMidPoints)
                 {
-                    InsertTriangleMidPoints(subpositions, subuvs, subtriangles.AsReadOnly());
+                    InsertTriangleMidPoints(subpositions, subuvs, subtriangles/*.AsReadOnly()*/.ToReadOnlySpan());
                 }
 
                 using var tmpPositionsT2 = new NativeList<double2>(Allocator.Temp);
@@ -1509,18 +1509,18 @@ namespace swolescr.andywiecko.BurstTriangulator
                 }
 
                 using var tmpPositions = new NativeArray<float3>(tmpPositionsT2.Length, Allocator.Temp);
-                GenerateOutputPositions(tmpPositions, tmpPositionsT2.AsReadOnly());
+                GenerateOutputPositions(tmpPositions.ToSpan(), tmpPositionsT2/*.AsReadOnly()*/.ToReadOnlySpan());
 
                 InsertSubMesh(
                     positions: outputPositions,
                     triangles: outputTriangles,
-                    subpositions: tmpPositions,
-                    subtriangles: tmpTriangles.AsReadOnly()
+                    subpositions: tmpPositions.ToSpan(),
+                    subtriangles: tmpTriangles/*.AsReadOnly()*/.ToReadOnlySpan()
                 );
 
                 if (outputUVs.IsCreated)
                 {
-                    GenerateUVs(subuvs, min, max, subpositions.AsReadOnly(), subtriangles.AsReadOnly(), tmpPositionsT2.AsReadOnly());
+                    GenerateUVs(subuvs, min, max, subpositions/*.AsReadOnly()*/.ToReadOnlySpan(), subtriangles/*.AsReadOnly()*/.ToReadOnlySpan(), tmpPositionsT2/*.AsReadOnly()*/.ToReadOnlySpan());
                     outputUVs.AddRange(subuvs.AsArray());
                 }
             }
@@ -2538,8 +2538,8 @@ namespace swolescr.andywiecko.BurstTriangulator.LowLevel.Unsafe
 
         public NativeQueueList(Allocator allocator) : this(1, allocator) { }
 
-        public ReadOnlySpan<T> AsReadOnlySpan() => impl.AsReadOnly().AsReadOnlySpan()[indexRef.Value..];
-        public Span<T> AsSpan() => impl.AsArray().AsSpan()[indexRef.Value..];
+        public ReadOnlySpan<T> AsReadOnlySpan() => impl/*.AsReadOnly().AsReadOnlySpan()*/.ToReadOnlySpan()[indexRef.Value..];
+        public Span<T> AsSpan() => impl/*.AsArray().AsSpan()*/.ToSpan()[indexRef.Value..];
 
         public void Clear()
         {
@@ -2715,7 +2715,7 @@ namespace swolescr.andywiecko.BurstTriangulator.LowLevel.Unsafe
             using var pointToHalfedge = new NativeArray<int>(output.Positions.Length, allocator);
             output.IgnoredHalfedgesForPlantingSeeds.Length = output.Halfedges.Length;
 
-            FillPointToHalfedge(pointToHalfedge, output.Triangles.AsReadOnly());
+            FillPointToHalfedge(pointToHalfedge.ToSpan(), output.Triangles/*.AsReadOnly()*/.ToReadOnlySpan());
             static void FillPointToHalfedge(Span<int> pointToHalfedge, ReadOnlySpan<int> triangles)
             {
                 for (int i = 0; i < triangles.Length; i++)
@@ -2727,7 +2727,7 @@ namespace swolescr.andywiecko.BurstTriangulator.LowLevel.Unsafe
             new ConstrainEdgesStep.UnsafeSloan
             {
                 Status = output.Status,
-                Positions = output.Positions.AsReadOnly(),
+                Positions = output.Positions/*.AsReadOnly()*/.AsArray().AsReadOnly(),
                 Triangles = output.Triangles,
                 Halfedges = output.Halfedges,
                 ConstrainedHalfedges = output.ConstrainedHalfedges,
@@ -3136,7 +3136,7 @@ namespace swolescr.andywiecko.BurstTriangulator.LowLevel.Unsafe
 
             public ValidateInputStep(NativeInputData<T2> input, NativeOutputData<T2> output, Args args)
             {
-                positions = output.Positions.AsReadOnly();
+                positions = output.Positions/*.AsReadOnly()*/.AsArray().AsReadOnly();
                 status = output.Status;
                 this.args = args;
                 constraints = input.ConstraintEdges.AsReadOnly();
@@ -3415,7 +3415,7 @@ namespace swolescr.andywiecko.BurstTriangulator.LowLevel.Unsafe
             public DelaunayTriangulationStep(NativeOutputData<T2> output, Args args)
             {
                 status = output.Status;
-                positions = output.Positions.AsReadOnly();
+                positions = output.Positions/*.AsReadOnly()*/.AsArray().AsReadOnly();
                 triangles = output.Triangles;
                 halfedges = output.Halfedges;
                 constrainedHalfedges = output.ConstrainedHalfedges;
@@ -3796,7 +3796,7 @@ namespace swolescr.andywiecko.BurstTriangulator.LowLevel.Unsafe
             public ConstrainEdgesStep(NativeInputData<T2> input, NativeOutputData<T2> output, Args args)
             {
                 status = output.Status;
-                positions = output.Positions.AsReadOnly();
+                positions = output.Positions/*.AsReadOnly()*/.AsArray().AsReadOnly();
                 triangles = output.Triangles;
                 inputConstraintEdges = input.ConstraintEdges.AsReadOnly();
                 ignoreConstraintForPlantingSeeds = input.IgnoreConstraintForPlantingSeeds;
@@ -3820,7 +3820,7 @@ namespace swolescr.andywiecko.BurstTriangulator.LowLevel.Unsafe
                 using var pointToHalfedge = new NativeArray<int>(positions.Length, allocator);
                 ignoredHalfedgesForPlantingSeeds.Length = halfedges.Length;
 
-                FillPointToHalfedge(pointToHalfedge, triangles.AsReadOnly());
+                FillPointToHalfedge(pointToHalfedge.ToSpan(), triangles/*.AsReadOnly()*/.ToReadOnlySpan());
                 static void FillPointToHalfedge(Span<int> pointToHalfedge, ReadOnlySpan<int> triangles)
                 {
                     for (int i = 0; i < triangles.Length; i++)
@@ -4441,7 +4441,7 @@ namespace swolescr.andywiecko.BurstTriangulator.LowLevel.Unsafe
                 }
 
                 // Plant seeds for non visited constraint edges
-                foreach (var h1 in loop.AsReadOnly())
+                foreach (var h1 in loop/*.AsReadOnly()*/.AsArray().AsReadOnly())
                 {
                     var h2 = NextHalfedge(h1);
                     if (!heVisited[h2])
@@ -4547,7 +4547,7 @@ namespace swolescr.andywiecko.BurstTriangulator.LowLevel.Unsafe
                 var pointTriangleCount = protectPoints || preventWindmills ? new NativeArray<int>(positions.Length, allocator) : default;
                 if (pointTriangleCount.IsCreated)
                 {
-                    GeneratePointTriangleCount(pointTriangleCount, triangles.AsReadOnly());
+                    GeneratePointTriangleCount(pointTriangleCount.ToSpan(), triangles/*.AsReadOnly()*/.ToReadOnlySpan());
                 }
 
                 var tIdMinVisited = -1;
@@ -4578,7 +4578,7 @@ namespace swolescr.andywiecko.BurstTriangulator.LowLevel.Unsafe
                     if (false
                         || protectConstraints && (constrainedHalfedges[h0] || constrainedHalfedges[h1] || constrainedHalfedges[h2])
                         || protectPoints && (c0 == 1 || c1 == 1 || c2 == 1)
-                        || preventWindmills && (WindmillCandidate(h0, c0, visitedTriangles) || WindmillCandidate(h1, c1, visitedTriangles) || WindmillCandidate(h2, c2, visitedTriangles))
+                        || preventWindmills && (WindmillCandidate(h0, c0, visitedTriangles.ToReadOnlySpan()) || WindmillCandidate(h1, c1, visitedTriangles.ToReadOnlySpan()) || WindmillCandidate(h2, c2, visitedTriangles.ToReadOnlySpan()))
                     )
                     {
                         continue;
@@ -5010,7 +5010,7 @@ namespace swolescr.andywiecko.BurstTriangulator.LowLevel.Unsafe
                     var area2 = Area2(xi, xj, xk);
                     if (utils.greater(area2, maximumArea2)) // TODO split permited
                     {
-                        foreach (var he in edges.AsReadOnly())
+                        foreach (var he in edges/*.AsReadOnly()*/.AsArray().AsReadOnly())
                         {
                             heQueue.Enqueue(he);
                         }

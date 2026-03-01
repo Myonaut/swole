@@ -6,6 +6,7 @@ using System.Collections.Generic;
 
 using UnityEngine;
 
+using Swole.API.Unity;
 using Swole.API.Unity.Animation;
 using Swole.Morphing;
 

@@ -1292,6 +1292,310 @@ namespace Swole
             return outputIndices;
         }
 
+        /// <summary>
+        /// For each uv in querying verticesUV, find the closest vertex UV to it in targetVerticesUV and store the index in the output array. Use triangles to compare local vertex connections to target vertex connections.
+        /// </summary>
+        public static int[] FindClosestVerticesUV(Vector2[] queryingVerticesUV, Vector2[] targetVerticesUV, int[] queryingTriangles, int[] targetTriangles, int[] outputIndices = null, bool fast = true)
+        {
+            if (outputIndices == null) outputIndices = new int[queryingVerticesUV.Length];
+
+            if (fast)
+            {
+                using (NativeArray<float2> queryingVerticesUV_job = new NativeArray<Vector2>(queryingVerticesUV, Allocator.TempJob).Reinterpret<float2>())
+                {
+                    using(NativeArray<float2> targetVerticesUV_job = new NativeArray<Vector2>(targetVerticesUV, Allocator.TempJob).Reinterpret<float2>())
+                    {
+
+                        using (NativeArray<int> queryingTriangles_job = new NativeArray<int>(queryingTriangles, Allocator.TempJob))
+                        {
+                            using (NativeArray<int> targetTriangles_job = new NativeArray<int>(targetTriangles, Allocator.TempJob))
+                            {
+
+                                using (NativeQueue<float3> results = new NativeQueue<float3>(Allocator.TempJob))
+                                {
+
+                                    var initArray = new float2[outputIndices.Length];
+                                    for (int i = 0; i < initArray.Length; i++)
+                                    {
+                                        initArray[i] = new float2(0, -1f);
+                                    }
+                                    using (NativeArray<float2> outputIndices_job = new NativeArray<float2>(initArray, Allocator.TempJob))
+                                    {
+                                        JobHandle handle = default;
+                                        for (int targetTriIndex = 0; targetTriIndex < targetTriangles.Length; targetTriIndex += 3)
+                                        {
+                                            handle = new FindClosestVerticesUVPlusTrisJob()
+                                            {
+                                                targetTriIndex = targetTriIndex,
+
+                                                queryingVerticesUV = queryingVerticesUV_job,
+                                                targetVerticesUV = targetVerticesUV_job,
+                                                queryTriangleCount = queryingTriangles.Length,
+                                                targetTriangleCount = targetTriangles.Length,
+                                                queryingTriangles = queryingTriangles_job,
+                                                targetTriangles = targetTriangles_job,
+                                                results = results.AsParallelWriter()
+                                            }.Schedule(queryingTriangles.Length / 3, 1, handle);
+
+                                            handle = new FinalizeClosestVerticesUVPlusTrisJob()
+                                            {
+                                                results = results,
+                                                outputIndices = outputIndices_job
+                                            }.Schedule(handle);
+                                        }
+
+                                        handle.Complete(); 
+
+                                        for (int i = 0; i < outputIndices.Length; i++)
+                                        {
+                                            outputIndices[i] = (int)outputIndices_job[i].x;
+                                        }
+                                    }
+
+                                }
+
+                            }
+                        }
+
+                    }
+                }
+            }
+            else
+            {
+
+                for (int t = 0; t < queryingTriangles.Length; t += 3)
+                {
+                    int q0 = queryingTriangles[t];
+                    int q1 = queryingTriangles[t + 1];
+                    int q2 = queryingTriangles[t + 2];
+
+                    var quv0 = queryingVerticesUV[q0];
+                    var quv1 = queryingVerticesUV[q1];
+                    var quv2 = queryingVerticesUV[q2];
+
+                    int closestIndex0 = 0;
+                    int closestIndex1 = 0;
+                    int closestIndex2 = 0;
+                    float closestDistance0 = float.MaxValue;
+                    float closestDistance1 = float.MaxValue;
+                    float closestDistance2 = float.MaxValue;
+                    for (int tt = 0; tt < targetTriangles.Length; tt += 3)
+                    {
+                        int t0 = targetTriangles[tt];
+                        int t1 = targetTriangles[tt + 1];
+                        int t2 = targetTriangles[tt + 2];
+
+                        var tuv0 = targetVerticesUV[t0];
+                        var tuv1 = targetVerticesUV[t1];
+                        var tuv2 = targetVerticesUV[t2];
+
+                        float dist0;
+                        dist0 = (tuv0 - quv0).sqrMagnitude + Mathf.Min((tuv1 - quv1).sqrMagnitude, (tuv2 - quv1).sqrMagnitude) + Mathf.Min((tuv1 - quv2).sqrMagnitude, (tuv2 - quv2).sqrMagnitude);
+                        if (dist0 < closestDistance0)
+                        {
+                            closestDistance0 = dist0;
+                            closestIndex0 = t0;
+                        }
+                        dist0 = (tuv1 - quv0).sqrMagnitude + Mathf.Min((tuv0 - quv1).sqrMagnitude, (tuv2 - quv1).sqrMagnitude) + Mathf.Min((tuv0 - quv2).sqrMagnitude, (tuv2 - quv2).sqrMagnitude);
+                        if (dist0 < closestDistance0)
+                        {
+                            closestDistance0 = dist0;
+                            closestIndex0 = t1;
+                        }
+                        dist0 = (tuv2 - quv0).sqrMagnitude + Mathf.Min((tuv0 - quv1).sqrMagnitude, (tuv1 - quv1).sqrMagnitude) + Mathf.Min((tuv0 - quv2).sqrMagnitude, (tuv1 - quv2).sqrMagnitude);
+                        if (dist0 < closestDistance0)
+                        {
+                            closestDistance0 = dist0;
+                            closestIndex0 = t2;
+                        }
+
+                        float dist1;
+                        dist1 = (tuv0 - quv1).sqrMagnitude + Mathf.Min((tuv1 - quv0).sqrMagnitude, (tuv2 - quv0).sqrMagnitude) + Mathf.Min((tuv1 - quv2).sqrMagnitude, (tuv2 - quv2).sqrMagnitude);
+                        if (dist1 < closestDistance1)
+                        {
+                            closestDistance1 = dist1;
+                            closestIndex1 = t0;
+                        }
+                        dist1 = (tuv1 - quv1).sqrMagnitude + Mathf.Min((tuv0 - quv0).sqrMagnitude, (tuv2 - quv0).sqrMagnitude) + Mathf.Min((tuv0 - quv2).sqrMagnitude, (tuv2 - quv2).sqrMagnitude);
+                        if (dist1 < closestDistance1)
+                        {
+                            closestDistance1 = dist1;
+                            closestIndex1 = t1;
+                        }
+                        dist1 = (tuv2 - quv1).sqrMagnitude + Mathf.Min((tuv0 - quv0).sqrMagnitude, (tuv1 - quv0).sqrMagnitude) + Mathf.Min((tuv0 - quv2).sqrMagnitude, (tuv1 - quv2).sqrMagnitude);
+                        if (dist1 < closestDistance1)
+                        {
+                            closestDistance1 = dist1;
+                            closestIndex1 = t2;
+                        }
+
+                        float dist2;
+                        dist2 = (tuv0 - quv2).sqrMagnitude + Mathf.Min((tuv1 - quv0).sqrMagnitude, (tuv2 - quv0).sqrMagnitude) + Mathf.Min((tuv1 - quv1).sqrMagnitude, (tuv2 - quv1).sqrMagnitude);
+                        if (dist2 < closestDistance2)
+                        {
+                            closestDistance2 = dist2;
+                            closestIndex2 = t0;
+                        }
+                        dist2 = (tuv1 - quv2).sqrMagnitude + Mathf.Min((tuv0 - quv0).sqrMagnitude, (tuv2 - quv0).sqrMagnitude) + Mathf.Min((tuv0 - quv1).sqrMagnitude, (tuv2 - quv1).sqrMagnitude);
+                        if (dist2 < closestDistance2)
+                        {
+                            closestDistance2 = dist2;
+                            closestIndex2 = t1;
+                        }
+                        dist2 = (tuv2 - quv2).sqrMagnitude + Mathf.Min((tuv0 - quv0).sqrMagnitude, (tuv1 - quv0).sqrMagnitude) + Mathf.Min((tuv0 - quv1).sqrMagnitude, (tuv1 - quv1).sqrMagnitude);
+                        if (dist2 < closestDistance2)
+                        {
+                            closestDistance2 = dist2;
+                            closestIndex2 = t2;
+                        }
+                    }
+
+                    outputIndices[q0] = closestIndex0;
+                    outputIndices[q1] = closestIndex1;
+                    outputIndices[q2] = closestIndex2;
+                }
+            }
+
+            return outputIndices;
+        }
+
+        [BurstCompile]
+        public struct FindClosestVerticesUVPlusTrisJob : IJobParallelFor
+        {
+
+            public int targetTriIndex;
+
+            public int queryTriangleCount;
+            public int targetTriangleCount;
+
+            [ReadOnly]
+            public NativeArray<float2> queryingVerticesUV;
+            [ReadOnly]
+            public NativeArray<float2> targetVerticesUV;
+            [ReadOnly]
+            public NativeArray<int> queryingTriangles;
+            [ReadOnly]
+            public NativeArray<int> targetTriangles;
+
+            public NativeQueue<float3>.ParallelWriter results;
+
+            public void Execute(int index)
+            {
+                int t = index * 3;
+                int tt = targetTriIndex;
+
+                int q0 = queryingTriangles[t];
+                int q1 = queryingTriangles[t + 1];
+                int q2 = queryingTriangles[t + 2];
+
+                var quv0 = queryingVerticesUV[q0];
+                var quv1 = queryingVerticesUV[q1];
+                var quv2 = queryingVerticesUV[q2];
+
+                int3 closestIndex = int3.zero;
+                float3 closestDistance = new float3(float.MaxValue, float.MaxValue, float.MaxValue);
+
+                int t0 = targetTriangles[tt];
+                int t1 = targetTriangles[tt + 1];
+                int t2 = targetTriangles[tt + 2];
+
+                var tuv0 = targetVerticesUV[t0];
+                var tuv1 = targetVerticesUV[t1];
+                var tuv2 = targetVerticesUV[t2];
+
+                float dist0;
+                dist0 = math.lengthsq(tuv0 - quv0) + math.min(math.lengthsq(tuv1 - quv1), math.lengthsq(tuv2 - quv1)) + math.min(math.lengthsq(tuv1 - quv2), math.lengthsq(tuv2 - quv2));
+                if (dist0 < closestDistance.x)
+                {
+                    closestDistance.x = dist0;
+                    closestIndex.x = t0;
+                }
+                dist0 = math.lengthsq(tuv1 - quv0) + math.min(math.lengthsq(tuv0 - quv1), math.lengthsq(tuv2 - quv1)) + math.min(math.lengthsq(tuv0 - quv2), math.lengthsq(tuv2 - quv2));
+                if (dist0 < closestDistance.x)
+                {
+                    closestDistance.x = dist0;
+                    closestIndex.x = t1;
+                }
+                dist0 = math.lengthsq(tuv2 - quv0) + math.min(math.lengthsq(tuv0 - quv1), math.lengthsq(tuv1 - quv1)) + math.min(math.lengthsq(tuv0 - quv2), math.lengthsq(tuv1 - quv2));
+                if (dist0 < closestDistance.x)
+                {
+                    closestDistance.x = dist0;
+                    closestIndex.x = t2;
+                }
+
+                float dist1;
+                dist1 = math.lengthsq(tuv0 - quv1) + math.min(math.lengthsq(tuv1 - quv0), math.lengthsq(tuv2 - quv0)) + math.min(math.lengthsq(tuv1 - quv2), math.lengthsq(tuv2 - quv2));
+                if (dist1 < closestDistance.y)
+                {
+                    closestDistance.y = dist1;
+                    closestIndex.y = t0;
+                }
+                dist1 = math.lengthsq(tuv1 - quv1) + math.min(math.lengthsq(tuv0 - quv0), math.lengthsq(tuv2 - quv0)) + math.min(math.lengthsq(tuv0 - quv2), math.lengthsq(tuv2 - quv2));
+                if (dist1 < closestDistance.y)
+                {
+                    closestDistance.y = dist1;
+                    closestIndex.y = t1;
+                }
+                dist1 = math.lengthsq(tuv2 - quv1) + math.min(math.lengthsq(tuv0 - quv0), math.lengthsq(tuv1 - quv0)) + math.min(math.lengthsq(tuv0 - quv2), math.lengthsq(tuv1 - quv2));
+                if (dist1 < closestDistance.y)
+                {
+                    closestDistance.y = dist1;
+                    closestIndex.y = t2;
+                }
+
+                float dist2;
+                dist2 = math.lengthsq(tuv0 - quv2) + math.min(math.lengthsq(tuv1 - quv0), math.lengthsq(tuv2 - quv0)) + math.min(math.lengthsq(tuv1 - quv1), math.lengthsq(tuv2 - quv1));
+                if (dist2 < closestDistance.z)
+                {
+                    closestDistance.z = dist2;
+                    closestIndex.z = t0;
+                }
+                dist2 = math.lengthsq(tuv1 - quv2) + math.min(math.lengthsq(tuv0 - quv0), math.lengthsq(tuv2 - quv0)) + math.min(math.lengthsq(tuv0 - quv1), math.lengthsq(tuv2 - quv1));
+                if (dist2 < closestDistance.z)
+                {
+                    closestDistance.z = dist2;
+                    closestIndex.z = t1;
+                }
+                dist2 = math.lengthsq(tuv2 - quv2) + math.min(math.lengthsq(tuv0 - quv0), math.lengthsq(tuv1 - quv0)) + math.min(math.lengthsq(tuv0 - quv1), math.lengthsq(tuv1 - quv1));
+                if (dist2 < closestDistance.z)
+                {
+                    closestDistance.z = dist2; 
+                    closestIndex.z = t2;
+                }
+
+                results.Enqueue(new float3() { x = q0, y = closestIndex.x, z = closestDistance.x });
+                results.Enqueue(new float3() { x = q1, y = closestIndex.y, z = closestDistance.y });
+                results.Enqueue(new float3() { x = q2, y = closestIndex.z, z = closestDistance.z });
+
+            }
+        }
+
+        [BurstCompile]
+        public struct FinalizeClosestVerticesUVPlusTrisJob : IJob 
+        {
+
+            public NativeQueue<float3> results;
+            public NativeArray<float2> outputIndices;
+
+            public void Execute()
+            {
+
+                while(results.TryDequeue(out float3 result))
+                {
+                    int queryIndex = (int)result.x;
+                    int closestIndex = (int)result.y;
+                    float dist = result.z;
+
+                    var current = outputIndices[queryIndex];
+                    if (dist < current.y || current.y <= -1f)
+                    {
+                        outputIndices[queryIndex] = new float2(closestIndex, dist);
+                    }           
+                }
+
+            }
+        }
+
         [Serializable]
         public struct MeshIsland
         {
@@ -1756,7 +2060,12 @@ namespace Swole
                     {
                         outputs = initialOutputs,
                         finalOutputs = secondaryOutputs.AsParallelWriter() 
-                    }.Schedule(initialOutputs.Length, 100, handle);
+                    }
+#if UNITY_2022_OR_NEWER
+                    .Schedule(initialOutputs.Length, 100, handle);
+#else
+                    .ScheduleBatch(initialOutputs.Length, 100, handle);
+#endif
 
                     using (var finalOutput = new NativeArray<ClosestTriangleData>(1, Allocator.TempJob))
                     {
@@ -1849,7 +2158,12 @@ namespace Swole
                     {
                         outputs = initialOutputs,
                         finalOutputs = secondaryOutputs.AsParallelWriter()
-                    }.Schedule(initialOutputs.Length, 100, handle);
+                    }
+#if UNITY_2022_OR_NEWER
+                    .Schedule(initialOutputs.Length, 100, handle);
+#else
+                    .ScheduleBatch(initialOutputs.Length, 100, handle);
+#endif
 
                     using (var finalOutput = new NativeArray<ClosestTriangleData>(1, Allocator.TempJob))
                     {
@@ -2502,7 +2816,7 @@ namespace Swole
             }
         }
 
-        #endregion
+#endregion
 
         #region Mesh Editing
 
@@ -4553,6 +4867,7 @@ namespace Swole
 
             tempMesh.uv2 = null;
 
+#if UNITY_2022_OR_NEWER
             if (settings.IsInvalid)
             {
                 if (!UnityEditor.Unwrapping.GenerateSecondaryUVSet(tempMesh) && tempMesh.indexFormat == IndexFormat.UInt16)
@@ -4581,6 +4896,7 @@ namespace Swole
                     if (UnityEditor.Unwrapping.GenerateSecondaryUVSet(tempMesh, settings)) flag = true;
                 }
             }
+#endif
              
             if (flag)
             {

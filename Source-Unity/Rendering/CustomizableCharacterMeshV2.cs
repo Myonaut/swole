@@ -19,7 +19,7 @@ using Swole.API.Unity;
 using Swole.API.Unity.Animation;
 using Swole.DataStructures;
 
-using static Swole.ICustomizableCharacter.Defaults;
+using static Swole.API.Unity.ICustomizableCharacter.Defaults;
 
 namespace Swole.Morphing
 {
@@ -1237,6 +1237,8 @@ namespace Swole.Morphing
                     {
                         material.SetFloat(data.VertexCountPropertyName, data.vertexCount);
 
+                        material.SetFloat(data.MinMassShapeWeightPropertyName, data.minMassShapeWeight);                        
+
                         material.SetBuffer(data.SkinningDataPropertyName, data.BoneWeightsBuffer);
                         material.SetInteger(data.BoneCountPropertyName, data.BoneCount);
                         
@@ -1259,11 +1261,32 @@ namespace Swole.Morphing
                         material.SetInteger(data.BustNerfVertexGroupIndexPropertyName, data.bustNerfVertexGroup);
                         material.SetInteger(data.NippleMaskVertexGroupIndexPropertyName, data.nippleMaskVertexGroup);
                         material.SetInteger(data.GenitalMaskVertexGroupIndexPropertyName, data.genitalMaskVertexGroup);
-                        
+
+                        material.SetInteger(data.BustSizeShapeIndexPropertyName, data.bustSizeShape);
+                        material.SetInteger(data.BustSizeMuscularShapeIndexPropertyName, data.bustSizeMuscleShape); 
+
                         material.SetBuffer(data.VertexGroupsPropertyName, data.VertexGroupsBuffer);
                         material.SetBuffer(data.MeshShapeFrameDeltasPropertyName, data.MeshShapeFrameDeltasBuffer);
                         material.SetBuffer(data.MeshShapeFrameWeightsPropertyName, data.MeshShapeFrameWeightsBuffer);
                         material.SetBuffer(data.MeshShapeIndicesPropertyName, data.MeshShapeIndicesBuffer);
+                        
+                        try
+                        {
+                            material.SetBuffer(data.VertexColorDeltasPropertyName, data.VertexColorDeltasBuffer); 
+                        } 
+                        catch(Exception ex)
+                        {
+                            Debug.LogException(ex);
+                        }
+
+                        for(int index = 0; index < data.VertexColorDeltaCount; index++)
+                        {
+                            var delta = data.GetVertexColorDeltaUnsafe(index);
+                            if (delta == null || string.IsNullOrWhiteSpace(delta.indexPropertyName)) continue;
+
+                            material.SetFloat(delta.indexPropertyName, index);
+                        }
+
                     }
                 }
 
@@ -1597,7 +1620,7 @@ namespace Swole.Morphing
                 activeJob = default;
 
                 insertionFlags.Clear();
-                insertionFlags.AddReplicate(false, MaxInstanceCount);
+                insertionFlags.AddReplicated(false, MaxInstanceCount);
 
                 indicesToUpdate.Clear();
 
@@ -1897,7 +1920,7 @@ namespace Swole.Morphing
                 indicesToVariationUpdate = new NativeList<int>(maxInstanceCount, Allocator.Persistent);
                 insertionFlags = new NativeList<bool>(maxInstanceCount, Allocator.Persistent);
                 bustSizes = new NativeList<float2>(maxInstanceCount, Allocator.Persistent);
-                bustSizes.AddReplicate(0f, maxInstanceCount);
+                bustSizes.AddReplicated(0f, maxInstanceCount);
 
                 data.TryPrecache();
                 bool isPrecached = data.IsPrecached;
@@ -2078,12 +2101,12 @@ namespace Swole.Morphing
                 muscleGroupVertexDataLR = new NativeList<float2>(muscleGroupDeltasCount, Allocator.Persistent);
                 if (muscleGroupDeltasCount > 0) 
                 { 
-                    muscleGroupVertexDeltasLR.AddReplicate(MeshVertexDeltaLR.Default, muscleGroupDeltasCount);
-                    muscleGroupVertexDataLR.AddReplicate(float2.zero, muscleGroupDeltasCount);
+                    muscleGroupVertexDeltasLR.AddReplicated(MeshVertexDeltaLR.Default, muscleGroupDeltasCount);
+                    muscleGroupVertexDataLR.AddReplicated(float2.zero, muscleGroupDeltasCount);
                 }
 
                 muscleValuesPerVertex = new NativeList<float>(initialVertexCount, Allocator.Persistent);
-                muscleValuesPerVertex.AddReplicate(0f, initialVertexCount);
+                muscleValuesPerVertex.AddReplicated(0f, initialVertexCount);
 
                 #endregion
 
@@ -2142,12 +2165,12 @@ namespace Swole.Morphing
                 fatGroupVertexDataLR = new NativeList<float4>(fatGroupDeltasCount, Allocator.Persistent);
                 if (fatGroupDeltasCount > 0) 
                 { 
-                    fatGroupVertexDeltasLR.AddReplicate(MeshVertexDeltaLR.Default, fatGroupDeltasCount);
-                    fatGroupVertexDataLR.AddReplicate(float4.zero, fatGroupDeltasCount);
+                    fatGroupVertexDeltasLR.AddReplicated(MeshVertexDeltaLR.Default, fatGroupDeltasCount);
+                    fatGroupVertexDataLR.AddReplicated(float4.zero, fatGroupDeltasCount);
                 }
 
                 fatValuesPerVertex = new NativeList<float2>(initialVertexCount, Allocator.Persistent);
-                fatValuesPerVertex.AddReplicate(float2.zero, initialVertexCount);
+                fatValuesPerVertex.AddReplicated(float2.zero, initialVertexCount);
 
                 #endregion
 
@@ -2207,13 +2230,13 @@ namespace Swole.Morphing
                 }
                 int variationGroupDeltasCount = variationGroupVertexWeights.Length * data.VariationShapesCount * maxInstanceCount;
                 variationGroupVertexDeltasLR = new NativeList<MeshVertexDeltaLR>(variationGroupDeltasCount, Allocator.Persistent);
-                if (variationGroupDeltasCount > 0) variationGroupVertexDeltasLR.AddReplicate(MeshVertexDeltaLR.Default, variationGroupDeltasCount);
+                if (variationGroupDeltasCount > 0) variationGroupVertexDeltasLR.AddReplicated(MeshVertexDeltaLR.Default, variationGroupDeltasCount);
 
                 #endregion
 
                 int initialDeltasCount = data.vertexCount * maxInstanceCount;
                 finalVertexDeltas = new NativeList<MeshVertexDelta>(initialDeltasCount, Allocator.Persistent);
-                finalVertexDeltas.AddReplicate(MeshVertexDelta.Default, initialDeltasCount);
+                finalVertexDeltas.AddReplicated(MeshVertexDelta.Default, initialDeltasCount);
 
                 finalVertexDeltasBufferIndex = CreateInstanceMaterialBuffer<MeshVertexDelta>(data.PerVertexDeltaDataPropertyName, data.vertexCount, 3, true, out var finalVertexDeltasBuffer);
                 EnsureInstanceBufferSize(finalVertexDeltasBuffer);
@@ -2251,23 +2274,23 @@ namespace Swole.Morphing
 
                     muscleGroupControlWeights.AddRange(blankMuscleGroupControlWeights);
                     muscleGroupControlWeightsNext.AddRange(blankMuscleGroupControlWeights);
-                    muscleGroupVertexDeltasLR.AddReplicate(MeshVertexDeltaLR.Default, muscleGroupVertexWeights.Length);
+                    muscleGroupVertexDeltasLR.AddReplicated(MeshVertexDeltaLR.Default, muscleGroupVertexWeights.Length);
 
-                    muscleGroupVertexDataLR.AddReplicate(float2.zero, muscleGroupVertexWeights.Length);
-                    muscleValuesPerVertex.AddReplicate(0f, data.vertexCount);
+                    muscleGroupVertexDataLR.AddReplicated(float2.zero, muscleGroupVertexWeights.Length);
+                    muscleValuesPerVertex.AddReplicated(0f, data.vertexCount);
 
                     fatGroupControlWeights.AddRange(blankFatGroupControlWeights);
                     fatGroupControlWeightsNext.AddRange(blankFatGroupControlWeights);
-                    fatGroupVertexDeltasLR.AddReplicate(MeshVertexDeltaLR.Default, fatGroupVertexWeights.Length);
+                    fatGroupVertexDeltasLR.AddReplicated(MeshVertexDeltaLR.Default, fatGroupVertexWeights.Length);
 
-                    fatGroupVertexDataLR.AddReplicate(float4.zero, fatGroupVertexWeights.Length);
-                    fatValuesPerVertex.AddReplicate(float2.zero, data.vertexCount);
+                    fatGroupVertexDataLR.AddReplicated(float4.zero, fatGroupVertexWeights.Length);
+                    fatValuesPerVertex.AddReplicated(float2.zero, data.vertexCount);
 
                     variationGroupControlWeights.AddRange(blankVariationGroupControlWeights);
                     variationGroupControlWeightsNext.AddRange(blankVariationGroupControlWeights);
-                    variationGroupVertexDeltasLR.AddReplicate(MeshVertexDeltaLR.Default, variationGroupVertexWeights.Length * data.VariationShapesCount);
+                    variationGroupVertexDeltasLR.AddReplicated(MeshVertexDeltaLR.Default, variationGroupVertexWeights.Length * data.VariationShapesCount);
 
-                    finalVertexDeltas.AddReplicate(MeshVertexDelta.Default, data.vertexCount); // expand the vertex delta buffer
+                    finalVertexDeltas.AddReplicated(MeshVertexDelta.Default, data.vertexCount); // expand the vertex delta buffer
 
                     EnsureInstanceBufferSizes();
                 }
@@ -3287,6 +3310,9 @@ namespace Swole.Morphing
 
             public Vector2Int fatGroups;
 
+            [Header("Vertex Color Deltas")]
+            public VertexColorDelta[] vertexColorDeltas; 
+
             [Header("Material Properties")]
             public string vertexCountPropertyNameOverride;
             public string VertexCountPropertyName => string.IsNullOrWhiteSpace(vertexCountPropertyNameOverride) ? _vertexCountDefaultPropertyName : vertexCountPropertyNameOverride;
@@ -3310,7 +3336,7 @@ namespace Swole.Morphing
             public string MidlineVertexGroupIndexPropertyName => string.IsNullOrWhiteSpace(midlineVertexGroupIndexPropertyNameOverride) ? _midlineVertexGroupIndexDefaultPropertyName : midlineVertexGroupIndexPropertyNameOverride;
 
             public string bustMixPropertyNameOverride;
-            public string BustMixPropertyName => string.IsNullOrWhiteSpace(bustMixPropertyNameOverride) ? _bustMixDefaultPropertyName : bustMixPropertyNameOverride;
+            public string BustMixPropertyName => string.IsNullOrWhiteSpace(bustMixPropertyNameOverride) ? _bustMixDefaultPropertyName : bustMixPropertyNameOverride; 
 
             public string hideNipplesPropertyNameOverride;
             public string HideNipplesPropertyName => string.IsNullOrWhiteSpace(hideNipplesPropertyNameOverride) ? _hideNipplesDefaultPropertyName : hideNipplesPropertyNameOverride;
@@ -3329,6 +3355,14 @@ namespace Swole.Morphing
 
             public string genitalMaskVertexGroupIndexPropertyNameOverride;
             public string GenitalMaskVertexGroupIndexPropertyName => string.IsNullOrWhiteSpace(genitalMaskVertexGroupIndexPropertyNameOverride) ? _genitalMaskVertexGroupIndexDefaultPropertyName : genitalMaskVertexGroupIndexPropertyNameOverride;
+
+
+            public string bustSizeShapeIndexPropertyNameOverride;
+            public string BustSizeShapeIndexPropertyName => string.IsNullOrWhiteSpace(bustSizeShapeIndexPropertyNameOverride) ? _bustSizeShapeIndexDefaultPropertyName : bustSizeShapeIndexPropertyNameOverride;
+
+            public string bustSizeMuscularShapeIndexPropertyNameOverride;
+            public string BustSizeMuscularShapeIndexPropertyName => string.IsNullOrWhiteSpace(bustSizeMuscularShapeIndexPropertyNameOverride) ? _bustSizeMuscularShapeIndexDefaultPropertyName : bustSizeMuscularShapeIndexPropertyNameOverride;
+
 
             public string fatMuscleBlendShapeIndexPropertyNameOverride;
             public string FatMuscleBlendShapeIndexPropertyName => string.IsNullOrWhiteSpace(fatMuscleBlendShapeIndexPropertyNameOverride) ? _fatMuscleBlendShapeIndexDefaultPropertyName : fatMuscleBlendShapeIndexPropertyNameOverride;
@@ -3351,7 +3385,7 @@ namespace Swole.Morphing
             public string variationShapesControlPropertyNameOverride;
             public string VariationShapesControlPropertyName => string.IsNullOrWhiteSpace(variationShapesControlPropertyNameOverride) ? _variationShapesControlDefaultPropertyName : variationShapesControlPropertyNameOverride;
 
-
+            
             public string muscleMassShapeIndexPropertyNameOverride;
             public string MuscleMassShapeIndexPropertyName => string.IsNullOrWhiteSpace(muscleMassShapeIndexPropertyNameOverride) ? _muscleMassShapeIndexDefaultPropertyName : muscleMassShapeIndexPropertyNameOverride;
 
@@ -3398,14 +3432,107 @@ namespace Swole.Morphing
             public string CharacterInstanceIDPropertyName => string.IsNullOrWhiteSpace(characterInstanceIDPropertyNameOverride) ? _characterInstanceIDPropertyName : characterInstanceIDPropertyNameOverride;
 
 
+
+            public string vertexColorDeltasPropertyNameOverride;
+            public string VertexColorDeltasPropertyName => string.IsNullOrWhiteSpace(vertexColorDeltasPropertyNameOverride) ? _vertexColorDeltasDefaultPropertyName : vertexColorDeltasPropertyNameOverride;
+
+
+            public string minMassShapeWeightPropertyNameOverride;
+            public string MinMassShapeWeightPropertyName => string.IsNullOrWhiteSpace(minMassShapeWeightPropertyNameOverride) ? _minMassShapeWeightDefaultPropertyName : minMassShapeWeightPropertyNameOverride;
+
+
             [Header("Other")]
             public int raycastLod;
             [Tooltip("The uv channel to use for determining the nearest vertex.")]
             public UVChannelURP nearestVertexUVChannel = UVChannelURP.UV3;
             [Tooltip("The uv element to store the nearest vertex index in.")]
             public RGBAChannel nearestVertexIndexElement = RGBAChannel.R;
-            public float2[] fatGroupModifiers;
 
+            public DefaultMuscleGroupConversion[] defaultMuscleGroupConversions;
+            private Dictionary<MuscleGroupsDefault, int> defaultMuscleGroupConversionsCache;
+            private Dictionary<string, MuscleGroupsDefault> defaultMuscleGroupConversionsReverseCache;
+            private Dictionary<MuscleGroup, int> defaultBaseMuscleGroupConversionsCache;
+            private Dictionary<VertexGroup, MuscleGroup> defaultBaseMuscleGroupConversionsReverseCache;
+
+            [NonSerialized]
+            private bool initializedDefaultMuscleGroupConversions = false;
+
+            private void InitializeDefaultMuscleGroupConversions()
+            {
+                if (initializedDefaultMuscleGroupConversions) return;
+
+                initializedDefaultMuscleGroupConversions = true;
+                defaultMuscleGroupConversionsCache = new Dictionary<MuscleGroupsDefault, int>();
+                defaultMuscleGroupConversionsReverseCache = new Dictionary<string, MuscleGroupsDefault>();
+                defaultBaseMuscleGroupConversionsCache = new Dictionary<MuscleGroup, int>();
+                defaultBaseMuscleGroupConversionsReverseCache = new Dictionary<VertexGroup, MuscleGroup>();
+
+                if (defaultMuscleGroupConversions != null)
+                {
+                    for (int a = 0; a < defaultMuscleGroupConversions.Length; a++)
+                    {
+                        var conversion = defaultMuscleGroupConversions[a];
+                        if (conversion == null) continue;
+
+                        int ind = IndexOfMuscleGroup(conversion.muscleGroupName, true);
+                        if (ind < 0) continue;
+
+                        var vertexGroup = GetMuscleVertexGroup(ind);
+
+                        defaultBaseMuscleGroupConversionsCache[conversion.basicMuscleGroup] = ind;
+                        defaultBaseMuscleGroupConversionsReverseCache[vertexGroup] = conversion.basicMuscleGroup;
+
+                        MuscleGroupsDefault mgSide;
+
+                        ind = ind * 2;
+                        mgSide = conversion.basicMuscleGroup.GetMuscleGroupSide(Side.Left);
+                        defaultMuscleGroupConversionsCache[mgSide] = ind;
+                        defaultMuscleGroupConversionsReverseCache[vertexGroup.name + Side.Left.AsSuffix()] = mgSide;
+
+                        var prevSide = mgSide;
+                        ind = ind + 1;
+                        mgSide = conversion.basicMuscleGroup.GetMuscleGroupSide(Side.Right);
+                        if (prevSide != mgSide) defaultMuscleGroupConversionsCache[mgSide] = ind;
+                        defaultMuscleGroupConversionsReverseCache[vertexGroup.name + Side.Right.AsSuffix()] = mgSide; 
+                    }
+                }
+            }
+
+            public string ConvertDefaultMuscleGroupName(MuscleGroupsDefault defaultGroup)
+            {
+                if (!initializedDefaultMuscleGroupConversions) InitializeDefaultMuscleGroupConversions();
+                if (defaultMuscleGroupConversionsCache.TryGetValue(defaultGroup, out int groupIndex)) return GetMuscleVertexGroup(groupIndex).name; 
+                return defaultGroup.ToString();
+            }
+            public int ConvertDefaultMuscleGroupToIndex(MuscleGroupsDefault defaultGroup)
+            {
+                if (!initializedDefaultMuscleGroupConversions) InitializeDefaultMuscleGroupConversions();
+                if (defaultMuscleGroupConversionsCache.TryGetValue(defaultGroup, out int groupIndex)) return groupIndex;
+                return -1;
+            }
+            public MuscleGroupsDefault ConvertMuscleGroupToDefault(string muscleGroupName)
+            {
+                if (!initializedDefaultMuscleGroupConversions) InitializeDefaultMuscleGroupConversions();
+                if (defaultMuscleGroupConversionsReverseCache.TryGetValue(muscleGroupName, out var defaultGroup)) return defaultGroup; 
+
+                return default;
+            }
+            public MuscleGroupsDefault ConvertMuscleGroupToDefault(int muscleGroupIndex)
+            {
+                if (muscleGroupIndex < 0 || muscleGroupIndex >= MuscleGroupsCount) return default;
+
+                if (!initializedDefaultMuscleGroupConversions) InitializeDefaultMuscleGroupConversions();
+
+                var vg = GetVertexGroup(muscleGroupIndex);
+                if (vg == null) return default;
+
+                if (defaultMuscleGroupConversionsReverseCache.TryGetValue(vg.name + Side.Left.AsSuffix(), out var defaultGroup)) return defaultGroup;
+
+                return default;
+            }
+
+            public float2[] fatGroupModifiers;
+            
             #endregion
 
             #region Interface
@@ -3551,19 +3678,6 @@ namespace Swole.Morphing
                 if (meshShapes != null) outputList.AddRange(meshShapes);
 
                 return outputList;
-            }
-
-            public int IndexOfMeshShape(string name)
-            {
-                if (meshShapes == null) return -1;
-
-                for (int a = 0; a < meshShapes.Length; a++)
-                {
-                    var shape = meshShapes[a];
-                    if (shape.name == name) return a;
-                }
-
-                return -1;
             }
 
             public int VertexGroupCount => vertexGroups == null ? 0 : vertexGroups.Length;
@@ -3835,6 +3949,50 @@ namespace Swole.Morphing
                 return meshShapes[variationShapes.x + index];
             }
 
+
+
+            public int VertexColorDeltaCount => vertexColorDeltas == null ? 0 : vertexColorDeltas.Length;
+            public VertexColorDelta GetVertexColorDelta(int index)
+            {
+                if (index < 0 || vertexColorDeltas == null || index >= vertexColorDeltas.Length) return null;
+                return GetVertexColorDeltaUnsafe(index);
+            }
+            public VertexColorDelta GetVertexColorDeltaUnsafe(int index) => vertexColorDeltas[index];
+            public int IndexOfVertexColorDelta(string deltaName, bool caseSensitive = false)
+            {
+                if (vertexColorDeltas == null) return -1;
+
+                for (int a = 0; a < vertexColorDeltas.Length; a++)
+                {
+                    var delta = vertexColorDeltas[a];
+                    if (delta == null) continue;
+
+                    if (delta.name == deltaName) return a;
+                }
+                if (caseSensitive) return -1;
+
+                deltaName = deltaName.ToLower().Trim();
+                for (int a = 0; a < vertexColorDeltas.Length; a++)
+                {
+                    var delta = vertexColorDeltas[a];
+                    if (delta == null) continue;
+
+                    if (!string.IsNullOrWhiteSpace(delta.name) && delta.name.ToLower().Trim() == deltaName) return a;
+                }
+
+                return -1;
+            }
+            public List<VertexColorDelta> GetVertexColorDeltas(List<VertexColorDelta> outputList = null)
+            {
+                if (outputList == null) outputList = new List<VertexColorDelta>();
+
+                if (vertexColorDeltas != null) outputList.AddRange(vertexColorDeltas);
+
+                return outputList;
+            }
+
+
+
             protected static readonly List<float> tempFloats = new List<float>();
             [NonSerialized]
             protected ComputeBuffer vertexGroupsBuffer;
@@ -3858,8 +4016,11 @@ namespace Swole.Morphing
                                 for (int vertexIndex = 0; vertexIndex < vertexCount; vertexIndex++) tempFloats.Add(vertexGroup[vertexIndex]);
                             }
 
-                            vertexGroupsBuffer = new ComputeBuffer(tempFloats.Count, UnsafeUtility.SizeOf(typeof(float)), ComputeBufferType.Structured, ComputeBufferMode.Immutable);
-                            if (tempFloats.Count > 0) vertexGroupsBuffer.SetData(tempFloats);
+                            if (tempFloats.Count > 0)
+                            {
+                                vertexGroupsBuffer = new ComputeBuffer(tempFloats.Count, UnsafeUtility.SizeOf(typeof(float)), ComputeBufferType.Structured, ComputeBufferMode.Immutable);
+                                vertexGroupsBuffer.SetData(tempFloats);
+                            }
 
                             tempFloats.Clear();
                         }
@@ -3885,8 +4046,11 @@ namespace Swole.Morphing
                             PrecacheMeshShapeFrameDeltas();
                         }
 
-                        meshShapeFrameDeltasBuffer = new ComputeBuffer(precache_meshShapeFrameDeltas.Length, UnsafeUtility.SizeOf(typeof(MorphShapeVertex)), ComputeBufferType.Structured, ComputeBufferMode.Immutable);
-                        if (precache_meshShapeFrameDeltas.Length > 0) meshShapeFrameDeltasBuffer.SetData(precache_meshShapeFrameDeltas);
+                        if (precache_meshShapeFrameDeltas.Length > 0)
+                        {
+                            meshShapeFrameDeltasBuffer = new ComputeBuffer(precache_meshShapeFrameDeltas.Length, UnsafeUtility.SizeOf(typeof(MorphShapeVertex)), ComputeBufferType.Structured, ComputeBufferMode.Immutable);
+                            meshShapeFrameDeltasBuffer.SetData(precache_meshShapeFrameDeltas);
+                        }
 
                         TrackDisposables();
                     }
@@ -3915,8 +4079,11 @@ namespace Swole.Morphing
                             }
                         }
 
-                        meshShapeFrameWeightsBuffer = new ComputeBuffer(tempFloats.Count, UnsafeUtility.SizeOf(typeof(float)), ComputeBufferType.Structured, ComputeBufferMode.Immutable);
-                        if (tempFloats.Count > 0) meshShapeFrameWeightsBuffer.SetData(tempFloats);
+                        if (tempFloats.Count > 0)
+                        {
+                            meshShapeFrameWeightsBuffer = new ComputeBuffer(tempFloats.Count, UnsafeUtility.SizeOf(typeof(float)), ComputeBufferType.Structured, ComputeBufferMode.Immutable);
+                            meshShapeFrameWeightsBuffer.SetData(tempFloats);
+                        }
 
                         tempFloats.Clear();
 
@@ -3947,8 +4114,11 @@ namespace Swole.Morphing
                             startIndex += meshShape.frames.Length;
                         }
 
-                        meshShapeIndicesBuffer = new ComputeBuffer(tempRanges.Count, UnsafeUtility.SizeOf(typeof(int2)), ComputeBufferType.Structured, ComputeBufferMode.Immutable);
-                        if (tempRanges.Count > 0) meshShapeIndicesBuffer.SetData(tempRanges);
+                        if (tempRanges.Count > 0)
+                        {
+                            meshShapeIndicesBuffer = new ComputeBuffer(tempRanges.Count, UnsafeUtility.SizeOf(typeof(int2)), ComputeBufferType.Structured, ComputeBufferMode.Immutable);
+                            meshShapeIndicesBuffer.SetData(tempRanges);
+                        }
 
                         tempRanges.Clear();
 
@@ -3956,6 +4126,33 @@ namespace Swole.Morphing
                     }
 
                     return meshShapeIndicesBuffer;
+                }
+            }
+
+            protected static readonly List<float4> tempColorDeltas = new List<float4>();
+            [NonSerialized]
+            protected ComputeBuffer vertexColorDeltasBuffer;
+            public ComputeBuffer VertexColorDeltasBuffer
+            {
+                get
+                {
+                    if (vertexColorDeltasBuffer == null)
+                    {
+                        if (precache_vertexColorDeltas == null || precache_vertexColorDeltas.Length <= 0)
+                        {
+                            PrecacheVertexColorDeltas();
+                        }
+
+                        if (precache_vertexColorDeltas.Length > 0)
+                        {
+                            vertexColorDeltasBuffer = new ComputeBuffer(precache_vertexColorDeltas.Length, UnsafeUtility.SizeOf(typeof(float4)), ComputeBufferType.Structured, ComputeBufferMode.Immutable);
+                            vertexColorDeltasBuffer.SetData(precache_vertexColorDeltas);
+                        }
+                        
+                        TrackDisposables();
+                    }
+
+                    return vertexColorDeltasBuffer;
                 }
             }
 
@@ -4075,6 +4272,21 @@ namespace Swole.Morphing
                     {
                         meshShapeFrameDeltasBuffer.Dispose();
                         meshShapeFrameDeltasBuffer = null;
+                    }
+                }
+                catch (Exception ex)
+                {
+#if UNITY_EDITOR
+                    Debug.LogException(ex);
+#endif
+                }
+
+                try
+                {
+                    if (vertexColorDeltasBuffer != null && vertexColorDeltasBuffer.IsValid())
+                    {
+                        vertexColorDeltasBuffer.Dispose();
+                        vertexColorDeltasBuffer = null;
                     }
                 }
                 catch (Exception ex)
@@ -4437,6 +4649,32 @@ namespace Swole.Morphing
                 tempFrameDeltas.Clear();
             }
 
+            [SerializeField, HideInInspector]
+            public float4[] precache_vertexColorDeltas;
+
+            public void PrecacheVertexColorDeltas()
+            {
+                if (precache_vertexColorDeltas != null && precache_vertexColorDeltas.Length > 0) return;
+
+                Debug.Log("Pre-caching vertex color deltas...");
+
+                tempColorDeltas.Clear();
+
+                if (vertexColorDeltas != null)
+                {
+                    foreach (var delta in vertexColorDeltas)
+                    {
+                        if (delta == null || delta.deltaColors == null) continue;
+
+                        for (int vertexIndex = 0; vertexIndex < vertexCount; vertexIndex++) tempColorDeltas.Add((Vector4)delta.deltaColors[vertexIndex]);
+                    }
+                }
+
+                precache_vertexColorDeltas = tempColorDeltas.ToArray();
+
+                tempColorDeltas.Clear();
+            }
+
             public bool IsPrecached => (precache_meshShapeDeltas != null && precache_meshShapeDeltas.Length != 0)
                 && (precache_meshShapeFrameWeights != null && precache_meshShapeFrameWeights.Length != 0)
                 && (precache_meshShapeInfos != null && precache_meshShapeInfos.Length != 0)
@@ -4676,6 +4914,8 @@ namespace Swole.Morphing
 
                 PrecacheMeshShapeFrameDeltas();
 
+                PrecacheVertexColorDeltas();
+
 #if !UNITY_EDITOR
                 if (meshShapes != null)
                 {
@@ -4696,6 +4936,17 @@ namespace Swole.Morphing
                         if (group == null) continue;
 
                         group.SetExternalWeightSource(precache_vertexGroups, i * vertexCount, vertexCount, true, true);
+                    }
+                }
+
+                if (vertexColorDeltas != null)
+                {
+                    for (int i = 0; i < vertexColorDeltas.Length; i++)
+                    {
+                        var delta = vertexColorDeltas[i];
+                        if (delta == null) continue;
+
+                        delta.deltaColors = null;
                     }
                 }
 #endif
@@ -5048,6 +5299,8 @@ namespace Swole.Morphing
             Animator = animator; // force subscribe listeners
 
             if (characterInstanceReference != null) CharacterInstanceReference = characterInstanceReference;
+            if (rigInstanceReference != null) RigInstanceReference = rigInstanceReference;
+            if (shapesInstanceReference != null) ShapesInstanceReference = shapesInstanceReference;  
 
         }
 
@@ -5130,19 +5383,75 @@ namespace Swole.Morphing
 
         #region Children
 
-        protected List<CustomizableCharacterMeshV2> children;
-        public void AddChild(CustomizableCharacterMeshV2 child)
+        [Serializable, Flags]
+        public enum ChildType
+        {
+            None = 0, Mesh = 1, Shapes = 2, Rig = 4
+        }
+
+        public struct Child
+        {
+            public ChildType type;
+            public CustomizableCharacterMeshV2 instance;
+
+            public bool IsValid => instance != null;
+        }
+
+        protected List<Child> children;
+        public bool IsParentOf(CustomizableCharacterMeshV2 child) => IsParentOf(child, out _);
+        public bool IsParentOf(CustomizableCharacterMeshV2 child, out int index)
+        {
+            index = -1;
+            if (children == null) return false;
+
+            for(int a = 0; a < children.Count; a++)
+            {
+                var child_ = children[a];
+                if (ReferenceEquals(child_.instance, child)) 
+                { 
+                    index = a;
+                    return true; 
+                }
+            }
+
+            return false;
+        }
+        public void AddChild(CustomizableCharacterMeshV2 child, ChildType type)
         {
             if (child == null) return;
 
-            if (children == null) children = new List<CustomizableCharacterMeshV2>();
-            if (!children.Contains(child)) children.Add(child);
+            if (children == null) children = new List<Child>();
+            if (IsParentOf(child, out var childIndex))
+            {
+                var c = children[childIndex];
+                c.type |= type;
+                children[childIndex] = c;
+            } 
+            else
+            {
+                children.Add(new Child() { instance = child, type = type });
+            }
+        }
+        public void RemoveChild(CustomizableCharacterMeshV2 child, ChildType type)
+        {
+            if (children == null) return;
+
+            if (IsParentOf(child, out var childIndex))
+            {
+                var c = children[childIndex];
+                c.type &= ~type;
+                children[childIndex] = c;
+                if (c.type == ChildType.None) children.RemoveAt(childIndex);
+            }
         }
         public void RemoveChild(CustomizableCharacterMeshV2 child)
         {
             if (children == null) return;
 
-            children.RemoveAll(i => ReferenceEquals(i, child));
+            if (IsParentOf(child, out var childIndex))
+            {
+                children.RemoveAt(childIndex);
+            }
         }
 
         #endregion
@@ -5500,7 +5809,7 @@ namespace Swole.Morphing
 
             if (children != null)
             {
-                foreach (var child in children) if (child != null) child.SetBustSize(value);
+                foreach (var child in children) if (child.IsValid && child.type.HasFlag(ChildType.Mesh)) child.instance.SetBustSize(value);
             }
         }
         public void SetBustShape(float value)
@@ -5516,7 +5825,7 @@ namespace Swole.Morphing
 
             if (children != null)
             {
-                foreach (var child in children) if (child != null) child.SetBustShape(value);
+                foreach (var child in children) if (child.IsValid && child.type.HasFlag(ChildType.Mesh)) child.instance.SetBustShape(value);
             }
         }
         [NonSerialized]
@@ -5538,7 +5847,7 @@ namespace Swole.Morphing
 
                 if (children != null)
                 {
-                    foreach (var child in children) if (child != null) child.SetHideNipples(value);
+                    foreach (var child in children) if (child.IsValid && child.type.HasFlag(ChildType.Mesh)) child.instance.SetHideNipples(value);
                 }
             }
         }
@@ -5561,7 +5870,7 @@ namespace Swole.Morphing
 
                 if (children != null)
                 {
-                    foreach (var child in children) if (child != null) child.SetHideGenitals(value);
+                    foreach (var child in children) if (child.IsValid && child.type.HasFlag(ChildType.Mesh)) child.instance.SetHideGenitals(value);
                 }
             }
         }
@@ -5639,15 +5948,18 @@ namespace Swole.Morphing
                     instance.SetMuscleGroupWeightUnsafe(groupIndex, new float2(data.valuesLeft.mass, data.valuesRight.mass));
                     instance.MarkForPhysiqueUpdateUnsafe();
                 }
+
+                if (prevData.x != data.valuesLeft.mass) NotifyDefaultMuscleGroupListeners(groupIndex * 2);
+                if (prevData.y != data.valuesLeft.mass) NotifyDefaultMuscleGroupListeners((groupIndex * 2) + 1); 
             }
 
             OnMuscleDataChanged?.Invoke(groupIndex);
 
             if (children != null)
             {
-                foreach (var child in children) if (child != null)
+                foreach (var child in children) if (child.IsValid && child.type.HasFlag(ChildType.Mesh))
                     {
-                        child.SetMuscleDataUnsafe(groupIndex, data);
+                        child.instance.SetMuscleDataUnsafe(groupIndex, data);
                     }
             }
         }
@@ -5694,7 +6006,7 @@ namespace Swole.Morphing
 
             if (children != null)
             {
-                foreach (var child in children) if (child != null) child.SetFatLevelUnsafe(groupIndex, level);
+                foreach (var child in children) if (child.IsValid && child.type.HasFlag(ChildType.Mesh)) child.instance.SetFatLevelUnsafe(groupIndex, level);
             }
         }
         public void SetFatLevel(int groupIndex, float level)
@@ -5725,7 +6037,7 @@ namespace Swole.Morphing
 
             if (children != null)
             {
-                foreach (var child in children) if (child != null) child.SetBodyHairLevelUnsafe(groupIndex, level, blend);
+                foreach (var child in children) if (child.IsValid && child.type.HasFlag(ChildType.Mesh)) child.instance.SetBodyHairLevelUnsafe(groupIndex, level, blend);
             }
         }
         public void SetBodyHairLevel(int groupIndex, float level, float blend = 1f)
@@ -5782,7 +6094,7 @@ namespace Swole.Morphing
 
             if (children != null)
             {
-                foreach (var child in children) if (child != null) child.SetVariationWeightUnsafe(variationShapeIndex, groupIndex, weight);
+                foreach (var child in children) if (child.IsValid && child.type.HasFlag(ChildType.Mesh)) child.instance.SetVariationWeightUnsafe(variationShapeIndex, groupIndex, weight);
             }
         }
         public void SetVariationWeight(int variationShapeIndex, int groupIndex, float2 weight)
@@ -6076,10 +6388,16 @@ namespace Swole.Morphing
             get => shapesInstanceReference;
             set
             {
-                if (value is CustomizableCharacterMeshV2 meshV2)
+                if (shapesInstanceReference != null)
                 {
-                    shapesInstanceReference = meshV2;
+                    shapesInstanceReference.RemoveChild(this, ChildType.Shapes);
                 }
+
+                if (value is CustomizableCharacterMeshV2 meshV2_)
+                {
+                    meshV2_.AddChild(this, ChildType.Shapes);
+                    shapesInstanceReference = meshV2_; 
+                } 
                 else
                 {
                     shapesInstanceReference = null;
@@ -6092,7 +6410,20 @@ namespace Swole.Morphing
         public InstanceableSkinnedMeshBase RigInstanceReference
         {
             get => rigInstanceReference;
-            set => rigInstanceReference = value;
+            set
+            {
+                if (rigInstanceReference is CustomizableCharacterMeshV2 meshV2)
+                {
+                    meshV2.RemoveChild(this, ChildType.Rig);
+                }
+
+                if (value is CustomizableCharacterMeshV2 meshV2_)
+                {
+                    meshV2_.AddChild(this, ChildType.Rig);
+                }
+
+                rigInstanceReference = value;
+            }
         }
         public bool RigInstanceReferenceIsValid => rigInstanceReference != null && rigInstanceReference.SkinningBoneCount == SkinningBoneCount;
         public override int RigInstanceID => rigInstanceReference == null ? InstanceSlot : rigInstanceReference.RigInstanceID;
@@ -6115,12 +6446,12 @@ namespace Swole.Morphing
             get => characterInstanceReference;
             set
             {
-                if (characterInstanceReference != null) characterInstanceReference.RemoveChild(this);
+                if (characterInstanceReference != null) characterInstanceReference.RemoveChild(this, ChildType.Mesh);
 
                 if (value is CustomizableCharacterMeshV2 meshV2)
                 {
                     characterInstanceReference = meshV2;
-                    characterInstanceReference.AddChild(this); 
+                    characterInstanceReference.AddChild(this, ChildType.Mesh); 
                 }
                 else
                 {
@@ -6191,7 +6522,7 @@ namespace Swole.Morphing
                 SetCharacterInstanceID(characterInstanceReference.InstanceSlot);
                 characterInstanceReference.OnCreateInstanceID += SetCharacterInstanceID;
 
-                characterInstanceReference.AddChild(this);
+                characterInstanceReference.AddChild(this, ChildType.Mesh);
             }
         }
 
@@ -6263,9 +6594,12 @@ namespace Swole.Morphing
                                 instance.OwnerGroup.CreateInstanceMaterialBuffer<float4x4>(matricesProperty, SkinningBoneCount, 3, false, out skinningMatricesBuffer);
                             }
 
-                            if (children != null)
+                            if (skinningMatricesBuffer != null)
                             {
-                                foreach (var child in children) if (child != null) child.BindSkinningMatricesBufferToMaterials();
+                                if (children != null)
+                                {
+                                    foreach (var child in children) if (child.IsValid && child.type.HasFlag(ChildType.Rig)) child.instance.BindSkinningMatricesBufferToMaterials();
+                                }
                             }
                         }
                     }
@@ -6285,7 +6619,8 @@ namespace Swole.Morphing
             {
                 var meshData = SubData;
 
-                if (RigSampler != null) rigSampler.AddWritableInstanceBuffer(matricesBuffer, RigInstanceID * SkinningBoneCount);
+                var rigSampler = RigSampler;
+                if (rigSampler != null) rigSampler.AddWritableInstanceBuffer(matricesBuffer, RigInstanceID * SkinningBoneCount);
 
                 if (materialInstances != null)
                 {
@@ -6293,7 +6628,7 @@ namespace Swole.Morphing
                     {
                         if (mat == null) continue;
 
-                        Debug.Log($"Binding {meshData.SkinningMatricesPropertyName} to {mat.name}");
+                        Debug.Log($"{name}: Binding {meshData.SkinningMatricesPropertyName} to {mat.name}");
                         matricesBuffer.BindMaterialProperty(mat, meshData.SkinningMatricesPropertyName);
                     }
                 }
@@ -6309,6 +6644,7 @@ namespace Swole.Morphing
             {
                 var meshData = SubData;
 
+                var rigSampler = RigSampler;
                 if (rigSampler != null) rigSampler.RemoveWritableInstanceBuffer(skinningMatricesBuffer);
 
                 if (materialInstances != null)
@@ -6344,9 +6680,12 @@ namespace Swole.Morphing
                                 instance.OwnerGroup.CreateInstanceMaterialBuffer<float>(matProperty, SubData.StandaloneShapesCount, 2, false, out standaloneShapeControlBuffer);
                             }
 
-                            if (children != null)
+                            if (standaloneShapeControlBuffer != null)
                             {
-                                foreach (var child in children) if (child != null) child.BindStandaloneShapesControlBufferToMaterials(); 
+                                if (children != null)
+                                {
+                                    foreach (var child in children) if (child.IsValid && child.type.HasFlag(ChildType.Shapes)) child.instance.BindStandaloneShapesControlBufferToMaterials();
+                                }
                             }
                         }
                     }
@@ -6369,7 +6708,7 @@ namespace Swole.Morphing
                 {
                     if (mat == null) continue;
 
-                    Debug.Log($"Binding {meshData.StandaloneShapesControlPropertyName} to {mat.name}");
+                    Debug.Log($"{name}: Binding {meshData.StandaloneShapesControlPropertyName} to {mat.name}");
                     shapeBuffer.BindMaterialProperty(mat, meshData.StandaloneShapesControlPropertyName);
                 }
             }
@@ -6413,9 +6752,12 @@ namespace Swole.Morphing
                                 instance.OwnerGroup.CreateInstanceMaterialBuffer<MuscleDataLR>(matProperty, SubData.MuscleVertexGroupCount, 2, false, out muscleGroupsControlBuffer);
                             }
 
-                            if (children != null)
+                            if (muscleGroupsControlBuffer != null)
                             {
-                                foreach (var child in children) if (child != null) child.BindMuscleGroupsControlBufferToMaterials();
+                                if (children != null)
+                                {
+                                    foreach (var child in children) if (child.IsValid && child.type.HasFlag(ChildType.Mesh)) child.instance.BindMuscleGroupsControlBufferToMaterials();
+                                }
                             }
                         }
                     }
@@ -6438,7 +6780,7 @@ namespace Swole.Morphing
                 {
                     if (mat == null) continue;
 
-                    Debug.Log($"Binding {meshData.MuscleGroupsControlPropertyName} to {mat.name}");
+                    Debug.Log($"{name}: Binding {meshData.MuscleGroupsControlPropertyName} to {mat.name}");
                     muscleBuffer.BindMaterialProperty(mat, meshData.MuscleGroupsControlPropertyName);
                 }
             }
@@ -6482,9 +6824,12 @@ namespace Swole.Morphing
                                 instance.OwnerGroup.CreateInstanceMaterialBuffer<float4>(matProperty, SubData.FatVertexGroupCount, 2, false, out fatGroupsControlBuffer);
                             }
 
-                            if (children != null)
+                            if (fatGroupsControlBuffer != null)
                             {
-                                foreach (var child in children) if (child != null) child.BindFatGroupsControlBufferToMaterials();
+                                if (children != null)
+                                {
+                                    foreach (var child in children) if (child.IsValid && child.type.HasFlag(ChildType.Mesh)) child.instance.BindFatGroupsControlBufferToMaterials();
+                                }
                             }
                         }
                     }
@@ -6507,7 +6852,7 @@ namespace Swole.Morphing
                 {
                     if (mat == null) continue;
 
-                    Debug.Log($"Binding {meshData.FatGroupsControlPropertyName} to {mat.name}");
+                    Debug.Log($"{name}: Binding {meshData.FatGroupsControlPropertyName} to {mat.name}");
                     fatBuffer.BindMaterialProperty(mat, meshData.FatGroupsControlPropertyName);
                 }
             }
@@ -6551,9 +6896,12 @@ namespace Swole.Morphing
                                 instance.OwnerGroup.CreateInstanceMaterialBuffer<float2>(matProperty, SubData.VariationShapesCount * SubData.VariationVertexGroupCount, 2, false, out variationShapesControlBuffer);
                             }
 
-                            if (children != null)
+                            if (variationShapesControlBuffer != null)
                             {
-                                foreach (var child in children) if (child != null) child.BindVariationGroupsControlBufferToMaterials();
+                                if (children != null)
+                                {
+                                    foreach (var child in children) if (child.IsValid && child.type.HasFlag(ChildType.Mesh)) child.instance.BindVariationGroupsControlBufferToMaterials();
+                                }
                             }
                         }
                     }
@@ -6576,7 +6924,7 @@ namespace Swole.Morphing
                 {
                     if (mat == null) continue;
 
-                    Debug.Log($"Binding {meshData.VariationShapesControlPropertyName} to {mat.name}");
+                    Debug.Log($"{name}: Binding {meshData.VariationShapesControlPropertyName} to {mat.name}");
                     variationBuffer.BindMaterialProperty(mat, meshData.VariationShapesControlPropertyName);
                 }
             }
@@ -6594,7 +6942,7 @@ namespace Swole.Morphing
                 {
                     if (mat == null) continue;
 
-                    variationShapesControlBuffer.UnbindMaterialProperty(mat, meshData.VariationShapesControlPropertyName);
+                    variationShapesControlBuffer.UnbindMaterialProperty(mat, meshData.VariationShapesControlPropertyName); 
                 }
             }
         }
@@ -6662,12 +7010,13 @@ namespace Swole.Morphing
             if (!Data.SerializedData.TryGetTriangles(lod, out var triangles)) return false;
             if (!Data.SerializedData.TryGetUV(lod, Data.SerializedData.nearestVertexUVChannel, out var indexUVs)) return false;
 
+            var rigSampler = RigSampler;
             RaycastResult finalResult = default; 
             using (var resultQueue = new NativeQueue<RaycastResult>(Allocator.TempJob))
             {
                 using (var skinningMatrices = new NativeArray<float4x4>(SkinningBoneCount, Allocator.TempJob))
                 {
-                    rigSampler.TrackingGroup.CopyIntoArray(skinningMatrices, 0);
+                    if (rigSampler != null) rigSampler.TrackingGroup.CopyIntoArray(skinningMatrices, 0);
 
                     var handle = instance.OwnerGroup.ActiveJob; 
 
@@ -6820,6 +7169,365 @@ namespace Swole.Morphing
                 }
 
                 finalOutput[0] = min;
+            }
+        }
+
+        #endregion
+
+        #region IMuscularBasic
+
+        [Serializable]
+        public class DefaultMuscleGroupConversion
+        {
+            public MuscleGroup basicMuscleGroup;
+            public string muscleGroupName;
+
+            [NonSerialized]
+            public int cachedIndex;
+        }
+
+        public string GetMuscleGroupName(int index) => GetMuscleGroupNameUnsafe(index);
+        public string GetMuscleGroupNameUnsafe(int index)
+        {
+            var group = SubData.GetMuscleVertexGroup(index / 2);
+            return group != null ? group.name : null;
+        }
+        public int GetMuscleGroupIndex(string muscleGroupName) 
+        {
+            if (Enum.TryParse(muscleGroupName, true, out MuscleGroupsDefault defaultGroup)) return SubData.ConvertDefaultMuscleGroupToIndex(defaultGroup);
+
+            var baseGroup = MuscleGroupsDefaultExtensions.GetMuscleGroupBase(muscleGroupName);
+            if (baseGroup != MuscleGroup.Null)
+            {
+                if (Enum.TryParse(baseGroup.ToString(), true, out defaultGroup)) return SubData.ConvertDefaultMuscleGroupToIndex(defaultGroup); 
+            }
+
+            return SubData.IndexOfMuscleGroup(muscleGroupName) * 2;
+        }
+        public int GetMuscleGroupIndex(MuscleGroupIdentifier identifier) => GetMuscleGroupIndex(identifier.ToString());
+        public int FindMuscleGroup(string muscleGroupName) => GetMuscleGroupIndex(muscleGroupName);
+        public int FindMuscleGroup(MuscleGroupIdentifier identifier) => FindMuscleGroup(identifier.ToString());
+
+        public int MuscleGroupCount => SubData.MuscleGroupsCount * 2;
+
+        public float BreastPresence
+        {
+            get => BustSize;
+            set => BustSize = value;
+        }
+
+        public bool SetMuscleGroupValues(int muscleGroupIndex, float3 values, bool updateDependencies = true)
+        {
+            int localGroupIndex = muscleGroupIndex / 2;
+
+            var defaultGroup = SubData.ConvertMuscleGroupToDefault(localGroupIndex);
+            bool isSymmetrical = defaultGroup.IsSymmetrical();
+
+            var data = GetMuscleData(localGroupIndex);
+            if (isSymmetrical)
+            {
+                data.valuesLeft.mass = values.x;
+                data.valuesLeft.flex = values.y;
+                data.valuesLeft.pump = values.z;
+
+                data.valuesRight.mass = values.x;
+                data.valuesRight.flex = values.y;
+                data.valuesRight.pump = values.z;
+            }
+            else
+            {
+                bool isLeft = muscleGroupIndex % 2 == 0;
+                if (isLeft)
+                {
+                    data.valuesLeft.mass = values.x;
+                    data.valuesLeft.flex = values.y;
+                    data.valuesLeft.pump = values.z;
+                }
+                else
+                {
+                    data.valuesRight.mass = values.x;
+                    data.valuesRight.flex = values.y;
+                    data.valuesRight.pump = values.z;
+                }
+            }
+
+            SetMuscleData(localGroupIndex, data);
+            return true;
+        }
+        public bool SetMuscleGroupMass(int muscleGroupIndex, float mass, bool updateDependencies = true, bool hasUpdated = false)
+        {
+            int localGroupIndex = muscleGroupIndex / 2;
+
+            var defaultGroup = SubData.ConvertMuscleGroupToDefault(localGroupIndex);
+            bool isSymmetrical = defaultGroup.IsSymmetrical();
+
+            var data = GetMuscleData(localGroupIndex);
+            if (isSymmetrical)
+            {
+                data.valuesLeft.mass = mass;
+                data.valuesRight.mass = mass;
+            }
+            else
+            {
+                bool isLeft = muscleGroupIndex % 2 == 0;
+                if (isLeft)
+                {
+                    data.valuesLeft.mass = mass;
+                }
+                else
+                {
+                    data.valuesRight.mass = mass;
+                }
+            }
+
+            SetMuscleData(localGroupIndex, data);
+            return true;
+        }
+        public bool SetMuscleGroupFlex(int muscleGroupIndex, float flex, bool updateDependencies = true, bool hasUpdated = false)
+        {
+            int localGroupIndex = muscleGroupIndex / 2;
+
+            var defaultGroup = SubData.ConvertMuscleGroupToDefault(localGroupIndex);
+            bool isSymmetrical = defaultGroup.IsSymmetrical();
+
+            var data = GetMuscleData(localGroupIndex);
+            if (isSymmetrical)
+            {
+                data.valuesLeft.flex = flex;
+                data.valuesRight.flex = flex;
+            }
+            else
+            {
+                bool isLeft = muscleGroupIndex % 2 == 0;
+                if (isLeft)
+                {
+                    data.valuesLeft.flex = flex;
+                }
+                else
+                {
+                    data.valuesRight.flex = flex;
+                }
+            }
+
+            SetMuscleData(localGroupIndex, data);
+            return true;
+        }
+        public bool SetMuscleGroupPump(int muscleGroupIndex, float pump, bool updateDependencies = true, bool hasUpdated = false)
+        {
+            int localGroupIndex = muscleGroupIndex / 2;
+
+            var defaultGroup = SubData.ConvertMuscleGroupToDefault(localGroupIndex);
+            bool isSymmetrical = defaultGroup.IsSymmetrical();
+
+            var data = GetMuscleData(localGroupIndex);
+            if (isSymmetrical)
+            {
+                data.valuesLeft.pump = pump;
+                data.valuesRight.pump = pump;
+            }
+            else
+            {
+                bool isLeft = muscleGroupIndex % 2 == 0;
+                if (isLeft)
+                {
+                    data.valuesLeft.pump = pump;
+                }
+                else
+                {
+                    data.valuesRight.pump = pump;
+                }
+            }
+
+            SetMuscleData(localGroupIndex, data);
+            return true;
+        }
+
+        public bool SetMuscleGroupValuesUnsafe(int muscleGroupIndex, float3 values, bool updateDependencies = true) => SetMuscleGroupValues(muscleGroupIndex, values, updateDependencies);
+        public bool SetMuscleGroupMassUnsafe(int muscleGroupIndex, float mass, bool updateDependencies = true, bool hasUpdated = false) => SetMuscleGroupMass(muscleGroupIndex, mass, updateDependencies, hasUpdated);
+        public bool SetMuscleGroupFlexUnsafe(int muscleGroupIndex, float flex, bool updateDependencies = true, bool hasUpdated = false) => SetMuscleGroupFlex(muscleGroupIndex, flex, updateDependencies, hasUpdated);
+        public bool SetMuscleGroupPumpUnsafe(int muscleGroupIndex, float pump, bool updateDependencies = true, bool hasUpdated = false) => SetMuscleGroupPump(muscleGroupIndex, pump, updateDependencies, hasUpdated);
+
+        public float3 GetMuscleGroupValues(int muscleGroupIndex)
+        {
+            int localGroupIndex = muscleGroupIndex / 2;
+            bool isLeft = muscleGroupIndex % 2 == 0;
+
+            var data = GetMuscleData(localGroupIndex);
+            return isLeft ? new float3(data.valuesLeft.mass, data.valuesLeft.flex, data.valuesLeft.pump) : new float3(data.valuesRight.mass, data.valuesRight.flex, data.valuesRight.pump);
+        }
+        public float3 GetMuscleGroupValuesUnsafe(int muscleGroupIndex) => GetMuscleGroupValues(muscleGroupIndex);
+
+        public float GetMuscleGroupMass(int muscleGroupIndex) => GetMuscleGroupValues(muscleGroupIndex).x;
+        public float GetMuscleGroupMassUnsafe(int muscleGroupIndex) => GetMuscleGroupMass(muscleGroupIndex);
+
+        public float GetMuscleGroupFlex(int muscleGroupIndex) => GetMuscleGroupValues(muscleGroupIndex).y;
+        public float GetMuscleGroupFlexUnsafe(int muscleGroupIndex) => GetMuscleGroupFlex(muscleGroupIndex);
+
+        public float GetMuscleGroupPump(int muscleGroupIndex) => GetMuscleGroupValues(muscleGroupIndex).z;
+        public float GetMuscleGroupPumpUnsafe(int muscleGroupIndex) => GetMuscleGroupPump(muscleGroupIndex);
+
+        public void SetGlobalMuscleValues(float3 values)
+        {
+            for(int a = 0; a < MuscleGroupCount; a++)
+            {
+                SetMuscleGroupValuesUnsafe(a, values);
+            }
+        }
+        public void SetGlobalMass(float mass)
+        {
+            for (int a = 0; a < MuscleGroupCount; a++)
+            {
+                SetMuscleGroupMassUnsafe(a, mass);
+            }
+        }
+        public void SetGlobalFlex(float flex)
+        {
+            for (int a = 0; a < MuscleGroupCount; a++)
+            {
+                SetMuscleGroupFlexUnsafe(a, flex);
+            }
+        }
+        public void SetGlobalPump(float pump)
+        {
+            for (int a = 0; a < MuscleGroupCount; a++)
+            {
+                SetMuscleGroupPumpUnsafe(a, pump);
+            }
+        }
+
+        public float3 GetAverageMuscleValues()
+        {
+            float3 values = float3.zero;
+            for (int a = 0; a < MuscleGroupCount; a++)
+            {
+                values = values + GetMuscleGroupValues(a);
+            }
+
+            return values;
+        }
+        public float GetAverageMass()
+        {
+            float mass = 0f;
+            for (int a = 0; a < MuscleGroupCount; a++)
+            {
+                mass = mass + GetMuscleGroupMass(a);
+            }
+
+            return mass;
+        }
+        public float GetAverageFlex()
+        {
+            float flex = 0f;
+            for (int a = 0; a < MuscleGroupCount; a++)
+            {
+                flex = flex + GetMuscleGroupMass(a);
+            }
+
+            return flex;
+        }
+        public float GetAveragePump()
+        {
+            float pump = 0f;
+            for (int a = 0; a < MuscleGroupCount; a++)
+            {
+                pump = pump + GetMuscleGroupMass(a);
+            }
+
+            return pump;
+        }
+
+        public void ClearEventListeners()
+        {
+            ClearListeners();
+        }
+
+        private List<MuscleValueListener>[] muscleValueListeners;
+
+        public bool Listen(int muscleGroupIndex, EngineInternal.IEngineObject listeningObject, MuscleValueListenerDelegate callback, out MuscleValueListener listener)
+        {
+
+            listener = null;
+            if (listeningObject == null || callback == null || muscleGroupIndex < 0 || muscleGroupIndex >= MuscleGroupCount) return false;
+
+            if (muscleValueListeners == null) muscleValueListeners = new List<MuscleValueListener>[MuscleGroupCount];
+
+            List<MuscleValueListener> listeners = muscleValueListeners[muscleGroupIndex];
+            if (listeners == null)
+            {
+                listeners = new List<MuscleValueListener>();
+                muscleValueListeners[muscleGroupIndex] = listeners;
+            }
+
+            listener = new MuscleValueListener() { listeningObject = listeningObject, callback = callback };
+            listeners.Add(listener);
+
+            return true;
+
+        }
+
+        public bool StopListening(int muscleGroupIndex, EngineInternal.IEngineObject listeningObject)
+        {
+
+            if (listeningObject == null || muscleValueListeners == null || muscleGroupIndex < 0 || muscleGroupIndex >= MuscleGroupCount) return false;
+
+            List<MuscleValueListener> listeners = muscleValueListeners[muscleGroupIndex];
+            if (listeners != null)
+            {
+
+                return listeners.RemoveAll(i => i.listeningObject == listeningObject) > 0;
+
+            }
+
+            return false;
+
+        }
+
+        public int StopListening(EngineInternal.IEngineObject listeningObject)
+        {
+
+            if (listeningObject == null || muscleValueListeners == null) return 0;
+
+            int removed = 0;
+
+            for (int a = 0; a < muscleValueListeners.Length; a++)
+            {
+
+                List<MuscleValueListener> listeners = muscleValueListeners[a];
+                if (listeners != null) removed += listeners.RemoveAll(i => i.listeningObject == listeningObject); 
+
+            }
+
+            return removed;
+
+        }
+
+        private void NotifyDefaultMuscleGroupListeners(int muscleGroupIndex)
+        {
+            if (muscleValueListeners != null && muscleGroupIndex >= 0 && muscleGroupIndex < MuscleGroupCount)
+            {
+                List<MuscleValueListener> listeners = muscleValueListeners[muscleGroupIndex];
+                if (listeners != null)
+                {
+                    bool isLeft = muscleGroupIndex % 2 == 0;
+                    int mirrorMuscleGroupIndex = isLeft ? muscleGroupIndex + 1 : muscleGroupIndex - 1; 
+                    var data = GetMuscleData(muscleGroupIndex / 2);
+
+                    foreach (var listener in listeners)
+                    {
+                        if (listener.listeningObject != null && listener.callback != null)
+                        {
+                            MuscleGroupInfo info = new MuscleGroupInfo()
+                            {
+                                mirroredIndex = mirrorMuscleGroupIndex,
+                                mass = isLeft ? data.valuesLeft.mass : data.valuesRight.mass,
+                                flex = isLeft ? data.valuesLeft.flex : data.valuesRight.flex,
+                                pump = isLeft ? data.valuesLeft.pump : data.valuesRight.pump
+                            };
+
+                            listener.callback.Invoke(info);
+                        }
+                    }
+                }
             }
         }
 

@@ -7,8 +7,9 @@ using UnityEngine;
 
 using Swole.API.Unity;
 
+
 #if BULKOUT_ENV
-using RootMotion.FinalIK; 
+using RootMotion.FinalIK;
 #endif
 
 namespace Swole.Modding
@@ -19,6 +20,9 @@ namespace Swole.Modding
     {
         public bool apply;
 
+        public bool includeIk;
+        public bool includeConstraints;
+
         public GameObject rootToCopy;
         public GameObject rootTarget;
 
@@ -28,20 +32,13 @@ namespace Swole.Modding
             {
                 apply = false;
 
-                Transfer(rootToCopy, rootTarget); 
+                TransferComponents(rootToCopy, rootTarget, includeIk, includeConstraints);
             }
         }
 
-        public virtual void Transfer(GameObject rootToCopy, GameObject rootTarget)
-        {
-            if (rootTarget == null) rootTarget = gameObject;
-            TransferComponents(rootToCopy, rootTarget);
-        }
-
-        public static void TransferComponents(GameObject rootToCopy, GameObject rootTarget)
+        public static void TransferComponents(GameObject rootToCopy, GameObject rootTarget, bool includeIk = true, bool includeConstraints = true)
         {
 
-            //Transform rootToCopyTransform = rootToCopy.transform;
             Transform rootTransform = rootTarget.transform;
 
             Transform FindTransform(GameObject equivalent) => ReferenceEquals(rootToCopy, equivalent) ? rootTransform : rootTransform.FindDeepChild(equivalent.name);
@@ -83,7 +80,118 @@ namespace Swole.Modding
                 targetSP.parent = sp.parent == null ? null : FindTransform(sp.parent.gameObject);
             }
 
-            ProxyBone[] proxyBones = rootToCopy.GetComponentsInChildren<ProxyBone>(true);  
+            if (includeConstraints)
+            {
+                var posConstraints = rootToCopy.GetComponentsInChildren<UnityEngine.Animations.PositionConstraint>(true);
+                foreach (var c in posConstraints)
+                {
+                    var target = rootTarget.transform.FindDeepChildLiberal(c.name);
+                    if (target == null) continue;
+
+                    var targetC = target.gameObject.GetComponent<UnityEngine.Animations.PositionConstraint>();
+                    if (targetC != null) continue;
+
+                    targetC = target.gameObject.AddComponent<UnityEngine.Animations.PositionConstraint>();
+
+                    if (c.sourceCount > 0)
+                    {
+                        var sources = new List<UnityEngine.Animations.ConstraintSource>();
+                        c.GetSources(sources);
+                        for (int i = 0; i < sources.Count; i++)
+                        {
+                            var source = sources[i];
+                            if (source.sourceTransform != null)
+                            {
+                                source.sourceTransform = rootTarget.transform.FindDeepChildLiberal(source.sourceTransform.name);
+                            }
+                            sources[i] = source;
+                        }
+                        targetC.SetSources(sources);
+                    }
+
+                    targetC.translationAxis = c.translationAxis;
+                    targetC.translationAtRest = c.translationAtRest;
+                    targetC.translationOffset = c.translationOffset;
+                    targetC.weight = c.weight;
+                    targetC.constraintActive = c.constraintActive;
+                    targetC.locked = c.locked;
+                    targetC.enabled = c.enabled;
+                }
+
+                var rotConstraints = rootToCopy.GetComponentsInChildren<UnityEngine.Animations.RotationConstraint>(true);
+                foreach (var c in rotConstraints)
+                {
+                    var target = rootTarget.transform.FindDeepChildLiberal(c.name);
+                    if (target == null) continue;
+
+                    var targetC = target.gameObject.GetComponent<UnityEngine.Animations.RotationConstraint>();
+                    if (targetC != null) continue;
+
+                    targetC = target.gameObject.AddComponent<UnityEngine.Animations.RotationConstraint>();
+
+                    if (c.sourceCount > 0)
+                    {
+                        var sources = new List<UnityEngine.Animations.ConstraintSource>();
+                        c.GetSources(sources);
+                        for (int i = 0; i < sources.Count; i++)
+                        {
+                            var source = sources[i];
+                            if (source.sourceTransform != null)
+                            {
+                                source.sourceTransform = rootTarget.transform.FindDeepChildLiberal(source.sourceTransform.name);
+                            }
+                            sources[i] = source;
+                        }
+                        targetC.SetSources(sources);
+                    }
+
+                    targetC.rotationAxis = c.rotationAxis;
+                    targetC.rotationAtRest = c.rotationAtRest;
+                    targetC.rotationOffset = c.rotationOffset;
+                    targetC.weight = c.weight;
+                    targetC.constraintActive = c.constraintActive;
+                    targetC.locked = c.locked;
+                    targetC.enabled = c.enabled;
+                }
+
+                var scaleConstraints = rootToCopy.GetComponentsInChildren<UnityEngine.Animations.ScaleConstraint>(true);
+                foreach (var c in scaleConstraints)
+                {
+                    var target = rootTarget.transform.FindDeepChildLiberal(c.name);
+                    if (target == null) continue;
+
+                    var targetC = target.gameObject.GetComponent<UnityEngine.Animations.ScaleConstraint>();
+                    if (targetC != null) continue;
+
+                    targetC = target.gameObject.AddComponent<UnityEngine.Animations.ScaleConstraint>();
+
+                    if (c.sourceCount > 0)
+                    {
+                        var sources = new List<UnityEngine.Animations.ConstraintSource>();
+                        c.GetSources(sources);
+                        for (int i = 0; i < sources.Count; i++)
+                        {
+                            var source = sources[i];
+                            if (source.sourceTransform != null)
+                            {
+                                source.sourceTransform = rootTarget.transform.FindDeepChildLiberal(source.sourceTransform.name);
+                            }
+                            sources[i] = source;
+                        }
+                        targetC.SetSources(sources);
+                    }
+
+                    targetC.scalingAxis = c.scalingAxis;
+                    targetC.scaleAtRest = c.scaleAtRest;
+                    targetC.scaleOffset = c.scaleOffset;
+                    targetC.weight = c.weight;
+                    targetC.constraintActive = c.constraintActive;
+                    targetC.locked = c.locked;
+                    targetC.enabled = c.enabled;
+                }
+            }
+
+            ProxyBone[] proxyBones = rootToCopy.GetComponentsInChildren<ProxyBone>(true);
             foreach (var pb in proxyBones)
             {
                 var target = FindTransform(pb.gameObject);
@@ -92,7 +200,7 @@ namespace Swole.Modding
                 var targetPB = target.gameObject.GetComponent<ProxyBone>();
                 if (targetPB != null) continue;
 
-                targetPB = target.gameObject.AddComponent<ProxyBone>(); 
+                targetPB = target.gameObject.AddComponent<ProxyBone>();
 
                 targetPB.hasStartingPose = pb.hasStartingPose;
                 targetPB.skipAutoRegister = pb.skipAutoRegister;
@@ -148,21 +256,48 @@ namespace Swole.Modding
                 targetIK = target.gameObject.AddComponent<TrigonometricIK>();
 
                 var solver = new IKSolverTrigonometric();
-                 
-                solver.target = ik.solver.target == null ? null : FindTransform(ik.solver.target.gameObject);
+
+                solver.target = ik.solver.target == null ? null : rootTarget.transform.FindDeepChildLiberal(ik.solver.target.name);
                 solver.IKRotationWeight = ik.solver.IKRotationWeight;
                 solver.IKRotation = ik.solver.IKRotation;
                 solver.bendNormal = ik.solver.bendNormal;
-                solver.bone1 = new IKSolverTrigonometric.TrigonometricBone() { transform = ik.solver.bone1.transform == null ? null : FindTransform(ik.solver.bone1.transform.gameObject), weight = ik.solver.bone1.weight };
-                solver.bone2 = new IKSolverTrigonometric.TrigonometricBone() { transform = ik.solver.bone2.transform == null ? null : FindTransform(ik.solver.bone2.transform.gameObject), weight = ik.solver.bone2.weight };
-                solver.bone3 = new IKSolverTrigonometric.TrigonometricBone() { transform = ik.solver.bone3.transform == null ? null : FindTransform(ik.solver.bone3.transform.gameObject), weight = ik.solver.bone3.weight };
+                solver.bone1 = new IKSolverTrigonometric.TrigonometricBone() { transform = ik.solver.bone1.transform == null ? null : rootTarget.transform.FindDeepChildLiberal(ik.solver.bone1.transform.name), weight = ik.solver.bone1.weight };
+                solver.bone2 = new IKSolverTrigonometric.TrigonometricBone() { transform = ik.solver.bone2.transform == null ? null : rootTarget.transform.FindDeepChildLiberal(ik.solver.bone2.transform.name), weight = ik.solver.bone2.weight };
+                solver.bone3 = new IKSolverTrigonometric.TrigonometricBone() { transform = ik.solver.bone3.transform == null ? null : rootTarget.transform.FindDeepChildLiberal(ik.solver.bone3.transform.name), weight = ik.solver.bone3.weight };
 
                 targetIK.solver = solver;
             }
-#endif
-        }
 
+            LimbIK[] limbIks = rootToCopy.GetComponentsInChildren<LimbIK>(true);
+            foreach (var ik in limbIks)
+            {
+                var target = rootTarget.transform.FindDeepChildLiberal(ik.name);
+                if (target == null) continue;
+
+                var targetIK = target.gameObject.GetComponent<LimbIK>();
+                if (targetIK != null) continue;
+
+                targetIK = target.gameObject.AddComponent<LimbIK>();
+
+                var solver = new IKSolverLimb();
+
+                solver.target = ik.solver.target == null ? null : rootTarget.transform.FindDeepChildLiberal(ik.solver.target.name);
+                solver.goal = ik.solver.goal;
+                solver.bendModifier = ik.solver.bendModifier;
+                solver.bendGoal = ik.solver.bendGoal == null ? null : rootTarget.transform.FindDeepChildLiberal(ik.solver.bendGoal.name);
+                solver.IKRotationWeight = ik.solver.IKRotationWeight;
+                solver.IKRotation = ik.solver.IKRotation;
+                solver.bendNormal = ik.solver.bendNormal;
+                solver.bone1 = new IKSolverTrigonometric.TrigonometricBone() { transform = ik.solver.bone1.transform == null ? null : rootTarget.transform.FindDeepChildLiberal(ik.solver.bone1.transform.name), weight = ik.solver.bone1.weight };
+                solver.bone2 = new IKSolverTrigonometric.TrigonometricBone() { transform = ik.solver.bone2.transform == null ? null : rootTarget.transform.FindDeepChildLiberal(ik.solver.bone2.transform.name), weight = ik.solver.bone2.weight };
+                solver.bone3 = new IKSolverTrigonometric.TrigonometricBone() { transform = ik.solver.bone3.transform == null ? null : rootTarget.transform.FindDeepChildLiberal(ik.solver.bone3.transform.name), weight = ik.solver.bone3.weight };
+
+                targetIK.solver = solver;
+            }
+        }
+#endif
     }
+
 }
 
 #endif

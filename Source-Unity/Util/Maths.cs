@@ -6,6 +6,8 @@ using System.Runtime.CompilerServices;
 using Unity.Mathematics;
 using UnityEngine;
 
+using Swole.DataStructures;
+
 namespace Swole
 {
 
@@ -767,8 +769,13 @@ namespace Swole
 
             quaternion midQFlipped = new quaternion(math.lerp(lastQ.value, flipped.value, 0.5f));
 
+#if UNITY_2022_OR_NEWER
             float angle = math.angle(lastQ, midQ);
             float angleFlipped = math.angle(lastQ, midQFlipped);
+#else
+            float angle = Quaternion.Angle(lastQ, midQ) * Mathf.Deg2Rad;
+            float angleFlipped = Quaternion.Angle(lastQ, midQFlipped) * Mathf.Deg2Rad;
+#endif
 
             return angleFlipped < angle ? flipped : q;
         }
@@ -1302,6 +1309,56 @@ namespace Swole
         }
 
         #endregion
+
+        public static Vector3 StoreValue(this Vector3 vec, float value, XYZChannel channels)
+        {
+            if (channels.HasFlag(XYZChannel.X)) vec.x = value;
+            if (channels.HasFlag(XYZChannel.Y)) vec.y = value;
+            if (channels.HasFlag(XYZChannel.Z)) vec.z = value;
+
+            return vec;
+        }
+
+        public static Vector4 StoreValue(this Vector4 vec, float value, XYZWChannel channels)
+        {
+            if (channels.HasFlag(XYZWChannel.X)) vec.x = value;
+            if (channels.HasFlag(XYZWChannel.Y)) vec.y = value;
+            if (channels.HasFlag(XYZWChannel.Z)) vec.z = value;
+            if (channels.HasFlag(XYZWChannel.W)) vec.w = value;
+
+            return vec;
+        }
+
+        public static Vector4 StoreValue(this Vector4 vec, float value, RGBAChannel channels)
+        {
+            if (channels.HasFlag(RGBAChannel.R)) vec.x = value;
+            if (channels.HasFlag(RGBAChannel.G)) vec.y = value;
+            if (channels.HasFlag(RGBAChannel.B)) vec.z = value;
+            if (channels.HasFlag(RGBAChannel.A)) vec.w = value;
+
+            return vec;
+        }
+
+        public static Color StoreValue(this Color col, float value, XYZWChannel channels)
+        {
+            if (channels.HasFlag(XYZWChannel.X)) col.r = value;
+            if (channels.HasFlag(XYZWChannel.Y)) col.g = value;
+            if (channels.HasFlag(XYZWChannel.Z)) col.b = value;
+            if (channels.HasFlag(XYZWChannel.W)) col.a = value;
+
+            return col;
+        }
+
+        public static Color StoreValue(this Color col, float value, RGBAChannel channels) 
+        {
+            if (channels.HasFlag(RGBAChannel.R)) col.r = value;
+            if (channels.HasFlag(RGBAChannel.G)) col.g = value;
+            if (channels.HasFlag(RGBAChannel.B)) col.b = value;
+            if (channels.HasFlag(RGBAChannel.A)) col.a = value;
+
+            return col;
+        }
+
     }
 
 }

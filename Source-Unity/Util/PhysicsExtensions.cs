@@ -239,7 +239,9 @@ namespace Swole
             var hits = rigidbody.SweepTestAll(direction, distance, queryTriggerInteraction);
             if (hits != null && hits.Length > 0)
             {
+#if UNITY_2022_OR_NEWER
                 layerMask = layerMask & ~rigidbody.excludeLayers;
+#endif
                 
                 foreach (var hit in hits)
                 {

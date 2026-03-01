@@ -14,7 +14,7 @@ namespace Swole.API.Unity
     /// <summary>
     /// Used by animations to control muscle flex values
     /// </summary>
-    public class MuscleFlexProxy : ControlProxy
+    public class MuscleFlexProxy : ControlProxy 
     {
 
         private static string[] _muscleGroupNames;
@@ -22,7 +22,7 @@ namespace Swole.API.Unity
         {
             get
             {
-                if (_muscleGroupNames == null) _muscleGroupNames = Enum.GetNames(typeof(MuscleGroupsDefault));
+                if (_muscleGroupNames == null) _muscleGroupNames = Enum.GetNames(typeof(MuscleGroupsDefault)); 
                 return _muscleGroupNames;
             }
         }
@@ -39,9 +39,9 @@ namespace Swole.API.Unity
 
         protected virtual void Initialize()
         {
-            if (Character != null)
+            if (MuscleManager != null)
             {
-                animator = character.GetComponentInChildren<CustomAnimator>();
+                animator = ((Behaviour)(character == null ? this : character)).GetComponentInChildren<CustomAnimator>();
                 if (animator != null)
                 {
                     if (animator.OnPostLateUpdate == null) animator.OnPostLateUpdate = new UnityEngine.Events.UnityEvent();
@@ -74,54 +74,65 @@ namespace Swole.API.Unity
         }
 
 
-        protected override bool IsReadyToBind => Character != null && Character.MuscleGroupCount > 0;
+        protected override bool IsReadyToBind => MuscleManager != null && MuscleManager.MuscleGroupCount > 0;
 
         [SerializeField]
         protected MuscularRenderedCharacter character;
-        public MuscularRenderedCharacter Character
+
+        protected IMuscularBasic muscleManager;
+        public IMuscularBasic MuscleManager
         {
             get
             {
-                if (character == null) character = gameObject.GetComponent<MuscularRenderedCharacter>();
-                return character; 
+                if (character != null) return character;
+
+                if (muscleManager == null) muscleManager = gameObject.GetComponent<IMuscularBasic>();
+
+                return muscleManager;
             }
         }
 
         protected void SetMassByProxy(float value, List<int> indices)
         {
-            if (indices == null || Character == null) return;
+            if (indices == null || MuscleManager == null) return;
+            var character = MuscleManager;
             foreach (var index in indices) character.SetMuscleGroupMassUnsafe(index, value);
         }
         protected float GetMassByProxy(List<int> indices)
         {
-            if (indices == null || indices.Count <= 0 || Character == null) return 0;
+            if (indices == null || indices.Count <= 0 || MuscleManager == null) return 0;
             float value = 0;
-            foreach (var index in indices) value += character.GetMuscleGroupMassUnsafe(index);
+            var character = MuscleManager;
+            foreach (var index in indices) value += character.GetMuscleGroupMassUnsafe(index); 
             return value / indices.Count;
         }
 
         protected void SetFlexByProxy(float value, List<int> indices)
         {
-            if (indices == null || Character == null) return;
+            if (indices == null || MuscleManager == null) return;
+            var character = MuscleManager;
             foreach (var index in indices) character.SetMuscleGroupFlexUnsafe(index, value);
         }
         protected float GetFlexByProxy(List<int> indices)
         {
-            if (indices == null || indices.Count <= 0 || Character == null) return 0;
+            if (indices == null || indices.Count <= 0 || MuscleManager == null) return 0;
             float value = 0;
+            var character = MuscleManager;
             foreach (var index in indices) value += character.GetMuscleGroupFlexUnsafe(index);
             return value / indices.Count;
         }
 
         protected void SetPumpByProxy(float value, List<int> indices)
         {
-            if (indices == null || Character == null) return;
+            if (indices == null || MuscleManager == null) return;
+            var character = MuscleManager;
             foreach (var index in indices) character.SetMuscleGroupPumpUnsafe(index, value);
         }
         protected float GetPumpByProxy(List<int> indices)
         {
-            if (indices == null || indices.Count <= 0 || Character == null) return 0;
+            if (indices == null || indices.Count <= 0 || MuscleManager == null) return 0;
             float value = 0;
+            var character = MuscleManager;
             foreach (var index in indices) value += character.GetMuscleGroupPumpUnsafe(index);
             return value / indices.Count;
         }
@@ -346,15 +357,17 @@ namespace Swole.API.Unity
 
         public override int FindBindingIndex(string binding)
         {
-            if (Character == null) return -1;
+            if (MuscleManager == null) return -1;
+
+            var character = MuscleManager;
             return character.FindMuscleGroup(binding); 
         }
 
         public override void Rebind()
         {
-            if (Character == null) 
+            if (MuscleManager == null) 
             {
-                swole.LogError($"[{nameof(MuscleFlexProxy)}] Failed to bind proxy '{name}' - No {nameof(MuscularRenderedCharacter)} instance set or found.");
+                swole.LogError($"[{nameof(MuscleFlexProxy)}] Failed to bind proxy '{name}' - No {nameof(IMuscularBasic)} instance set or found.");
                 return; 
             }
 
@@ -573,8 +586,8 @@ namespace Swole.API.Unity
                 */
 
                 // The lazy way
-                if (muscleGroupIndex == 0) muscleGroupIndex = proxy.character.GetMuscleGroupIndex(muscleGroup.ToString()) + 1;
-                return proxy.character.GetMuscleGroupMassUnsafe(muscleGroupIndex - 1) / mass;  
+                if (muscleGroupIndex == 0) muscleGroupIndex = proxy.MuscleManager.GetMuscleGroupIndex(muscleGroup.ToString()) + 1;
+                return proxy.MuscleManager.GetMuscleGroupMassUnsafe(muscleGroupIndex - 1) / mass;  
             }
         }
 

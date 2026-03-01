@@ -1532,7 +1532,7 @@ namespace Swole.API.Unity.Animation
             public bool IsUsingAsset => Asset != null; 
 
             private float m_length;
-            public float LengthInSeconds => (m_animation.timeCurve == null || m_animation.timeCurve.length <= 1 ? m_length : (m_length * m_animation.timeCurve[m_animation.timeCurve.length - 1].time));
+            public float LengthInSeconds => m_animation == null ? 0f : (m_animation.timeCurve == null || m_animation.timeCurve.length <= 1 ? m_length : (m_length * m_animation.timeCurve[m_animation.timeCurve.length - 1].time));
 
             public AnimationLoopMode loopMode = AnimationLoopMode.PlayOnce;
             public AnimationLoopMode LoopMode
@@ -3286,8 +3286,12 @@ namespace Swole.API.Unity.Animation
             } 
             else
             {
+#if UNITY_2022_OR_NEWER
                 finalCurve.ClearKeys();
-            }
+#else
+                finalCurve.keys = new Keyframe[0];
+#endif
+            } 
 
             if (heightAxis.x == 0f && heightAxis.y == 0f && heightAxis.z == 0f) heightAxis = Vector3.up;
 
@@ -3333,7 +3337,7 @@ namespace Swole.API.Unity.Animation
         }
         public bool TryGetBoneHeightCurve(Transform bone, out AnimationCurve heightCurve) => TryGetBoneHeightCurve(bone == null ? string.Empty : bone.name, out heightCurve);
 
-        #endregion
+#endregion
 
         public void Optimize(bool includeProperties = true, float propertyTolerance = 0.005f, bool includePosition = true, float positionTolerance = 0.005f, bool includeRotation = true, float rotationToleranceDeg = 1f, bool includeScale = true, float scaleTolerance = 0.005f, List<string> bonesToIgnore = null)
         {

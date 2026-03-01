@@ -8,7 +8,7 @@ using UnityEngine;
 using UnityEngine.Events;
 
 
-#if BULKOUT_ENV
+#if SWOLE_ROOTMOTION
 using RootMotion;
 using RootMotion.Dynamics;
 #endif
@@ -16,10 +16,10 @@ using RootMotion.Dynamics;
 namespace Swole.API.Unity.Animation
 { 
 
-#if BULKOUT_ENV
+#if SWOLE_ROOTMOTION
     public class SwolePuppetMaster : PuppetMaster, ISwolePuppetMaster
 #else
-    public class SwolePuppetMaster : Monobehaviour, ISwolePuppetMaster 
+    public class SwolePuppetMaster : MonoBehaviour, ISwolePuppetMaster 
 #endif
     {
 
@@ -34,12 +34,16 @@ namespace Swole.API.Unity.Animation
         }
         public void SetDefaultConfiguration(SwolePuppetMuscleConfiguration configuration)
         {
+#if SWOLE_ROOTMOTION
             defaultConfiguration = configuration.CacheMuscleIndices(this);
+#endif
         }
 
         public void ApplyDefaultConfiguration()
         {
+#if SWOLE_ROOTMOTION
             defaultConfiguration.ApplyUsingIndexCache(this);
+#endif
         }
 
         [NonSerialized]
@@ -47,6 +51,7 @@ namespace Swole.API.Unity.Animation
 
         public void ValidateCurrentConfiguration()
         {
+#if SWOLE_ROOTMOTION
             if (currentConfiguration.muscleStates == null || currentConfiguration.muscleStates.Length != muscles.Length)
             {
                 int prevSize = currentConfiguration.muscleStates == null ? 0 : currentConfiguration.muscleStates.Length;
@@ -63,6 +68,7 @@ namespace Swole.API.Unity.Animation
                     currentConfiguration.muscleStates[i] = state;
                 }
             }
+#endif
         }
 
         public SwolePuppetMuscleState GetMuscleState(int muscleIndex)
@@ -76,10 +82,12 @@ namespace Swole.API.Unity.Animation
 
             currentConfiguration.muscleStates[muscleIndex] = state;
 
+#if SWOLE_ROOTMOTION
             var muscle = muscles[muscleIndex];
             if (muscle == null) return;
 
             state.Apply(pinWeight, muscle);
+#endif
         }
 
         public struct MuscleConfigMix
@@ -89,6 +97,7 @@ namespace Swole.API.Unity.Animation
         }
         public void ApplyConfigurationMix(IEnumerable<MuscleConfigMix> configs)
         {
+#if SWOLE_ROOTMOTION
             if (muscles == null) return;
 
             ApplyDefaultConfiguration();
@@ -112,9 +121,11 @@ namespace Swole.API.Unity.Animation
                     }
                 }
             }
+#endif
         }
         public void ApplyConfigurationMix(ICollection<ICollection<MuscleConfigMix>> configCollections)
         {
+#if SWOLE_ROOTMOTION
             if (muscles == null) return;
 
             ApplyDefaultConfiguration();
@@ -143,6 +154,7 @@ namespace Swole.API.Unity.Animation
                     }
                 }
             }
+#endif
         }
          
         public struct MuscleConfigCollectionMix
@@ -152,6 +164,7 @@ namespace Swole.API.Unity.Animation
         }
         public void ApplyConfigurationMix(ICollection<MuscleConfigCollectionMix> configCollections)
         {
+#if SWOLE_ROOTMOTION
             if (muscles == null) return;
 
             ApplyDefaultConfiguration();
@@ -180,10 +193,12 @@ namespace Swole.API.Unity.Animation
                     }
                 }
             }
+#endif
         }
 
         public void ApplyConfigurationMix(ICollection<SwolePuppetMuscleConfiguration> configs)
         {
+#if SWOLE_ROOTMOTION
             if (muscles == null) return;
 
             ApplyDefaultConfiguration();
@@ -209,10 +224,12 @@ namespace Swole.API.Unity.Animation
                     }
                 }
             }
+#endif
         }
 
         public void ApplyConfigurationMix(SwolePuppetMuscleConfiguration configA, SwolePuppetMuscleConfiguration configB, float mix)
         {
+#if SWOLE_ROOTMOTION
             if (muscles == null) return;
 
             ApplyDefaultConfiguration();
@@ -232,6 +249,7 @@ namespace Swole.API.Unity.Animation
                     }
                 }
             }
+#endif
         }
         public void ApplyConfigurationMix(SwolePuppetMuscleConfiguration config, float mix)
         {
@@ -244,6 +262,7 @@ namespace Swole.API.Unity.Animation
 
             if (!config.IsValid) config = defaultConfiguration;
 
+#if SWOLE_ROOTMOTION
             if (additive)
             {
                 currentConfiguration.unbalancingSpeed = currentConfiguration.unbalancingSpeed + config.unbalancingSpeed * mix;
@@ -308,16 +327,21 @@ namespace Swole.API.Unity.Animation
                     state.Apply(pinWeight, muscle);
                 }
             }
+#endif
         }
 
         public int IndexOfMuscle(string muscleName)
         {
+#if SWOLE_ROOTMOTION
             if (muscles == null) return -1;
 
             for(int a = 0; a < muscles.Length; a++) if (muscles[a].name == muscleName) return a;
+#endif
 
             return -1;
         }
+
+#if SWOLE_ROOTMOTION
         public Muscle FindMuscle(string muscleName)
         {
             int ind = IndexOfMuscle(muscleName);
@@ -330,6 +354,7 @@ namespace Swole.API.Unity.Animation
             muscle = FindMuscle(muscleName);
             return muscle != null;
         }
+#endif
 
         [SerializeField]
         protected Transform muscleRoot;
@@ -337,14 +362,20 @@ namespace Swole.API.Unity.Animation
         {
             get
             {
+#if SWOLE_ROOTMOTION
                 if (muscleRoot == null) muscleRoot = targetRoot;
+#endif
                 return muscleRoot;
             }
         }
 
         public Transform RootTransform
         {
+#if SWOLE_ROOTMOTION
             get => targetRoot == null ? transform : targetRoot;
+#else
+            get => transform;
+#endif
         }
 
         public void BuildRagdoll(CharacterRagdoll ragdoll, string musclePrefix) => BuildRagdoll(ragdoll, null, musclePrefix);
@@ -364,7 +395,7 @@ namespace Swole.API.Unity.Animation
              
             ragdoll.BuildLocalWithMuscleRoot(out List<CharacterRagdoll.MuscleJoint> muscleJoints, muscleRoot, null, musclePrefix);
 
-#if BULKOUT_ENV
+#if SWOLE_ROOTMOTION
             List<Muscle> newMuscles = new List<Muscle>();
             List<PropMuscle> newPropMuscles = new List<PropMuscle>();
 
@@ -393,7 +424,7 @@ namespace Swole.API.Unity.Animation
         {
             ragdoll.RemoveComponentsWithMuscleRoot(muscleRoot, immediate, musclePrefix);
 
-#if BULKOUT_ENV
+#if SWOLE_ROOTMOTION
             muscles = null;
             propMuscles = null;
 #endif
@@ -401,21 +432,23 @@ namespace Swole.API.Unity.Animation
 
         public virtual void EnterTriggerMode()
         {
+#if SWOLE_ROOTMOTION
             for (int i = 0; i < muscles.Length; i++) 
             {
                 EnterTriggerModeUnsafe(i); 
             }
+#endif
         }
         public virtual void EnterTriggerMode(int muscleIndex)
         {
-#if BULKOUT_ENV
+#if SWOLE_ROOTMOTION
             if (muscleIndex < 0 || muscleIndex >= muscles.Length) return;
             EnterTriggerModeUnsafe(muscleIndex);
 #endif
         }
         public virtual void EnterTriggerModeUnsafe(int muscleIndex)
         {
-#if BULKOUT_ENV
+#if SWOLE_ROOTMOTION
             var muscle = muscles[muscleIndex];
             if (muscle.colliders != null)
             {
@@ -431,21 +464,23 @@ namespace Swole.API.Unity.Animation
 
         public virtual void ExitTriggerMode()
         {
+#if SWOLE_ROOTMOTION
             for (int i = 0; i < muscles.Length; i++)
             {
                 ExitTriggerModeUnsafe(i);  
             }
+#endif
         }
         public virtual void ExitTriggerMode(int muscleIndex)
         {
-#if BULKOUT_ENV
+#if SWOLE_ROOTMOTION
             if (muscleIndex < 0 || muscleIndex >= muscles.Length) return;  
             ExitTriggerModeUnsafe(muscleIndex);
 #endif
         }
         public virtual void ExitTriggerModeUnsafe(int muscleIndex)
         {
-#if BULKOUT_ENV
+#if SWOLE_ROOTMOTION
             var muscle = muscles[muscleIndex];
             if (muscle.colliders != null)
             {
@@ -459,7 +494,7 @@ namespace Swole.API.Unity.Animation
 #endif
         }
 
-#if BULKOUT_ENV
+#if SWOLE_ROOTMOTION
         protected override void Initiate()
         {
             base.Initiate();
@@ -479,18 +514,19 @@ namespace Swole.API.Unity.Animation
         }
 #endif
 
-#if BULKOUT_ENV
+#if SWOLE_ROOTMOTION
         protected override void Awake()
 #else
         protected virtual void Awake()
 #endif
         {
-#if BULKOUT_ENV
+#if SWOLE_ROOTMOTION
             base.Awake();
 #endif
 
             if (defaultConfigurationAsset == null)
             {
+#if SWOLE_ROOTMOTION
                 if (muscles != null)
                 {
                     defaultConfiguration = new SwolePuppetMuscleConfiguration();
@@ -533,24 +569,30 @@ namespace Swole.API.Unity.Animation
                         defaultConfiguration.muscleStates[i] = state;
                     }
                 }
-            } 
+#endif
+            }
             else
             {
-                SetDefaultConfiguration(defaultConfigurationAsset); 
+                SetDefaultConfiguration(defaultConfigurationAsset);
             }
 
             //SetOverrideUpdateCalls(OverrideUpdateCalls); // Force register to updater
             SwolePuppetMasterUpdater.Register(this);
         }
 
+#if SWOLE_ROOTMOTION
         public override void Start()
         {
             base.Start();
+#else
+        public virtual void Start()
+        {
+#endif
 
             if (defaultConfigurationAsset != null) ApplyDefaultConfiguration();
         }
 
-#if BULKOUT_ENV
+#if SWOLE_ROOTMOTION
         protected override void OnDestroy()
 #else
         protected virtual void OnDestroy()
@@ -558,7 +600,7 @@ namespace Swole.API.Unity.Animation
         {
             /*if (!OverrideUpdateCalls) */SwolePuppetMasterUpdater.Unregister(this);
 
-#if BULKOUT_ENV
+#if SWOLE_ROOTMOTION
             base.OnDestroy();
 #endif
         } 
@@ -571,9 +613,11 @@ namespace Swole.API.Unity.Animation
         {
             get
             {
+#if SWOLE_ROOTMOTION
                 // Protect from the Animator being replaced (UMA)
                 if (_swoleAnimator == null) _swoleAnimator = targetRoot.GetComponentInChildren<CustomAnimator>();
                 if (_swoleAnimator == null && targetRoot.parent != null) _swoleAnimator = targetRoot.parent.GetComponentInChildren<CustomAnimator>();
+#endif
                 return _swoleAnimator;
             }
             set
@@ -592,7 +636,7 @@ namespace Swole.API.Unity.Animation
             }
         }
 
-#if BULKOUT_ENV
+#if SWOLE_ROOTMOTION
         protected override void SetAnimationEnabled(bool to)
         {
             animatorDisabled = false;
@@ -779,14 +823,14 @@ namespace Swole.API.Unity.Animation
 
         public virtual void LateUpdateStep(float deltaTime)
         {
-#if BULKOUT_ENV
+#if SWOLE_ROOTMOTION
             base.LateUpdate();
 #endif
 
             PostLateUpdate?.Invoke(); 
         }
 
-#if BULKOUT_ENV
+#if SWOLE_ROOTMOTION
         protected override void FixedUpdate()
         {
         }
@@ -796,18 +840,20 @@ namespace Swole.API.Unity.Animation
 
         public virtual void FixedUpdateStep(float deltaTime)
         {
-#if BULKOUT_ENV
+#if SWOLE_ROOTMOTION
             base.FixedUpdate();
 #endif
 
             PostFixedUpdate?.Invoke();
+#if SWOLE_ROOTMOTION
             foreach (BehaviourBase b in behaviours) 
             {
                 if (b is ISwolePuppetBehaviour sb) sb.AfterFixedUpdate(Time.deltaTime); 
-            }           
+            }      
+#endif
         }
 
-#if BULKOUT_ENV
+#if SWOLE_ROOTMOTION
         protected override void Read()
         {
             base.Read();
@@ -1015,7 +1061,12 @@ namespace Swole.API.Unity.Animation
                 if (puppet.DisabledBySkip)
                 {
                 }
-                else if (puppet.isActiveAndEnabled) puppet.UpdateStep(deltaTime);
+                else if (puppet.isActiveAndEnabled)
+                {
+#if SWOLE_ROOTMOTION
+                    puppet.UpdateStep(deltaTime);
+#endif
+                }
             }
 
             foreach (var work in postUpdateWork) work?.Invoke();

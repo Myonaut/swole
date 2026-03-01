@@ -44,10 +44,12 @@ namespace Swole
                 outputTarget.width = blurTextureDescriptor.width;
                 outputTarget.height = blurTextureDescriptor.height; 
                 outputTarget.Create();
-            } 
+            }
 
+#if UNITY_2022_OR_NEWER
             // Check if the descriptor has changed, and reallocate the RTHandle if necessary
             RenderingUtils.ReAllocateIfNeeded(ref blurTextureHandle, blurTextureDescriptor);
+#endif
 
             base.Configure(cmd, cameraTextureDescriptor);
         }
@@ -57,18 +59,19 @@ namespace Swole
 
             if (material == null || !Application.isPlaying || blurTextureHandle == null) return;
 
-            CommandBuffer cmd = CommandBufferPool.Get("Gaussian Blur"); 
+            CommandBuffer cmd = CommandBufferPool.Get("Gaussian Blur");
 
             int gridSize = Mathf.Max(2, Mathf.CeilToInt(blurStrength * 6.0f));
 
             if (gridSize % 2 == 0)
             {
-               gridSize++;
+                gridSize++;
             }
 
             material.SetInteger("_GridSize", gridSize);
-            material.SetFloat("_Spread", blurStrength);   
+            material.SetFloat("_Spread", blurStrength);
 
+#if UNITY_2022_OR_NEWER
             RTHandle cameraTargetHandle = renderingData.cameraData.renderer.cameraColorTargetHandle;
 
             if (cameraTargetHandle != null)
@@ -87,6 +90,7 @@ namespace Swole
 
                 context.ExecuteCommandBuffer(cmd);
             }
+#endif
 
             cmd.Clear();
             CommandBufferPool.Release(cmd);

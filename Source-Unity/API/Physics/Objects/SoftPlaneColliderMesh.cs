@@ -416,8 +416,10 @@ namespace Swole.API.Unity
                 objRB.useGravity = false;
                 objRB.isKinematic = false;
                 objRB.collisionDetectionMode = collisionDetectionMode;
+#if UNITY_2022_OR_NEWER
                 objRB.automaticCenterOfMass = false;
                 objRB.automaticInertiaTensor = false;
+#endif
                 
                 objRB.drag = drag; 
                 objRB.angularDrag = 1f;

@@ -673,7 +673,12 @@ namespace Swole.API.Unity
         {
             if (unityCurve == null) return;
 
+#if UNITY_2022_OR_NEWER
             unityCurve.ClearKeys();
+#else
+            unityCurve.keys = new Keyframe[0];
+#endif
+
         }
 
         public void Scale(float scale)

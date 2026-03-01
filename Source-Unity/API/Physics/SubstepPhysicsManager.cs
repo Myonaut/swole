@@ -70,7 +70,11 @@ namespace Swole.API.Unity
         {
             base.OnAwake();
 
+#if UNITY_2022_OR_NEWER
             if (forceSetSimulationMode) Physics.simulationMode = SimulationMode.Script; 
+#else
+            if (forceSetSimulationMode) Physics.autoSimulation = false; 
+#endif
         }
 
         public bool applyFinalCatchUpStep = true;
