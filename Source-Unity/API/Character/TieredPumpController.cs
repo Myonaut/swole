@@ -7,6 +7,7 @@ namespace Swole.API.Unity
     public class TieredPumpController : MonoBehaviour
     {
         public MuscularRenderedCharacter character;
+        private IMuscularBasic muscleManager;
 
         public float level1Threshold = 0.2f;
         public float level2Threshold = 0.4f;
@@ -22,6 +23,7 @@ namespace Swole.API.Unity
         public float[] pumpLevels;
 
         protected bool initialized;
+        public bool IsInitialized => initialized;
         public void Initialize()
         {
             if (initialized) return;
@@ -29,13 +31,22 @@ namespace Swole.API.Unity
             initialized = true;
 
             if (character == null) character = GetComponent<MuscularRenderedCharacter>();
-            if (character == null)
+            if (character != null)
+            {
+                muscleManager = character;
+            } 
+            else
+            {
+                muscleManager = GetComponent<IMuscularBasic>();
+            }
+
+            if (muscleManager == null)
             {
                 GameObject.Destroy(this);
                 return;
             }
 
-            pumpLevels = new float[character.MuscleGroupCount];
+            pumpLevels = new float[muscleManager.MuscleGroupCount];
         }
         protected virtual void Start()
         {
@@ -43,10 +54,10 @@ namespace Swole.API.Unity
         }
         protected virtual void LateUpdate()
         {
-            if (pumpLevels == null || character == null) return;
+            if (pumpLevels == null || muscleManager == null) return; 
 
-            float decayRate = 0;
-            if (pumpDecayDelay > 0)
+            float decayRate = 0f;
+            if (pumpDecayDelay > 0f)
             {
                 pumpDecayDelay -= Time.deltaTime;
             }
@@ -62,12 +73,12 @@ namespace Swole.API.Unity
                 pumpLevels[a] = pump;
                 
                 float tieredPump = pump < level1Threshold ? 0 : (pump < level2Threshold ? level1Threshold : (pump < level3Threshold ? level2Threshold : level3Threshold));
-                float visualPump = character.GetMuscleGroupPumpUnsafe(a);
+                float visualPump = muscleManager.GetMuscleGroupPumpUnsafe(a);
                 if (visualPump != tieredPump) 
                 {
                     visualPump = Mathf.LerpUnclamped(visualPump, tieredPump, Mathf.Min(1, Time.deltaTime * pumpGainRate));
-                    character.SetMuscleGroupPumpUnsafe(a, visualPump, false, false);
-                    character.UpdateMuscleGroupMaterialPropertiesUnsafe(a);
+                    muscleManager.SetMuscleGroupPumpUnsafe(a, visualPump, false, false);
+                    if (muscleManager is MuscularRenderedCharacter mrc) mrc.UpdateMuscleGroupMaterialPropertiesUnsafe(a);
                 }
             }
         }

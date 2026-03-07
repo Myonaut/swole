@@ -818,7 +818,7 @@ namespace Swole.Morphing
 
                 output.baseMeshVertices = (Vector3[])baseMeshVertices.Clone();
                 output.baseMeshNormals = (Vector3[])baseMeshNormals.Clone();
-                output.baseMeshTangents = (Vector4[])baseMeshTangents.Clone();
+                output.baseMeshTangents = (Vector4[])baseMeshTangents.Clone(); 
 
                 foreach (var shapeTarget in shapes)
                 {
@@ -891,6 +891,8 @@ namespace Swole.Morphing
             public bool transferBlendShapes;
             public bool preserveExistingBlendShapeData;
 
+            public NameFloat[] shapesToApplyBeforeTransfer;
+
             public TransferSurfaceDataBase baseDataMain;
             public TransferSurfaceDataBase[] baseDatas;
 
@@ -923,9 +925,9 @@ namespace Swole.Morphing
             public int BaseDataCount => baseDatas == null ? 1 : (1 + baseDatas.Length);
             public TransferSurfaceDataBase GetBaseData(int index)
             {
-                if (baseDatas == null || baseDatas.Length <= 0 || index <= 0 || index >= baseDatas.Length) return baseDataMain;
+                if (baseDatas == null || baseDatas.Length <= 0 || index <= 0 || index >= BaseDataCount) return baseDataMain; 
 
-                return baseDatas[index - 1];
+                return baseDatas[index - 1]; 
             }
 
             public TransferSurfaceDataSettings ApplyBlendShapesToBaseData(IEnumerable<NameFloat> shapes)
@@ -1048,6 +1050,20 @@ namespace Swole.Morphing
                 List<BlendShape> blendShapes = mesh.GetBlendShapes();
                 foreach (var shape in blendShapes) originalBlendShapes.Add(shape.name);
 
+                bool TryGetOriginalBlendShape(string name, out BlendShape blendShape)
+                {
+                    blendShape = null;
+                    foreach (var shape in blendShapes)
+                    {
+                        if (shape.name == name)
+                        {
+                            blendShape = shape;
+                            return true;
+                        }
+                    }
+                    return false;
+                }
+
                 bool IsOriginalBlendShape(string name)
                 {
                     foreach (var shapeName in originalBlendShapes) if (shapeName == name) return true;
@@ -1082,6 +1098,18 @@ namespace Swole.Morphing
                 Vector3[] localVertices = mesh.vertices;
                 Vector2[] localTransferUVs = settings.useUVsForBaseDataTransfers ? mesh.GetUVsByChannel(settings.localUV_transferChannel) : null;
                 Vector3[] localNormals = mesh.normals;
+                Vector4[] localTangents = mesh.tangents;
+
+                if (settings.shapesToApplyBeforeTransfer != null && settings.shapesToApplyBeforeTransfer.Length > 0)
+                {
+                    foreach (var shapeTarget in settings.shapesToApplyBeforeTransfer)
+                    {
+                        if (TryGetOriginalBlendShape(shapeTarget.name, out var blendShape))
+                        {
+                            blendShape.GetTransformedData(localVertices, localNormals, localTangents, shapeTarget.value, out localVertices, out localNormals, out localTangents, false); 
+                        }
+                    }
+                }
 
                 List<Vector4[]> localUVs = null;
                 bool[] initialUVDataStates = null;
@@ -1407,6 +1435,15 @@ namespace Swole.Morphing
                         perShapeVertexInfos[shape] = CalculateVertexInfo(shape);
                     }
 
+                    // DEBUG
+                    /*if (defaultVertexInfo.closestIndex0 >= 0)
+                    {
+                        var debug_baseData = settings.GetBaseData(defaultVertexInfo.closestBaseIndex); 
+                        var debug_surfaceVertex = debug_baseData.baseMeshVertices[defaultVertexInfo.closestIndex0];
+                        Debug.DrawLine(localVertex, debug_surfaceVertex, Color.red, 1000f);
+                    }*/
+                    //
+
                     if (defaultVertexInfo.closestBaseIndex >= 0 && defaultVertexInfo.closestIndex0 >= 0 && defaultVertexInfo.closestIndex1 >= 0 && defaultVertexInfo.closestIndex2 >= 0)
                     {
                         var defaultBaseData = settings.GetBaseData(defaultVertexInfo.closestBaseIndex);
@@ -1441,7 +1478,7 @@ namespace Swole.Morphing
                         {
                             foreach (var entry in perShapeVertexInfos)
                             {
-                                if (!perShapeVertexTransferDataArrays.TryGetValue(entry.Key, out var transferDataArray))
+                                if (!perShapeVertexTransferDataArrays.TryGetValue(entry.Key, out var transferDataArray)) 
                                 {
                                     transferDataArray = new SurfaceDataTransferVertex[localMesh.vertexCount];
                                     perShapeVertexTransferDataArrays[entry.Key] = transferDataArray;
@@ -1924,7 +1961,7 @@ namespace Swole.Morphing
                     mesh.SetBoneWeights(bonesPerVertex, boneWeights.AsArray());
 
                     boneWeights.Dispose();
-                    bonesPerVertex.Dispose();
+                    bonesPerVertex.Dispose(); 
                 }
 
                 return mesh;
@@ -2683,6 +2720,45 @@ namespace Swole.Morphing
             return meshShape;
         }
 
+        [NonSerialized]
+        private BlendShape blendShape;
+        public BlendShape BlendShape
+        {
+            get
+            {
+                if (blendShape == null)
+                {
+                    blendShape = new BlendShape(name);
+                    if (frames != null)
+                    {
+                        int vertexCount = frames.Length < 1 ? 0 : (frames[0].deltas == null ? 0 : frames[0].deltas.Length); 
+                        foreach (var f in frames)
+                        {
+                            Vector3[] deltaVertices = new Vector3[vertexCount];
+                            Vector3[] deltaNormals = new Vector3[vertexCount];
+                            Vector3[] deltaTangents = new Vector3[vertexCount];
+
+                            if (f.deltas != null)
+                            {
+                                for(int i = 0; i < Mathf.Min(vertexCount, f.deltas.Length); i++)
+                                {
+                                    var delta = f.deltas[i];
+
+                                    deltaVertices[i] = delta.deltaVertex;
+                                    deltaNormals[i] = delta.deltaNormal;
+                                    deltaTangents[i] = delta.deltaTangent;
+                                }
+                            }
+
+                            blendShape.AddFrame(f.weight, deltaVertices, deltaNormals, deltaTangents);
+                        }
+                    }
+                }
+
+                return blendShape;
+            }
+        }
+
     }
     [Serializable, NonAnimatable]
     public struct MeshShapeFrame
@@ -2732,6 +2808,12 @@ namespace Swole.Morphing
         public float weight;
     }
     [Serializable, NonAnimatable]
+    public struct IdToMesh
+    {
+        public string[] ids;
+        public Mesh mesh;
+    }
+    [Serializable, NonAnimatable]
     public struct BlendShapeTarget
     {
         public string newName;
@@ -2767,6 +2849,10 @@ namespace Swole.Morphing
         public BlendShapeBaseMix[] copyNormalsTangentsShapeMix;
 
         public Mesh meshToCopyNormalsFrom;
+        public IdToMesh[] meshToCopyNormalsFromPerID;
+        [Tooltip("Should the ids in the mesh copy ids array be used as the only ids that receive the copy? If not, the ids in the array are treated as exclusive.")]
+        public bool meshCopyIdsArrayIsInclusive;
+        public string[] meshCopyIds;
 
         [Tooltip("Ids of meshes or mesh groups that will recalculate the normals and tangents for this shape when it's fetched")]
         public string[] idsToRecalculateNormalsAndTangents;
@@ -2834,6 +2920,7 @@ namespace Swole.Morphing
                 {
                     if (id == queryId || id == mesh.name)
                     {
+                        Debug.Log($"RECALCULATING NORMALS & TANGENTS FOR SHAPE {shape.name} ({id} == ({queryId}) or ({mesh.name}))");  
                         recalculateNorms = true;
                         recalculateTans = true;
                         break;
@@ -2919,41 +3006,81 @@ namespace Swole.Morphing
                 }
             }
 
-            if (meshToCopyNormalsFrom != null)
+            if (meshToCopyNormalsFrom != null || (meshToCopyNormalsFromPerID != null && meshToCopyNormalsFromPerID.Length > 0))
             {
-
-                if (triangles == null || triangles.Length <= 0) triangles = mesh.triangles;
-                if (nearVertexUVs == null || nearVertexUVs.Length <= 0) nearVertexUVs = mesh.GetUVsByChannel(nearVertexUVchannel);
-
-                var targetTriangles = meshToCopyNormalsFrom.triangles;
-                var targetNearVertexUVs = meshToCopyNormalsFrom.GetUVsByChannel(nearVertexUVchannel);
-                var targetNormals = meshToCopyNormalsFrom.normals;
-                var targetVertices = meshToCopyNormalsFrom.vertices;
-
-                if (triangles != null && nearVertexUVs != null && targetTriangles != null && targetTriangles.Length > 0 && targetNearVertexUVs != null && targetNearVertexUVs.Length > 0 && targetNormals != null && targetNormals.Length > 0)
-                { 
-                    //for (int z = 0; z < nearVertexUVs.Length; z++) Debug.DrawRay(nearVertexUVs[z] + Vector2.right * 2f, Vector3.up * 0.1f, Color.blue, 100f); 
-                    //for (int z = 0; z < targetNearVertexUVs.Length; z++) Debug.DrawRay(targetNearVertexUVs[z] - Vector2.right * 2f, Vector3.up * 0.1f, Color.cyan, 100f);  
-
-                    var closestIndices = MeshDataTools.FindClosestVerticesUV(nearVertexUVs, targetNearVertexUVs, triangles, targetTriangles, null);
-                    if (normals == null) normals = mesh.normals;
-                    Vector3[] transferredNormals = (Vector3[])normals.Clone();
-                    for (int i = 0; i < closestIndices.Length; i++) 
-                    { 
-                        transferredNormals[i] = targetNormals[closestIndices[i]];
-                        //Debug.DrawLine(vertices[i], targetVertices[closestIndices[i]], Color.red, 60f); 
-                    }
-
-                    for (int a = 0; a < shape.frames.Length; a++)
+                bool include = meshCopyIds == null || meshCopyIds.Length <= 0 || !meshCopyIdsArrayIsInclusive;
+                if (meshCopyIds != null && meshCopyIds.Length > 0)
+                {
+                    foreach(var id in meshCopyIds)
                     {
-                        var frame = shape.frames[a];
-
-                        for (int b = 0; b < mesh.vertexCount; b++)
+                        if (id == queryId || id == mesh.name)
                         {
-                            frame.deltaNormals[b] = transferredNormals[b] - normals[b]; 
+                            include = meshCopyIdsArrayIsInclusive;
+                            break;
                         }
                     }
-                }  
+                }
+
+                if (include)
+                {
+                    var meshToCopyNormalsFrom_ = meshToCopyNormalsFrom;
+                    if (meshToCopyNormalsFromPerID != null && meshToCopyNormalsFromPerID.Length > 0)
+                    {
+                        foreach (var copyMesh in meshToCopyNormalsFromPerID)
+                        {
+                            if (copyMesh.ids == null) continue;
+
+                            bool flag = false;
+                            foreach (var id in copyMesh.ids)
+                            {
+                                if (id == queryId || id == mesh.name)
+                                {
+                                    meshToCopyNormalsFrom_ = copyMesh.mesh;
+                                    flag = true;
+                                    break;
+                                }
+                            }
+
+                            if (flag) break; 
+                        }
+                    }
+
+                    if (meshToCopyNormalsFrom_ != null)
+                    {
+                        if (triangles == null || triangles.Length <= 0) triangles = mesh.triangles;
+                        if (nearVertexUVs == null || nearVertexUVs.Length <= 0) nearVertexUVs = mesh.GetUVsByChannel(nearVertexUVchannel);
+
+                        var targetTriangles = meshToCopyNormalsFrom_.triangles;
+                        var targetNearVertexUVs = meshToCopyNormalsFrom_.GetUVsByChannel(nearVertexUVchannel);
+                        var targetNormals = meshToCopyNormalsFrom_.normals;
+                        var targetVertices = meshToCopyNormalsFrom_.vertices;
+
+                        if (triangles != null && nearVertexUVs != null && targetTriangles != null && targetTriangles.Length > 0 && targetNearVertexUVs != null && targetNearVertexUVs.Length > 0 && targetNormals != null && targetNormals.Length > 0)
+                        {
+                            //for (int z = 0; z < nearVertexUVs.Length; z++) Debug.DrawRay(nearVertexUVs[z] + Vector2.right * 2f, Vector3.up * 0.1f, Color.blue, 100f); 
+                            //for (int z = 0; z < targetNearVertexUVs.Length; z++) Debug.DrawRay(targetNearVertexUVs[z] - Vector2.right * 2f, Vector3.up * 0.1f, Color.cyan, 100f);  
+
+                            var closestIndices = MeshDataTools.FindClosestVerticesUV(nearVertexUVs, targetNearVertexUVs, triangles, targetTriangles, null);
+                            if (normals == null) normals = mesh.normals;
+                            Vector3[] transferredNormals = (Vector3[])normals.Clone();
+                            for (int i = 0; i < closestIndices.Length; i++)
+                            {
+                                transferredNormals[i] = targetNormals[closestIndices[i]];
+                                //Debug.DrawLine(vertices[i], targetVertices[closestIndices[i]], Color.red, 60f); 
+                            }
+
+                            for (int a = 0; a < shape.frames.Length; a++)
+                            {
+                                var frame = shape.frames[a];
+
+                                for (int b = 0; b < mesh.vertexCount; b++)
+                                {
+                                    frame.deltaNormals[b] = transferredNormals[b] - normals[b];
+                                }
+                            }
+                        }
+                    }
+                }
             }
 
             if ((copyNormals || copyTangents) && copyNormalsTangentsShapeMix != null && copyNormalsTangentsShapeMix.Length > 0)
@@ -3260,6 +3387,13 @@ namespace Swole.Morphing
     {
         public string name;
         public float value;
+    }
+
+    [Serializable]
+    public struct NameProperty
+    {
+        public string name;
+        public string property;
     }
 
     [Serializable]

@@ -6,11 +6,13 @@ using System.Collections.Generic;
 using System.Runtime.InteropServices;
 
 using Unity.Mathematics;
+using Unity.Collections;
 
 using UnityEngine;
 using UnityEngine.Events;
 
 using Swole.API.Unity.Animation;
+using Swole.DataStructures;
 
 namespace Swole.API.Unity
 {
@@ -120,6 +122,26 @@ namespace Swole.API.Unity
 
         public Matrix4x4[] BindPose { get; }
 
+
+        public bool TryGetVertices(int lod, out NativeArray<float3> array);
+        public bool TryGetColors(int lod, out NativeArray<float4> array);
+        public bool TryGetTriangles(int lod, out NativeArray<int> array);
+        public bool TryGetBoneWeights(int lod, out NativeArray<BoneWeight8> array);
+
+        public bool TryGetUV0(int lod, out NativeArray<float4> array);
+        public bool TryGetUV1(int lod, out NativeArray<float4> array);
+        public bool TryGetUV2(int lod, out NativeArray<float4> array);
+        public bool TryGetUV3(int lod, out NativeArray<float4> array);
+        public bool TryGetUV(int lod, UVChannelURP channel, out NativeArray<float4> array);
+
+        public float3 GetVertexInWorld(int lod, int vertexIndex);
+        public float3 GetNormalInWorld(int lod, int vertexIndex);
+        public float4 GetTangentInWorld(int lod, int vertexIndex);
+        public void GetVertexInWorld(int lod, int vertexIndex, out float3 pos, out float3 normal, out float4 tangent);
+
+        public List<float3> GetMuscleGroupsAffecting(int lod, int vertexIndex, List<float3> list = null);
+        public List<float3> GetFatGroupsAffecting(int lod, int vertexIndex, List<float3> list = null);
+        public List<float3> GetVariationGroupsAffecting(int lod, int vertexIndex, List<float3> list = null);
 
         public int IndexOfVertexGroup(string groupName, bool caseSensitive = false);
         public VertexGroup GetVertexGroup(int index);
@@ -316,7 +338,13 @@ namespace Swole.API.Unity
 
             public const string _vertexColorDeltasDefaultPropertyName = "_VertexColorDeltas";
 
-            public const string _minMassShapeWeightDefaultPropertyName = "_MinMassShapeWeight";  
+            public const string _minMassShapeWeightDefaultPropertyName = "_MinMassShapeWeight";
+
+            public const string _flexEndPointWeightDefaultPropertyName = "_FlexEndPointWeight";
+            public const string _flexExponentDefaultPropertyName = "_FlexEXP";
+
+            public const string _flexNerfThresholdDefaultPropertyName = "_FlexNerfThreshold";
+            public const string _flexNerfExponentDefaultPropertyName = "_FlexNerfExponent";
 
             public static float2 _defaultFatGroupModifier => new float2(1f, 0f);
 
@@ -355,6 +383,96 @@ namespace Swole.API.Unity
 
         public static bool operator ==(MuscleData dat1, MuscleData dat2) => dat1.Equals(dat2);
         public static bool operator !=(MuscleData dat1, MuscleData dat2) => !dat1.Equals(dat2);
+
+        public static MuscleData operator *(MuscleData dat1, MuscleData dat2)
+        {
+            var val = dat1;
+
+            val.mass = dat1.mass * dat2.mass;
+            val.flex = dat1.flex * dat2.flex;
+            val.pump = dat1.pump * dat2.pump;
+            val.varicose = dat1.varicose * dat2.varicose;
+
+            return val;
+        }
+        public static MuscleData operator /(MuscleData dat1, MuscleData dat2)
+        {
+            var val = dat1;
+
+            val.mass = dat1.mass / dat2.mass;
+            val.flex = dat1.flex / dat2.flex;
+            val.pump = dat1.pump / dat2.pump;
+            val.varicose = dat1.varicose / dat2.varicose;
+
+            return val;
+        }
+        public static MuscleData operator +(MuscleData dat1, MuscleData dat2)
+        {
+            var val = dat1;
+
+            val.mass = dat1.mass + dat2.mass;
+            val.flex = dat1.flex + dat2.flex;
+            val.pump = dat1.pump + dat2.pump;
+            val.varicose = dat1.varicose + dat2.varicose;
+
+            return val;
+        }
+        public static MuscleData operator -(MuscleData dat1, MuscleData dat2)
+        {
+            var val = dat1;
+
+            val.mass = dat1.mass - dat2.mass;
+            val.flex = dat1.flex - dat2.flex;
+            val.pump = dat1.pump - dat2.pump;
+            val.varicose = dat1.varicose - dat2.varicose;
+
+            return val;
+        }
+
+        public static MuscleData operator *(MuscleData dat1, float dat2)
+        {
+            var val = dat1;
+
+            val.mass = dat1.mass * dat2;
+            val.flex = dat1.flex * dat2;
+            val.pump = dat1.pump * dat2;
+            val.varicose = dat1.varicose * dat2;
+
+            return val;
+        }
+        public static MuscleData operator /(MuscleData dat1, float dat2)
+        {
+            var val = dat1;
+
+            val.mass = dat1.mass / dat2;
+            val.flex = dat1.flex / dat2;
+            val.pump = dat1.pump / dat2;
+            val.varicose = dat1.varicose / dat2;
+
+            return val;
+        }
+        public static MuscleData operator +(MuscleData dat1, float dat2)
+        {
+            var val = dat1;
+
+            val.mass = dat1.mass + dat2;
+            val.flex = dat1.flex + dat2;
+            val.pump = dat1.pump + dat2;
+            val.varicose = dat1.varicose + dat2;
+
+            return val;
+        }
+        public static MuscleData operator -(MuscleData dat1, float dat2)
+        {
+            var val = dat1;
+
+            val.mass = dat1.mass - dat2;
+            val.flex = dat1.flex - dat2;
+            val.pump = dat1.pump - dat2;
+            val.varicose = dat1.varicose - dat2;
+
+            return val;
+        }
     }
 
     [Serializable, StructLayout(LayoutKind.Sequential)]
@@ -377,6 +495,80 @@ namespace Swole.API.Unity
 
         public static bool operator ==(MuscleDataLR dat1, MuscleDataLR dat2) => dat1.Equals(dat2);
         public static bool operator !=(MuscleDataLR dat1, MuscleDataLR dat2) => !dat1.Equals(dat2);
+
+        public static MuscleDataLR operator *(MuscleDataLR dat1, MuscleDataLR dat2)
+        {
+            var val = dat1;
+
+            val.valuesLeft = dat1.valuesLeft * dat2.valuesLeft;
+            val.valuesRight = dat1.valuesRight * dat2.valuesRight;
+
+            return val;
+        }
+        public static MuscleDataLR operator /(MuscleDataLR dat1, MuscleDataLR dat2)
+        {
+            var val = dat1;
+
+            val.valuesLeft = dat1.valuesLeft / dat2.valuesLeft;
+            val.valuesRight = dat1.valuesRight / dat2.valuesRight;
+
+            return val;
+        }
+        public static MuscleDataLR operator +(MuscleDataLR dat1, MuscleDataLR dat2)
+        {
+            var val = dat1;
+
+            val.valuesLeft = dat1.valuesLeft + dat2.valuesLeft;
+            val.valuesRight = dat1.valuesRight + dat2.valuesRight;
+
+            return val;
+        }
+        public static MuscleDataLR operator -(MuscleDataLR dat1, MuscleDataLR dat2)
+        {
+            var val = dat1;
+
+            val.valuesLeft = dat1.valuesLeft - dat2.valuesLeft;
+            val.valuesRight = dat1.valuesRight - dat2.valuesRight;
+
+            return val;
+        }
+
+        public static MuscleDataLR operator *(MuscleDataLR dat1, float dat2)
+        {
+            var val = dat1;
+
+            val.valuesLeft = dat1.valuesLeft * dat2;
+            val.valuesRight = dat1.valuesRight * dat2;
+
+            return val;
+        }
+        public static MuscleDataLR operator /(MuscleDataLR dat1, float dat2)
+        {
+            var val = dat1;
+
+            val.valuesLeft = dat1.valuesLeft / dat2;
+            val.valuesRight = dat1.valuesRight / dat2;
+
+            return val;
+        }
+        public static MuscleDataLR operator +(MuscleDataLR dat1, float dat2)
+        {
+            var val = dat1;
+
+            val.valuesLeft = dat1.valuesLeft + dat2;
+            val.valuesRight = dat1.valuesRight + dat2;
+
+            return val;
+        }
+        public static MuscleDataLR operator -(MuscleDataLR dat1, float dat2)
+        {
+            var val = dat1;
+
+            val.valuesLeft = dat1.valuesLeft - dat2;
+            val.valuesRight = dat1.valuesRight - dat2;
+
+            return val;
+        }
     }
 
 }

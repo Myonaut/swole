@@ -6,6 +6,10 @@ using System.Collections.Generic;
 
 using UnityEngine;
 
+using Unity.Mathematics;
+using Unity.Collections;
+using Swole.DataStructures;
+
 using static Swole.API.Unity.ICustomizableCharacter.Defaults;
 
 namespace Swole.Morphing
@@ -110,6 +114,18 @@ namespace Swole.Morphing
 
         public int FatGroupsCount => serializedData.FatGroupsCount;
         public int FatVertexGroupCount => FatGroupsCount;
+
+
+        public bool TryGetVertices(int lod, out NativeArray<float3> array) => serializedData.TryGetVertices(lod, out array);
+        public bool TryGetColors(int lod, out NativeArray<float4> array) => serializedData.TryGetColors(lod, out array);
+        public bool TryGetTriangles(int lod, out NativeArray<int> array) => serializedData.TryGetTriangles(lod, out array);
+        public bool TryGetBoneWeights(int lod, out NativeArray<BoneWeight8> array) => serializedData.TryGetBoneWeights(lod, out array);
+
+        public bool TryGetUV0(int lod, out NativeArray<float4> array) => serializedData.TryGetUV0(lod, out array);
+        public bool TryGetUV1(int lod, out NativeArray<float4> array) => serializedData.TryGetUV1(lod, out array);
+        public bool TryGetUV2(int lod, out NativeArray<float4> array) => serializedData.TryGetUV2(lod, out array);
+        public bool TryGetUV3(int lod, out NativeArray<float4> array) => serializedData.TryGetUV3(lod, out array);
+        public bool TryGetUV(int lod, UVChannelURP channel, out NativeArray<float4> array) => serializedData.TryGetUV(lod, channel, out array);
 
     }
 }

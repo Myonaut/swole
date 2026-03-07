@@ -167,6 +167,28 @@ namespace Swole.Morphing
             return -1;
         }
 
+        public int GetMuscleGroupIndexForArray(string muscleGroupName)
+        {
+            var main = First;
+            if (main != null)
+            {
+                return main.GetMuscleGroupIndexForArray(muscleGroupName);
+            }
+
+            return -1;
+        }
+
+        public int GetMuscleGroupIndexForArray(MuscleGroupIdentifier identifier)
+        {
+            var main = First;
+            if (main != null)
+            {
+                return main.GetMuscleGroupIndexForArray(identifier);
+            }
+
+            return -1;
+        }
+
         public int FindMuscleGroup(string muscleGroupName)
         {
             var main = First;
@@ -370,7 +392,7 @@ namespace Swole.Morphing
             var main = First;
             if (main != null)
             {
-                main.SetGlobalMuscleValues(values);
+                main.SetGlobalMuscleValues(values); 
             }
         }
 
@@ -388,7 +410,7 @@ namespace Swole.Morphing
             var main = First;
             if (main != null)
             {
-                main.SetGlobalMass(flex);
+                main.SetGlobalFlex(flex);
             }
         }
 
@@ -397,7 +419,7 @@ namespace Swole.Morphing
             var main = First;
             if (main != null)
             {
-                main.SetGlobalMass(pump);
+                main.SetGlobalPump(pump);
             }
         }
 

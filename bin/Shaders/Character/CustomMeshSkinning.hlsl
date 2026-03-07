@@ -34,6 +34,20 @@ void ApplySingleFrameShapeWithMultiplier_float(int shapeBaseIndex, float weight,
 	outTangent = inTangent;
 }
 
+void ApplyShapeDelta_float(int indexInBuffer, float weight, float3 inPosition, float3 inNormal, float3 inTangent, out float3 outPosition, out float3 outNormal, out float3 outTangent) 
+{
+	outPosition = inPosition;
+	outNormal = inNormal;
+	outTangent = inTangent;
+}
+
+void ApplyMultiShape_float(int shapeBaseIndex, float weight, float multiplier, int vertexIndex, int vertexCount, float3 inPosition, float3 inNormal, float3 inTangent, out float3 outPosition, out float3 outNormal, out float3 outTangent) 
+{
+	outPosition = inPosition;
+	outNormal = inNormal;
+	outTangent = inTangent;
+}
+
 #endif
 
 #ifndef SHADERGRAPH_PREVIEW
@@ -74,13 +88,13 @@ StructuredBuffer<float> _ControlStandaloneShapes;
 //#else
 //#endif
 
-void SkinNoShapes_float(int instanceID, int vertexIndex, float3 inPosition, float3 inNormal, float3 inTangent, out float3 outPosition, out float3 outNormal, out float3 outTangent)
+void SkinNoShapesOutMatrix_float(int instanceID, int vertexIndex, float3 inPosition, float3 inNormal, float3 inTangent, out float3 outPosition, out float3 outNormal, out float3 outTangent, out float4x4 blendedMatrix)
 {
 
 	SkinInfluence si = _SkinBindings[vertexIndex];
 	
 	const int boneIndexOffset = instanceID * _BoneCount;
-	const float4x4 blendedMatrix = 
+	blendedMatrix = 
 	_SkinningMatrices[boneIndexOffset + int(si.indicesA.x)] * si.weightsA.x 
 	+ _SkinningMatrices[boneIndexOffset + int(si.indicesA.y)] * si.weightsA.y 
 	+ _SkinningMatrices[boneIndexOffset + int(si.indicesA.z)] * si.weightsA.z  
@@ -99,6 +113,11 @@ void SkinNoShapes_float(int instanceID, int vertexIndex, float3 inPosition, floa
 	//outNormal = inNormal;
 	//outTangent = inTangent;
 
+}
+void SkinNoShapes_float(int instanceID, int vertexIndex, float3 inPosition, float3 inNormal, float3 inTangent, out float3 outPosition, out float3 outNormal, out float3 outTangent) 
+{
+	float4x4 _discard;
+	SkinNoShapesOutMatrix_float(instanceID, vertexIndex, inPosition, inNormal, inTangent, outPosition, outNormal, outTangent, _discard);
 }
 
 void ApplyShapeDelta_float(int indexInBuffer, float weight, float3 inPosition, float3 inNormal, float3 inTangent, out float3 outPosition, out float3 outNormal, out float3 outTangent) 

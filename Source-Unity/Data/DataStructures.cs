@@ -4,10 +4,12 @@ using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.Runtime.InteropServices;
+using System.Runtime.CompilerServices;
 
 using UnityEngine;
 
 using Unity.Mathematics;
+using Unity.Collections;
 
 namespace Swole.DataStructures
 {
@@ -41,6 +43,14 @@ namespace Swole.DataStructures
     {
 
         None = 0, X = 1, Y = 2, Z = 4, W = 8
+
+    }
+
+    [Serializable]
+    public enum Axis
+    {
+
+        X = 0, Y = 1, Z = 2
 
     }
 
@@ -278,6 +288,42 @@ namespace Swole.DataStructures
             }
         }
 
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public float4x4 BuildSkinningMatrix(NativeArray<float4x4> boneMatrices)
+        {
+            return (boneMatrices[boneIndex0] * boneWeight0) +
+                    (boneMatrices[boneIndex1] * boneWeight1) +
+                    (boneMatrices[boneIndex2] * boneWeight2) +
+                    (boneMatrices[boneIndex3] * boneWeight3) +
+                    (boneMatrices[boneIndex4] * boneWeight4) +
+                    (boneMatrices[boneIndex5] * boneWeight5) +
+                    (boneMatrices[boneIndex6] * boneWeight6) +
+                    (boneMatrices[boneIndex7] * boneWeight7);
+        }
+
+        public float4x4 BuildSkinningMatrix(float4x4[] boneMatrices)
+        {
+            return (boneMatrices[boneIndex0] * boneWeight0) +
+                    (boneMatrices[boneIndex1] * boneWeight1) +
+                    (boneMatrices[boneIndex2] * boneWeight2) +
+                    (boneMatrices[boneIndex3] * boneWeight3) +
+                    (boneMatrices[boneIndex4] * boneWeight4) +
+                    (boneMatrices[boneIndex5] * boneWeight5) +
+                    (boneMatrices[boneIndex6] * boneWeight6) +
+                    (boneMatrices[boneIndex7] * boneWeight7);
+        }
+        public float4x4 BuildSkinningMatrix(IList<float4x4> boneMatrices)
+        {
+            return (boneMatrices[boneIndex0] * boneWeight0) +
+                    (boneMatrices[boneIndex1] * boneWeight1) +
+                    (boneMatrices[boneIndex2] * boneWeight2) +
+                    (boneMatrices[boneIndex3] * boneWeight3) +
+                    (boneMatrices[boneIndex4] * boneWeight4) +
+                    (boneMatrices[boneIndex5] * boneWeight5) +
+                    (boneMatrices[boneIndex6] * boneWeight6) +
+                    (boneMatrices[boneIndex7] * boneWeight7);
+        }
+
     }
 
     [Serializable, StructLayout(LayoutKind.Sequential)]
@@ -295,6 +341,33 @@ namespace Swole.DataStructures
             this.weightsA = weightsA;
             this.weightsB = weightsB;
 
+        }
+
+        public static implicit operator BoneWeight8(BoneWeight8Float bw8f)
+        {
+            var bw8 = new BoneWeight8();
+
+            bw8.boneIndex0 = (int)bw8f.indicesA.x;
+            bw8.boneIndex1 = (int)bw8f.indicesA.y;
+            bw8.boneIndex2 = (int)bw8f.indicesA.z;
+            bw8.boneIndex3 = (int)bw8f.indicesA.w;
+
+            bw8.boneIndex4 = (int)bw8f.indicesB.x;
+            bw8.boneIndex5 = (int)bw8f.indicesB.y;
+            bw8.boneIndex6 = (int)bw8f.indicesB.z;
+            bw8.boneIndex7 = (int)bw8f.indicesB.w;
+
+            bw8.boneWeight0 = bw8f.weightsA.x;
+            bw8.boneWeight1 = bw8f.weightsA.y;
+            bw8.boneWeight2 = bw8f.weightsA.z;
+            bw8.boneWeight3 = bw8f.weightsA.w;
+
+            bw8.boneWeight4 = bw8f.weightsB.x;
+            bw8.boneWeight5 = bw8f.weightsB.y;
+            bw8.boneWeight6 = bw8f.weightsB.z;
+            bw8.boneWeight7 = bw8f.weightsB.w;
+
+            return bw8;
         }
 
         public float4 indicesA;
@@ -442,6 +515,12 @@ namespace Swole.DataStructures
             else if (componentIndex == 7) return weightsB.w;
             else return 0f;
         }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public float4x4 BuildSkinningMatrix(NativeArray<float4x4> boneMatrices) => ((BoneWeight8)this).BuildSkinningMatrix(boneMatrices);
+
+        public float4x4 BuildSkinningMatrix(float4x4[] boneMatrices) => ((BoneWeight8)this).BuildSkinningMatrix(boneMatrices);
+        public float4x4 BuildSkinningMatrix(IList<float4x4> boneMatrices) => ((BoneWeight8)this).BuildSkinningMatrix(boneMatrices);
 
     }
 

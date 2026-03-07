@@ -189,11 +189,11 @@ namespace Swole.API.Unity.Animation
                 //var smrs = instance.GetComponentsInChildren<SkinnedMeshRenderer>();
                 //foreach (var smr in smrs) smr.bounds = new Bounds(instance.transform.position, new Vector3(10000, 10000, 10000)); 
 
-                muscleController = instance.GetComponentInChildren<MuscularRenderedCharacter>(true);
+                muscleController = instance.GetComponentInChildren<IMuscularBasic>(true);
                 muscleProxy = instance.GetComponentInChildren<MuscleFlexProxy>(true);
                 cameraProxy = instance.GetComponentInChildren<CameraProxy>(true);
 
-                heightController = instance.GetComponentInChildren<BipedalCharacterHeight>(true);
+                heightController = instance.GetComponentInChildren<BipedalCharacterHeight>(true); 
                 expressionController = instance.GetComponentInChildren<CharacterExpressions>(true);
 
                 autoFlexer = instance.GetComponentInChildren<CharacterMuscleAutoFlexer>(true);
@@ -1013,7 +1013,7 @@ namespace Swole.API.Unity.Animation
         [NonSerialized]
         public CustomAnimator animator;
         [NonSerialized]
-        public MuscularRenderedCharacter muscleController;
+        public IMuscularBasic muscleController;
         [NonSerialized]
         public MuscleFlexProxy muscleProxy;
         [NonSerialized]

@@ -266,6 +266,7 @@ namespace Swole.Modding
                 solver.bone3 = new IKSolverTrigonometric.TrigonometricBone() { transform = ik.solver.bone3.transform == null ? null : rootTarget.transform.FindDeepChildLiberal(ik.solver.bone3.transform.name), weight = ik.solver.bone3.weight };
 
                 targetIK.solver = solver;
+                targetIK.fixTransforms = ik.fixTransforms;
             }
 
             LimbIK[] limbIks = rootToCopy.GetComponentsInChildren<LimbIK>(true);
@@ -293,6 +294,7 @@ namespace Swole.Modding
                 solver.bone3 = new IKSolverTrigonometric.TrigonometricBone() { transform = ik.solver.bone3.transform == null ? null : rootTarget.transform.FindDeepChildLiberal(ik.solver.bone3.transform.name), weight = ik.solver.bone3.weight };
 
                 targetIK.solver = solver;
+                targetIK.fixTransforms = ik.fixTransforms;
             }
         }
 #endif

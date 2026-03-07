@@ -359,6 +359,7 @@ namespace Swole.Morphing
             public Mesh mainMesh;
 
             public BaseMeshEdit[] mainMeshEdits;
+            public BaseMeshEdit[] postTransferMainMeshEdits;
 
             public MeshLOD[] lods;
             public bool preserveLodMeshVertexColors;
@@ -430,6 +431,7 @@ namespace Swole.Morphing
             public bool treatAsMeshIslands;
             public BlendShapeTarget meshIslandRootsVertexGroup;
             public BlendShapeTarget meshIslandBlendVertexGroup;
+            public NameFloat[] shapesToApplyBeforeTransfer;
 
             public bool transferNormals;
             [Range(0, 1)]
@@ -468,6 +470,8 @@ namespace Swole.Morphing
             public VertexGroupToVertexColorChannel[] vertexGroupsToVertexColorChannels;
 
             public TextureToVertexColor[] textureToVertexColorBakes;
+
+            public NameProperty[] meshShapeMaterialProperties;
 
         }
 
@@ -566,6 +570,12 @@ namespace Swole.Morphing
         public BodyMask[] fatGroups;
 
         public CustomizableCharacterMeshV2.DefaultMuscleGroupConversion[] basicMuscleGroupConversions;
+
+        public float flexEndPointWeight;
+        public float flexExponent;
+
+        public float flexNerfThreshold = 0.35f;
+        public float flexNerfExponent = 1f;
 
         [Header("Customization")]
         public BlendShapeTarget[] variationShapes;
@@ -1462,7 +1472,9 @@ namespace Swole.Morphing
                                     normalDotWeight = objectSetup.normalDotWeightForTransfers,
                                     triCoordinatesWeight = objectSetup.triCoordinatesWeightForTransfers,
                                     maxDistancePosition = objectSetup.maxPositionDistanceForTransfers,
-                                    maxDistanceUV = objectSetup.maxUV_DistanceForTransfers
+                                    maxDistanceUV = objectSetup.maxUV_DistanceForTransfers,
+
+                                    shapesToApplyBeforeTransfer = objectSetup.shapesToApplyBeforeTransfer
                                 };
 
                                 if (objectSetup.treatAsMeshIslands)
@@ -1483,6 +1495,17 @@ namespace Swole.Morphing
                         {
                             var debugRenderer = GameObject.Instantiate(objectSetup.skinnedRendererReference);
                             debugRenderer.sharedMesh = MeshUtils.DuplicateMesh(mainMesh);
+                        }
+
+                        if (objectSetup.postTransferMainMeshEdits != null && objectSetup.postTransferMainMeshEdits.Length > 0)
+                        {
+                            string meshName = mainMesh.name;
+                            mainMesh = MeshUtils.DuplicateMesh(mainMesh);
+                            mainMesh.name = meshName;
+                            foreach (var edit in objectSetup.postTransferMainMeshEdits)
+                            {
+                                mainMesh = edit.Apply(mainMesh, false);   
+                            }
                         }
 
                         #region Merge Seams
@@ -2724,9 +2747,34 @@ namespace Swole.Morphing
 
                         serializedData.defaultMuscleGroupConversions = basicMuscleGroupConversions == null ? null : ((CustomizableCharacterMeshV2.DefaultMuscleGroupConversion[])basicMuscleGroupConversions.Clone());
 
+                        serializedData.flexEndPointWeight = flexEndPointWeight;
+                        serializedData.flexExponent = flexExponent;
+                        serializedData.flexNerfThreshold = flexNerfThreshold;
+                        serializedData.flexNerfExponent = flexNerfExponent;
+
                         if (outputData == null) outputData = CustomizableCharacterMeshV2_DATA.CreateInstance(dataName, serializedData); else outputData.ReplaceData(serializedData);
 
-                    }
+                        if (objectSetup.meshShapeMaterialProperties != null && objectSetup.meshShapeMaterialProperties.Length > 0 && objectSetup.materials != null)
+                        {
+                            foreach (var shapeProp in objectSetup.meshShapeMaterialProperties)
+                            {
+                                if (string.IsNullOrWhiteSpace(shapeProp.name) || string.IsNullOrWhiteSpace(shapeProp.property)) continue;
+
+                                int shapeIndex = serializedData.IndexOfShape(shapeProp.name);
+                                if (shapeIndex < 0)
+                                {
+                                    Debug.LogError($"Mesh shape material property '{shapeProp.name}' could not be found on mesh '{objectSetup.name}'!");
+                                    continue;
+                                }
+
+                                foreach (var mat in objectSetup.materials)
+                                {
+                                    if (mat == null) continue;
+                                    mat.SetFloat(shapeProp.property, shapeIndex);
+                                }
+                            }
+                        }
+                    } 
 
                     outputDatas.Add(outputData);
                     

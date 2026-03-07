@@ -84,12 +84,15 @@ namespace Swole.API.Unity
                     if (vertexAccuracy <= 0) vertexAccuracy = 10;
                     vertexPath = new VertexPath(path, VertexPathUtility.SplitBezierPathEvenly(path, vertexSpacing, vertexAccuracy), null);
 
-                    for(int a = 0; a < path.NumPoints; a++)
+                    for (int a = 0; a < path.NumPoints; a++)
                     {
-                        float t = a / (path.NumPoints - 1f);
-
-                        int b = Mathf.Clamp(Mathf.RoundToInt((vertexPath.NumPoints - 1) * t), 0, vertexPath.NumPoints - 1); 
-                        Debug.Log($"CURVEP {a}: {((float3)points[a])} :: {b}: {((float3)vertexPath.GetPoint(b))}"); 
+                        var p = path.GetPoint(a);
+                        Debug.DrawRay(p, Vector3.forward, Color.blue, 100f);
+                    }
+                    for (int a = 0; a < vertexPath.NumPoints; a++)
+                    {
+                        var p = vertexPath.GetPoint(a);
+                        Debug.DrawRay(p, Vector3.forward, Color.green, 100f); 
                     }
                 }
 
@@ -267,39 +270,45 @@ namespace Swole.API.Unity
 
         public bool SetPoints(Vector3[] points)
         {
-            if (points == null) return false;
-
-            int segCount = Mathf.CeilToInt(points.Length / 3f);
-            if (segCount <= 0) return false; 
+            if (points == null || points.Length < 2) return false;
+            
+            int targetSegmentCount = Mathf.Max(1, Mathf.CeilToInt((points.Length - 1) / 3f));
 
             dirtyVertices = true;
 
             if (path == null)
             {
-                path = new BezierPath(points, false, PathSpace.xyz); // this is adding control points, so needs to be reevaluated by the code below, since the control points are already included in the points array
+                path = new BezierPath(points, false, PathSpace.xyz); // this constructor is adding control points, so the points need to be reevaluated by the code below, since the control points are already included in the points array and should not be added again
                 //return true;
             }
             
             bool closed = path.IsClosed;
             path.IsClosed = false;
-
-            while (path.NumSegments > segCount) 
+            
+            while (path.NumSegments > targetSegmentCount) 
             {
                 var prev = path.NumSegments;
                 path.DeleteSegment(path.NumSegments - 1);
                 if (prev <= path.NumSegments) return false;
             }
 
-            while(path.NumSegments < segCount)
+            while(path.NumSegments < targetSegmentCount - 1)
             {
                 var prev = path.NumSegments;
                 path.AddSegmentToEnd(Vector3.zero);
                 if (prev >= path.NumSegments) return false;
             }
-            
-            for(int a = 0; a < Mathf.Min(points.Length, segCount * 3); a++)
+
+            int segPointCount = (targetSegmentCount * 3) + 1; 
+            for(int a = 0; a < Mathf.Min(points.Length, segPointCount); a++)
             {
-                path.SetPoint(a, points[a], true); 
+                if (a == points.Length - 1 && segPointCount > points.Length)
+                {
+                    path.AddSegmentToEnd(points[a]);
+                    continue;
+                }
+
+                path.SetPoint(a, points[a], true);  
             }
 
             path.IsClosed = closed;

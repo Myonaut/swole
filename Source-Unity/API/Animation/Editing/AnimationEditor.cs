@@ -1863,7 +1863,7 @@ namespace Swole.API.Unity.Animation
             else
             {
                 var editor = PhysiqueEditor;
-                if (editor != null) editor.Character = activeObj.muscleController;              
+                if (editor != null) editor.Character = activeObj.muscleController; 
             }
 
         }

@@ -1065,6 +1065,88 @@ namespace Swole
 
         }
 
+        public void GetTransformedVertex(ref Vector3 vertex, ref Vector3 normal, ref Vector4 tangent, int vertexIndex, float weight, float multiplier = 1)
+        {
+
+            int frameCount = frames.Length;
+
+            if (frameCount == 1)
+            {
+
+                Frame frame = frames[0];
+
+                float w = weight / frame.weight;
+                w = w * multiplier;
+
+                vertex = vertex + frame.deltaVertices[vertexIndex] * w;
+                normal = normal + frame.deltaNormals[vertexIndex] * w;
+                var deltaT = frame.deltaTangents[vertexIndex];
+                tangent = tangent + new Vector4(deltaT.x * w, deltaT.y * w, deltaT.z * w, 0f); 
+
+            }
+            else
+            {
+
+                for (int a = 0; a < frameCount; a++)
+                {
+
+                    Frame frame = frames[a];
+
+                    if (weight < frame.weight)
+                    {
+
+                        float w = weight / frame.weight;
+                        w = w * multiplier;
+
+                        if (a == 0)
+                        {
+
+                            vertex = vertex + frame.deltaVertices[vertexIndex] * w;
+                            normal = normal + frame.deltaNormals[vertexIndex] * w;
+                            var deltaT = frame.deltaTangents[vertexIndex];
+                            tangent = tangent + new Vector4(deltaT.x * w, deltaT.y * w, deltaT.z * w, 0f);
+
+                        }
+
+                    }
+                    else
+                    {
+
+                        if (a == frameCount - 1)
+                        {
+
+                            float w = 1 + ((weight - frame.weight) / frame.weight);
+                            w = w * multiplier;
+
+                            vertex = vertex + frame.deltaVertices[vertexIndex] * w;
+                            normal = normal + frame.deltaNormals[vertexIndex] * w;
+                            var deltaT = frame.deltaTangents[vertexIndex];
+                            tangent = tangent + new Vector4(deltaT.x * w, deltaT.y * w, deltaT.z * w, 0f);
+
+                        }
+                        else
+                        {
+
+                            Frame frame2 = frames[a + 1];
+
+                            if (weight >= frame2.weight) continue;
+
+                            float w = (weight - frame.weight) / (frame2.weight - frame.weight);
+
+                            vertex = vertex + Vector3.LerpUnclamped(frame.deltaVertices[vertexIndex], frame2.deltaVertices[vertexIndex], w) * multiplier;
+                            normal = normal + Vector3.LerpUnclamped(frame.deltaNormals[vertexIndex], frame2.deltaNormals[vertexIndex], w) * multiplier;
+                            var deltaT = Vector3.LerpUnclamped(frame.deltaTangents[vertexIndex], frame2.deltaTangents[vertexIndex], w);
+                            tangent = tangent + new Vector4(deltaT.x * multiplier, deltaT.y * multiplier, deltaT.z * multiplier, 0f); 
+
+                        }
+
+                    }
+
+                }
+
+            }
+        }
+
         public Vector3[] GetTransformedVertices(Vector3[] originalVertices, float weight, bool createNewArray = true)
         {
 

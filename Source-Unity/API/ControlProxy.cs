@@ -29,9 +29,9 @@ namespace Swole
 
         public abstract void Rebind();
 
-        public abstract int FindBindingIndex(string binding);
+        public abstract List<int> FindBindingIndex(string binding, List<int> list = null);
 
-        protected void Bind(string defaultName, string[] bindings, ref List<int> indicesList)
+        protected virtual void Bind(string defaultName, string[] bindings, ref List<int> indicesList)
         {
             if (bindings == null || bindings.Length <= 0)
             {
@@ -42,9 +42,7 @@ namespace Swole
 
             foreach (var binding in bindings)
             {
-                var index = FindBindingIndex(binding);
-                if (index < 0) continue;
-                indicesList.Add(index);
+                FindBindingIndex(binding, indicesList);
             }
         }
 

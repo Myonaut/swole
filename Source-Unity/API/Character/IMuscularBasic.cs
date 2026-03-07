@@ -14,6 +14,8 @@ namespace Swole.API.Unity
         public string GetMuscleGroupNameUnsafe(int index);
         public int GetMuscleGroupIndex(string muscleGroupName);
         public int GetMuscleGroupIndex(MuscleGroupIdentifier identifier);
+        public int GetMuscleGroupIndexForArray(string muscleGroupName);
+        public int GetMuscleGroupIndexForArray(MuscleGroupIdentifier identifier);
         public int FindMuscleGroup(string muscleGroupName);
         public int FindMuscleGroup(MuscleGroupIdentifier identifier);
 

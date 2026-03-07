@@ -32,7 +32,7 @@ namespace Swole.Morphing
         public void UpdateInEditor()
         {
 #if UNITY_EDITOR
-            if (Application.isPlaying && isActiveAndEnabled)
+            if (Application.isPlaying && isActiveAndEnabled) 
             {
                 var meshData = SubData;
                 if (meshData != null)
@@ -490,6 +490,15 @@ namespace Swole.Morphing
             return 1f - (bustNerfFactor * multiplier);
         }
 
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static float CalculateFinalFlexFactor(float initialFlexFactor, float muscleMass, float flexEndPointWeight, float flexExp, float flexNerfThreshold, float flexNerfExp)
+        {
+            float flexFactor = (initialFlexFactor / (flexEndPointWeight <= 0f ? 1f : flexEndPointWeight)) * math.pow(math.saturate(muscleMass / (flexNerfThreshold <= 0f ? 0.35f : flexNerfThreshold)), flexNerfExp <= 0f ? 1f : flexNerfExp); // nerf flex for smaller masses
+            flexFactor = math.pow(math.saturate(flexFactor), flexExp <= 0f ? 1f : flexExp);
+
+            return flexFactor;
+        }
+
         #endregion
 
         #region Singleton Updater
@@ -621,14 +630,66 @@ namespace Swole.Morphing
 
             public Material[] Materials => ownerGroup == null ? null : ownerGroup.GetInstanceMaterials(localID);
 
+            public bool updateManually;
+
+            public bool UpdateIfDirty(bool force = false, bool updateImmediately = false)
+            {
+                if (force)
+                {
+                    physiqueIsDirty = true;
+                    variationIsDirty = true;
+                }
+
+                bool flag = false;
+
+                if (physiqueIsDirty) 
+                {
+                    flag = true;
+                    physiqueIsDirty = false;
+                    ownerGroup.MarkForPhysiqueUpdate(localID); 
+                }
+
+                if (variationIsDirty) 
+                {
+                    flag = true;
+                    variationIsDirty = false;
+                    ownerGroup.MarkForVariationUpdate(localID); 
+                }
+
+                if (flag && updateImmediately)
+                {
+                    ownerGroup.BeginNewJob();
+                    ownerGroup.WaitForJobCompletion();
+                }
+
+                return flag;
+            }
+
+            private bool physiqueIsDirty;
+            private bool variationIsDirty;
+
             public void MarkForPhysiqueUpdateUnsafe()
             {
-                ownerGroup.MarkForPhysiqueUpdate(localID);
+                if (updateManually)
+                {
+                    physiqueIsDirty = true;
+                } 
+                else
+                {
+                    ownerGroup.MarkForPhysiqueUpdate(localID);
+                }   
             }
 
             public void MarkForVariationUpdateUnsafe()
             {
-                ownerGroup.MarkForVariationUpdate(localID);
+                if (updateManually)
+                {
+                    variationIsDirty = true;
+                }
+                else
+                {
+                    ownerGroup.MarkForVariationUpdate(localID);
+                }
             }
 
             public void SetBustSizeUnsafe(float2 bustSize)
@@ -1255,6 +1316,10 @@ namespace Swole.Morphing
                         material.SetInteger(data.FatShapeIndexPropertyName, data.fatShape);
 
                         material.SetFloat(data.DefaultShapeMuscleWeightPropertyName, data.defaultMassShapeWeight);
+                        material.SetFloat(data.FlexEndPointWeightPropertyName, data.flexEndPointWeight);
+                        material.SetFloat(data.FlexExponentPropertyName, data.flexExponent);
+                        material.SetFloat(data.FlexNerfThresholdPropertyName, data.flexNerfThreshold);
+                        material.SetFloat(data.FlexNerfExponentPropertyName, data.flexNerfExponent);
 
                         material.SetInteger(data.MidlineVertexGroupIndexPropertyName, data.midlineVertexGroup);
                         material.SetInteger(data.BustVertexGroupIndexPropertyName, data.bustVertexGroup);
@@ -2610,6 +2675,35 @@ namespace Swole.Morphing
             [NativeDisableParallelForRestriction]
             public NativeList<float2> muscleData;
 
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            public static MeshVertexDeltaLR CalculateMuscleVertexDelta(int groupIndex, float groupWeightAtIndex, int vertexIndex, int vertexCount, float minShapeMassWeight, float defaultShapeMassWeight, float muscleMassRange, int2 muscleShapeIndex, int2 fatMuscleBlendShapeIndex, NativeList<GroupControlWeight2> muscleGroupControlWeights, NativeArray<float> meshShapeFrameWeights, NativeArray<MeshVertexDelta> meshShapeDeltas, NativeList<float2> fatValuesPerVertex, out float2 muscleGroupMassWeight)
+            {
+                GroupControlWeight2 muscleGroupMass = muscleGroupControlWeights[groupIndex];
+
+                float2 fat = fatValuesPerVertex[vertexIndex];
+
+                float bustNerfFactor = 1f;// CalculateBustNerfFactor(bustSizes[meshIndex].x, vertexGroups, bustNerfVertexGroupIndex, vertexCount, groupVertexWeight.vertexIndex, 0.45f);
+
+                float muscleWeight = groupWeightAtIndex * bustNerfFactor * (1f - fat.y); // fat.y determines how much of the muscle shape to fade out based on fat level
+
+                float minMassShapeWeight = math.max(minShapeMassWeight, defaultShapeMassWeight * math.pow(math.saturate(fat.x), 0.3f) * 0.7f);
+                muscleGroupMassWeight = math.max(minMassShapeWeight, muscleGroupMass.weight);
+                var shapeDeltaL = meshShapeDeltas.SampleDeltaShapeBuffer(vertexIndex, meshShapeFrameWeights, muscleShapeIndex.x, muscleShapeIndex.y, muscleGroupMassWeight.x, vertexCount) * muscleWeight;
+                var shapeDeltaR = meshShapeDeltas.SampleDeltaShapeBuffer(vertexIndex, meshShapeFrameWeights, muscleShapeIndex.x, muscleShapeIndex.y, muscleGroupMassWeight.y, vertexCount) * muscleWeight;
+
+                float fatMuscleWeight = muscleWeight * fat.x;
+
+                float2 muscleGroupMassSat = math.saturate((muscleGroupMassWeight - defaultShapeMassWeight) / muscleMassRange);
+                shapeDeltaL = shapeDeltaL + meshShapeDeltas.SampleDeltaShapeBuffer(vertexIndex, meshShapeFrameWeights, fatMuscleBlendShapeIndex.x, fatMuscleBlendShapeIndex.y, muscleGroupMassSat.x, vertexCount) * fatMuscleWeight;
+                shapeDeltaR = shapeDeltaR + meshShapeDeltas.SampleDeltaShapeBuffer(vertexIndex, meshShapeFrameWeights, fatMuscleBlendShapeIndex.x, fatMuscleBlendShapeIndex.y, muscleGroupMassSat.y, vertexCount) * fatMuscleWeight;
+
+                return new MeshVertexDeltaLR()
+                {
+                    deltaLeft = shapeDeltaL,
+                    deltaRight = shapeDeltaR
+                };
+            }
+
             public void Execute(int vertexSequenceIndex)
             {
                 int meshIndexBufferIndex = vertexSequenceIndex / combinedVertexCount;
@@ -2618,31 +2712,10 @@ namespace Swole.Morphing
                 var localVertexSequenceIndex = vertexSequenceIndex - (meshIndexBufferIndex * combinedVertexCount);
                 var groupVertexWeight = muscleGroupVertexWeights[localVertexSequenceIndex];
 
-                GroupControlWeight2 muscleGroupMass = muscleGroupControlWeights[groupVertexWeight.groupIndex];
-
-                float2 fat = fatValuesPerVertex[groupVertexWeight.vertexIndex];
-
-                float bustNerfFactor = 1f;// CalculateBustNerfFactor(bustSizes[meshIndex].x, vertexGroups, bustNerfVertexGroupIndex, vertexCount, groupVertexWeight.vertexIndex, 0.45f);
-
-                float muscleWeight = groupVertexWeight.weight * bustNerfFactor * (1f - fat.y); // fat.y determines how much of the muscle shape to fade out based on fat level
-
-                float minMassShapeWeight = math.max(minShapeMassWeight, defaultShapeMassWeight * math.pow(math.saturate(fat.x), 0.3f) * 0.7f);
-                float2 muscleGroupMassWeight = math.max(minMassShapeWeight, muscleGroupMass.weight);
-                var shapeDeltaL = meshShapeDeltas.SampleDeltaShapeBuffer(groupVertexWeight.vertexIndex, meshShapeFrameWeights, muscleShapeIndex.x, muscleShapeIndex.y, muscleGroupMassWeight.x, vertexCount) * muscleWeight;
-                var shapeDeltaR = meshShapeDeltas.SampleDeltaShapeBuffer(groupVertexWeight.vertexIndex, meshShapeFrameWeights, muscleShapeIndex.x, muscleShapeIndex.y, muscleGroupMassWeight.y, vertexCount) * muscleWeight;
-
-                float fatMuscleWeight = muscleWeight * fat.x;
-
-                float2 muscleGroupMassSat = math.saturate((muscleGroupMassWeight - defaultShapeMassWeight) / muscleMassRange);
-                shapeDeltaL = shapeDeltaL + meshShapeDeltas.SampleDeltaShapeBuffer(groupVertexWeight.vertexIndex, meshShapeFrameWeights, fatMuscleBlendShapeIndex.x, fatMuscleBlendShapeIndex.y, muscleGroupMassSat.x, vertexCount) * fatMuscleWeight;
-                shapeDeltaR = shapeDeltaR + meshShapeDeltas.SampleDeltaShapeBuffer(groupVertexWeight.vertexIndex, meshShapeFrameWeights, fatMuscleBlendShapeIndex.x, fatMuscleBlendShapeIndex.y, muscleGroupMassSat.y, vertexCount) * fatMuscleWeight;
+                var deltas = CalculateMuscleVertexDelta(groupVertexWeight.groupIndex, groupVertexWeight.weight, groupVertexWeight.vertexIndex, vertexCount, minShapeMassWeight, defaultShapeMassWeight, muscleMassRange, muscleShapeIndex, fatMuscleBlendShapeIndex, muscleGroupControlWeights, meshShapeFrameWeights, meshShapeDeltas, fatValuesPerVertex, out var muscleGroupMassWeight);
 
                 int bufferIndex = (meshIndex * combinedVertexCount) + localVertexSequenceIndex;
-                vertexDeltas[bufferIndex] = new MeshVertexDeltaLR()
-                {
-                    deltaLeft = shapeDeltaL,
-                    deltaRight = shapeDeltaR
-                };
+                vertexDeltas[bufferIndex] = deltas;
                 muscleData[bufferIndex] = muscleGroupMassWeight * groupVertexWeight.weight;
             }
 
@@ -2989,9 +3062,15 @@ namespace Swole.Morphing
             [NonSerialized]
             private NativeArray<float3>[] meshVertices;
             [NonSerialized]
+            private NativeArray<float3>[] meshNormals;
+            [NonSerialized]
+            private NativeArray<float4>[] meshTangents;
+            [NonSerialized]
             private NativeArray<float4>[] meshColors;
             [NonSerialized]
             private NativeArray<int>[] meshTriangles;
+            [NonSerialized]
+            private NativeArray<BoneWeight8>[] meshBoneWeights;
             [NonSerialized]
             private NativeArray<float4>[] meshUV0s;
             [NonSerialized]
@@ -3029,6 +3108,64 @@ namespace Swole.Morphing
                 }
 
                 meshVertices[lod] = array;
+
+                return true;
+            }
+            public bool TryGetNormals(int lod, out NativeArray<float3> array)
+            {
+                array = default;
+                if (meshLODs == null || lod < 0 || lod >= meshLODs.Length) return false;
+
+                var mesh = GetMeshUnsafe(lod);
+                if (mesh == null) return false;
+
+                if (meshNormals != null && meshNormals.Length >= meshLODs.Length && meshNormals[lod].IsCreated)
+                {
+                    array = meshNormals[lod];
+                    return true;
+                }
+
+                array = new NativeArray<Vector3>(mesh.normals, Allocator.Persistent).Reinterpret<float3>();
+                if (meshNormals == null || meshNormals.Length != meshLODs.Length)
+                {
+                    if (meshNormals != null)
+                    {
+                        foreach (var array_ in meshNormals) if (array_.IsCreated) array_.Dispose();
+                    }
+
+                    meshNormals = new NativeArray<float3>[meshLODs.Length];
+                }
+
+                meshNormals[lod] = array;
+
+                return true;
+            }
+            public bool TryGetTangents(int lod, out NativeArray<float4> array)
+            {
+                array = default;
+                if (meshLODs == null || lod < 0 || lod >= meshLODs.Length) return false; 
+
+                var mesh = GetMeshUnsafe(lod);
+                if (mesh == null) return false;
+
+                if (meshTangents != null && meshTangents.Length >= meshLODs.Length && meshTangents[lod].IsCreated)
+                {
+                    array = meshTangents[lod];
+                    return true;
+                }
+
+                array = new NativeArray<Vector4>(mesh.tangents, Allocator.Persistent).Reinterpret<float4>();
+                if (meshTangents == null || meshTangents.Length != meshLODs.Length)
+                {
+                    if (meshTangents != null)
+                    {
+                        foreach (var array_ in meshTangents) if (array_.IsCreated) array_.Dispose();
+                    }
+
+                    meshTangents = new NativeArray<float4>[meshLODs.Length];
+                }
+
+                meshTangents[lod] = array;
 
                 return true;
             }
@@ -3089,6 +3226,47 @@ namespace Swole.Morphing
                 }
 
                 meshTriangles[lod] = array;
+
+                return true;
+            }
+
+            public bool TryGetBoneWeights(int lod, out NativeArray<BoneWeight8> array)
+            {
+                array = default;
+                if (meshLODs == null || lod < 0 || lod >= meshLODs.Length) return false;
+
+                var mesh = GetMeshUnsafe(lod);
+                if (mesh == null) return false;
+
+                if (meshBoneWeights != null && meshBoneWeights.Length >= meshLODs.Length && meshBoneWeights[lod].IsCreated)
+                {
+                    array = meshBoneWeights[lod];
+                    return true;
+                }
+
+                array = lod == 0 ? new NativeArray<BoneWeight8>(baseBoneWeights, Allocator.Persistent) : new NativeArray<BoneWeight8>(mesh.vertexCount, Allocator.Persistent);
+                if (meshBoneWeights == null || meshBoneWeights.Length != meshLODs.Length)
+                {
+                    if (meshBoneWeights != null)
+                    {
+                        foreach (var array_ in meshBoneWeights) if (array_.IsCreated) array_.Dispose();
+                    }
+
+                    meshBoneWeights = new NativeArray<BoneWeight8>[meshLODs.Length];
+                }
+
+                if (lod > 0)
+                {
+                    if (TryGetUV(lod, nearestVertexUVChannel, out var uvArray))
+                    {
+                        for(int i = 0; i < array.Length; i++)
+                        {
+                            int nearestIndex = MorphUtils.FetchIndexFromUV(nearestVertexIndexElement, uvArray[i]);
+                            array[i] = baseBoneWeights[nearestIndex]; 
+                        }
+                    }
+                }
+                meshBoneWeights[lod] = array;
 
                 return true;
             }
@@ -3441,7 +3619,24 @@ namespace Swole.Morphing
             public string MinMassShapeWeightPropertyName => string.IsNullOrWhiteSpace(minMassShapeWeightPropertyNameOverride) ? _minMassShapeWeightDefaultPropertyName : minMassShapeWeightPropertyNameOverride;
 
 
+            public string flexEndPointWeightPropertyNameOverride;
+            public string FlexEndPointWeightPropertyName => string.IsNullOrWhiteSpace(flexEndPointWeightPropertyNameOverride) ? _flexEndPointWeightDefaultPropertyName : flexEndPointWeightPropertyNameOverride;
+
+            public string flexExponentPropertyNameOverride;
+            public string FlexExponentPropertyName => string.IsNullOrWhiteSpace(flexExponentPropertyNameOverride) ? _flexExponentDefaultPropertyName : flexExponentPropertyNameOverride;
+
+            public string flexNerfThresholdPropertyNameOverride;
+            public string FlexNerfThresholdPropertyName => string.IsNullOrWhiteSpace(flexNerfThresholdPropertyNameOverride) ? _flexNerfThresholdDefaultPropertyName : flexNerfThresholdPropertyNameOverride;
+
+            public string flexNerfExponentPropertyNameOverride;
+            public string FlexNerfExponentPropertyName => string.IsNullOrWhiteSpace(flexNerfExponentPropertyNameOverride) ? _flexNerfExponentDefaultPropertyName : flexNerfExponentPropertyNameOverride;
+
+
             [Header("Other")]
+            public float flexEndPointWeight;
+            public float flexExponent;
+            public float flexNerfThreshold = 0.35f;
+            public float flexNerfExponent = 1f;
             public int raycastLod;
             [Tooltip("The uv channel to use for determining the nearest vertex.")]
             public UVChannelURP nearestVertexUVChannel = UVChannelURP.UV3;
@@ -3475,12 +3670,16 @@ namespace Swole.Morphing
                         if (conversion == null) continue;
 
                         int ind = IndexOfMuscleGroup(conversion.muscleGroupName, true);
-                        if (ind < 0) continue;
+                        if (ind < 0)
+                        {
+                            Debug.LogError($"Muscle group '{conversion.muscleGroupName}' not found for conversion to {conversion.basicMuscleGroup}");
+                            continue;
+                        }
 
                         var vertexGroup = GetMuscleVertexGroup(ind);
 
                         defaultBaseMuscleGroupConversionsCache[conversion.basicMuscleGroup] = ind;
-                        defaultBaseMuscleGroupConversionsReverseCache[vertexGroup] = conversion.basicMuscleGroup;
+                        defaultBaseMuscleGroupConversionsReverseCache[vertexGroup] = conversion.basicMuscleGroup; 
 
                         MuscleGroupsDefault mgSide;
 
@@ -3492,7 +3691,8 @@ namespace Swole.Morphing
                         var prevSide = mgSide;
                         ind = ind + 1;
                         mgSide = conversion.basicMuscleGroup.GetMuscleGroupSide(Side.Right);
-                        if (prevSide != mgSide) defaultMuscleGroupConversionsCache[mgSide] = ind;
+                        if (prevSide == mgSide) ind = (ind - 1) + _dualMuscleGroupIndexOffset;
+                        defaultMuscleGroupConversionsCache[mgSide] = ind;
                         defaultMuscleGroupConversionsReverseCache[vertexGroup.name + Side.Right.AsSuffix()] = mgSide; 
                     }
                 }
@@ -3510,25 +3710,42 @@ namespace Swole.Morphing
                 if (defaultMuscleGroupConversionsCache.TryGetValue(defaultGroup, out int groupIndex)) return groupIndex;
                 return -1;
             }
-            public MuscleGroupsDefault ConvertMuscleGroupToDefault(string muscleGroupName)
+            public MuscleGroupsDefault ConvertLocalMuscleGroupToDefault(string muscleGroupName)
             {
                 if (!initializedDefaultMuscleGroupConversions) InitializeDefaultMuscleGroupConversions();
                 if (defaultMuscleGroupConversionsReverseCache.TryGetValue(muscleGroupName, out var defaultGroup)) return defaultGroup; 
 
                 return default;
             }
-            public MuscleGroupsDefault ConvertMuscleGroupToDefault(int muscleGroupIndex)
+            public MuscleGroupsDefault ConvertLocalMuscleGroupToDefault(int muscleGroupIndex)
             {
                 if (muscleGroupIndex < 0 || muscleGroupIndex >= MuscleGroupsCount) return default;
 
                 if (!initializedDefaultMuscleGroupConversions) InitializeDefaultMuscleGroupConversions();
 
-                var vg = GetVertexGroup(muscleGroupIndex);
+                var vg = GetMuscleVertexGroup(muscleGroupIndex);
                 if (vg == null) return default;
 
                 if (defaultMuscleGroupConversionsReverseCache.TryGetValue(vg.name + Side.Left.AsSuffix(), out var defaultGroup)) return defaultGroup;
 
                 return default;
+            }
+            public MuscleGroupsDefault ConvertMuscleGroupIndexToDefault(int muscleGroupIndex)
+            {
+                if (muscleGroupIndex < 0) return default;
+                
+                if (!initializedDefaultMuscleGroupConversions) InitializeDefaultMuscleGroupConversions(); 
+
+                muscleGroupIndex = ConvertDefaultMuscleGroupIndexToLocal(muscleGroupIndex, out int defaultIndex, out bool isBothSides);
+
+                var vg = GetMuscleVertexGroup(muscleGroupIndex);
+                if (vg == null) return default;
+
+                bool isLeft = isBothSides || defaultIndex % 2 == 0;
+
+                if (defaultMuscleGroupConversionsReverseCache.TryGetValue(vg.name + (isLeft ? Side.Left : Side.Right).AsSuffix(), out var defaultGroup)) return defaultGroup;
+
+                return default; 
             }
 
             public float2[] fatGroupModifiers;
@@ -3544,7 +3761,7 @@ namespace Swole.Morphing
                 if (baseBoneWeights != null)
                 {
                     if (outputList.Capacity < baseBoneWeights.Length) outputList.Capacity = baseBoneWeights.Length;
-                    foreach (var boneWeight in baseBoneWeights) outputList.Add(boneWeight);
+                    foreach (var boneWeight in baseBoneWeights) outputList.Add(boneWeight); 
                 }
 
                 return outputList;
@@ -3715,7 +3932,7 @@ namespace Swole.Morphing
             {
                 if (outputList == null) outputList = new List<VertexGroup>();
 
-                if (vertexGroups != null) outputList.AddRange(vertexGroups);
+                if (vertexGroups != null) outputList.AddRange(vertexGroups); 
 
                 return outputList;
             }
@@ -4347,6 +4564,48 @@ namespace Swole.Morphing
 
                     meshVertices = null;
                 }
+                if (meshNormals != null)
+                {
+                    foreach (var array in meshNormals)
+                    {
+                        try
+                        {
+                            if (array.IsCreated)
+                            {
+                                array.Dispose();
+                            }
+                        }
+                        catch (Exception ex)
+                        {
+#if UNITY_EDITOR
+                            Debug.LogException(ex);
+#endif
+                        }
+                    }
+
+                    meshNormals = null;
+                }
+                if (meshTangents != null)
+                {
+                    foreach (var array in meshTangents) 
+                    {
+                        try
+                        {
+                            if (array.IsCreated)
+                            {
+                                array.Dispose();
+                            }
+                        }
+                        catch (Exception ex)
+                        {
+#if UNITY_EDITOR
+                            Debug.LogException(ex);
+#endif
+                        }
+                    }
+
+                    meshTangents = null;
+                }
 
                 if (meshColors != null)
                 {
@@ -4392,6 +4651,28 @@ namespace Swole.Morphing
                     meshTriangles = null;
                 }
 
+                if (meshBoneWeights != null)
+                {
+                    foreach (var array in meshBoneWeights)
+                    {
+                        try
+                        {
+                            if (array.IsCreated)
+                            {
+                                array.Dispose();
+                            }
+                        }
+                        catch (Exception ex)
+                        {
+#if UNITY_EDITOR
+                            Debug.LogException(ex);
+#endif
+                        }
+                    }
+
+                    meshBoneWeights = null; 
+                }
+                
                 if (meshUV0s != null)
                 {
                     foreach (var array in meshUV0s)
@@ -5327,6 +5608,219 @@ namespace Swole.Morphing
         public SerializedData SubData => data == null ? null : data.SerializedData;
 
 
+        public bool TryGetVertices(int lod, out NativeArray<float3> array) => data.TryGetVertices(lod, out array);
+        public bool TryGetColors(int lod, out NativeArray<float4> array) => data.TryGetColors(lod, out array);
+        public bool TryGetTriangles(int lod, out NativeArray<int> array) => data.TryGetTriangles(lod, out array);
+        public bool TryGetBoneWeights(int lod, out NativeArray<BoneWeight8> array) => data.TryGetBoneWeights(lod, out array);
+
+        public bool TryGetUV0(int lod, out NativeArray<float4> array) => data.TryGetUV0(lod, out array);
+        public bool TryGetUV1(int lod, out NativeArray<float4> array) => data.TryGetUV1(lod, out array);
+        public bool TryGetUV2(int lod, out NativeArray<float4> array) => data.TryGetUV2(lod, out array);
+        public bool TryGetUV3(int lod, out NativeArray<float4> array) => data.TryGetUV3(lod, out array);
+        public bool TryGetUV(int lod, UVChannelURP channel, out NativeArray<float4> array) => data.TryGetUV(lod, channel, out array);
+
+        public int DeltasStartIndex => SubData.vertexCount * instance.localID;
+
+        private bool PrepInWorldDataFetch(int lod, int vertexIndex, out int topVertexIndex, out MuscleData muscleData, out float flexFactor, out MeshVertexDelta delta, out MeshShape flexShape, out float4x4 skinningMatrix)
+        {
+            delta = default;
+            flexShape = null;
+            skinningMatrix = float4x4.identity;
+            muscleData = default;
+            flexFactor = 0f;
+            topVertexIndex = vertexIndex;
+
+            var subData = SubData;
+
+            if (!subData.TryGetBoneWeights(lod, out var boneWeightsArray)) return false;
+
+            instance.UpdateIfDirty(false, true);
+            instance.OwnerGroup.ActiveJob.Complete();
+
+            topVertexIndex = vertexIndex;
+            if (lod > 0)
+            {
+                if (TryGetUV(lod, subData.nearestVertexUVChannel, out var uvArray))
+                {
+                    topVertexIndex = MorphUtils.FetchIndexFromUV(subData.nearestVertexIndexElement, uvArray[vertexIndex]);
+                }
+            }
+
+            flexShape = subData.GetShapeUnsafe(subData.flexShape);
+            muscleData = GetMuscleDataForVertex(topVertexIndex);
+            flexFactor = CalculateFinalFlexFactor(muscleData.flex, muscleData.mass, subData.flexEndPointWeight, subData.flexExponent, subData.flexNerfThreshold, subData.flexNerfExponent);
+
+            delta = instance.OwnerGroup.FinalVertexDeltas[DeltasStartIndex + vertexIndex]; 
+
+            if (rigSampler != null)
+            {
+                var boneWeights = boneWeightsArray[vertexIndex];
+                skinningMatrix = (rigSampler.TrackingGroup[boneWeights.boneIndex0] * boneWeights.boneWeight0) +
+                    (rigSampler.TrackingGroup[boneWeights.boneIndex1] * boneWeights.boneWeight1) +
+                    (rigSampler.TrackingGroup[boneWeights.boneIndex2] * boneWeights.boneWeight2) +
+                    (rigSampler.TrackingGroup[boneWeights.boneIndex3] * boneWeights.boneWeight3) +
+                    (rigSampler.TrackingGroup[boneWeights.boneIndex4] * boneWeights.boneWeight4) +
+                    (rigSampler.TrackingGroup[boneWeights.boneIndex5] * boneWeights.boneWeight5) +
+                    (rigSampler.TrackingGroup[boneWeights.boneIndex6] * boneWeights.boneWeight6) +
+                    (rigSampler.TrackingGroup[boneWeights.boneIndex7] * boneWeights.boneWeight7);
+            }
+
+            return true;
+        }
+
+        public float3 GetVertexInWorld(int lod, int vertexIndex)
+        {
+            var subData = SubData;
+
+            if (!subData.TryGetVertices(lod, out var vertexArray)) return default; 
+
+            if (!PrepInWorldDataFetch(lod, vertexIndex, out int topVertexIndex, out MuscleData muscleData, out float flexFactor, out MeshVertexDelta delta, out MeshShape flexShape, out float4x4 skinningMatrix)) return default;
+
+            float3 deltaV = delta.positionDelta;
+            deltaV = flexShape.BlendShape.GetTransformedVertex(deltaV, topVertexIndex, flexFactor, 1f);
+
+            return math.transform(skinningMatrix, vertexArray[vertexIndex] + deltaV);
+        }
+        public float3 GetNormalInWorld(int lod, int vertexIndex)
+        {
+            var subData = SubData;
+
+            if (!subData.TryGetNormals(lod, out var normalsArray)) return default;
+
+            if (!PrepInWorldDataFetch(lod, vertexIndex, out int topVertexIndex, out MuscleData muscleData, out float flexFactor, out MeshVertexDelta delta, out MeshShape flexShape, out float4x4 skinningMatrix)) return default;
+
+            float3 deltaN = delta.normalDelta;
+            deltaN = flexShape.BlendShape.GetTransformedNormal(deltaN, topVertexIndex, flexFactor, 1f);
+
+            return math.normalize(math.rotate(skinningMatrix, normalsArray[vertexIndex] + deltaN)); 
+        }
+        public float4 GetTangentInWorld(int lod, int vertexIndex)
+        {
+            var subData = SubData;
+
+            if (!subData.TryGetTangents(lod, out var tangentsArray)) return default;
+
+            if (!PrepInWorldDataFetch(lod, vertexIndex, out int topVertexIndex, out MuscleData muscleData, out float flexFactor, out MeshVertexDelta delta, out MeshShape flexShape, out float4x4 skinningMatrix)) return default;
+
+            float3 deltaT = delta.tangentDelta;
+            deltaT = ((float4)flexShape.BlendShape.GetTransformedTangent(new Vector4(deltaT.x, deltaT.y, deltaT.z, 0f), topVertexIndex, flexFactor, 1f)).xyz;
+
+            var tangent = tangentsArray[vertexIndex];
+            tangent.xyz = math.normalize(math.rotate(skinningMatrix, tangent.xyz + deltaT));
+            return tangent;
+        }
+        public void GetVertexInWorld(int lod, int vertexIndex, out float3 pos, out float3 normal, out float4 tangent)
+        {
+            pos = default;
+            normal = default;
+            tangent = default;
+
+            var subData = SubData;
+
+            if (!subData.TryGetVertices(lod, out var vertexArray) || !subData.TryGetNormals(lod, out var normalsArray) || !subData.TryGetTangents(lod, out var tangentsArray)) return;
+
+            if (!PrepInWorldDataFetch(lod, vertexIndex, out int topVertexIndex, out MuscleData muscleData, out float flexFactor, out MeshVertexDelta delta, out MeshShape flexShape, out float4x4 skinningMatrix)) return;
+
+            float3 deltaV = delta.positionDelta;
+            deltaV = flexShape.BlendShape.GetTransformedVertex(deltaV, topVertexIndex, flexFactor, 1f);
+
+            float3 deltaN = delta.normalDelta;
+            deltaN = flexShape.BlendShape.GetTransformedNormal(deltaN, topVertexIndex, flexFactor, 1f);
+
+            float3 deltaT = delta.tangentDelta;
+            deltaT = ((float4)flexShape.BlendShape.GetTransformedTangent(new Vector4(deltaT.x, deltaT.y, deltaT.z, 0f), topVertexIndex, flexFactor, 1f)).xyz;
+
+            pos = math.transform(skinningMatrix, vertexArray[vertexIndex] + deltaV);
+
+            normal = math.normalize(math.rotate(skinningMatrix, normalsArray[vertexIndex] + deltaN));
+
+            tangent = tangentsArray[vertexIndex];
+            tangent.xyz = math.normalize(math.rotate(skinningMatrix, tangent.xyz + deltaT));
+        }
+
+        public List<float3> GetMuscleGroupsAffecting(int lod, int vertexIndex, List<float3> list = null)
+        {
+            if (list == null) list = new List<float3>();
+
+            var subData = SubData;
+            if (subData.muscleGroups.y >= subData.muscleGroups.x)
+            {
+                int topVertexIndex = vertexIndex;
+                if (lod > 0 && TryGetUV(lod, subData.nearestVertexUVChannel, out var uvArray))
+                {
+                    topVertexIndex = MorphUtils.FetchIndexFromUV(subData.nearestVertexIndexElement, uvArray[vertexIndex]);
+                }
+
+                float midlineWeight = subData.precache_vertexGroups[(subData.midlineVertexGroup * subData.vertexCount) + topVertexIndex];
+                float2 weightLeftRight = math.lerp(math.select(new float2(1f, 0f), new float2(0f, 1f), subData.leftRightFlags[topVertexIndex]), new float2(0.5f, 0.5f), midlineWeight);
+                for (int i = subData.muscleGroups.x; i <= subData.muscleGroups.y; i++)
+                {
+                    int groupIndex = i - subData.muscleGroups.x;
+
+                    var vg = subData.GetVertexGroup(i); 
+                    float weight = vg.GetWeight(topVertexIndex);
+                    if (weight > 0f) list.Add(new float3(groupIndex, weight * weightLeftRight.x, weight * weightLeftRight.y));
+                }
+            }
+
+            return list;
+        }
+        public List<float3> GetFatGroupsAffecting(int lod, int vertexIndex, List<float3> list = null)
+        {
+            if (list == null) list = new List<float3>();
+
+            var subData = SubData;
+            if (subData.fatGroups.y >= subData.fatGroups.x)
+            {
+                int topVertexIndex = vertexIndex;
+                if (lod > 0 && TryGetUV(lod, subData.nearestVertexUVChannel, out var uvArray))
+                {
+                    topVertexIndex = MorphUtils.FetchIndexFromUV(subData.nearestVertexIndexElement, uvArray[vertexIndex]);
+                }
+
+                float midlineWeight = subData.precache_vertexGroups[(subData.midlineVertexGroup * subData.vertexCount) + topVertexIndex];
+                float2 weightLeftRight = math.lerp(math.select(new float2(1f, 0f), new float2(0f, 1f), subData.leftRightFlags[topVertexIndex]), new float2(0.5f, 0.5f), midlineWeight);
+                for (int i = subData.fatGroups.x; i <= subData.fatGroups.y; i++)
+                {
+                    int groupIndex = i - subData.fatGroups.x;
+
+                    var vg = subData.GetVertexGroup(i);
+                    float weight = vg.GetWeight(topVertexIndex);
+                    if (weight > 0f) list.Add(new float3(groupIndex, weight * weightLeftRight.x, weight * weightLeftRight.y)); 
+                }
+            }
+
+            return list;
+        }
+        public List<float3> GetVariationGroupsAffecting(int lod, int vertexIndex, List<float3> list = null)
+        {
+            if (list == null) list = new List<float3>();
+
+            var subData = SubData;
+            if (subData.variationGroups.y >= subData.variationGroups.x)
+            {
+                int topVertexIndex = vertexIndex;
+                if (lod > 0 && TryGetUV(lod, subData.nearestVertexUVChannel, out var uvArray))
+                {
+                    topVertexIndex = MorphUtils.FetchIndexFromUV(subData.nearestVertexIndexElement, uvArray[vertexIndex]);
+                }
+
+                float midlineWeight = subData.precache_vertexGroups[(subData.midlineVertexGroup * subData.vertexCount) + topVertexIndex];
+                float2 weightLeftRight = math.lerp(math.select(new float2(1f, 0f), new float2(0f, 1f), subData.leftRightFlags[topVertexIndex]), new float2(0.5f, 0.5f), midlineWeight);
+                for (int i = subData.variationGroups.x; i <= subData.variationGroups.y; i++) 
+                {
+                    int groupIndex = i - subData.variationGroups.x;
+
+                    var vg = subData.GetVertexGroup(i);
+                    float weight = vg.GetWeight(topVertexIndex);
+                    if (weight > 0f) list.Add(new float3(groupIndex, weight * weightLeftRight.x, weight * weightLeftRight.y)); 
+                }
+            }
+
+            return list;
+        }
+
+
         public override InstanceableMeshDataBase MeshData => null;
         public override InstancedMeshGroup MeshGroup => null;
 
@@ -5969,6 +6463,30 @@ namespace Swole.Morphing
             SetMuscleDataUnsafe(groupIndex, data);
         }
         public int IndexOfMuscleGroup(string groupName) => Data == null ? -1 : SubData.IndexOfMuscleGroup(groupName);
+
+
+        public MuscleData GetMuscleDataForVertex(int vertexIndex)
+        {
+            MuscleData data = default;
+
+            var subData = SubData;
+            if (subData.muscleGroups.y >= subData.muscleGroups.x) 
+            {
+                float midlineWeight = subData.precache_vertexGroups[(subData.midlineVertexGroup * subData.vertexCount) + vertexIndex];
+                float2 weightLeftRight = math.lerp(math.select(new float2(1f, 0f), new float2(0f, 1f), subData.leftRightFlags[vertexIndex]), new float2(0.5f, 0.5f), midlineWeight);
+                for (int i = subData.muscleGroups.x; i <= subData.muscleGroups.y; i++)
+                {
+                    int muscleGroupIndex = i - subData.muscleGroups.x;
+                    int controlIndex = FirstMuscleGroupsControlIndex + muscleGroupIndex;
+                    var dataLR = MuscleGroupsControlBuffer[controlIndex];
+
+                    data = data + (dataLR.valuesLeft * weightLeftRight.x) + (dataLR.valuesRight * weightLeftRight.y); 
+                }
+            }
+
+            return data;
+        }
+
 
         public int FirstFatGroupsControlIndex => CharacterInstanceID * SubData.FatVertexGroupCount;
         public float GetFatLevelUnsafe(int groupIndex) => FatGroupsControlBuffer[FirstFatGroupsControlIndex + groupIndex].x;
@@ -7010,6 +7528,9 @@ namespace Swole.Morphing
             if (!Data.SerializedData.TryGetTriangles(lod, out var triangles)) return false;
             if (!Data.SerializedData.TryGetUV(lod, Data.SerializedData.nearestVertexUVChannel, out var indexUVs)) return false;
 
+            instance.UpdateIfDirty(false, true);
+            instance.OwnerGroup.ActiveJob.Complete(); 
+
             var rigSampler = RigSampler;
             RaycastResult finalResult = default; 
             using (var resultQueue = new NativeQueue<RaycastResult>(Allocator.TempJob))
@@ -7023,7 +7544,7 @@ namespace Swole.Morphing
                     handle = new RaycastMeshJob()
                     {
 
-                        deltasStartIndex = Data.SerializedData.vertexCount * instance.localID,
+                        deltasStartIndex = DeltasStartIndex,
 
                         indexChannel = Data.SerializedData.nearestVertexIndexElement,
 
@@ -7141,6 +7662,7 @@ namespace Swole.Morphing
 
                 var output = new RaycastResult();
                 output.didHit = Maths.seg_intersect_triangle_include_dist(origin, offset, v0, v1, v2, out Maths.RaycastHitResult result, errorMargin);
+                result.triangleIndex = index;
                 output.hitInfo = result;
 
                 if (output.didHit) results.Enqueue(output); 
@@ -7176,6 +7698,35 @@ namespace Swole.Morphing
 
         #region IMuscularBasic
 
+        public const int _dualMuscleGroupIndexOffset = 10000;
+
+        public static int ConvertDefaultIndexForArray(int defaultIndex)
+        {
+            int convertedDefaultIndex = defaultIndex;
+            if (convertedDefaultIndex >= _dualMuscleGroupIndexOffset)
+            {
+                convertedDefaultIndex = convertedDefaultIndex - _dualMuscleGroupIndexOffset;
+            }
+
+            return convertedDefaultIndex;
+        }
+        public static int ConvertDefaultMuscleGroupIndexToLocal(int defaultIndex, out int convertedDefaultIndex, out bool isBothSides) 
+        {
+            isBothSides = false;
+
+            convertedDefaultIndex = defaultIndex;
+            if (convertedDefaultIndex >= _dualMuscleGroupIndexOffset)
+            {
+                isBothSides = true;
+                convertedDefaultIndex = convertedDefaultIndex - _dualMuscleGroupIndexOffset;
+            }
+
+            return convertedDefaultIndex / 2; 
+        }
+        public static int ConvertDefaultMuscleGroupIndexToLocal(int defaultIndex, out bool isBothSides) => ConvertDefaultMuscleGroupIndexToLocal(defaultIndex, out _, out isBothSides);
+        public static int ConvertDefaultMuscleGroupIndexToLocal(int defaultIndex, out int convertedDefaultIndex) => ConvertDefaultMuscleGroupIndexToLocal(defaultIndex, out convertedDefaultIndex, out _);
+        public static int ConvertDefaultMuscleGroupIndexToLocal(int defaultIndex) => ConvertDefaultMuscleGroupIndexToLocal(defaultIndex, out _, out _);
+
         [Serializable]
         public class DefaultMuscleGroupConversion
         {
@@ -7189,8 +7740,8 @@ namespace Swole.Morphing
         public string GetMuscleGroupName(int index) => GetMuscleGroupNameUnsafe(index);
         public string GetMuscleGroupNameUnsafe(int index)
         {
-            var group = SubData.GetMuscleVertexGroup(index / 2);
-            return group != null ? group.name : null;
+            var defaultGroup = SubData.ConvertMuscleGroupIndexToDefault(index); 
+            return defaultGroup.ToString();  
         }
         public int GetMuscleGroupIndex(string muscleGroupName) 
         {
@@ -7201,11 +7752,19 @@ namespace Swole.Morphing
             {
                 if (Enum.TryParse(baseGroup.ToString(), true, out defaultGroup)) return SubData.ConvertDefaultMuscleGroupToIndex(defaultGroup); 
             }
-
+            
             return SubData.IndexOfMuscleGroup(muscleGroupName) * 2;
         }
         public int GetMuscleGroupIndex(MuscleGroupIdentifier identifier) => GetMuscleGroupIndex(identifier.ToString());
-        public int FindMuscleGroup(string muscleGroupName) => GetMuscleGroupIndex(muscleGroupName);
+
+        public int GetMuscleGroupIndexForArray(string muscleGroupName)
+        {
+            int ind = GetMuscleGroupIndex(muscleGroupName);
+            return ConvertDefaultIndexForArray(ind);
+        }
+        public int GetMuscleGroupIndexForArray(MuscleGroupIdentifier identifier) => GetMuscleGroupIndexForArray(identifier.ToString()); 
+
+        public int FindMuscleGroup(string muscleGroupName) => GetMuscleGroupIndexForArray(muscleGroupName);
         public int FindMuscleGroup(MuscleGroupIdentifier identifier) => FindMuscleGroup(identifier.ToString());
 
         public int MuscleGroupCount => SubData.MuscleGroupsCount * 2;
@@ -7218,10 +7777,10 @@ namespace Swole.Morphing
 
         public bool SetMuscleGroupValues(int muscleGroupIndex, float3 values, bool updateDependencies = true)
         {
-            int localGroupIndex = muscleGroupIndex / 2;
+            int localGroupIndex = ConvertDefaultMuscleGroupIndexToLocal(muscleGroupIndex, out bool bothSides);
 
-            var defaultGroup = SubData.ConvertMuscleGroupToDefault(localGroupIndex);
-            bool isSymmetrical = defaultGroup.IsSymmetrical();
+            var defaultGroup = SubData.ConvertLocalMuscleGroupToDefault(localGroupIndex);
+            bool isSymmetrical = bothSides || defaultGroup.IsSymmetrical();
 
             var data = GetMuscleData(localGroupIndex);
             if (isSymmetrical)
@@ -7256,12 +7815,12 @@ namespace Swole.Morphing
         }
         public bool SetMuscleGroupMass(int muscleGroupIndex, float mass, bool updateDependencies = true, bool hasUpdated = false)
         {
-            int localGroupIndex = muscleGroupIndex / 2;
+            int localGroupIndex = ConvertDefaultMuscleGroupIndexToLocal(muscleGroupIndex, out bool bothSides);
 
-            var defaultGroup = SubData.ConvertMuscleGroupToDefault(localGroupIndex);
-            bool isSymmetrical = defaultGroup.IsSymmetrical();
+            var defaultGroup = SubData.ConvertLocalMuscleGroupToDefault(localGroupIndex);
+            bool isSymmetrical = bothSides || defaultGroup.IsSymmetrical();
 
-            var data = GetMuscleData(localGroupIndex);
+            var data = GetMuscleData(localGroupIndex); 
             if (isSymmetrical)
             {
                 data.valuesLeft.mass = mass;
@@ -7285,10 +7844,10 @@ namespace Swole.Morphing
         }
         public bool SetMuscleGroupFlex(int muscleGroupIndex, float flex, bool updateDependencies = true, bool hasUpdated = false)
         {
-            int localGroupIndex = muscleGroupIndex / 2;
+            int localGroupIndex = ConvertDefaultMuscleGroupIndexToLocal(muscleGroupIndex, out bool bothSides);
 
-            var defaultGroup = SubData.ConvertMuscleGroupToDefault(localGroupIndex);
-            bool isSymmetrical = defaultGroup.IsSymmetrical();
+            var defaultGroup = SubData.ConvertLocalMuscleGroupToDefault(localGroupIndex);
+            bool isSymmetrical = bothSides || defaultGroup.IsSymmetrical();
 
             var data = GetMuscleData(localGroupIndex);
             if (isSymmetrical)
@@ -7314,10 +7873,10 @@ namespace Swole.Morphing
         }
         public bool SetMuscleGroupPump(int muscleGroupIndex, float pump, bool updateDependencies = true, bool hasUpdated = false)
         {
-            int localGroupIndex = muscleGroupIndex / 2;
+            int localGroupIndex = ConvertDefaultMuscleGroupIndexToLocal(muscleGroupIndex, out bool bothSides);
 
-            var defaultGroup = SubData.ConvertMuscleGroupToDefault(localGroupIndex);
-            bool isSymmetrical = defaultGroup.IsSymmetrical();
+            var defaultGroup = SubData.ConvertLocalMuscleGroupToDefault(localGroupIndex);
+            bool isSymmetrical = bothSides || defaultGroup.IsSymmetrical();
 
             var data = GetMuscleData(localGroupIndex);
             if (isSymmetrical)
@@ -7349,8 +7908,11 @@ namespace Swole.Morphing
 
         public float3 GetMuscleGroupValues(int muscleGroupIndex)
         {
-            int localGroupIndex = muscleGroupIndex / 2;
-            bool isLeft = muscleGroupIndex % 2 == 0;
+            int localGroupIndex = ConvertDefaultMuscleGroupIndexToLocal(muscleGroupIndex, out int defaultIndex, out bool bothSides);
+
+            var defaultGroup = SubData.ConvertLocalMuscleGroupToDefault(localGroupIndex);
+            bool isSymmetrical = bothSides || defaultGroup.IsSymmetrical();
+            bool isLeft = isSymmetrical || muscleGroupIndex % 2 == 0; 
 
             var data = GetMuscleData(localGroupIndex);
             return isLeft ? new float3(data.valuesLeft.mass, data.valuesLeft.flex, data.valuesLeft.pump) : new float3(data.valuesRight.mass, data.valuesRight.flex, data.valuesRight.pump);
@@ -7445,17 +8007,20 @@ namespace Swole.Morphing
 
         public bool Listen(int muscleGroupIndex, EngineInternal.IEngineObject listeningObject, MuscleValueListenerDelegate callback, out MuscleValueListener listener)
         {
+            muscleGroupIndex = ConvertDefaultMuscleGroupIndexToLocal(muscleGroupIndex, out int defaultIndex, out bool bothSides);
 
             listener = null;
-            if (listeningObject == null || callback == null || muscleGroupIndex < 0 || muscleGroupIndex >= MuscleGroupCount) return false;
+            if (listeningObject == null || callback == null || muscleGroupIndex < 0 || muscleGroupIndex >= SubData.MuscleGroupsCount) return false;
 
             if (muscleValueListeners == null) muscleValueListeners = new List<MuscleValueListener>[MuscleGroupCount];
 
-            List<MuscleValueListener> listeners = muscleValueListeners[muscleGroupIndex];
+            if (bothSides) defaultIndex = muscleGroupIndex * 2;
+
+            List<MuscleValueListener> listeners = muscleValueListeners[defaultIndex];
             if (listeners == null)
             {
                 listeners = new List<MuscleValueListener>();
-                muscleValueListeners[muscleGroupIndex] = listeners;
+                muscleValueListeners[defaultIndex] = listeners;
             }
 
             listener = new MuscleValueListener() { listeningObject = listeningObject, callback = callback };
@@ -7503,14 +8068,16 @@ namespace Swole.Morphing
 
         private void NotifyDefaultMuscleGroupListeners(int muscleGroupIndex)
         {
-            if (muscleValueListeners != null && muscleGroupIndex >= 0 && muscleGroupIndex < MuscleGroupCount)
+            muscleGroupIndex = ConvertDefaultMuscleGroupIndexToLocal(muscleGroupIndex, out int defaultIndex);
+
+            if (muscleValueListeners != null && muscleGroupIndex >= 0 && muscleGroupIndex < SubData.MuscleGroupsCount)
             {
-                List<MuscleValueListener> listeners = muscleValueListeners[muscleGroupIndex];
+                List<MuscleValueListener> listeners = muscleValueListeners[defaultIndex];
                 if (listeners != null)
                 {
-                    bool isLeft = muscleGroupIndex % 2 == 0;
-                    int mirrorMuscleGroupIndex = isLeft ? muscleGroupIndex + 1 : muscleGroupIndex - 1; 
-                    var data = GetMuscleData(muscleGroupIndex / 2);
+                    bool isLeft = defaultIndex % 2 == 0;
+                    int mirrorMuscleGroupIndex = isLeft ? defaultIndex + 1 : defaultIndex - 1; 
+                    var data = GetMuscleData(muscleGroupIndex);
 
                     foreach (var listener in listeners)
                     {

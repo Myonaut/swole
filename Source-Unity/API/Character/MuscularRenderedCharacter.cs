@@ -346,8 +346,12 @@ namespace Swole.API.Unity
 
         }
         public int GetMuscleGroupIndex(MuscleGroupIdentifier identifier) => GetMuscleGroupIndex(identifier.ToString());
-        public int FindMuscleGroup(string muscleGroupName) => GetMuscleGroupIndex(muscleGroupName);
-        public int FindMuscleGroup(MuscleGroupIdentifier identifier) => GetMuscleGroupIndex(identifier);
+
+        public int GetMuscleGroupIndexForArray(string muscleGroupName) => GetMuscleGroupIndex(muscleGroupName);
+        public int GetMuscleGroupIndexForArray(MuscleGroupIdentifier identifier) => GetMuscleGroupIndex(identifier);
+
+        public int FindMuscleGroup(string muscleGroupName) => GetMuscleGroupIndexForArray(muscleGroupName);
+        public int FindMuscleGroup(MuscleGroupIdentifier identifier) => GetMuscleGroupIndexForArray(identifier);
 
 
         protected NativeArray<MuscleGroupInfo> m_muscleGroupValues;

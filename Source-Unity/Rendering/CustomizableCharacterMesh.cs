@@ -13,6 +13,7 @@ using Unity.Collections;
 
 using Swole.API.Unity;
 using Swole.API.Unity.Animation;
+using Swole.DataStructures;
 
 using static Swole.API.Unity.ICustomizableCharacter.Defaults;
 
@@ -1624,6 +1625,88 @@ namespace Swole.Morphing
             }*/
         }
 
+
+        public bool TryGetVertices(int lod, out NativeArray<float3> array)
+        {
+            array = default;
+            return false;
+        }
+        public bool TryGetColors(int lod, out NativeArray<float4> array)
+        {
+            array = default;
+            return false;
+        }
+        public bool TryGetTriangles(int lod, out NativeArray<int> array)
+        {
+            array = default;
+            return false;
+        }
+        public bool TryGetBoneWeights(int lod, out NativeArray<BoneWeight8> array)
+        {
+            array = default;
+            return false;
+        }
+
+        public bool TryGetUV0(int lod, out NativeArray<float4> array)
+        {
+            array = default;
+            return false;
+        }
+        public bool TryGetUV1(int lod, out NativeArray<float4> array)
+        {
+            array = default;
+            return false;
+        }
+        public bool TryGetUV2(int lod, out NativeArray<float4> array)
+        {
+            array = default;
+            return false;
+        }
+        public bool TryGetUV3(int lod, out NativeArray<float4> array)
+        {
+            array = default;
+            return false;
+        }
+        public bool TryGetUV(int lod, UVChannelURP channel, out NativeArray<float4> array)
+        {
+            array = default;
+            return false;
+        }
+
+
+        public float3 GetVertexInWorld(int lod, int vertexIndex)
+        {
+            return default;
+        }
+        public float3 GetNormalInWorld(int lod, int vertexIndex)
+        {
+            return default;
+        }
+        public float4 GetTangentInWorld(int lod, int vertexIndex)
+        {
+            return default;
+        }
+        public void GetVertexInWorld(int lod, int vertexIndex, out float3 pos, out float3 normal, out float4 tangent)
+        {
+            pos = default;
+            normal = default;
+            tangent = default;
+        }
+
+        public List<float3> GetMuscleGroupsAffecting(int lod, int vertexIndex, List<float3> list = null)
+        {
+            return list;
+        }
+        public List<float3> GetFatGroupsAffecting(int lod, int vertexIndex, List<float3> list = null)
+        {
+            return list;
+        }
+        public List<float3> GetVariationGroupsAffecting(int lod, int vertexIndex, List<float3> list = null)
+        {
+            return list;
+        }
+
+
         #region Events
 
         public void AddListener(ICustomizableCharacter.ListenableEvent event_, UnityAction<int> listener)
@@ -1666,6 +1749,8 @@ namespace Swole.Morphing
         public string GetMuscleGroupNameUnsafe(int index) => string.Empty;
         public int GetMuscleGroupIndex(string muscleGroupName) => -1;
         public int GetMuscleGroupIndex(MuscleGroupIdentifier identifier) => GetMuscleGroupIndex(identifier.ToString());
+        public int GetMuscleGroupIndexForArray(string muscleGroupName) => -1;
+        public int GetMuscleGroupIndexForArray(MuscleGroupIdentifier identifier) => GetMuscleGroupIndexForArray(identifier.ToString());
         public int FindMuscleGroup(string muscleGroupName) => GetMuscleGroupIndex(muscleGroupName);
         public int FindMuscleGroup(MuscleGroupIdentifier identifier) => FindMuscleGroup(identifier.ToString());
 

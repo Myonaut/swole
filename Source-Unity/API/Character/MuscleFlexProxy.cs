@@ -355,12 +355,17 @@ namespace Swole.API.Unity
         public float Flex_TFL_Right { set => SetFlexByProxy(value, boundIndices_TFL_Right); get => GetFlexByProxy(boundIndices_TFL_Right); }
         public string[] bindings_TFL_Right; protected List<int> boundIndices_TFL_Right;
 
-        public override int FindBindingIndex(string binding)
+        public override List<int> FindBindingIndex(string binding, List<int> list = null)
         {
-            if (MuscleManager == null) return -1;
+            if (list == null) list = new List<int>();
+
+            if (MuscleManager == null) return list;
 
             var character = MuscleManager;
-            return character.FindMuscleGroup(binding); 
+            var ind = character.FindMuscleGroup(binding); 
+            if (ind >= 0) list.Add(ind);
+
+            return list;
         }
 
         public override void Rebind()

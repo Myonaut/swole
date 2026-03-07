@@ -20,12 +20,18 @@ namespace Swole.API.Unity
 
         [SerializeField]
         protected MuscularRenderedCharacter character;
-        public MuscularRenderedCharacter Character
+        protected IMuscularBasic muscleController;
+        public IMuscularBasic Character
         {
-            get => character;
+            get
+            {
+                if (character != null) return character;
+                return muscleController;
+            }
             set
             {
-                character = value;
+                if (value is MuscularRenderedCharacter mrc) character = mrc; 
+                muscleController = value;
                 Refresh();
             }
         }
@@ -48,7 +54,9 @@ namespace Swole.API.Unity
 
         public void Refresh() 
         {
+            var character = Character;
             if (character == null) return;
+
             if (list == null) 
             { 
                 list = gameObject.GetComponent<UICategorizedList>();

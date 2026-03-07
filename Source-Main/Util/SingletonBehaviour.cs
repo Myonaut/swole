@@ -275,6 +275,17 @@ namespace Swole
         public void OnPreFixedUpdate();
         public void OnPostFixedUpdate();
     }
+    public static class ExecutableBehaviourExtensions
+    {
+        public static void AddToCallstack(this IExecutableBehaviour behaviour)
+        {
+            SingletonCallStack.Insert(behaviour);
+        }
+        public static void RemoveFromCallstack(this IExecutableBehaviour behaviour)
+        {
+            SingletonCallStack.Remove(behaviour);
+        }
+    }
     public interface ISingletonBehaviour : IExecutableBehaviour, IComparable<ISingletonBehaviour>
     {
 

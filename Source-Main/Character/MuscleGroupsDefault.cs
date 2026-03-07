@@ -14,23 +14,25 @@ namespace Swole
     {
         public static MuscleGroup GetMuscleGroupBase(this MuscleGroupsDefault muscleGroup)
         {
-            return GetMuscleGroupBase(muscleGroup.ToString());
+            return GetMuscleGroupBase(muscleGroup.ToString()); 
         }
         public static MuscleGroup GetMuscleGroupBase(string name)
         {
-            var indexOfLeft = name.IndexOf(SwoleUtil.sideSuffixLeft);
+            name = name.ToLower();
+
+            var indexOfLeft = name.IndexOf(SwoleUtil.sideSuffixLeft.ToLower());
             if (indexOfLeft >= 0)
             {
                 name = name.Substring(0, indexOfLeft);
             }
 
-            var indexOfRight = name.IndexOf(SwoleUtil.sideSuffixRight);
+            var indexOfRight = name.IndexOf(SwoleUtil.sideSuffixRight.ToLower());
             if (indexOfRight >= 0)
             {
                 name = name.Substring(0, indexOfRight);
             }
 
-            if (Enum.TryParse(name, out MuscleGroup result)) 
+            if (Enum.TryParse(name, true, out MuscleGroup result)) 
             {
                 return result;
             }

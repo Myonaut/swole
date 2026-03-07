@@ -149,10 +149,15 @@ namespace Swole.API.Unity
             return value / indices.Count;
         }
 
-        public override int FindBindingIndex(string binding)
+        public override List<int> FindBindingIndex(string binding, List<int> list = null)
         {
-            if (Manager == null) return -1;
-            return manager.FindIKControllerIndex(binding);
+            if (list == null) list = new List<int>();
+
+            if (Manager == null) return list;
+
+            var ind = manager.FindIKControllerIndex(binding);
+            if (ind >= 0) list.Add(ind);
+            return list;
         }
     }
 }
