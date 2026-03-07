@@ -32,8 +32,14 @@ namespace Swole.Modding
             {
                 apply = false;
 
-                TransferComponents(rootToCopy, rootTarget, includeIk, includeConstraints);
+                Transfer(rootToCopy, rootTarget);
             }
+        }
+
+        public virtual void Transfer(GameObject rootToCopy, GameObject rootTarget)
+        {
+            if (rootTarget == null) rootTarget = gameObject;
+            TransferComponents(rootToCopy, rootTarget, includeIk, includeConstraints); 
         }
 
         public static void TransferComponents(GameObject rootToCopy, GameObject rootTarget, bool includeIk = true, bool includeConstraints = true)
