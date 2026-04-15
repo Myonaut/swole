@@ -12,6 +12,8 @@ namespace Swole
     public interface IInteractable
     {
 
+        public string Prompt { get; }
+
         public Vector3 WorldPosition { get; }
 
         public int InteractableID { get; }
@@ -48,9 +50,12 @@ namespace Swole
     public interface IInteraction
     {
 
+        public IInteractable Owner { get; }
+        public bool HasOwner { get; }
+
         public string ID { get; }
 
-        public bool Initialize(bool reinitialize);
+        public bool Initialize(bool reinitialize, IInteractable owner);
 
         public void SetTime(float normalizedTime);
 

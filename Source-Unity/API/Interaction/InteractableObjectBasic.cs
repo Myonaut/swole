@@ -14,6 +14,9 @@ namespace Swole
     public class InteractableObjectBasic : MonoBehaviour, IInteractable
     {
 
+        public string prompt;
+        public string Prompt => prompt;
+
         public Vector3 WorldPosition => transform.position;
 
         public int InteractableID => GetInstanceID();
@@ -46,7 +49,7 @@ namespace Swole
         {
             if (!useSeperateBoundsForAutoInteract) return IsPositionInBounds(position);
 
-            if (!requirePositionInBounds || autoInteractRequiredBounds == null || autoInteractRequiredBounds.Length <= 0) return true;
+            if (!requirePositionInBounds || autoInteractRequiredBounds == null || autoInteractRequiredBounds.Length <= 0) return true; 
 
             var localPosition = transform.InverseTransformPoint(position);
             foreach (var bounds in autoInteractRequiredBounds)
@@ -198,6 +201,11 @@ namespace Swole
         public class TransformInteraction : IInteraction
         {
 
+            [NonSerialized]
+            protected IInteractable owner;
+            public IInteractable Owner => owner;
+            public bool HasOwner => owner != null;
+
             public Transform target;
 
             public string ID => target == null ? string.Empty : target.name; 
@@ -234,9 +242,11 @@ namespace Swole
             public bool HasRotationCurve => controlRotation && rotationCurve != null && rotationCurve.length > 0;
             public bool HasScaleCurve => controlScale && scaleCurve != null && scaleCurve.length > 0;
 
-            public bool Initialize(bool reinitialize = false)
+            public bool Initialize(bool reinitialize = false, IInteractable owner = null)
             {
                 if ((initialized && !reinitialize) || target == null) return false;
+
+                this.owner = owner;
 
                 defaultLocalPosition = target.localPosition;
                 defaultLocalRotation = target.localRotation;
@@ -252,7 +262,7 @@ namespace Swole
             {
                 if (!initialized)
                 {
-                    if (!Initialize(false)) return;
+                    if (!Initialize(false, owner)) return;
                 }
 
                 normalizedTime = HasTimeCurve ? timeCurve.Evaluate(normalizedTime) : normalizedTime;
@@ -315,6 +325,11 @@ namespace Swole
         public class TransformGroupInteraction : IInteraction
         {
 
+            [NonSerialized]
+            protected IInteractable owner;
+            public IInteractable Owner => owner;
+            public bool HasOwner => owner != null;
+
             public string name;
             public string ID => name;
 
@@ -327,11 +342,11 @@ namespace Swole
             public Behaviour[] componentsToEnable;
             public Collider[] collidersToEnable;
 
-            public bool Initialize(bool reinitialize = false)
+            public bool Initialize(bool reinitialize = false, IInteractable owner = null)
             {
                 if (affectedTransforms != null)
                 {
-                    foreach(var t in affectedTransforms) if (t != null) t.Initialize(reinitialize);
+                    foreach(var t in affectedTransforms) if (t != null) t.Initialize(reinitialize, owner);
                 }
 
                 if (interactionPoints != null)
@@ -479,7 +494,7 @@ namespace Swole
 
         protected virtual void Awake()
         {
-            if (interactions != null) foreach(var i in interactions) i.Initialize(false);
+            if (interactions != null) foreach(var i in interactions) i.Initialize(false, this);
 
             if (triggers != null) foreach (var t in triggers) if (t != null) t.SetOwner(this);
         }
