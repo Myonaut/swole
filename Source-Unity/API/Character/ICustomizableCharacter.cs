@@ -135,9 +135,13 @@ namespace Swole.API.Unity
         public bool TryGetUV(int lod, UVChannelURP channel, out NativeArray<float4> array);
 
         public float3 GetVertexInWorld(int lod, int vertexIndex);
+        public float3 GetVertexInWorld(int lod, int vertexIndex, out float4x4 local2World, out float3 localDelta);
         public float3 GetNormalInWorld(int lod, int vertexIndex);
+        public float3 GetNormalInWorld(int lod, int vertexIndex, out float4x4 local2World, out float3 localDelta);
         public float4 GetTangentInWorld(int lod, int vertexIndex);
+        public float4 GetTangentInWorld(int lod, int vertexIndex, out float4x4 local2World, out float3 localDelta);
         public void GetVertexInWorld(int lod, int vertexIndex, out float3 pos, out float3 normal, out float4 tangent);
+        public void GetVertexInWorld(int lod, int vertexIndex, out float3 pos, out float3 normal, out float4 tangent, out float4x4 local2World, out float3 localDeltaPos, out float3 localDeltaNorm, out float3 localDeltaTan);
 
         public List<float3> GetMuscleGroupsAffecting(int lod, int vertexIndex, List<float3> list = null);
         public List<float3> GetFatGroupsAffecting(int lod, int vertexIndex, List<float3> list = null);

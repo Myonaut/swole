@@ -486,10 +486,13 @@ namespace Swole.API.Unity
 
         public void Scale(float scale)
         {
+            float invScale = 1f / scale;
             for(int a = 0; a < this.length; a++)
             {
                 var key = this[a];
                 key.time = key.time * scale;
+                key.inTangent = key.inTangent * invScale;
+                key.outTangent = key.outTangent * invScale; 
                 this[a] = key;
             }
         }

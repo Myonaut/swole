@@ -261,7 +261,7 @@ namespace Swole.API.Unity.Animation
             }
             else if (instance != null)
             {
-                rootTransform = instance.transform;
+                rootTransform = instance.transform; 
                 restPose = new AnimationUtils.Pose(instance.transform, animator == null ? null : animator.avatar);
             }
 
@@ -749,7 +749,7 @@ namespace Swole.API.Unity.Animation
                     }
                     else if (instance != null)
                     {
-                        lastPose.ApplyTo(instance.transform);
+                        lastPose.ApplyTo(instance.transform); 
                     }
                 }
                 else if (referencePose != null)

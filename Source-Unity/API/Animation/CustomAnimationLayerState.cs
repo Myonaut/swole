@@ -41,6 +41,13 @@ namespace Swole.API.Unity.Animation
 
         }
 
+        public CustomAnimationLayerState() { }
+
+        public CustomAnimationLayerState(string name)
+        {
+            this.name = name;
+        }
+
         [NonSerialized]
         protected IAnimationLayer m_layer;
         public IAnimationLayer Layer => m_layer; 
@@ -60,7 +67,7 @@ namespace Swole.API.Unity.Animation
         }
 
         [SerializeField, Tooltip("This index is local to the motion controller identifiers array in the owning layer. If the layer and state have been instantiated at runtime, then it's local to the layer's motion controller array instead.")]
-        public int motionControllerIndex;
+        public int motionControllerIndex = -1;
         //protected int motionControllerIndex;
         /// <summary>
         /// This index is local to the motion controller identifiers array in the owning layer. If the layer and state have been instantiated at runtime, then it's local to the layer's motion controller array instead.

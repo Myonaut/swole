@@ -11,6 +11,12 @@ namespace Swole
 
         public Side side;
 
+        public MuscleGroupIdentifier(MuscleGroup muscleGroup, Side side)
+        {
+            this.muscleGroup = muscleGroup;
+            this.side = side;
+        }
+
         public override readonly string ToString()
         {
 

@@ -136,6 +136,15 @@ namespace Swole.Unity.InputSystem
                     ""processors"": """",
                     ""interactions"": """",
                     ""initialStateCheck"": false
+                },
+                {
+                    ""name"": ""Interact"",
+                    ""type"": ""Button"",
+                    ""id"": ""25399513-9628-4bb4-8f28-f5a8456fc2d5"",
+                    ""expectedControlType"": """",
+                    ""processors"": """",
+                    ""interactions"": """",
+                    ""initialStateCheck"": false
                 }
             ],
             ""bindings"": [
@@ -323,6 +332,28 @@ namespace Swole.Unity.InputSystem
                     ""processors"": """",
                     ""groups"": "";Gamepad"",
                     ""action"": ""Crouch"",
+                    ""isComposite"": false,
+                    ""isPartOfComposite"": false
+                },
+                {
+                    ""name"": """",
+                    ""id"": ""f3ec8936-fbe2-4c52-8f51-3d9455f96897"",
+                    ""path"": ""<Gamepad>/buttonNorth"",
+                    ""interactions"": """",
+                    ""processors"": """",
+                    ""groups"": "";Gamepad"",
+                    ""action"": ""Interact"",
+                    ""isComposite"": false,
+                    ""isPartOfComposite"": false
+                },
+                {
+                    ""name"": """",
+                    ""id"": ""d0a2d494-ee15-495b-aef2-61419b7e171f"",
+                    ""path"": ""<Keyboard>/e"",
+                    ""interactions"": """",
+                    ""processors"": """",
+                    ""groups"": """",
+                    ""action"": ""Interact"",
                     ""isComposite"": false,
                     ""isPartOfComposite"": false
                 }
@@ -621,6 +652,76 @@ namespace Swole.Unity.InputSystem
                     ""isPartOfComposite"": false
                 }
             ]
+        },
+        {
+            ""name"": ""Object Interaction"",
+            ""id"": ""925006cd-070b-487e-8ed7-20e8a9ad8b4d"",
+            ""actions"": [
+                {
+                    ""name"": ""ObjectPickup"",
+                    ""type"": ""Button"",
+                    ""id"": ""75312bde-aeef-490e-9569-40df3c26c5c1"",
+                    ""expectedControlType"": """",
+                    ""processors"": """",
+                    ""interactions"": """",
+                    ""initialStateCheck"": false
+                },
+                {
+                    ""name"": ""ObjectDrop"",
+                    ""type"": ""Button"",
+                    ""id"": ""7aacd8ac-efe0-48ae-9087-97dbbf8ee53c"",
+                    ""expectedControlType"": """",
+                    ""processors"": """",
+                    ""interactions"": """",
+                    ""initialStateCheck"": false
+                }
+            ],
+            ""bindings"": [
+                {
+                    ""name"": """",
+                    ""id"": ""88b8494e-2001-4958-af2d-7afa084345b8"",
+                    ""path"": ""<Gamepad>/buttonNorth"",
+                    ""interactions"": """",
+                    ""processors"": """",
+                    ""groups"": "";Gamepad"",
+                    ""action"": ""ObjectPickup"",
+                    ""isComposite"": false,
+                    ""isPartOfComposite"": false
+                },
+                {
+                    ""name"": """",
+                    ""id"": ""8d1b58b6-66c3-4629-81c3-0fd081ae2e26"",
+                    ""path"": ""<Keyboard>/e"",
+                    ""interactions"": """",
+                    ""processors"": """",
+                    ""groups"": """",
+                    ""action"": ""ObjectPickup"",
+                    ""isComposite"": false,
+                    ""isPartOfComposite"": false
+                },
+                {
+                    ""name"": """",
+                    ""id"": ""dc6291b1-b08b-4470-a1af-54150026df30"",
+                    ""path"": ""<Gamepad>/buttonEast"",
+                    ""interactions"": """",
+                    ""processors"": """",
+                    ""groups"": """",
+                    ""action"": ""ObjectDrop"",
+                    ""isComposite"": false,
+                    ""isPartOfComposite"": false
+                },
+                {
+                    ""name"": """",
+                    ""id"": ""fcbbeeb6-3bc2-473e-a6e5-16910248e885"",
+                    ""path"": ""<Keyboard>/x"",
+                    ""interactions"": """",
+                    ""processors"": """",
+                    ""groups"": """",
+                    ""action"": ""ObjectDrop"",
+                    ""isComposite"": false,
+                    ""isPartOfComposite"": false
+                }
+            ]
         }
     ],
     ""controlSchemes"": [
@@ -662,6 +763,7 @@ namespace Swole.Unity.InputSystem
             m_Standard_Roll = m_Standard.FindAction("Roll", throwIfNotFound: true);
             m_Standard_Sprint = m_Standard.FindAction("Sprint", throwIfNotFound: true);
             m_Standard_Crouch = m_Standard.FindAction("Crouch", throwIfNotFound: true);
+            m_Standard_Interact = m_Standard.FindAction("Interact", throwIfNotFound: true);
             // MOBA
             m_MOBA = asset.FindActionMap("MOBA", throwIfNotFound: true);
             m_MOBA_AbilityQ = m_MOBA.FindAction("AbilityQ", throwIfNotFound: true);
@@ -676,6 +778,10 @@ namespace Swole.Unity.InputSystem
             // Camera
             m_Camera = asset.FindActionMap("Camera", throwIfNotFound: true);
             m_Camera_InitiateZoom = m_Camera.FindAction("InitiateZoom", throwIfNotFound: true);
+            // Object Interaction
+            m_ObjectInteraction = asset.FindActionMap("Object Interaction", throwIfNotFound: true);
+            m_ObjectInteraction_ObjectPickup = m_ObjectInteraction.FindAction("ObjectPickup", throwIfNotFound: true);
+            m_ObjectInteraction_ObjectDrop = m_ObjectInteraction.FindAction("ObjectDrop", throwIfNotFound: true);
         }
 
         ~@DefaultSwoleControls()
@@ -684,6 +790,7 @@ namespace Swole.Unity.InputSystem
             UnityEngine.Debug.Assert(!m_MOBA.enabled, "This will cause a leak and performance issues, DefaultSwoleControls.MOBA.Disable() has not been called.");
             UnityEngine.Debug.Assert(!m_Driving.enabled, "This will cause a leak and performance issues, DefaultSwoleControls.Driving.Disable() has not been called.");
             UnityEngine.Debug.Assert(!m_Camera.enabled, "This will cause a leak and performance issues, DefaultSwoleControls.Camera.Disable() has not been called.");
+            UnityEngine.Debug.Assert(!m_ObjectInteraction.enabled, "This will cause a leak and performance issues, DefaultSwoleControls.ObjectInteraction.Disable() has not been called.");
         }
 
         public void Dispose()
@@ -757,6 +864,7 @@ namespace Swole.Unity.InputSystem
         private readonly InputAction m_Standard_Roll;
         private readonly InputAction m_Standard_Sprint;
         private readonly InputAction m_Standard_Crouch;
+        private readonly InputAction m_Standard_Interact;
         public struct StandardActions
         {
             private @DefaultSwoleControls m_Wrapper;
@@ -773,6 +881,7 @@ namespace Swole.Unity.InputSystem
             public InputAction @Roll => m_Wrapper.m_Standard_Roll;
             public InputAction @Sprint => m_Wrapper.m_Standard_Sprint;
             public InputAction @Crouch => m_Wrapper.m_Standard_Crouch;
+            public InputAction @Interact => m_Wrapper.m_Standard_Interact;
             public InputActionMap Get() { return m_Wrapper.m_Standard; }
             public void Enable() { Get().Enable(); }
             public void Disable() { Get().Disable(); }
@@ -818,6 +927,9 @@ namespace Swole.Unity.InputSystem
                 @Crouch.started += instance.OnCrouch;
                 @Crouch.performed += instance.OnCrouch;
                 @Crouch.canceled += instance.OnCrouch;
+                @Interact.started += instance.OnInteract;
+                @Interact.performed += instance.OnInteract;
+                @Interact.canceled += instance.OnInteract;
             }
 
             private void UnregisterCallbacks(IStandardActions instance)
@@ -858,6 +970,9 @@ namespace Swole.Unity.InputSystem
                 @Crouch.started -= instance.OnCrouch;
                 @Crouch.performed -= instance.OnCrouch;
                 @Crouch.canceled -= instance.OnCrouch;
+                @Interact.started -= instance.OnInteract;
+                @Interact.performed -= instance.OnInteract;
+                @Interact.canceled -= instance.OnInteract;
             }
 
             public void RemoveCallbacks(IStandardActions instance)
@@ -1053,6 +1168,60 @@ namespace Swole.Unity.InputSystem
             }
         }
         public CameraActions @Camera => new CameraActions(this);
+
+        // Object Interaction
+        private readonly InputActionMap m_ObjectInteraction;
+        private List<IObjectInteractionActions> m_ObjectInteractionActionsCallbackInterfaces = new List<IObjectInteractionActions>();
+        private readonly InputAction m_ObjectInteraction_ObjectPickup;
+        private readonly InputAction m_ObjectInteraction_ObjectDrop;
+        public struct ObjectInteractionActions
+        {
+            private @DefaultSwoleControls m_Wrapper;
+            public ObjectInteractionActions(@DefaultSwoleControls wrapper) { m_Wrapper = wrapper; }
+            public InputAction @ObjectPickup => m_Wrapper.m_ObjectInteraction_ObjectPickup;
+            public InputAction @ObjectDrop => m_Wrapper.m_ObjectInteraction_ObjectDrop;
+            public InputActionMap Get() { return m_Wrapper.m_ObjectInteraction; }
+            public void Enable() { Get().Enable(); }
+            public void Disable() { Get().Disable(); }
+            public bool enabled => Get().enabled;
+            public static implicit operator InputActionMap(ObjectInteractionActions set) { return set.Get(); }
+            public void AddCallbacks(IObjectInteractionActions instance)
+            {
+                if (instance == null || m_Wrapper.m_ObjectInteractionActionsCallbackInterfaces.Contains(instance)) return;
+                m_Wrapper.m_ObjectInteractionActionsCallbackInterfaces.Add(instance);
+                @ObjectPickup.started += instance.OnObjectPickup;
+                @ObjectPickup.performed += instance.OnObjectPickup;
+                @ObjectPickup.canceled += instance.OnObjectPickup;
+                @ObjectDrop.started += instance.OnObjectDrop;
+                @ObjectDrop.performed += instance.OnObjectDrop;
+                @ObjectDrop.canceled += instance.OnObjectDrop;
+            }
+
+            private void UnregisterCallbacks(IObjectInteractionActions instance)
+            {
+                @ObjectPickup.started -= instance.OnObjectPickup;
+                @ObjectPickup.performed -= instance.OnObjectPickup;
+                @ObjectPickup.canceled -= instance.OnObjectPickup;
+                @ObjectDrop.started -= instance.OnObjectDrop;
+                @ObjectDrop.performed -= instance.OnObjectDrop;
+                @ObjectDrop.canceled -= instance.OnObjectDrop;
+            }
+
+            public void RemoveCallbacks(IObjectInteractionActions instance)
+            {
+                if (m_Wrapper.m_ObjectInteractionActionsCallbackInterfaces.Remove(instance))
+                    UnregisterCallbacks(instance);
+            }
+
+            public void SetCallbacks(IObjectInteractionActions instance)
+            {
+                foreach (var item in m_Wrapper.m_ObjectInteractionActionsCallbackInterfaces)
+                    UnregisterCallbacks(item);
+                m_Wrapper.m_ObjectInteractionActionsCallbackInterfaces.Clear();
+                AddCallbacks(instance);
+            }
+        }
+        public ObjectInteractionActions @ObjectInteraction => new ObjectInteractionActions(this);
         private int m_KeyboardSchemeIndex = -1;
         public InputControlScheme KeyboardScheme
         {
@@ -1085,6 +1254,7 @@ namespace Swole.Unity.InputSystem
             void OnRoll(InputAction.CallbackContext context);
             void OnSprint(InputAction.CallbackContext context);
             void OnCrouch(InputAction.CallbackContext context);
+            void OnInteract(InputAction.CallbackContext context);
         }
         public interface IMOBAActions
         {
@@ -1102,6 +1272,11 @@ namespace Swole.Unity.InputSystem
         public interface ICameraActions
         {
             void OnInitiateZoom(InputAction.CallbackContext context);
+        }
+        public interface IObjectInteractionActions
+        {
+            void OnObjectPickup(InputAction.CallbackContext context);
+            void OnObjectDrop(InputAction.CallbackContext context);
         }
     }
 }

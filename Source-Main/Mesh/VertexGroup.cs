@@ -14,6 +14,67 @@ namespace Swole
     {
 
 #if (UNITY_STANDALONE || UNITY_EDITOR)
+        public static float[] ConvertToVertexWeightArray(BlendShape shape, bool normalize = true, string keyword = "", float threshold = 0.0001f, float normalizationSetMaxWeight = 0f, bool clampWeights = true)
+        {
+            return ConvertToVertexWeightArray(shape, null, normalize, keyword, threshold, normalizationSetMaxWeight, clampWeights);
+        }
+        public static float[] ConvertToVertexWeightArray(BlendShape shape, float[] weightsArray, bool normalize = true, string keyword = "", float threshold = 0.0001f, float normalizationSetMaxWeight = 0f, bool clampWeights = true)
+        {
+            float maxWeight = normalizationSetMaxWeight;
+            if (shape.frames != null && shape.frames.Length > 0)
+            {
+
+                Dictionary<int, float> weightDic = new Dictionary<int, float>();
+
+                for (int b = 0; b < shape.frames.Length; b++)
+                {
+
+                    BlendShape.Frame frame = shape.frames[b];
+
+                    for (int c = 0; c < frame.deltaVertices.Length; c++)
+                    {
+
+                        float mag = frame.deltaVertices[c].magnitude;
+
+                        if (mag - threshold > 0)
+                        {
+                            weightDic.TryGetValue(c, out float w);
+
+                            float cw = w + mag;
+
+                            if (normalizationSetMaxWeight <= 0f && cw > maxWeight) maxWeight = cw;
+
+                            weightDic[c] = cw;
+
+                        }
+
+                    }
+
+                }
+
+                if (weightsArray == null) weightsArray = new float[shape.frames[0].deltaVertices.Length];
+
+                if (normalize && maxWeight > 0f)
+                {
+                    foreach (var weight in weightDic)
+                    {
+                        weightsArray[weight.Key] = (clampWeights ? Mathf.Clamp01(weight.Value / maxWeight) : (weight.Value / maxWeight));
+                    }
+                }
+                else
+                {
+                    foreach (var weight in weightDic)
+                    {
+                        weightsArray[weight.Key] = weight.Value;
+                    }
+                }
+
+            }
+
+            return weightsArray;
+
+        }
+
         /// <summary>
         /// Creates a new vertex group instance using blend shape delta vertex magnitudes as the weights.
         /// </summary>
@@ -94,6 +155,27 @@ namespace Swole
 
             return new VertexGroup(string.IsNullOrEmpty(keyword) || string.IsNullOrEmpty(shape.name) ? shape.name : shape.name.Replace(keyword, ""), new List<int>(), new List<float>());
 
+        }
+
+        public BlendShape AsBlendShape(int vertexCount, float frameWeight = 1f)
+        {
+            var deltaV = new Vector3[vertexCount];
+            var deltaN = new Vector3[vertexCount];
+            var deltaT = new Vector3[vertexCount];
+
+            for(int i = 0; i < EntryCount; i++)
+            {
+                int vertexIndex = GetEntryIndex(i);
+                if (vertexIndex < 0 || vertexIndex >= vertexCount) continue;
+
+                float weight = GetEntryWeight(i);
+                deltaV[vertexIndex] += new Vector3(0f, 0f, weight); 
+            }
+
+            var shape = new BlendShape(name);
+            shape.AddFrame(frameWeight, deltaV, deltaN, deltaT);
+
+            return shape;
         }
 #endif
 
@@ -203,6 +285,10 @@ namespace Swole
         {
             if (maxWeight == 0f) for (int a = 0; a < weights.Count; a++) maxWeight = Mathf.Max(maxWeight, weights[a]);
             if (maxWeight != 0f) for (int a = 0; a < weights.Count; a++) weights[a] = weights[a] / maxWeight;
+        }
+        public void Clamp(float minWeight, float maxWeight)
+        {
+            for (int a = 0; a < weights.Count; a++) weights[a] = Mathf.Clamp(weights[a], minWeight, maxWeight);
         }
         public void Add(VertexGroup group, bool limitMaxWeight = false, float maxWeight = 1, float multiplier = 1)
         {
@@ -321,6 +407,11 @@ namespace Swole
             indices.RemoveAt(entryIndex);
             weights.RemoveAt(entryIndex);
         }
+        public void SetEntry(int entryIndex, int vertexIndex, float weight)
+        {
+            SetEntryIndex(entryIndex, vertexIndex);
+            SetEntryWeight(entryIndex, weight); 
+        }
 
         public float GetWeight(int vertexIndex)
         {
@@ -416,6 +507,43 @@ namespace Swole
             this.name = name;
             this.indices = indices;
             this.weights = weights;
+        }
+
+        public VertexGroup(string name, IEnumerable<float> linearWeights, bool ignoreZeroWeights = true)
+        {
+            this.name = name;
+
+            this.indices = new List<int>();
+            this.weights = new List<float>();
+
+            if (linearWeights != null)
+            {
+                int i = 0;
+
+                if (ignoreZeroWeights)
+                {
+                    foreach (var weight in linearWeights)
+                    {
+                        if (weight != 0f)
+                        {
+                            indices.Add(i);
+                            weights.Add(weight);
+                        }
+
+                        i++;
+                    }
+                }
+                else
+                {
+                    foreach (var weight in linearWeights)
+                    {
+                        indices.Add(i);
+                        weights.Add(weight);
+
+                        i++;
+                    }
+                }
+            }
         }
 
         public float[] AsLinearWeightArray(float[] array, bool clearArray = true, int indexOffset = 0)

@@ -66,7 +66,7 @@ namespace Swole.Animation
         public HashSet<int> GetActiveParameters(IAnimationLayer layer, HashSet<int> indices);
         public void GetParameterIndices(IAnimationLayer layer, List<int> indices);
 
-        public void RemapParameterIndices(IAnimationLayer layer, Dictionary<int, int> remapper, bool invalidateNonRemappedIndices = false);
+        public void RemapParameterIndices(IAnimationLayer layer, Dictionary<int, int> remapper, bool invalidateNonRemappedIndices = false, bool remapChildren = true);
 
         public float GetBiasedParameterValue(IAnimationLayer layer, int parameterIndex, float defaultValue, bool updateParameter);
         public float GetBiasedParameterValue(IAnimationLayer layer, int parameterIndex, float defaultValue, bool updateParameter, out bool appliedBias);
@@ -185,7 +185,7 @@ namespace Swole.Animation
     public class MotionPart : IMotionPart, ICloneable
     {
 
-        public float speed;
+        public float speed = 1f;
         public float Speed
         {
             get => speed;
@@ -371,7 +371,7 @@ namespace Swole.Animation
             get => threshold;
             set => threshold = value;
         }
-        public float speed;
+        public float speed = 1f;
         public float Speed
         {
             get => speed;
@@ -430,7 +430,7 @@ namespace Swole.Animation
             set => y = value;
         }
 
-        public float speed;
+        public float speed = 1f;
         public float Speed
         {
             get => speed;

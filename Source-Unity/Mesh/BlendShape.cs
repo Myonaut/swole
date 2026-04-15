@@ -236,8 +236,24 @@ namespace Swole
             }
         }
 
-        public int AddToMesh(Mesh mesh)
+        public int AddToMesh(Mesh mesh, bool replaceExisting = true)
         {
+            if (replaceExisting)
+            {
+                int existingIndex = mesh.GetBlendShapeIndex(name);
+                if (existingIndex >= 0)
+                {
+                    var tempShapes = mesh.GetBlendShapes();
+                    mesh.ClearBlendShapes();
+                    for (int a = 0; a < tempShapes.Count; a++)
+                    {
+                        if (a == existingIndex) continue;
+
+                        BlendShape shape = tempShapes[a];
+                        shape.AddToMesh(mesh, false);
+                    }
+                }
+            } 
 
             for (int a = 0; a < frames.Length; a++)
             {

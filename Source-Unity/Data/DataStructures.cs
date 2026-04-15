@@ -324,6 +324,11 @@ namespace Swole.DataStructures
                     (boneMatrices[boneIndex7] * boneWeight7);
         }
 
+        public override string ToString()
+        {
+            return $"BW8[({boneIndex0},{boneWeight0}), ({boneIndex1},{boneWeight1}), ({boneIndex2},{boneWeight2}), ({boneIndex3},{boneWeight3}), ({boneIndex4},{boneWeight4}), ({boneIndex5},{boneWeight5}), ({boneIndex6},{boneWeight6}), ({boneIndex7},{boneWeight7})]"; 
+        }
+
     }
 
     [Serializable, StructLayout(LayoutKind.Sequential)]

@@ -5,6 +5,7 @@ using System.Collections;
 using System.Collections.Generic;
 using System.Runtime.InteropServices;
 using System.Runtime.CompilerServices;
+using System.Linq;
 
 using UnityEngine;
 
@@ -135,14 +136,14 @@ namespace Swole.Morphing
                     if (!shapeTarget.TryGetBlendShape(queryId, mesh, out shape, vertices, normals, tangents, mergedVertices))
                     {
                         shape = new BlendShape(shapeTarget.targetName); // force create an empty shape if it wasnt in the mesh
-                        Debug.LogWarning($"Target shape '{shapeTarget.targetName}' was not found. Created an empty replacement.");
+                        Debug.LogWarning($"({mesh.name}) Target shape '{shapeTarget.targetName}' was not found. Created an empty replacement.");
                     }
                     if (shape.frames == null || shape.frames.Length <= 0) // if shape has no frames, create an empty one
                     {
                         var frame = new BlendShape.Frame(shape, 0, 0, new Vector3[mesh.vertexCount], new Vector3[mesh.vertexCount], new Vector3[mesh.vertexCount]);
                         shape.frames = new BlendShape.Frame[] { frame };
 
-                        Debug.LogWarning($"Target shape '{shape.name}' had no frames. Created an empty one.");
+                        Debug.LogWarning($"({mesh.name}) Target shape '{shape.name}' had no frames. Created an empty one."); 
                     }
 
                     bool normalize_ = normalize;
@@ -227,10 +228,29 @@ namespace Swole.Morphing
                 }
 
             if (seamShape != null && seamShape.frames != null && seamShape.frames.Length > 0)
-            {
+            {              
+                List<BlendShape> baseShapes = baseMesh.GetBlendShapes();
+                foreach(var baseShape in baseShapes)
+                {
+                    if (nonSeamMergableBlendShapes != null && nonSeamMergableBlendShapes.Contains(baseShape.name)) continue;  
+
+                    bool exists = false;
+                    foreach(var shape in shapes)
+                    {
+                        if (shape.name == baseShape.name)
+                        {
+                            exists = true;
+                            break;
+                        }
+                    }
+                    if (exists) continue;
+
+                    var newShape = new BlendShape(baseShape.name, baseShape.frames, mesh.vertexCount);
+                    shapes.Add(newShape);
+                }
+
                 if (removeSeamShape) shapes.Remove(seamShape);
 
-                List<BlendShape> baseShapes = baseMesh.GetBlendShapes();
                 var baseVertices = baseMesh.vertices;
                 var baseNormals = baseMesh.normals;
                 var baseTangents = baseMesh.tangents;
@@ -254,6 +274,7 @@ namespace Swole.Morphing
                     mergeVertexColors = colors != null && colors.Length > 0;
                 }
 
+                Debug.Log($"Merging seam '{seamShape.name}' for mesh '{mesh.name}' using base mesh '{baseMesh.name}' with method '{mergeMethod}'"); 
                 byte maxBonesPerVertex = 0;
                 using (var baseBoneWeights = baseMesh.GetAllBoneWeights())
                 {
@@ -316,6 +337,9 @@ namespace Swole.Morphing
 
                                                 continue;
                                             }
+
+                                            Debug.DrawRay(vertex, Vector3.up * 0.001f, Color.cyan, 500f);
+                                            Debug.DrawLine(vertex, baseVertices[closestVertex], Color.red, 500f);    
 
                                             boneWeightIndex += bpv;
 
@@ -395,9 +419,9 @@ namespace Swole.Morphing
                                                             var frame = shape.frames[c];
                                                             var baseFrame = baseShape.frames[c];
 
-                                                            var mergedDeltaVertex = baseFrame.deltaVertices[closestVertex];
-                                                            var mergedDeltaNormal = baseFrame.deltaNormals[closestVertex];
-                                                            var mergedDeltaTangent = baseFrame.deltaTangents[closestVertex];
+                                                            var mergedDeltaVertex = Vector3.zero;
+                                                            var mergedDeltaNormal = Vector3.zero;
+                                                            var mergedDeltaTangent = Vector3.zero;
 
                                                             if (mergeMethod == SeamMergeMethod.WeldData)
                                                             {
@@ -412,9 +436,18 @@ namespace Swole.Morphing
                                                                     mergedDeltaTangent = mergedDeltaTangent + baseFrame.deltaTangents[index];
                                                                 }
 
-                                                                mergedDeltaVertex = mergedDeltaVertex / count;
-                                                                mergedDeltaNormal = mergedDeltaNormal / count;
-                                                                mergedDeltaTangent = mergedDeltaTangent / count;
+                                                                if (count > 1)
+                                                                {
+                                                                    mergedDeltaVertex = mergedDeltaVertex / count;
+                                                                    mergedDeltaNormal = mergedDeltaNormal / count;
+                                                                    mergedDeltaTangent = mergedDeltaTangent / count;
+                                                                }
+                                                            } 
+                                                            else
+                                                            {
+                                                                mergedDeltaVertex = baseFrame.deltaVertices[closestVertex];
+                                                                mergedDeltaNormal = baseFrame.deltaNormals[closestVertex];
+                                                                mergedDeltaTangent = baseFrame.deltaTangents[closestVertex]; 
                                                             }
 
                                                             frame.deltaVertices[a] = mergedDeltaVertex;
@@ -444,7 +477,7 @@ namespace Swole.Morphing
                 mesh.colors = colors;
 
                 mesh.ClearBlendShapes();
-                foreach (var shape in shapes) shape.AddToMesh(mesh);
+                foreach (var shape in shapes) shape.AddToMesh(mesh); 
             }
 
             return mesh;
@@ -1938,7 +1971,7 @@ namespace Swole.Morphing
                         vertexBoneWeights.Sort((BoneWeight1 a, BoneWeight1 b) => (int)Mathf.Sign(b.weight - a.weight));
                         if (vertexBoneWeights.Count > 8) vertexBoneWeights.RemoveRange(8, vertexBoneWeights.Count - 8);
 
-                        float totalWeight = 0;
+                        float totalWeight = 0f;
                         foreach (var bw in vertexBoneWeights) totalWeight += bw.weight;
                         if (totalWeight > 0)
                         {
@@ -1950,15 +1983,41 @@ namespace Swole.Morphing
                             }
                         }
 
+                        if (vertexBoneWeights.Count <= 0) vertexBoneWeights.Add(new BoneWeight1() { boneIndex = 0, weight = 1f });
+
                         for (int d = 0; d < vertexBoneWeights.Count; d++)
                         {
                             var bw = vertexBoneWeights[d];
                             boneWeights.Add(bw);
                         }
-                        bonesPerVertex[c] = (byte)vertexBoneWeights.Count;
+                        bonesPerVertex[c] = (byte)vertexBoneWeights.Count; 
                     }
 
-                    mesh.SetBoneWeights(bonesPerVertex, boneWeights.AsArray());
+                    var baseMesh = settings.baseDataMain.baseMesh;
+                    if (baseMesh.HasVertexAttribute(UnityEngine.Rendering.VertexAttribute.BlendWeight))
+                    {
+                        var attributes = new List<UnityEngine.Rendering.VertexAttributeDescriptor>(mesh.GetVertexAttributes());
+                        bool hasBlendWeightAttribute = false;
+                        for (int i = 0; i < attributes.Count; i++)
+                        {
+                            var attr = attributes[i];
+                            if (attr.attribute != UnityEngine.Rendering.VertexAttribute.BlendWeight) continue;
+
+                            attr.dimension = baseMesh.GetVertexAttributeDimension(UnityEngine.Rendering.VertexAttribute.BlendWeight);
+                            attr.format = baseMesh.GetVertexAttributeFormat(UnityEngine.Rendering.VertexAttribute.BlendWeight);
+
+                            attributes[i] = attr;
+
+                            hasBlendWeightAttribute = true;
+                        }
+                        if (!hasBlendWeightAttribute)
+                        {
+                            var attr = new UnityEngine.Rendering.VertexAttributeDescriptor(UnityEngine.Rendering.VertexAttribute.BlendWeight, baseMesh.GetVertexAttributeFormat(UnityEngine.Rendering.VertexAttribute.BlendWeight), baseMesh.GetVertexAttributeDimension(UnityEngine.Rendering.VertexAttribute.BlendWeight));
+                            attributes.Add(attr);
+                        }
+                        mesh.SetVertexBufferParams(mesh.vertexCount, attributes.ToArray()); 
+                    }
+                    mesh.SetBoneWeights(bonesPerVertex, boneWeights.AsArray());  
 
                     boneWeights.Dispose();
                     bonesPerVertex.Dispose(); 
@@ -3394,6 +3453,375 @@ namespace Swole.Morphing
     {
         public string name;
         public string property;
+    }
+
+    [Serializable]
+    public struct MixedVertexGroupBoneWeight
+    {
+        public string boneName;
+        public bool afterShapes;
+    }
+
+    [Serializable]
+    public struct MixedVertexGroupBuilder
+    {
+
+        public string name;
+
+        public float defaultWeight;
+
+        public bool ignoreZeroWeights;
+
+        public bool normalize;
+        public float normalizeMaxWeight; 
+
+        public bool clamp;
+        public Vector2 clampRange;
+
+        public bool invert;
+
+        public MixedVertexGroupBoneWeight[] boneWeightsToAdd;
+        public MixedVertexGroupBoneWeight[] boneWeightsToSubtract;
+        public MixedVertexGroupBoneWeight[] boneWeightsToMultiply;
+        public MixedVertexGroupBoneWeight[] boneWeightsToDivide;
+
+        public BlendShapeTarget[] shapesToAdd;
+        public BlendShapeTarget[] shapesToSubtract;
+        public BlendShapeTarget[] shapesToMultiply;
+        public BlendShapeTarget[] shapesToDivide;
+
+        public VertexGroup Create(string queryId, Mesh mesh, Transform[] bones, IEnumerable<MorphShape> morphShapes, IEnumerable<MeshShape> meshShapes, Vector3[] vertices = null, Vector3[] normals = null, Vector4[] tangents = null, MeshDataTools.WeldedVertex[] mergedVertices = null, int[] triangles = null, UVChannelURP nearVertexUVchannel = UVChannelURP.UV0, Vector2[] nearVertexUVs = null)
+        {
+            string[] boneNames = bones == null ? null : bones.Select(b => b.name).ToArray();
+            return Create(queryId, mesh, boneNames, morphShapes, meshShapes, vertices, normals, tangents, mergedVertices, triangles, nearVertexUVchannel, nearVertexUVs);
+        }
+        public VertexGroup Create(string queryId, Mesh mesh, string[] boneNames, IEnumerable<MorphShape> morphShapes, IEnumerable<MeshShape> meshShapes, Vector3[] vertices = null, Vector3[] normals = null, Vector4[] tangents = null, MeshDataTools.WeldedVertex[] mergedVertices = null, int[] triangles = null, UVChannelURP nearVertexUVchannel = UVChannelURP.UV0, Vector2[] nearVertexUVs = null)
+        {
+
+            if (mesh == null) return null;
+
+            VertexGroup vertexGroup = null;
+
+            int IndexOfBone(string boneName)
+            {
+                if (boneNames == null) return -1;
+                for (int i = 0; i < boneNames.Length; i++)
+                {
+                    if (boneNames[i] == boneName) return i;
+                }
+                return -1;
+            }
+
+            bool hasBoneWeights = (boneWeightsToAdd != null && boneWeightsToAdd.Length > 0) || (boneWeightsToSubtract != null && boneWeightsToSubtract.Length > 0) || (boneWeightsToMultiply != null && boneWeightsToMultiply.Length > 0) || (boneWeightsToDivide != null && boneWeightsToDivide.Length > 0);
+
+            NativeArray<BoneWeight1> boneWeights = default;
+            NativeArray<byte> boneCounts = default;
+
+            if (hasBoneWeights)
+            {
+                boneWeights = new NativeArray<BoneWeight1>( mesh.GetAllBoneWeights(), Allocator.Persistent);
+                boneCounts = new NativeArray<byte>(mesh.GetBonesPerVertex(), Allocator.Persistent);
+            }
+
+            try
+            {
+
+                float[] weights = new float[mesh.vertexCount]; 
+
+                #region Bone Weights Pre Shapes
+
+                if (boneWeightsToAdd != null)
+                {
+                    foreach (var boneTarget in boneWeightsToAdd)
+                    {
+                        if (boneTarget.afterShapes || string.IsNullOrWhiteSpace(boneTarget.boneName)) continue;
+
+                        int boneIndex = IndexOfBone(boneTarget.boneName);
+                        if (boneIndex < 0) continue;
+
+                        int boneWeightIndex = 0;
+                        for (int i = 0; i < boneCounts.Length; i++)
+                        {
+                            var boneCount = boneCounts[i];
+                            for (int j = 0; j < boneCount; j++)
+                            {
+                                if (boneWeights[boneWeightIndex].boneIndex == boneIndex)
+                                {
+                                    weights[i] = weights[i] + boneWeights[boneWeightIndex].weight;
+                                }
+
+                                boneWeightIndex++;
+                            }
+                        }
+                    }
+                }
+                if (boneWeightsToSubtract != null)
+                {
+                    foreach (var boneTarget in boneWeightsToSubtract)
+                    {
+                        if (boneTarget.afterShapes || string.IsNullOrWhiteSpace(boneTarget.boneName)) continue;
+
+                        int boneIndex = IndexOfBone(boneTarget.boneName);
+                        if (boneIndex < 0) continue;
+
+                        int boneWeightIndex = 0;
+                        for (int i = 0; i < boneCounts.Length; i++)
+                        {
+                            var boneCount = boneCounts[i];
+                            for (int j = 0; j < boneCount; j++)
+                            {
+                                if (boneWeights[boneWeightIndex].boneIndex == boneIndex)
+                                {
+                                    weights[i] = weights[i] - boneWeights[boneWeightIndex].weight;
+                                }
+
+                                boneWeightIndex++;
+                            }
+                        }
+                    }
+                }
+                if (boneWeightsToMultiply != null)
+                {
+                    foreach (var boneTarget in boneWeightsToMultiply)
+                    {
+                        if (boneTarget.afterShapes || string.IsNullOrWhiteSpace(boneTarget.boneName)) continue;
+
+                        int boneIndex = IndexOfBone(boneTarget.boneName);
+                        if (boneIndex < 0) continue;
+
+                        int boneWeightIndex = 0;
+                        for (int i = 0; i < boneCounts.Length; i++)
+                        {
+                            var boneCount = boneCounts[i];
+                            for (int j = 0; j < boneCount; j++)
+                            {
+                                if (boneWeights[boneWeightIndex].boneIndex == boneIndex)
+                                {
+                                    weights[i] = weights[i] * boneWeights[boneWeightIndex].weight;
+                                }
+
+                                boneWeightIndex++;
+                            }
+                        }
+                    }
+                }
+                if (boneWeightsToDivide != null)
+                {
+                    foreach (var boneTarget in boneWeightsToDivide)
+                    {
+                        if (boneTarget.afterShapes || string.IsNullOrWhiteSpace(boneTarget.boneName)) continue;
+
+                        int boneIndex = IndexOfBone(boneTarget.boneName);
+                        if (boneIndex < 0) continue;
+
+                        int boneWeightIndex = 0;
+                        for (int i = 0; i < boneCounts.Length; i++)
+                        {
+                            var boneCount = boneCounts[i];
+                            for (int j = 0; j < boneCount; j++)
+                            {
+                                if (boneWeights[boneWeightIndex].boneIndex == boneIndex)
+                                {
+                                    weights[i] = weights[i] / boneWeights[boneWeightIndex].weight;
+                                }
+
+                                boneWeightIndex++;
+                            }
+                        }
+                    }
+                }
+
+                #endregion
+
+                #region Shape Weights
+
+                if (shapesToAdd != null)
+                {
+                    foreach (var shape in shapesToAdd)
+                    {
+                        if (shape.TryGetBlendShape(queryId, mesh, out var blendShape, morphShapes, meshShapes, vertices, normals, tangents, mergedVertices, triangles, nearVertexUVchannel, nearVertexUVs))
+                        {
+                            var shapeWeights = VertexGroup.ConvertToVertexWeightArray(blendShape, false, null, 0.0001f, 0f, false);
+                            if (shapeWeights != null)
+                            {
+                                for (int i = 0; i < weights.Length; i++) weights[i] = weights[i] + shapeWeights[i];
+                            }
+                        }
+                    }
+                }
+                if (shapesToSubtract != null)
+                {
+                    foreach (var shape in shapesToSubtract)
+                    {
+                        if (shape.TryGetBlendShape(queryId, mesh, out var blendShape, morphShapes, meshShapes, vertices, normals, tangents, mergedVertices, triangles, nearVertexUVchannel, nearVertexUVs))
+                        {
+                            var shapeWeights = VertexGroup.ConvertToVertexWeightArray(blendShape, false, null, 0.0001f, 0f, false);
+                            if (shapeWeights != null)
+                            {
+                                for (int i = 0; i < weights.Length; i++) weights[i] = weights[i] - shapeWeights[i];
+                            }
+                        }
+                    }
+                }
+                if (shapesToMultiply != null)
+                {
+                    foreach (var shape in shapesToMultiply)
+                    {
+                        if (shape.TryGetBlendShape(queryId, mesh, out var blendShape, morphShapes, meshShapes, vertices, normals, tangents, mergedVertices, triangles, nearVertexUVchannel, nearVertexUVs))
+                        {
+                            var shapeWeights = VertexGroup.ConvertToVertexWeightArray(blendShape, false, null, 0.0001f, 0f, false);
+                            if (shapeWeights != null)
+                            {
+                                for (int i = 0; i < weights.Length; i++) weights[i] = weights[i] * shapeWeights[i];
+                            }
+                        }
+                    }
+                }
+                if (shapesToDivide != null)
+                {
+                    foreach (var shape in shapesToDivide)
+                    {
+                        if (shape.TryGetBlendShape(queryId, mesh, out var blendShape, morphShapes, meshShapes, vertices, normals, tangents, mergedVertices, triangles, nearVertexUVchannel, nearVertexUVs))
+                        {
+                            var shapeWeights = VertexGroup.ConvertToVertexWeightArray(blendShape, false, null, 0.0001f, 0f, false);
+                            if (shapeWeights != null)
+                            {
+                                for (int i = 0; i < weights.Length; i++) weights[i] = weights[i] / shapeWeights[i];
+                            }
+                        }
+                    }
+                }
+
+                #endregion
+
+                #region Bone Weights Post Shapes
+
+                if (boneWeightsToAdd != null)
+                {
+                    foreach (var boneTarget in boneWeightsToAdd)
+                    {
+                        if (!boneTarget.afterShapes || string.IsNullOrWhiteSpace(boneTarget.boneName)) continue;
+
+                        int boneIndex = IndexOfBone(boneTarget.boneName);
+                        if (boneIndex < 0) continue;
+
+                        int boneWeightIndex = 0;
+                        for (int i = 0; i < boneCounts.Length; i++)
+                        {
+                            var boneCount = boneCounts[i];
+                            for (int j = 0; j < boneCount; j++)
+                            {
+                                if (boneWeights[boneWeightIndex].boneIndex == boneIndex)
+                                {
+                                    weights[i] = weights[i] + boneWeights[boneWeightIndex].weight;
+                                }
+
+                                boneWeightIndex++;
+                            }
+                        }
+                    }
+                }
+                if (boneWeightsToSubtract != null)
+                {
+                    foreach (var boneTarget in boneWeightsToSubtract)
+                    {
+                        if (!boneTarget.afterShapes || string.IsNullOrWhiteSpace(boneTarget.boneName)) continue;
+
+                        int boneIndex = IndexOfBone(boneTarget.boneName);
+                        if (boneIndex < 0) continue;
+
+                        int boneWeightIndex = 0;
+                        for (int i = 0; i < boneCounts.Length; i++)
+                        {
+                            var boneCount = boneCounts[i];
+                            for (int j = 0; j < boneCount; j++)
+                            {
+                                if (boneWeights[boneWeightIndex].boneIndex == boneIndex)
+                                {
+                                    weights[i] = weights[i] - boneWeights[boneWeightIndex].weight;
+                                }
+
+                                boneWeightIndex++;
+                            }
+                        }
+                    }
+                }
+                if (boneWeightsToMultiply != null)
+                {
+                    foreach (var boneTarget in boneWeightsToMultiply)
+                    {
+                        if (!boneTarget.afterShapes || string.IsNullOrWhiteSpace(boneTarget.boneName)) continue;
+
+                        int boneIndex = IndexOfBone(boneTarget.boneName);
+                        if (boneIndex < 0) continue;
+
+                        int boneWeightIndex = 0;
+                        for (int i = 0; i < boneCounts.Length; i++)
+                        {
+                            var boneCount = boneCounts[i];
+                            for (int j = 0; j < boneCount; j++)
+                            {
+                                if (boneWeights[boneWeightIndex].boneIndex == boneIndex)
+                                {
+                                    weights[i] = weights[i] * boneWeights[boneWeightIndex].weight;
+                                }
+
+                                boneWeightIndex++;
+                            }
+                        }
+                    }
+                }
+                if (boneWeightsToDivide != null)
+                {
+                    foreach (var boneTarget in boneWeightsToDivide)
+                    {
+                        if (!boneTarget.afterShapes || string.IsNullOrWhiteSpace(boneTarget.boneName)) continue;
+
+                        int boneIndex = IndexOfBone(boneTarget.boneName);
+                        if (boneIndex < 0) continue;
+
+                        int boneWeightIndex = 0;
+                        for (int i = 0; i < boneCounts.Length; i++)
+                        {
+                            var boneCount = boneCounts[i];
+                            for (int j = 0; j < boneCount; j++)
+                            {
+                                if (boneWeights[boneWeightIndex].boneIndex == boneIndex)
+                                {
+                                    weights[i] = weights[i] / boneWeights[boneWeightIndex].weight;
+                                }
+
+                                boneWeightIndex++;
+                            }
+                        }
+                    }
+                }
+
+                #endregion
+
+                if (invert)
+                {
+                    for (int i = 0; i < weights.Length; i++) weights[i] = 1f - weights[i];
+                }
+
+                vertexGroup = new VertexGroup(name, weights, ignoreZeroWeights);
+
+                if (normalize) vertexGroup.Normalize(normalizeMaxWeight);
+                if (clamp) vertexGroup.Clamp(clampRange.x, (clampRange.x == 0f && clampRange.y == 0f) ? 1f : clampRange.y);
+
+            } 
+            finally
+            {
+                if (hasBoneWeights)
+                {
+                    if (boneWeights.IsCreated) boneWeights.Dispose();
+                    if (boneCounts.IsCreated) boneCounts.Dispose();
+                }
+            }
+
+            return vertexGroup;
+        }
+
     }
 
     [Serializable]

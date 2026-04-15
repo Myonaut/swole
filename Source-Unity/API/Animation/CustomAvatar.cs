@@ -296,7 +296,11 @@ namespace Swole.API.Unity.Animation
             return GetBoneGroup(0);
         }
 
-        public Transform FindPoseableBone(Transform rootTransform, PoseableRig.BoneInfo boneInfo)
+        [Obsolete]
+        /// <summary>
+        /// WARNING: May not find the correct bone if the root transform is not the rig container
+        /// </summary>
+        private Transform FindPoseableBone(Transform rootTransform, PoseableRig.BoneInfo boneInfo)
         {
             Transform boneTransform = rootTransform.FindDeepChildLiberal(boneInfo.Name); 
             if (boneTransform == null && boneInfo.id.aliases != null)
@@ -310,20 +314,47 @@ namespace Swole.API.Unity.Animation
 
             return boneTransform;
         }
+        private Transform FindPoseableBone(PoseableRig.FindBoneTransformDelegate findTrnasform, PoseableRig.BoneInfo boneInfo)
+        {
+            Transform boneTransform = findTrnasform(boneInfo.Name);
+            if (boneTransform == null && boneInfo.id.aliases != null)
+            {
+                for (int a = 0; a < boneInfo.id.aliases.Length; a++)
+                {
+                    boneTransform = findTrnasform(boneInfo.id.aliases[a]);
+                    if (boneTransform != null) break;
+                }
+            }
+
+            return boneTransform;
+        }
         public List<Transform> FindBones(Transform rootTransform, List<Transform> outputList = null)
         {
             if (outputList == null) outputList = new List<Transform>();
 
+            Transform rigContainerTransform = null;
+            if (!string.IsNullOrWhiteSpace(rigContainer))
+            {
+                rigContainerTransform = rootTransform.FindDeepChild(rigContainer);
+            }
+
+            Transform FindBone(string boneName)
+            {
+                Transform bone = null;
+                if (rigContainerTransform != null) bone = rigContainerTransform.FindDeepChild(boneName);
+                if (bone == null) rootTransform.FindDeepChild(boneName); 
+
+                return bone;
+            }
+
             if (Poseable != null)
             {
-                Transform FindBone(string boneName) => rootTransform.FindDeepChild(boneName);
-
                 if (poseable.IsExplicit)
                 {
                     foreach(var bone in poseable.fullRig)
                     {
                         if (poseable.ShouldExcludeBone(bone.Name, FindBone)) continue;
-                        Transform boneTransform = FindPoseableBone(rootTransform, bone); 
+                        Transform boneTransform = FindPoseableBone(FindBone, bone); 
                         if (boneTransform != null) outputList.Add(boneTransform);
                     }
 
@@ -332,7 +363,7 @@ namespace Swole.API.Unity.Animation
                         foreach (var bone in poseable.additiveRig)
                         {
                             if (poseable.ShouldExcludeBone(bone.Name, FindBone)) continue;
-                            Transform boneTransform = FindPoseableBone(rootTransform, bone);
+                            Transform boneTransform = FindPoseableBone(FindBone, bone);
                             if (boneTransform != null) outputList.Add(boneTransform);
                         }
                     }
@@ -354,7 +385,7 @@ namespace Swole.API.Unity.Animation
                         foreach (var bone in poseable.additiveRig)
                         {
                             if (poseable.ShouldExcludeBone(bone.Name, FindBone)) continue;
-                            Transform boneTransform = FindPoseableBone(rootTransform, bone);
+                            Transform boneTransform = FindPoseableBone(FindBone, bone);
                             if (boneTransform != null && !outputList.Contains(boneTransform)) outputList.Add(boneTransform);
                         }
                     }
@@ -366,7 +397,7 @@ namespace Swole.API.Unity.Animation
                 {
                     foreach (var bone in bones)
                     {
-                        Transform boneTransform = rootTransform.FindDeepChildLiberal(bone);
+                        Transform boneTransform = FindBone(bone);
                         if (boneTransform != null) outputList.Add(boneTransform);
                     }
                 }

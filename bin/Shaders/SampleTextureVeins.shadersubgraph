@@ -229,9 +229,6 @@
             "m_Id": "e976de1b14ca46b7ac60b431f27ef8a5"
         },
         {
-            "m_Id": "b4e4697735ab4e0abafcb8ea7a1a8bca"
-        },
-        {
             "m_Id": "cecbc3bc9adf4f3a99c491492f3f1a88"
         },
         {
@@ -287,6 +284,9 @@
         },
         {
             "m_Id": "eaaa52f93fd040b7adb8e3770c23e9e2"
+        },
+        {
+            "m_Id": "77f1bb8ca55848f4bca4997f4c6f8b5b"
         }
     ],
     "m_GroupDatas": [],
@@ -567,7 +567,7 @@
             },
             "m_InputSlot": {
                 "m_Node": {
-                    "m_Id": "b4e4697735ab4e0abafcb8ea7a1a8bca"
+                    "m_Id": "77f1bb8ca55848f4bca4997f4c6f8b5b"
                 },
                 "m_SlotId": 633666363
             }
@@ -813,6 +813,104 @@
         {
             "m_OutputSlot": {
                 "m_Node": {
+                    "m_Id": "77f1bb8ca55848f4bca4997f4c6f8b5b"
+                },
+                "m_SlotId": 1
+            },
+            "m_InputSlot": {
+                "m_Node": {
+                    "m_Id": "c254bca2dae540a5aaf9c87f21ee7e6a"
+                },
+                "m_SlotId": 0
+            }
+        },
+        {
+            "m_OutputSlot": {
+                "m_Node": {
+                    "m_Id": "77f1bb8ca55848f4bca4997f4c6f8b5b"
+                },
+                "m_SlotId": 2
+            },
+            "m_InputSlot": {
+                "m_Node": {
+                    "m_Id": "7eb93babcac141c0aa676f26f39df9c1"
+                },
+                "m_SlotId": 2
+            }
+        },
+        {
+            "m_OutputSlot": {
+                "m_Node": {
+                    "m_Id": "77f1bb8ca55848f4bca4997f4c6f8b5b"
+                },
+                "m_SlotId": 2
+            },
+            "m_InputSlot": {
+                "m_Node": {
+                    "m_Id": "8dec7e20d3d8481788c792603fd2787c"
+                },
+                "m_SlotId": 2
+            }
+        },
+        {
+            "m_OutputSlot": {
+                "m_Node": {
+                    "m_Id": "77f1bb8ca55848f4bca4997f4c6f8b5b"
+                },
+                "m_SlotId": 2
+            },
+            "m_InputSlot": {
+                "m_Node": {
+                    "m_Id": "ba574348037f4ed5b3649c7b35c8e125"
+                },
+                "m_SlotId": 0
+            }
+        },
+        {
+            "m_OutputSlot": {
+                "m_Node": {
+                    "m_Id": "77f1bb8ca55848f4bca4997f4c6f8b5b"
+                },
+                "m_SlotId": 3
+            },
+            "m_InputSlot": {
+                "m_Node": {
+                    "m_Id": "87799104ac9f4e9d87895a2a4fdeb3a0"
+                },
+                "m_SlotId": 2
+            }
+        },
+        {
+            "m_OutputSlot": {
+                "m_Node": {
+                    "m_Id": "77f1bb8ca55848f4bca4997f4c6f8b5b"
+                },
+                "m_SlotId": 3
+            },
+            "m_InputSlot": {
+                "m_Node": {
+                    "m_Id": "c58c9c3c1edc465aad0262a4de66e15d"
+                },
+                "m_SlotId": 0
+            }
+        },
+        {
+            "m_OutputSlot": {
+                "m_Node": {
+                    "m_Id": "77f1bb8ca55848f4bca4997f4c6f8b5b"
+                },
+                "m_SlotId": 3
+            },
+            "m_InputSlot": {
+                "m_Node": {
+                    "m_Id": "f76445eb42b64ef5a82c6e2088d96086"
+                },
+                "m_SlotId": 2
+            }
+        },
+        {
+            "m_OutputSlot": {
+                "m_Node": {
                     "m_Id": "7eb93babcac141c0aa676f26f39df9c1"
                 },
                 "m_SlotId": 3
@@ -903,7 +1001,7 @@
             },
             "m_InputSlot": {
                 "m_Node": {
-                    "m_Id": "b4e4697735ab4e0abafcb8ea7a1a8bca"
+                    "m_Id": "77f1bb8ca55848f4bca4997f4c6f8b5b"
                 },
                 "m_SlotId": 1246723692
             }
@@ -1205,104 +1303,6 @@
         {
             "m_OutputSlot": {
                 "m_Node": {
-                    "m_Id": "b4e4697735ab4e0abafcb8ea7a1a8bca"
-                },
-                "m_SlotId": 1
-            },
-            "m_InputSlot": {
-                "m_Node": {
-                    "m_Id": "c254bca2dae540a5aaf9c87f21ee7e6a"
-                },
-                "m_SlotId": 0
-            }
-        },
-        {
-            "m_OutputSlot": {
-                "m_Node": {
-                    "m_Id": "b4e4697735ab4e0abafcb8ea7a1a8bca"
-                },
-                "m_SlotId": 2
-            },
-            "m_InputSlot": {
-                "m_Node": {
-                    "m_Id": "7eb93babcac141c0aa676f26f39df9c1"
-                },
-                "m_SlotId": 2
-            }
-        },
-        {
-            "m_OutputSlot": {
-                "m_Node": {
-                    "m_Id": "b4e4697735ab4e0abafcb8ea7a1a8bca"
-                },
-                "m_SlotId": 2
-            },
-            "m_InputSlot": {
-                "m_Node": {
-                    "m_Id": "8dec7e20d3d8481788c792603fd2787c"
-                },
-                "m_SlotId": 2
-            }
-        },
-        {
-            "m_OutputSlot": {
-                "m_Node": {
-                    "m_Id": "b4e4697735ab4e0abafcb8ea7a1a8bca"
-                },
-                "m_SlotId": 2
-            },
-            "m_InputSlot": {
-                "m_Node": {
-                    "m_Id": "ba574348037f4ed5b3649c7b35c8e125"
-                },
-                "m_SlotId": 0
-            }
-        },
-        {
-            "m_OutputSlot": {
-                "m_Node": {
-                    "m_Id": "b4e4697735ab4e0abafcb8ea7a1a8bca"
-                },
-                "m_SlotId": 3
-            },
-            "m_InputSlot": {
-                "m_Node": {
-                    "m_Id": "87799104ac9f4e9d87895a2a4fdeb3a0"
-                },
-                "m_SlotId": 2
-            }
-        },
-        {
-            "m_OutputSlot": {
-                "m_Node": {
-                    "m_Id": "b4e4697735ab4e0abafcb8ea7a1a8bca"
-                },
-                "m_SlotId": 3
-            },
-            "m_InputSlot": {
-                "m_Node": {
-                    "m_Id": "c58c9c3c1edc465aad0262a4de66e15d"
-                },
-                "m_SlotId": 0
-            }
-        },
-        {
-            "m_OutputSlot": {
-                "m_Node": {
-                    "m_Id": "b4e4697735ab4e0abafcb8ea7a1a8bca"
-                },
-                "m_SlotId": 3
-            },
-            "m_InputSlot": {
-                "m_Node": {
-                    "m_Id": "f76445eb42b64ef5a82c6e2088d96086"
-                },
-                "m_SlotId": 2
-            }
-        },
-        {
-            "m_OutputSlot": {
-                "m_Node": {
                     "m_Id": "b5828552e6454086bc23f706ff68d945"
                 },
                 "m_SlotId": 1
@@ -1337,7 +1337,7 @@
             },
             "m_InputSlot": {
                 "m_Node": {
-                    "m_Id": "b4e4697735ab4e0abafcb8ea7a1a8bca"
+                    "m_Id": "77f1bb8ca55848f4bca4997f4c6f8b5b"
                 },
                 "m_SlotId": -1558178022
             }
@@ -1976,6 +1976,21 @@
     "m_Property": {
         "m_Id": "e2223671155745f6a1c3461997d896cb"
     }
+}
+
+{
+    "m_SGVersion": 0,
+    "m_Type": "UnityEditor.ShaderGraph.Vector1MaterialSlot",
+    "m_ObjectId": "09b4c6595d7e426abcde80e993a32cef",
+    "m_Id": 633666363,
+    "m_DisplayName": "Pump",
+    "m_SlotType": 0,
+    "m_Hidden": false,
+    "m_ShaderOutputName": "_Pump",
+    "m_StageCapability": 3,
+    "m_Value": 0.0,
+    "m_DefaultValue": 0.0,
+    "m_Labels": []
 }
 
 {
@@ -3141,21 +3156,6 @@
 
 {
     "m_SGVersion": 0,
-    "m_Type": "UnityEditor.ShaderGraph.Vector1MaterialSlot",
-    "m_ObjectId": "2a49379370c74afa99da4fc90db8be50",
-    "m_Id": 1246723692,
-    "m_DisplayName": "VeinsL1Threshold",
-    "m_SlotType": 0,
-    "m_Hidden": false,
-    "m_ShaderOutputName": "_VeinsL1Threshold",
-    "m_StageCapability": 3,
-    "m_Value": 0.0,
-    "m_DefaultValue": 0.0,
-    "m_Labels": []
-}
-
-{
-    "m_SGVersion": 0,
     "m_Type": "UnityEditor.ShaderGraph.DynamicVectorMaterialSlot",
     "m_ObjectId": "2bf6afbdc0a541d298b44eea1b5cd70a",
     "m_Id": 0,
@@ -3617,21 +3617,6 @@
 
 {
     "m_SGVersion": 0,
-    "m_Type": "UnityEditor.ShaderGraph.Vector1MaterialSlot",
-    "m_ObjectId": "3a852a1ab9bf4b93b1fbbef64b7594b6",
-    "m_Id": -1558178022,
-    "m_DisplayName": "VeinsL2Threshold",
-    "m_SlotType": 0,
-    "m_Hidden": false,
-    "m_ShaderOutputName": "_VeinsL2Threshold",
-    "m_StageCapability": 3,
-    "m_Value": 0.0,
-    "m_DefaultValue": 0.0,
-    "m_Labels": []
-}
-
-{
-    "m_SGVersion": 0,
     "m_Type": "UnityEditor.ShaderGraph.DynamicVectorMaterialSlot",
     "m_ObjectId": "3a9332b9ab584e29ab835695ae244749",
     "m_Id": 0,
@@ -3980,21 +3965,6 @@
         "z": 0.0,
         "w": 0.0
     }
-}
-
-{
-    "m_SGVersion": 0,
-    "m_Type": "UnityEditor.ShaderGraph.Vector1MaterialSlot",
-    "m_ObjectId": "43682594d49a491bb1c88885a32fa846",
-    "m_Id": 2,
-    "m_DisplayName": "VeinsL2",
-    "m_SlotType": 1,
-    "m_Hidden": false,
-    "m_ShaderOutputName": "VeinsL2",
-    "m_StageCapability": 3,
-    "m_Value": 0.0,
-    "m_DefaultValue": 0.0,
-    "m_Labels": []
 }
 
 {
@@ -4874,21 +4844,6 @@
 
 {
     "m_SGVersion": 0,
-    "m_Type": "UnityEditor.ShaderGraph.Vector1MaterialSlot",
-    "m_ObjectId": "602e7970542448ed955aafd8046f62d0",
-    "m_Id": 1,
-    "m_DisplayName": "VeinsL1",
-    "m_SlotType": 1,
-    "m_Hidden": false,
-    "m_ShaderOutputName": "VeinsL1",
-    "m_StageCapability": 3,
-    "m_Value": 0.0,
-    "m_DefaultValue": 0.0,
-    "m_Labels": []
-}
-
-{
-    "m_SGVersion": 0,
     "m_Type": "UnityEditor.ShaderGraph.DynamicVectorMaterialSlot",
     "m_ObjectId": "60edbb34f95c4cbcaade3f2b8866824a",
     "m_Id": 0,
@@ -5473,6 +5428,21 @@
 {
     "m_SGVersion": 0,
     "m_Type": "UnityEditor.ShaderGraph.Vector1MaterialSlot",
+    "m_ObjectId": "6eada379eaa84877984bf13f99d28511",
+    "m_Id": 1,
+    "m_DisplayName": "VeinsL1",
+    "m_SlotType": 1,
+    "m_Hidden": false,
+    "m_ShaderOutputName": "VeinsL1",
+    "m_StageCapability": 3,
+    "m_Value": 0.0,
+    "m_DefaultValue": 0.0,
+    "m_Labels": []
+}
+
+{
+    "m_SGVersion": 0,
+    "m_Type": "UnityEditor.ShaderGraph.Vector1MaterialSlot",
     "m_ObjectId": "707338fbad144865b9914897f6effc48",
     "m_Id": 1,
     "m_DisplayName": "X",
@@ -5652,6 +5622,67 @@
     "m_Property": {
         "m_Id": "4cf36431d653468491e02eb79ee3379e"
     }
+}
+
+{
+    "m_SGVersion": 0,
+    "m_Type": "UnityEditor.ShaderGraph.SubGraphNode",
+    "m_ObjectId": "77f1bb8ca55848f4bca4997f4c6f8b5b",
+    "m_Group": {
+        "m_Id": ""
+    },
+    "m_Name": "CalculateVeinLevels",
+    "m_DrawState": {
+        "m_Expanded": true,
+        "m_Position": {
+            "serializedVersion": "2",
+            "x": -1253.0,
+            "y": -512.0000610351563,
+            "width": 234.99993896484376,
+            "height": 143.0
+        }
+    },
+    "m_Slots": [
+        {
+            "m_Id": "09b4c6595d7e426abcde80e993a32cef"
+        },
+        {
+            "m_Id": "97d7d8c0acbe490aac1128b1193bbdc7"
+        },
+        {
+            "m_Id": "f6147873fa2a49229b1e7080b6916424"
+        },
+        {
+            "m_Id": "6eada379eaa84877984bf13f99d28511"
+        },
+        {
+            "m_Id": "92492a54e5064554841485ebd59198e7"
+        },
+        {
+            "m_Id": "a6d3377aaf3e43218e87823fe8aca5f8"
+        }
+    ],
+    "synonyms": [],
+    "m_Precision": 0,
+    "m_PreviewExpanded": false,
+    "m_DismissedVersion": 0,
+    "m_PreviewMode": 0,
+    "m_CustomColors": {
+        "m_SerializableColors": []
+    },
+    "m_SerializedSubGraph": "{\n    \"subGraph\": {\n        \"fileID\": -5475051401550479605,\n        \"guid\": \"b9402f7e9d321104b92e0ae6ae98b8a8\",\n        \"type\": 3\n    }\n}",
+    "m_PropertyGuids": [
+        "642eefc3-a8a8-4e2d-b2c9-313ee275f631",
+        "7c3a3ef2-e4f6-4651-9bc4-a7c1f36083b1",
+        "c041e2d2-86ca-473a-bc3a-9f82be49c4a6"
+    ],
+    "m_PropertyIds": [
+        633666363,
+        1246723692,
+        -1558178022
+    ],
+    "m_Dropdowns": [],
+    "m_DropdownSelectedEntries": []
 }
 
 {
@@ -6559,21 +6590,6 @@
 
 {
     "m_SGVersion": 0,
-    "m_Type": "UnityEditor.ShaderGraph.Vector1MaterialSlot",
-    "m_ObjectId": "8f602ef3756141269df4f77e80e33eb4",
-    "m_Id": 3,
-    "m_DisplayName": "VeinsL3",
-    "m_SlotType": 1,
-    "m_Hidden": false,
-    "m_ShaderOutputName": "VeinsL3",
-    "m_StageCapability": 3,
-    "m_Value": 0.0,
-    "m_DefaultValue": 0.0,
-    "m_Labels": []
-}
-
-{
-    "m_SGVersion": 0,
     "m_Type": "UnityEditor.ShaderGraph.DynamicVectorMaterialSlot",
     "m_ObjectId": "8f891c3a329a4444a99656958e729519",
     "m_Id": 2,
@@ -6655,6 +6671,21 @@
     "m_Labels": [
         "W"
     ]
+}
+
+{
+    "m_SGVersion": 0,
+    "m_Type": "UnityEditor.ShaderGraph.Vector1MaterialSlot",
+    "m_ObjectId": "92492a54e5064554841485ebd59198e7",
+    "m_Id": 2,
+    "m_DisplayName": "VeinsL2",
+    "m_SlotType": 1,
+    "m_Hidden": false,
+    "m_ShaderOutputName": "VeinsL2",
+    "m_StageCapability": 3,
+    "m_Value": 0.0,
+    "m_DefaultValue": 0.0,
+    "m_Labels": []
 }
 
 {
@@ -6775,6 +6806,21 @@
     "m_SlotType": 1,
     "m_Hidden": false,
     "m_ShaderOutputName": "Out",
+    "m_StageCapability": 3,
+    "m_Value": 0.0,
+    "m_DefaultValue": 0.0,
+    "m_Labels": []
+}
+
+{
+    "m_SGVersion": 0,
+    "m_Type": "UnityEditor.ShaderGraph.Vector1MaterialSlot",
+    "m_ObjectId": "97d7d8c0acbe490aac1128b1193bbdc7",
+    "m_Id": 1246723692,
+    "m_DisplayName": "VeinsL1Threshold",
+    "m_SlotType": 0,
+    "m_Hidden": false,
+    "m_ShaderOutputName": "_VeinsL1Threshold",
     "m_StageCapability": 3,
     "m_Value": 0.0,
     "m_DefaultValue": 0.0,
@@ -7452,12 +7498,12 @@
 {
     "m_SGVersion": 0,
     "m_Type": "UnityEditor.ShaderGraph.Vector1MaterialSlot",
-    "m_ObjectId": "a7064b4de4f14a91967f7d3612988a27",
-    "m_Id": 633666363,
-    "m_DisplayName": "Pump",
-    "m_SlotType": 0,
+    "m_ObjectId": "a6d3377aaf3e43218e87823fe8aca5f8",
+    "m_Id": 3,
+    "m_DisplayName": "VeinsL3",
+    "m_SlotType": 1,
     "m_Hidden": false,
-    "m_ShaderOutputName": "_Pump",
+    "m_ShaderOutputName": "VeinsL3",
     "m_StageCapability": 3,
     "m_Value": 0.0,
     "m_DefaultValue": 0.0,
@@ -7712,67 +7758,6 @@
         "z": 0.0,
         "w": 0.0
     }
-}
-
-{
-    "m_SGVersion": 0,
-    "m_Type": "UnityEditor.ShaderGraph.SubGraphNode",
-    "m_ObjectId": "b4e4697735ab4e0abafcb8ea7a1a8bca",
-    "m_Group": {
-        "m_Id": ""
-    },
-    "m_Name": "CalculateVeinLevels",
-    "m_DrawState": {
-        "m_Expanded": true,
-        "m_Position": {
-            "serializedVersion": "2",
-            "x": -1245.0,
-            "y": -507.0,
-            "width": 275.0,
-            "height": 326.0
-        }
-    },
-    "m_Slots": [
-        {
-            "m_Id": "a7064b4de4f14a91967f7d3612988a27"
-        },
-        {
-            "m_Id": "2a49379370c74afa99da4fc90db8be50"
-        },
-        {
-            "m_Id": "3a852a1ab9bf4b93b1fbbef64b7594b6"
-        },
-        {
-            "m_Id": "602e7970542448ed955aafd8046f62d0"
-        },
-        {
-            "m_Id": "43682594d49a491bb1c88885a32fa846"
-        },
-        {
-            "m_Id": "8f602ef3756141269df4f77e80e33eb4"
-        }
-    ],
-    "synonyms": [],
-    "m_Precision": 0,
-    "m_PreviewExpanded": false,
-    "m_DismissedVersion": 0,
-    "m_PreviewMode": 0,
-    "m_CustomColors": {
-        "m_SerializableColors": []
-    },
-    "m_SerializedSubGraph": "{\n    \"subGraph\": {\n        \"fileID\": -5475051401550479605,\n        \"guid\": \"f35bb03fd9a314c44806cadab33da9b1\",\n        \"type\": 3\n    }\n}",
-    "m_PropertyGuids": [
-        "642eefc3-a8a8-4e2d-b2c9-313ee275f631",
-        "7c3a3ef2-e4f6-4651-9bc4-a7c1f36083b1",
-        "c041e2d2-86ca-473a-bc3a-9f82be49c4a6"
-    ],
-    "m_PropertyIds": [
-        633666363,
-        1246723692,
-        -1558178022
-    ],
-    "m_Dropdowns": [],
-    "m_DropdownSelectedEntries": []
 }
 
 {
@@ -10248,6 +10233,21 @@
     "m_Property": {
         "m_Id": "e2223671155745f6a1c3461997d896cb"
     }
+}
+
+{
+    "m_SGVersion": 0,
+    "m_Type": "UnityEditor.ShaderGraph.Vector1MaterialSlot",
+    "m_ObjectId": "f6147873fa2a49229b1e7080b6916424",
+    "m_Id": -1558178022,
+    "m_DisplayName": "VeinsL2Threshold",
+    "m_SlotType": 0,
+    "m_Hidden": false,
+    "m_ShaderOutputName": "_VeinsL2Threshold",
+    "m_StageCapability": 3,
+    "m_Value": 0.0,
+    "m_DefaultValue": 0.0,
+    "m_Labels": []
 }
 
 {

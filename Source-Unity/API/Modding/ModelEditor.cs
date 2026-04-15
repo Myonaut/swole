@@ -126,9 +126,9 @@ namespace Swole
         public class AnimationImport
         {
             public CustomAnimation asset;
-            public CustomAnimationLayer controlLayer;
+            public string controlLayer;
 
-            public AnimationImport(CustomAnimation asset, CustomAnimationLayer controlLayer)
+            public AnimationImport(CustomAnimation asset, string controlLayer)
             {
                 this.asset = asset;
                 this.controlLayer = controlLayer;
@@ -415,14 +415,34 @@ namespace Swole
         }
 
         [Serializable]
-        public class Session
+        public class Session : IDisposable
         {
 
             public GameObject rootObject;
             public CustomAnimator animator;
 
+            [NonSerialized]
+            public CustomAnimationController controller;
+            public void ReapplyController()
+            {
+                if (controller != null && animator != null)
+                {
+                    animator.RemoveControllerData(controller);
+                    animator.ApplyController(controller);
+                }
+            }
+
             public List<AnimationImport> animationImports = new List<AnimationImport>();
             public List<int> selectedAnimations = new List<int>();
+
+            public void Dispose()
+            {
+                if (controller != null && animator != null)
+                {
+                    animator.RemoveControllerData(controller);
+                    GameObject.Destroy(controller);
+                }
+            }
 
             private bool isPlaying;
 
@@ -434,23 +454,29 @@ namespace Swole
 
                 foreach (var import in animationImports)
                 {
-                    if (import.controlLayer == null) continue;
+                    if (string.IsNullOrWhiteSpace(import.controlLayer)) continue;
 
-                    import.controlLayer.mix = 0;
+                    var controlLayer = animator.FindTypedLayer(import.controlLayer);
+                    if (controlLayer == null) continue;
+
+                    controlLayer.mix = 0f;
                 }
 
                 foreach(var index in selectedAnimations)
                 {
                     var import = animationImports[index];
-                    if (import.controlLayer == null) continue;
+                    if (string.IsNullOrWhiteSpace(import.controlLayer)) continue;
 
-                    import.controlLayer.mix = 1;
-                    if (import.controlLayer.HasActiveState && import.controlLayer.ActiveState is CustomAnimationLayerState state && state.MotionControllerIndex >= 0)
+                    var controlLayer = animator.FindTypedLayer(import.controlLayer);
+                    if (controlLayer == null) continue;
+
+                    controlLayer.mix = 1f;
+                    if (controlLayer.HasActiveState && controlLayer.ActiveState is CustomAnimationLayerState state && state.MotionControllerIndex >= 0)
                     {
-                        var mc = import.controlLayer.GetMotionControllerUnsafe(state.MotionControllerIndex);
+                        var mc = controlLayer.GetMotionControllerUnsafe(state.MotionControllerIndex);
                         if (mc is AnimationReference ar)
                         {
-                            ar.BaseSpeed = 1;  
+                            ar.BaseSpeed = 1f;  
                         }
                     }
                 }
@@ -474,11 +500,14 @@ namespace Swole
 
                 foreach (var import in animationImports)
                 {
-                    if (import.controlLayer == null) continue;
+                    if (string.IsNullOrWhiteSpace(import.controlLayer)) continue;
 
-                    if (import.controlLayer.HasActiveState && import.controlLayer.ActiveState is CustomAnimationLayerState state && state.MotionControllerIndex >= 0)
+                    var controlLayer = animator.FindTypedLayer(import.controlLayer);
+                    if (controlLayer == null) continue;
+
+                    if (controlLayer.HasActiveState && controlLayer.ActiveState is CustomAnimationLayerState state && state.MotionControllerIndex >= 0)
                     {
-                        var mc = import.controlLayer.GetMotionControllerUnsafe(state.MotionControllerIndex);
+                        var mc = controlLayer.GetMotionControllerUnsafe(state.MotionControllerIndex);
                         if (mc is AnimationReference ar)
                         {
                             ar.BaseSpeed = 0;
@@ -493,7 +522,7 @@ namespace Swole
                     animator.OnPostLateUpdate.RemoveListener(SyncRemapTargetPoseDefault);
                 }
 
-                SyncRemapTargetPoseDelayed(2, true, false); 
+                SyncRemapTargetPoseDelayed(2, false/*true*/, false); 
             }
 
             public void StopPlayback(ModelEditor editor)
@@ -504,17 +533,20 @@ namespace Swole
 
                 foreach (var import in animationImports)
                 {
-                    if (import.controlLayer == null) continue;
+                    if (string.IsNullOrWhiteSpace(import.controlLayer)) continue;
 
-                    import.controlLayer.mix = 0;
+                    var controlLayer = animator.FindTypedLayer(import.controlLayer);
+                    if (controlLayer == null) continue;
 
-                    if (import.controlLayer.HasActiveState && import.controlLayer.ActiveState is CustomAnimationLayerState state && state.MotionControllerIndex >= 0)
+                    controlLayer.mix = 0;
+
+                    if (controlLayer.HasActiveState && controlLayer.ActiveState is CustomAnimationLayerState state && state.MotionControllerIndex >= 0)
                     {
-                        var mc = import.controlLayer.GetMotionControllerUnsafe(state.MotionControllerIndex);
+                        var mc = controlLayer.GetMotionControllerUnsafe(state.MotionControllerIndex);
                         if (mc is AnimationReference ar)
                         {
                             ar.BaseSpeed = 0;
-                            ar.SetTime(import.controlLayer, 0);
+                            ar.SetTime(controlLayer, 0);
                         }
                     }
                 }
@@ -526,7 +558,7 @@ namespace Swole
                     animator.OnPostLateUpdate.RemoveListener(SyncRemapTargetPoseDefault); 
                 }
 
-                SyncRemapTargetPoseDelayed(2, true, false);
+                SyncRemapTargetPoseDelayed(2, false/*true*/, false);
             }
 
             public List<ImportedAnimatable> importedObjects;
@@ -1081,7 +1113,7 @@ namespace Swole
                     }
                 }
 
-                SyncRemapTargetPoseDelayed(2, true, false);
+                SyncRemapTargetPoseDelayed(2, false/*true*/, false);
             }
             public void ValidateRemapPreset()
             {
@@ -1310,7 +1342,7 @@ namespace Swole
             private readonly List<BoneRemapSync> boneSyncsPreserve = new List<BoneRemapSync>();
             private readonly List<BoneRemapSync> boneSyncsDelayed = new List<BoneRemapSync>();
             private readonly List<BoneRemapSync> boneSyncsPreserveDelayed = new List<BoneRemapSync>();
-            public void SyncRemapTargetPoseDefault() => SyncRemapTargetPose(true, false); 
+            public void SyncRemapTargetPoseDefault() => SyncRemapTargetPose(false/*true*/, false); 
             public void SyncRemapTargetPose(bool revertToDefaultPositions, bool revertToDefaultRotations)
             {
                 if (remapData == null || remapData.remapBindings == null || animator == null || animator.Bones == null || animator.Bones.bones == null || remapTarget == null || remapTarget.animator == null) return;
@@ -1757,15 +1789,13 @@ namespace Swole
                         animator.ReinitializeBindPose(); 
 
                         var controller = CustomAnimationController.BuildDefaultController("imported", anims, 0);
-
-                        animator.ApplyController(controller);
+                        session.controller = controller;
+                        session.ReapplyController();
 
                         foreach (var anim in anims)
                         {
-                            session.animationImports.Add(new AnimationImport(anim.Animation, animator.FindTypedLayer($"imported/{anim.Name}")));
-                        }
-
-                        GameObject.Destroy(controller); 
+                            session.animationImports.Add(new AnimationImport(anim.Animation, $"imported/{anim.Name}"));
+                        }                       
                     }
                 }
 
@@ -1918,16 +1948,83 @@ namespace Swole
 
                     CustomEditorUtils.SetInputFieldOnEndEditActionByName(instance, "length", (string val) =>
                     {
-                        float timeLength = anim.asset.LengthInSeconds * (anim.asset.timeCurve.length <= 1 ? 0f : anim.asset.timeCurve[anim.asset.timeCurve.length - 1].time);
+                        session.StopPlayback(this);
+                        playT.gameObject.SetActive(true);
+                        pauseT.gameObject.SetActive(false); 
+
+                        float timeCurveEnd = (anim.asset.timeCurve.length <= 1 ? 0f : anim.asset.timeCurve[anim.asset.timeCurve.length - 1].time);
+                        float timeLength = anim.asset.LengthInSeconds * timeCurveEnd;
 
                         if (float.TryParse(val, out float result) && result > 0f && timeLength > 0f)
                         {
-                            anim.asset.timeCurve.Scale(result / timeLength);
+                            /*anim.asset.timeCurve.Scale(result / timeLength);
                             if (curveEditorWindow.gameObject.activeInHierarchy) RefreshCurveEditorWindow(anim.asset.timeCurve, curveEditorWindow, (AnimationCurveEditor.State a, AnimationCurveEditor.State b) =>
                             {
                                 CustomEditorUtils.SetInputFieldTextByName(instance, "length", (anim.asset.LengthInSeconds * (b.keyframes.Length <= 1 ? 0f : b.keyframes[b.keyframes.Length - 1].time)).ToString());
-                            });
-                        } 
+                            });*/
+
+                            float scale = (result * timeCurveEnd) / timeLength;
+                            if (anim.asset.transformCurves != null)
+                            {
+                                foreach (var curve in anim.asset.transformCurves)
+                                {
+                                    if (curve.localPositionCurveX != null) curve.localPositionCurveX.Scale(scale);
+                                    if (curve.localPositionCurveY != null) curve.localPositionCurveY.Scale(scale);
+                                    if (curve.localPositionCurveZ != null) curve.localPositionCurveZ.Scale(scale);
+                                    
+                                    if (curve.localRotationCurveX != null) curve.localRotationCurveX.Scale(scale);
+                                    if (curve.localRotationCurveY != null) curve.localRotationCurveY.Scale(scale);
+                                    if (curve.localRotationCurveZ != null) curve.localRotationCurveZ.Scale(scale);
+                                    if (curve.localRotationCurveW != null) curve.localRotationCurveW.Scale(scale);
+
+                                    if (curve.localScaleCurveX != null) curve.localScaleCurveX.Scale(scale);
+                                    if (curve.localScaleCurveY != null) curve.localScaleCurveY.Scale(scale);
+                                    if (curve.localScaleCurveZ != null) curve.localScaleCurveZ.Scale(scale);
+                                }
+                            }
+                            if (anim.asset.transformLinearCurves != null)
+                            {
+                                foreach (var curve in anim.asset.transformLinearCurves)
+                                {
+                                    if (curve.frames != null)
+                                    {
+                                        for(int i = 0; i < curve.frames.Length; i++)
+                                        {
+                                            var frame = curve.frames[i];
+                                            frame.timelinePosition = (int)(frame.timelinePosition * scale);
+                                            curve.frames[i] = frame;
+                                        }
+                                    }
+                                }
+                            }
+
+                            if (anim.asset.propertyCurves != null)
+                            {
+                                foreach (var curve in anim.asset.propertyCurves)
+                                {
+                                    if (curve.propertyValueCurve != null) curve.propertyValueCurve.Scale(scale);
+                                }
+                            }
+                            if (anim.asset.propertyLinearCurves != null)
+                            {
+                                foreach (var curve in anim.asset.propertyLinearCurves)
+                                {
+                                    if (curve.frames != null)
+                                    {
+                                        for (int i = 0; i < curve.frames.Length; i++)
+                                        {
+                                            var frame = curve.frames[i];
+                                            frame.timelinePosition = (int)(frame.timelinePosition * scale); 
+                                            curve.frames[i] = frame;
+                                        }
+                                    }
+                                }
+                            }
+
+                            anim.asset.FlushJobData();
+                            session.ReapplyController();
+                            Debug.Log($"RETIMED {timeLength} -> {anim.asset.LengthInSeconds * timeCurveEnd}");  
+                        }
                         else
                         {
                             CustomEditorUtils.SetInputFieldTextByName(instance, "length", "0"); 
@@ -2811,7 +2908,7 @@ namespace Swole
 
                             singleName[0] = bone.name;
                             var output = RigHelpers.MapBones(singleName, targetBoneNames);
-
+                            
                             if (output.Count > 0)
                             {
                                 var mapping = output[0];
@@ -3209,7 +3306,7 @@ namespace Swole
                 return null;
             }
 
-            animationBake = new AnimationBake(activeSession.animator, activeSession.RemapTarget.animator, animationToTransfer, activeSession.RemapTarget.RestPose, () => activeSession.SyncRemapTargetPoseDelayed(1, true, false));   
+            animationBake = new AnimationBake(activeSession.animator, activeSession.RemapTarget.animator, animationToTransfer, activeSession.RemapTarget.RestPose, () => activeSession.SyncRemapTargetPoseDelayed(1, false/*true*/, false));    
             animationBake.insertionFrameDelay = 3;
 
             activeSession.ValidateRemapPreset();
@@ -3219,7 +3316,7 @@ namespace Swole
             animationBake.rootMotionPositionMode = preset.rootMotionPositionMode;
             animationBake.bakeRootMotionAtSeparateInterval = preset.bakeRootMotionAtSeparateInverval;
             animationBake.rootMotionBakeIntervalPos = preset.bakeRootMotionIntervalPos; 
-            animationBake.rootMotionBakeIntervalRot = preset.bakeRootMotionIntervalRot;
+            animationBake.rootMotionBakeIntervalRot = preset.bakeRootMotionIntervalRot; 
 
             IEnumerator Bake()
             {
@@ -3297,21 +3394,20 @@ namespace Swole
                     activeSession.RemapTarget.animator.ResetToPreInitializedBindPose();
                     session.rootObject = Instantiate(activeSession.RemapTarget.instance); 
 
-                    session.animator = session.rootObject.GetComponentInChildren<CustomAnimator>(true);
+                    session.animator = session.rootObject.GetComponentInChildren<CustomAnimator>(true); 
                     session.animator.ClearLayers(false);
                     session.animator.enabled = true;
                     session.animator.ResetToPreInitializedBindPose();
 
                     var controller = CustomAnimationController.BuildDefaultController("imported", bakedAnimations, 0); 
-                    session.animator.ApplyController(controller);
+                    session.controller = controller;
+                    session.ReapplyController();
 
                     foreach (var anim in bakedAnimations)
                     {
-                        session.animationImports.Add(new AnimationImport(anim, session.animator.FindTypedLayer($"imported/{anim.Name}")));
+                        session.animationImports.Add(new AnimationImport(anim, $"imported/{anim.Name}")); 
                     }
                     
-                    GameObject.Destroy(controller);
-
                     RegisterSession(session);
                 }
             }
@@ -3398,6 +3494,16 @@ namespace Swole
 
             if (animationBakeWindow != null) animationBakeWindow.gameObject.SetActive(false);
         }
+
+        protected void OnDestroy()
+        {
+            if (sessions != null)
+            {
+                foreach (var session in sessions) if (session != null) session.Dispose();
+                sessions.Clear();
+            }
+        }
+
         private void OnRemapPresetChange(RemapPreset preset)
         {
             RefreshRemapWindowPreset(activeSession);
@@ -4019,8 +4125,10 @@ namespace Swole
 
         private Dictionary<string, List<BoneRelation>> boneRelations = new Dictionary<string, List<BoneRelation>>();
         private Dictionary<string, Dictionary<float, Quaternion>> boneRotations = new Dictionary<string, Dictionary<float, Quaternion>>();
-        private Quaternion GetPreviousBoneRotation(string bone, float time)
+        private bool TryGetPreviousBoneRotation(string bone, float time, out Quaternion prevRotation)
         {
+            prevRotation = Quaternion.identity;
+
             if (boneRotations.TryGetValue(bone, out var timeline))
             {
                 if (timeline != null)
@@ -4037,11 +4145,12 @@ namespace Swole
                         }
                     }
 
-                    return closestRot;
+                    prevRotation = closestRot;
+                    return true;
                 }
             }
 
-            return Quaternion.identity;
+            return false;
         }
         private void StoreBoneRotation(string bone, float time, Quaternion rotation)
         {
@@ -4056,9 +4165,11 @@ namespace Swole
         private Quaternion CalculateAndStoreBoneRotation(Transform bone, float time)
         {
             var localRot = bone.localRotation;
-            var prevLocalRot = GetPreviousBoneRotation(bone.name, time);
+            if (TryGetPreviousBoneRotation(bone.name, time, out var prevLocalRot))
+            {
+                localRot = Maths.EnsureQuaternionContinuity(prevLocalRot, localRot); 
+            }
 
-            localRot = Maths.EnsureQuaternionContinuity(prevLocalRot, localRot);
             StoreBoneRotation(bone.name, time, localRot);
 
             return localRot;
@@ -5576,7 +5687,7 @@ namespace Swole
                 }
 
                 if (optimizeKeys) animationSource.rawAnimation.Optimize(false, 0f, optimizationTolerancePosition > 0f, optimizationTolerancePosition, optimizationToleranceRotation > 0f, optimizationToleranceRotation, optimizationToleranceScale > 0f, optimizationToleranceScale, ModelEditor._defaultBonesToIgnoreForOptimization);
-
+                
                 animationSource.MarkForRecompilation();
             }
 

@@ -114,7 +114,7 @@ namespace Swole.API.Unity.Animation
                 m_parent = parent;
             }
 
-            m_weight = 1;
+            m_weight = 1f;
 
             if (avatarMask != null) 
             {
@@ -206,9 +206,9 @@ namespace Swole.API.Unity.Animation
         public virtual float GetMaxDuration(IAnimationLayer layer) => GetDuration(layer);
         public virtual float GetMaxScaledDuration(IAnimationLayer layer) => GetScaledDuration(layer);
 
-        public abstract float GetTime(IAnimationLayer layer, float addTime = 0);
+        public abstract float GetTime(IAnimationLayer layer, float addTime = 0f);
 
-        public virtual float GetNormalizedTime(IAnimationLayer layer, float addTime = 0)
+        public virtual float GetNormalizedTime(IAnimationLayer layer, float addTime = 0f)
         {
             float length = GetDuration(layer);
             if (length <= 0f) return 0f;
@@ -247,7 +247,7 @@ namespace Swole.API.Unity.Animation
 
         }
 
-        public virtual void RemapParameterIndices(IAnimationLayer layer, Dictionary<int, int> remapper, bool invalidateNonRemappedIndices = false)
+        public virtual void RemapParameterIndices(IAnimationLayer layer, Dictionary<int, int> remapper, bool invalidateNonRemappedIndices = false, bool remapChildren = true)
         {
 
             if (remapper == null) return;
@@ -480,17 +480,17 @@ namespace Swole.API.Unity.Animation
             set => useNormalizedTimeForOverriding = value; 
         }
 
-        public override void RemapParameterIndices(IAnimationLayer layer, Dictionary<int, int> remapper, bool invalidateNonRemappedIndices = false)
+        public override void RemapParameterIndices(IAnimationLayer layer, Dictionary<int, int> remapper, bool invalidateNonRemappedIndices = false, bool remapChildren = true)
         {
 
-            base.RemapParameterIndices(layer, remapper, invalidateNonRemappedIndices);
+            base.RemapParameterIndices(layer, remapper, invalidateNonRemappedIndices, remapChildren);
 
             if (remapper == null) return;
 
             if (TimeOverrideParameter >= 0)
             {
-
-                int origIndex = TimeOverrideParameter;
+                
+                int origIndex = TimeOverrideParameter; 
                 if (!remapper.TryGetValue(origIndex, out timeOverrideParameter) && invalidateNonRemappedIndices) 
                 {
                     timeOverrideParameter = -1;
@@ -685,12 +685,12 @@ namespace Swole.API.Unity.Animation
                 if (p != null)
                 {
                     float val = p.UpdateAndGetValue();
-                    cap.TimeOverride = val * (useNormalizedTimeForOverriding ? cap.LengthInSeconds : 1f); 
+                    cap.TimeOverride = val * (useNormalizedTimeForOverriding ? cap.LengthInSeconds : 1f);  
                 }
             }
 
-            jobHandle = cap.Progress(deltaTime, layer.Mix, jobHandle, useMultithreading, isFinal, canLoop); 
-
+            jobHandle = cap.Progress(deltaTime, layer.Mix, jobHandle, useMultithreading, isFinal, canLoop);
+            //Debug.Log($"{name}: {layer.Mix} {cap.Time} {cap.Speed}"); 
         }
 
         public override bool HasAnimationPlayer(IAnimationLayer layer)
@@ -1051,12 +1051,12 @@ namespace Swole.API.Unity.Animation
 
         public int GetParameterIndex(int localParameterIndex) => -1;
 
-        public override void RemapParameterIndices(IAnimationLayer layer, Dictionary<int, int> remapper, bool invalidateNonRemappedIndices = false)
+        public override void RemapParameterIndices(IAnimationLayer layer, Dictionary<int, int> remapper, bool invalidateNonRemappedIndices = false, bool remapChildren = true)
         {
 
             if (remapper == null) return;
 
-            base.RemapParameterIndices(layer, remapper, invalidateNonRemappedIndices);
+            base.RemapParameterIndices(layer, remapper, invalidateNonRemappedIndices, remapChildren);
 
             if (motionParts != null)
             {
@@ -1083,11 +1083,13 @@ namespace Swole.API.Unity.Animation
                     }
 
 
+                    if (remapChildren)
+                    {
+                        var controller = layer.GetMotionController(part.controllerIndex);
+                        if (controller == null) continue;
 
-                    var controller = layer.GetMotionController(part.controllerIndex);
-                    if (controller == null) continue;
-
-                    controller.RemapParameterIndices(layer, remapper, invalidateNonRemappedIndices);
+                        controller.RemapParameterIndices(layer, remapper, invalidateNonRemappedIndices, remapChildren);
+                    }
 
                 }
 
@@ -1506,6 +1508,10 @@ namespace Swole.API.Unity.Animation
         [NonSerialized]
         protected int finalFieldCached;
         public int FinalFieldIndex => finalFieldCached - 1;
+
+        [NonSerialized]
+        protected bool[] finalIndices;
+
         protected void RefreshFinalField(IAnimationLayer layer)
         {
             finalFieldCached = 0;
@@ -1519,6 +1525,51 @@ namespace Swole.API.Unity.Animation
 
                 finalFieldCached = a + 1;
 
+            }
+
+            if (finalIndices == null || finalIndices.Length != MotionParts.Length) finalIndices = new bool[MotionParts.Length];
+            for (int a = 0; a < MotionParts.Length; a++)
+            {
+                finalIndices[a] = false;
+
+                var motionField = MotionParts[a];
+                var controller = layer.GetMotionController(motionField.ControllerIndex);
+                if (controller is not CustomMotionController) continue;
+
+                bool finalize = false;
+                if (a == FinalFieldIndex)
+                {
+                    finalize = true;
+                }
+                else
+                {
+                    finalize = true;
+
+                    var localHierarchyIndex = controller.GetLongestHierarchyIndex(Layer);
+                    var localHierarchy = layer.Animator.GetTransformHierarchy(localHierarchyIndex);
+                    if (localHierarchy != null)
+                    {
+                        for (int b = MotionParts.Length - 1; b > a; b--)
+                        {
+                            var motionPart2 = MotionParts[b];
+                            var controller2 = layer.GetMotionController(motionPart2.ControllerIndex);
+                            if (controller2 is not CustomMotionController cmc2) continue;
+
+                            var otherHierarchyIndex = controller2.GetLongestHierarchyIndex(Layer);
+                            var otherHierarchy = layer.Animator.GetTransformHierarchy(otherHierarchyIndex);
+                            if (otherHierarchy != null)
+                            {
+                                if (localHierarchy.IsDerivative(otherHierarchy))
+                                {
+                                    finalize = false;
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                }
+
+                finalIndices[a] = finalize;
             }
         }
 
@@ -1664,9 +1715,8 @@ namespace Swole.API.Unity.Animation
 
                 cmc.SetWeight(motionPart.GetMix(layer));
                 cmc.SyncWeight(layer);
-                cmc.Progress(layer, deltaTime, ref jobHandle, useMultithreading, isFinal && a == FinalFieldIndex, canLoop);
-            }
-
+                cmc.Progress(layer, deltaTime, ref jobHandle, useMultithreading, isFinal && finalIndices[a], canLoop);
+            }           
         }
 
         public override bool HasAnimationPlayer(IAnimationLayer layer)
@@ -2299,6 +2349,9 @@ namespace Swole.API.Unity.Animation
         [NonSerialized]
         protected int finalFieldCached;
         public int FinalFieldIndex => finalFieldCached - 1;
+        [NonSerialized]
+        protected bool[] finalIndices;
+
         protected void RefreshFinalField(IAnimationLayer layer)
         {
             finalFieldCached = 0;
@@ -2312,6 +2365,51 @@ namespace Swole.API.Unity.Animation
 
                 finalFieldCached = a + 1;
 
+            }
+
+            if (finalIndices == null || finalIndices.Length != BaseMotionFields.Length) finalIndices = new bool[BaseMotionFields.Length];
+            for (int a = 0; a < BaseMotionFields.Length; a++)
+            {
+                finalIndices[a] = false;
+
+                var motionField = BaseMotionFields[a];
+                var controller = layer.GetMotionController(motionField.ControllerIndex);
+                if (controller is not CustomMotionController) continue;
+
+                bool finalize = false;
+                if (a == FinalFieldIndex)
+                {
+                    finalize = true;
+                }
+                else
+                {
+                    finalize = true;
+
+                    var localHierarchyIndex = controller.GetLongestHierarchyIndex(Layer);
+                    var localHierarchy = layer.Animator.GetTransformHierarchy(localHierarchyIndex);
+                    if (localHierarchy != null)
+                    {
+                        for (int b = BaseMotionFields.Length - 1; b > a; b--)
+                        {
+                            var motionPart2 = BaseMotionFields[b];
+                            var controller2 = layer.GetMotionController(motionPart2.ControllerIndex);
+                            if (controller2 is not CustomMotionController cmc2) continue;
+
+                            var otherHierarchyIndex = controller2.GetLongestHierarchyIndex(Layer);
+                            var otherHierarchy = layer.Animator.GetTransformHierarchy(otherHierarchyIndex);
+                            if (otherHierarchy != null)
+                            {
+                                if (localHierarchy.IsDerivative(otherHierarchy))
+                                {
+                                    finalize = false;
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                }
+
+                finalIndices[a] = finalize;
             }
         }
 
@@ -2485,7 +2583,7 @@ namespace Swole.API.Unity.Animation
 #if UNITY_EDITOR
                 //if (cmc.Parent == null || !ReferenceEquals(this, cmc.Parent)) Debug.LogError($"NULL OR MISMATCHED PARENT FOR {cmc.Name} (REAL PARENT: {Name}) (CURRENT PARENT: {(cmc.Parent == null ? "null" : cmc.Parent.Name)})"); 
 #endif
-                cmc.Progress(layer, deltaTime, ref jobHandle, useMultithreading, isFinal && a == FinalFieldIndex, canLoop);
+                cmc.Progress(layer, deltaTime, ref jobHandle, useMultithreading, isFinal && finalIndices[a], canLoop);
             }
         }
 
@@ -2824,12 +2922,12 @@ namespace Swole.API.Unity.Animation
             return base.GetBiasedParameterValue(layer, parameterIndex, defaultValue, updateParameter, out appliedBias);
         }
 
-        public override void RemapParameterIndices(IAnimationLayer layer, Dictionary<int, int> remapper, bool invalidateNonRemappedIndices = false)
+        public override void RemapParameterIndices(IAnimationLayer layer, Dictionary<int, int> remapper, bool invalidateNonRemappedIndices = false, bool remapChildren = true)
         {
 
             if (remapper == null) return;
 
-            base.RemapParameterIndices(layer, remapper, invalidateNonRemappedIndices);
+            base.RemapParameterIndices(layer, remapper, invalidateNonRemappedIndices, remapChildren);
 
             if (ParameterIndex >= 0)
             {
@@ -2847,19 +2945,22 @@ namespace Swole.API.Unity.Animation
 
             }
 
-            if (motionFields != null)
+            if (remapChildren)
             {
-
-                foreach (var field in motionFields)
+                if (motionFields != null)
                 {
 
-                    var controller = layer.GetMotionController(field.controllerIndex);
-                    if (controller == null) continue;
+                    foreach (var field in motionFields)
+                    {
 
-                    controller.RemapParameterIndices(layer, remapper, invalidateNonRemappedIndices);
+                        var controller = layer.GetMotionController(field.controllerIndex);
+                        if (controller == null) continue;
+
+                        controller.RemapParameterIndices(layer, remapper, invalidateNonRemappedIndices, remapChildren); 
+
+                    }
 
                 }
-
             }
 
         }
@@ -2956,7 +3057,7 @@ namespace Swole.API.Unity.Animation
                     if (minIndex == maxIndex)
                     {
 
-                        controller.SetWeight(1);
+                        controller.SetWeight(1f);
                         controller.SyncWeight(layer);
 
                         if (controller is IBlendTree blendTree) blendTree.UpdateBlendValues(layer, blendTree.GetNormalizedTime(layer), deltaTime);  
@@ -2970,7 +3071,7 @@ namespace Swole.API.Unity.Animation
                         var minController = layer.GetMotionControllerUnsafe(prevMotionField.controllerIndex);
                         var maxController = layer.GetMotionControllerUnsafe(motionField.controllerIndex); 
 
-                        minController.SetWeight(1 - interp);
+                        minController.SetWeight(1f - interp);
                         minController.SyncWeight(layer);
                         maxController.SetWeight(interp);
                         maxController.SyncWeight(layer);
@@ -2983,7 +3084,7 @@ namespace Swole.API.Unity.Animation
                      
                 }
                 
-                controller.SetWeight(0);
+                controller.SetWeight(0f);
                 controller.SyncWeight(layer);
             }
 
@@ -2992,12 +3093,12 @@ namespace Swole.API.Unity.Animation
                 var controller = layer.GetMotionControllerUnsafe(motionFields[a].controllerIndex);
                 if (controller != null) 
                 { 
-                    controller.SetWeight(0);
+                    controller.SetWeight(0f);
                     controller.SyncWeight(layer);
                 }
             }
 
-            /*string debug = "";
+            /*string debug = $"(BT1) ({GetWeight()}) {name}: "; 
             for (int a = 0; a < motionFields.Length; a++)
             {
                 var controller = layer.GetMotionControllerUnsafe(motionFields[a].controllerIndex);
@@ -3005,8 +3106,8 @@ namespace Swole.API.Unity.Animation
                 {
                     debug = $"{debug}, ({controller.Name}:{controller.GetWeight()})"; 
                 }
-            }*/
-            //if (name.Contains("test")) Debug.Log(debug);
+            }
+            Debug.Log(debug);*/
 
         }
 
@@ -3305,12 +3406,12 @@ namespace Swole.API.Unity.Animation
             return base.GetBiasedParameterValue(layer, parameterIndex, defaultValue, updateParameter, out appliedBias);
         }
 
-        public override void RemapParameterIndices(IAnimationLayer layer, Dictionary<int, int> remapper, bool invalidateNonRemappedIndices = false)
+        public override void RemapParameterIndices(IAnimationLayer layer, Dictionary<int, int> remapper, bool invalidateNonRemappedIndices = false, bool remapChildren = true)
         {
 
             if (remapper == null) return;
 
-            base.RemapParameterIndices(layer, remapper, invalidateNonRemappedIndices);
+            base.RemapParameterIndices(layer, remapper, invalidateNonRemappedIndices, remapChildren);
 
             if (ParameterIndexX >= 0)
             {
@@ -3341,19 +3442,22 @@ namespace Swole.API.Unity.Animation
                 }
             }
 
-            if (motionFields != null)
+            if (remapChildren)
             {
-
-                foreach (var field in motionFields)
+                if (motionFields != null)
                 {
 
-                    var controller = layer.GetMotionController(field.controllerIndex);
-                    if (controller == null) continue;
+                    foreach (var field in motionFields)
+                    {
 
-                    controller.RemapParameterIndices(layer, remapper, invalidateNonRemappedIndices);
+                        var controller = layer.GetMotionController(field.controllerIndex);
+                        if (controller == null) continue;
+
+                        controller.RemapParameterIndices(layer, remapper, invalidateNonRemappedIndices, remapChildren);
+
+                    }
 
                 }
-
             }
 
         }
@@ -3650,6 +3754,360 @@ namespace Swole.API.Unity.Animation
         }
 
     }
+
+    public class CustomMotionControllersBuilder
+    {
+        public readonly List<MotionControllerIdentifier> motionControllerIds = new List<MotionControllerIdentifier>();
+
+        public readonly List<AnimationReference> animationReferences = new List<AnimationReference>();
+        public readonly List<MotionComposite> motionComposites = new List<MotionComposite>();
+        public readonly List<BlendTree1D> blendTree1Ds = new List<BlendTree1D>();
+        public readonly List<BlendTree2D> blendTree2Ds = new List<BlendTree2D>();
+
+        public void Clear()
+        {
+            motionControllerIds.Clear();
+
+            animationReferences.Clear();
+            motionComposites.Clear();
+            blendTree1Ds.Clear();
+            blendTree2Ds.Clear();
+        }
+
+        public CustomMotionController GetMotionController(MotionControllerIdentifier id)
+        {
+            switch (id.type)
+            {
+                case MotionControllerType.AnimationReference:
+                    if (id.index < 0 || id.index >= animationReferences.Count) return null;
+                    return animationReferences[id.index];
+
+                case MotionControllerType.MotionComposite:
+                    if (id.index < 0 || id.index >= motionComposites.Count) return null;
+                    return motionComposites[id.index];
+
+                case MotionControllerType.BlendTree1D:
+                    if (id.index < 0 || id.index >= blendTree1Ds.Count) return null;
+                    return blendTree1Ds[id.index];
+
+                case MotionControllerType.BlendTree2D:
+                    if (id.index < 0 || id.index >= blendTree2Ds.Count) return null;
+                    return blendTree2Ds[id.index];
+            }
+
+            return null;
+        }
+
+        public CustomMotionController GetMotionController(int idIndex)
+        {
+            if (idIndex < 0 || idIndex >= motionControllerIds.Count) return null;
+            return GetMotionController(motionControllerIds[idIndex]);
+        }
+
+        public void AddAnimationReference(AnimationReference inst) => AddAnimationReference(inst, out _, out _);
+        public void AddAnimationReference(AnimationReference inst, out int motionControllerIndex, out int animRefIndex)
+        {
+            motionControllerIndex = motionControllerIds.Count;
+            animRefIndex = animationReferences.Count;
+
+            animationReferences.Add(inst);
+            motionControllerIds.Add(new MotionControllerIdentifier() { index = animRefIndex, type = MotionControllerType.AnimationReference });
+        }
+
+        public void AddMotionComposite(MotionComposite inst) => AddMotionComposite(inst, out _, out _);
+        public void AddMotionComposite(MotionComposite inst, out int motionControllerIndex, out int motionCompIndex)
+        {
+            motionControllerIndex = motionControllerIds.Count;
+            motionCompIndex = motionComposites.Count;
+
+            motionComposites.Add(inst);
+            motionControllerIds.Add(new MotionControllerIdentifier() { index = motionCompIndex, type = MotionControllerType.MotionComposite });
+        }
+
+        public void AddBlendTree1D(BlendTree1D inst) => AddBlendTree1D(inst, out _, out _);
+        public void AddBlendTree1D(BlendTree1D inst, out int motionControllerIndex, out int blendTreeIndex)
+        {
+            motionControllerIndex = motionControllerIds.Count;
+            blendTreeIndex = blendTree1Ds.Count;
+
+            blendTree1Ds.Add(inst);
+            motionControllerIds.Add(new MotionControllerIdentifier() { index = blendTreeIndex, type = MotionControllerType.BlendTree1D });
+        }
+
+        public void AddBlendTree2D(BlendTree2D inst) => AddBlendTree2D(inst, out _, out _);
+        public void AddBlendTree2D(BlendTree2D inst, out int motionControllerIndex, out int blendTreeIndex)
+        {
+            motionControllerIndex = motionControllerIds.Count;
+            blendTreeIndex = blendTree2Ds.Count;
+
+            blendTree2Ds.Add(inst);
+            motionControllerIds.Add(new MotionControllerIdentifier() { index = blendTreeIndex, type = MotionControllerType.BlendTree2D });
+        }
+
+        public int GetMotionControllerIdIndex(string name, MotionControllerType type)
+        {
+            if (string.IsNullOrWhiteSpace(name)) return -1;
+
+            for (int a = 0; a < motionControllerIds.Count; a++)
+            {
+                var id = motionControllerIds[a];
+                switch(id.type)
+                {
+                    case MotionControllerType.AnimationReference:
+                        var animRef = animationReferences[id.index];
+                        if (animRef.name == name) return a;
+                        break;
+
+                    case MotionControllerType.MotionComposite:
+                        var comp = motionComposites[id.index];
+                        if (comp.name == name) return a;
+                        break;
+
+                    case MotionControllerType.BlendTree1D:
+                        var tree1D = blendTree1Ds[id.index];
+                        if (tree1D.name == name) return a;
+                        break;
+
+                    case MotionControllerType.BlendTree2D:
+                        var tree2D = blendTree2Ds[id.index];
+                        if (tree2D.name == name) return a;
+                        break;
+                }
+            }
+
+            return -1;
+        }
+
+        public bool TryFindAnimationReferenceIndex(string name, out int controllerIndex, out int animRefIndex)
+        {
+            controllerIndex = -1;
+            animRefIndex = -1;
+
+            if (string.IsNullOrWhiteSpace(name)) return false;
+
+            for (int a = 0; a < motionControllerIds.Count; a++)
+            {
+                var id = motionControllerIds[a];
+
+                if (id.type == MotionControllerType.AnimationReference)
+                {
+                    var inst = animationReferences[a];
+                    if (inst != null && inst.name == name)
+                    {
+                        controllerIndex = a;
+                        animRefIndex = id.index;
+                        return true;
+                    }
+                }
+            }
+
+            return false;
+        }
+        public bool TryFindMotionCompositeindex(string name, out int controllerIndex, out int motionCompIndex)
+        {
+            controllerIndex = -1;
+            motionCompIndex = -1;
+
+            if (string.IsNullOrWhiteSpace(name)) return false;
+
+            for (int a = 0; a < motionControllerIds.Count; a++)
+            {
+                var id = motionControllerIds[a];
+
+                if (id.type == MotionControllerType.MotionComposite) 
+                {
+                    var inst = motionComposites[a];
+                    if (inst != null && inst.name == name)
+                    {
+                        controllerIndex = a;
+                        motionCompIndex = id.index;
+                        return true;
+                    }
+                }
+            }
+
+            return false;
+        }
+        public bool TryFindBlendTree1DIndex(string name, out int controllerIndex, out int blendTree1dIndex)
+        {
+            controllerIndex = -1;
+            blendTree1dIndex = -1;
+
+            if (string.IsNullOrWhiteSpace(name)) return false;
+
+            for (int a = 0; a < motionControllerIds.Count; a++)
+            {
+                var id = motionControllerIds[a];
+
+                if (id.type == MotionControllerType.BlendTree1D)
+                {
+                    var inst = blendTree1Ds[a];
+                    if (inst != null && inst.name == name)
+                    {
+                        controllerIndex = a;
+                        blendTree1dIndex = id.index;
+                        return true;
+                    }
+                }
+            }
+
+            return false;
+        }
+        public bool TryFindBlendTree2DIndex(string name, out int controllerIndex, out int blendTree2dIndex)
+        {
+            controllerIndex = -1;
+            blendTree2dIndex = -1;
+
+            if (string.IsNullOrWhiteSpace(name)) return false;
+
+            for (int a = 0; a < motionControllerIds.Count; a++)
+            {
+                var id = motionControllerIds[a];
+
+                if (id.type == MotionControllerType.BlendTree2D)
+                {
+                    var inst = blendTree2Ds[a];
+                    if (inst != null && inst.name == name)
+                    {
+                        controllerIndex = a;
+                        blendTree2dIndex = id.index;
+                        return true;
+                    }
+                }
+            }
+
+            return false;
+        }
+
+        public void Finalize(CustomAnimationController controller) => Finalize(controller, false, out _, out _, out _, out _, false);
+        public void Finalize(CustomAnimationController controller, bool additive, out int animRefIndexOffset, out int motionCompIndexOffset, out int blendTree1dIndexOffset, out int blendTree2dIndexOffset, bool updateInternalMotionControllerIDs = false)
+        {
+            animRefIndexOffset = 0;
+            motionCompIndexOffset = 0;
+            blendTree1dIndexOffset = 0;
+            blendTree2dIndexOffset = 0; 
+
+            if (additive)
+            {
+                // Animation References
+                if (controller.animationReferences == null || controller.animationReferences.Length <= 0)
+                {
+                    controller.animationReferences = animationReferences.ToArray();
+                }
+                else
+                {
+                    animRefIndexOffset = controller.animationReferences.Length;
+                    var newArray = new AnimationReference[controller.animationReferences.Length + animationReferences.Count];
+                    controller.animationReferences.CopyTo(newArray, 0);
+                    animationReferences.CopyTo(newArray, animRefIndexOffset);
+                    controller.animationReferences = newArray;
+                }
+
+                // Motion Composites
+                if (controller.motionComposites == null || controller.motionComposites.Length <= 0)
+                {
+                    controller.motionComposites = motionComposites.ToArray();
+                }
+                else
+                {
+                    motionCompIndexOffset = controller.motionComposites.Length;
+                    var newArray = new MotionComposite[controller.motionComposites.Length + motionComposites.Count];
+                    controller.motionComposites.CopyTo(newArray, 0);
+                    motionComposites.CopyTo(newArray, motionCompIndexOffset);
+                    controller.motionComposites = newArray;
+                }
+
+                // Blend Tree 1Ds
+                if (controller.blendTrees1D == null || controller.blendTrees1D.Length <= 0)
+                {
+                    controller.blendTrees1D = blendTree1Ds.ToArray();
+                }
+                else
+                {
+                    blendTree1dIndexOffset = controller.blendTrees1D.Length;
+                    var newArray = new BlendTree1D[controller.blendTrees1D.Length + blendTree1Ds.Count];
+                    controller.blendTrees1D.CopyTo(newArray, 0);
+                    blendTree1Ds.CopyTo(newArray, blendTree1dIndexOffset);
+                    controller.blendTrees1D = newArray;
+                }
+
+                // Blend Tree 2Ds
+                if (controller.blendTrees2D == null || controller.blendTrees2D.Length <= 0)
+                {
+                    controller.blendTrees2D = blendTree2Ds.ToArray();
+                }
+                else
+                {
+                    blendTree2dIndexOffset = controller.blendTrees2D.Length;
+                    var newArray = new BlendTree2D[controller.blendTrees2D.Length + blendTree2Ds.Count];
+                    controller.blendTrees2D.CopyTo(newArray, 0);
+                    blendTree2Ds.CopyTo(newArray, blendTree2dIndexOffset);
+                    controller.blendTrees2D = newArray;
+                }
+
+                if (updateInternalMotionControllerIDs)
+                {
+                    if (motionControllerIds != null)
+                    {
+                        for (int i = 0; i < motionControllerIds.Count; i++)
+                        {
+                            var id = motionControllerIds[i];
+                            switch (id.type)
+                            {
+                                case MotionControllerType.AnimationReference:
+                                    id.index = id.index + animRefIndexOffset;
+                                    break;
+                                case MotionControllerType.MotionComposite:
+                                    id.index = id.index + motionCompIndexOffset;
+                                    break;
+                                case MotionControllerType.BlendTree1D:
+                                    id.index = id.index + blendTree1dIndexOffset;
+                                    break;
+                                case MotionControllerType.BlendTree2D:
+                                    id.index = id.index + blendTree2dIndexOffset;
+                                    break;
+                            }
+                            motionControllerIds[i] = id;
+                        }
+                    }
+                }
+            }
+            else
+            {
+                controller.animationReferences = animationReferences.ToArray();
+                controller.motionComposites = motionComposites.ToArray();
+                controller.blendTrees1D = blendTree1Ds.ToArray();
+                controller.blendTrees2D = blendTree2Ds.ToArray();
+            }
+        }
+
+        public void Finalize(CustomAnimationLayer layer) => Finalize(layer, false, out _);
+        public void Finalize(CustomAnimationLayer layer, bool additive, out int idsOffset)
+        {
+            idsOffset = 0;
+
+            if (additive)
+            {
+                if (layer.motionControllerIdentifiers == null || layer.motionControllerIdentifiers.Length <= 0)
+                {
+                    layer.motionControllerIdentifiers = motionControllerIds.ToArray();
+                }
+                else
+                {
+                    idsOffset = layer.motionControllerIdentifiers.Length;
+                    var newArray = new MotionControllerIdentifier[layer.motionControllerIdentifiers.Length + motionControllerIds.Count];
+                    layer.motionControllerIdentifiers.CopyTo(newArray, 0);
+                    motionControllerIds.CopyTo(newArray, idsOffset);
+                    layer.motionControllerIdentifiers = newArray;
+                }
+            }
+            else
+            {
+                layer.motionControllerIdentifiers = motionControllerIds.ToArray(); 
+            }
+        }
+    }
+
 }
 
 #endif

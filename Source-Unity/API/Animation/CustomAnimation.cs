@@ -1430,7 +1430,7 @@ namespace Swole.API.Unity.Animation
             }
             public void UnsubscribePostEvent(RuntimeEventListenerDelegate listener)
             {
-                if (listener == null || onPreEventCalled == null) return;
+                if (listener == null || onPreEventCalled == null) return; 
                 onPostEventCalled -= listener;
             }
 
@@ -1493,6 +1493,17 @@ namespace Swole.API.Unity.Animation
                             onPreEventCalled = null;
                             swole.LogError(ex);
                         }
+                        try
+                        {
+                            if (m_animator != null)
+                            {
+                                m_animator.NotifyPreEventCall(_event.Name, _event.TimelinePosition, sender);
+                            }
+                        }
+                        catch (Exception ex)
+                        {
+                            swole.LogError(ex);
+                        }
                         _event.Execute(environment, _defaultEventCompletionTimeout, eventLogger);
                         try
                         {
@@ -1501,6 +1512,17 @@ namespace Swole.API.Unity.Animation
                         catch (Exception ex)
                         {
                             onPostEventCalled = null;
+                            swole.LogError(ex);
+                        }
+                        try
+                        {
+                            if (m_animator != null)
+                            {
+                                m_animator.NotifyPostEventCall(_event.Name, _event.TimelinePosition, sender);
+                            }
+                        }
+                        catch (Exception ex)
+                        {
                             swole.LogError(ex);
                         }
                     }
@@ -1637,22 +1659,25 @@ namespace Swole.API.Unity.Animation
                 set => timeOverride = value;
             }
 
-            public float speed = 1;
+            public float speed = 1f;
             public float Speed
             {
                 get => speed;
                 set => speed = value; 
                 
             }
-            protected float internalSpeedMultiplier = 1;
+            protected float internalSpeedMultiplier = 1f;
             public float InternalSpeedMultiplier => internalSpeedMultiplier;
             public float InternalSpeed => speed * internalSpeedMultiplier; 
 
-            public float mix = 1;
+            public float mix = 1f;
             public float Mix
             {
                 get => mix;
-                set => mix = value;
+                set
+                {
+                    mix = value;
+                }
             }
             protected float dynamicMix;
             /// <summary>
@@ -1670,7 +1695,7 @@ namespace Swole.API.Unity.Animation
 
             public void ResetLoop()
             {
-                internalSpeedMultiplier = 1;
+                internalSpeedMultiplier = 1f;
             }
 
             private CustomAnimationLayer layer;
@@ -2185,7 +2210,10 @@ namespace Swole.API.Unity.Animation
             public JobHandle LastJobHandle => lastJobHandle;
             public JobHandle Progress(float deltaTime, float layerMix = 1f, JobHandle jobDeps = default, bool useMultithreading = true, bool isFinal = false, bool canLoop = true)
             {
-                if (m_animation == null) return jobDeps;
+                if (m_animation == null) 
+                {
+                    return jobDeps;
+                }
 
                 float real_speed = 0f;
                 float previousTime = prevTime;
@@ -2236,13 +2264,13 @@ namespace Swole.API.Unity.Animation
                 //
            
                 dynamicMix = mix * layerMix;
-                bool isAdditiveBlend = (isBlend && isAdditive) || (isBlend /*&& layerMix != 1f*/); 
+                bool isAdditiveBlend = (isBlend && isAdditive) || (isBlend /*&& layerMix != 1f*/);
 
                 if (!isFinal && isBlend && math.abs(isAdditiveBlend ? dynamicMix : layerMix) < 0.00001f) return jobDeps; // Don't bother updating when the changes to be made are insignificant
 
                 var animator = m_animator;  
                 var anim = TypedAnimation;
-                if (anim == null) return jobDeps;
+                if (anim == null) return jobDeps; 
 
                 if (isAdditiveBlend)
                 {

@@ -489,7 +489,12 @@ void CalculateMuscleData_float(int instanceID, int vertexIndex, int vertexCount,
 	muscleData.y = pow(saturate(muscleData.y), _FlexEXP <= 0 ? 1 : _FlexEXP); 
 
 #ifdef MASS_PULSE
-	muscleData.x = muscleData.w <= 0.0001 ? muscleData.x : (muscleData.x + max(-_PulseMassAddMax, min(_PulseMassAddMax, (sin(_Time.y * _PulseRate) * _PulseMassAdd * muscleData.w) * saturate(muscleData.x / _PulseMassThreshold)))); 
+	if (muscleData.w > 0.0001) 
+	{
+		float pulse = max(-_PulseMassAddMax, min(_PulseMassAddMax, (sin(_Time.y * _PulseRate) * _PulseMassAdd * muscleData.w) * saturate(muscleData.x / _PulseMassThreshold)));
+		muscleData.x = muscleData.x + pulse;
+		muscleData.w = pulse;
+	}
 #endif
 }
 float4 ApplyPreCalculatedMuscleData(int controlIndexOffset, int muscleGroupIndex, float influenceWeight, float4 muscleData, float maskLeft, float maskRight) 

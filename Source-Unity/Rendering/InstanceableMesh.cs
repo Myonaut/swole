@@ -805,7 +805,7 @@ namespace Swole
                     }
                 }
 
-                return rigSampler;
+                return rigSampler; 
             }
         }
 
@@ -816,7 +816,7 @@ namespace Swole
         public abstract Transform[] SkinnedBones { get; }
         public virtual int BoneCount => SkinningBoneCount;
         public abstract Matrix4x4[] BindPose { get; }
-        public virtual int SkinningBoneCount => BindPose.Length; 
+        public virtual int SkinningBoneCount => SkinnedBones.Length; 
 
         public abstract string ShapeBufferID { get; }
 

@@ -414,6 +414,178 @@ namespace Swole.API.Unity.Animation
 
     }
 
+    public class CustomAnimationParametersBuilder
+    {
+        public readonly List<AnimationParameterIdentifier> identifiers = new List<AnimationParameterIdentifier>();
+
+        public readonly List<CustomAnimationParameter.Float> floatParameters = new List<CustomAnimationParameter.Float>();
+        public readonly List<CustomAnimationParameter.Boolean> boolParameters = new List<CustomAnimationParameter.Boolean>();
+        public readonly List<CustomAnimationParameter.Trigger> triggerParameters = new List<CustomAnimationParameter.Trigger>();
+
+        public void Clear()
+        {
+            identifiers.Clear();
+
+            floatParameters.Clear();
+            boolParameters.Clear();
+            triggerParameters.Clear();
+        }
+
+        public void AddFloatParameter(CustomAnimationParameter.Float p) => AddFloatParameter(p, out _, out _);
+        public void AddFloatParameter(CustomAnimationParameter.Float p, out int idIndex, out int floatParamIndex)
+        {
+            idIndex = identifiers.Count;
+            floatParamIndex = floatParameters.Count;
+
+            identifiers.Add(new AnimationParameterIdentifier(AnimationParameterValueType.Float, floatParameters.Count));
+            floatParameters.Add(p);
+        }
+
+        public void AddBoolParameter(CustomAnimationParameter.Boolean p) => AddBoolParameter(p, out _, out _);
+        public void AddBoolParameter(CustomAnimationParameter.Boolean p, out int idIndex, out int boolParamIndex)
+        {
+            idIndex = identifiers.Count;
+            boolParamIndex = boolParameters.Count;
+
+            identifiers.Add(new AnimationParameterIdentifier(AnimationParameterValueType.Boolean, boolParameters.Count));
+            boolParameters.Add(p);
+        }
+
+        public void AddTriggerParameter(CustomAnimationParameter.Trigger p) => AddTriggerParameter(p, out _, out _); 
+        public void AddTriggerParameter(CustomAnimationParameter.Trigger p, out int idIndex, out int triggerParamIndex)
+        {
+            idIndex = identifiers.Count;
+            triggerParamIndex = triggerParameters.Count;
+
+            identifiers.Add(new AnimationParameterIdentifier(AnimationParameterValueType.Trigger, triggerParameters.Count));
+            triggerParameters.Add(p);
+        }
+
+        public int FindParamterIndex(string parameterName)
+        {
+            if (string.IsNullOrWhiteSpace(parameterName)) return -1;
+
+            for (int a = 0; a < identifiers.Count; a++)
+            {
+                var id = identifiers[a];
+
+                CustomAnimationParameter parameter = null;
+                switch (id.type)
+                {
+                    case AnimationParameterValueType.Float:
+                        parameter = floatParameters[id.index];
+                        if (parameter != null && parameter.name == parameterName) return a;
+                        break;
+                    case AnimationParameterValueType.Boolean:
+                        parameter = boolParameters[id.index];
+                        if (parameter != null && parameter.name == parameterName) return a;
+                        break;
+                    case AnimationParameterValueType.Trigger:
+                        parameter = triggerParameters[id.index];
+                        if (parameter != null && parameter.name == parameterName) return a;
+                        break;
+                }
+            }
+
+            return -1;
+        }
+
+        public void Finalize(CustomAnimationController controller) => Finalize(controller, false, out _); 
+        public void Finalize(CustomAnimationController controller, bool additive, out int indexOffset)
+        {
+            indexOffset = 0;
+
+            if (additive)
+            {
+                AnimationParameterIdentifier[] identifiers = this.identifiers.ToArray();
+
+                // Float Params
+                if (controller.floatParameters == null || controller.floatParameters.Length <= 0)
+                {
+                    controller.floatParameters = floatParameters.ToArray();
+                }
+                else
+                {
+                    int indexOffset_ = controller.floatParameters.Length;
+                    var newArray = new CustomAnimationParameter.Float[controller.floatParameters.Length + floatParameters.Count];
+                    controller.floatParameters.CopyTo(newArray, 0);
+                    floatParameters.CopyTo(newArray, indexOffset_);
+                    controller.floatParameters = newArray;
+
+                    for(int i = 0; i < identifiers.Length; i++)
+                    {
+                        var id = identifiers[i];
+                        if (id.type == AnimationParameterValueType.Float) id.index += indexOffset_;
+                        identifiers[i] = id;
+                    }
+                }
+
+                // Bool Params
+                if (controller.boolParameters == null || controller.boolParameters.Length <= 0)
+                {
+                    controller.boolParameters = boolParameters.ToArray();
+                }
+                else
+                {
+                    int indexOffset_ = controller.boolParameters.Length;
+                    var newArray = new CustomAnimationParameter.Boolean[controller.boolParameters.Length + boolParameters.Count];
+                    controller.boolParameters.CopyTo(newArray, 0);
+                    boolParameters.CopyTo(newArray, indexOffset_);
+                    controller.boolParameters = newArray;
+
+                    for (int i = 0; i < identifiers.Length; i++)
+                    {
+                        var id = identifiers[i];
+                        if (id.type == AnimationParameterValueType.Boolean) id.index += indexOffset_;
+                        identifiers[i] = id;
+                    }
+                }
+
+                // Trigger Params
+                if (controller.triggerParameters == null || controller.triggerParameters.Length <= 0)
+                {
+                    controller.triggerParameters = triggerParameters.ToArray();
+                }
+                else
+                {
+                    int indexOffset_ = controller.triggerParameters.Length;
+                    var newArray = new CustomAnimationParameter.Trigger[controller.triggerParameters.Length + triggerParameters.Count]; 
+                    controller.triggerParameters.CopyTo(newArray, 0);
+                    triggerParameters.CopyTo(newArray, indexOffset_);
+                    controller.triggerParameters = newArray;
+
+                    for (int i = 0; i < identifiers.Length; i++)
+                    {
+                        var id = identifiers[i];
+                        if (id.type == AnimationParameterValueType.Trigger) id.index += indexOffset_;
+                        identifiers[i] = id;
+                    }
+                }
+
+                // Param IDs
+                if (controller.parameters == null || controller.parameters.Length <= 0)
+                {
+                    controller.parameters = identifiers;
+                } 
+                else
+                {
+                    indexOffset = controller.parameters.Length;
+                    var newArray = new AnimationParameterIdentifier[controller.parameters.Length + identifiers.Length];
+                    controller.parameters.CopyTo(newArray, 0);
+                    identifiers.CopyTo(newArray, indexOffset);
+                    controller.parameters = newArray;
+                }
+            }
+            else
+            {
+                controller.parameters = identifiers.ToArray();
+                controller.floatParameters = floatParameters.ToArray();
+                controller.boolParameters = boolParameters.ToArray();
+                controller.triggerParameters = triggerParameters.ToArray();
+            }
+        }
+    }
+
 }
 
 #endif

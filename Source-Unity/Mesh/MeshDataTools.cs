@@ -28,6 +28,12 @@ namespace Swole
 
         #endregion
 
+        #region Temp Data
+
+        private static readonly List<int> _tempInts = new List<int>();
+
+        #endregion
+
         #region Misc
 
         public static Mesh Duplicate(this Mesh inputMesh) => UnityEngine.Object.Instantiate(inputMesh);
@@ -2967,6 +2973,89 @@ namespace Swole
                 };
             }
 
+            public int DeleteVertexData(int startIndex, int endIndex = -1)
+            {
+                if (endIndex < startIndex) endIndex = startIndex;
+                if (endIndex >= VertexCount) endIndex = VertexCount - 1; 
+
+                int count = (endIndex - startIndex) + 1;
+
+                vertices.RemoveRange(startIndex, count);
+                if (HasNormals) normals.RemoveRange(startIndex, count);
+                if (HasTangents) tangents.RemoveRange(startIndex, count);
+
+                if (HasColors) colors.RemoveRange(startIndex, count);
+
+                if (HasUV0) uv0.RemoveRange(startIndex, count);
+                if (HasUV1) uv1.RemoveRange(startIndex, count);
+                if (HasUV2) uv2.RemoveRange(startIndex, count);
+                if (HasUV3) uv3.RemoveRange(startIndex, count);
+                if (HasUV4) uv4.RemoveRange(startIndex, count);
+                if (HasUV5) uv5.RemoveRange(startIndex, count);
+                if (HasUV6) uv6.RemoveRange(startIndex, count);
+                if (HasUV7) uv7.RemoveRange(startIndex, count);
+
+                if (HasBoneWeights)
+                {
+                    int boneWeightsStartIndex = 0;
+                    for (int a = 0; a < startIndex; a++) boneWeightsStartIndex += bonesPerVertex[a];
+
+                    int boneWeightsEndIndex = boneWeightsStartIndex;
+                    for (int a = startIndex; a <= endIndex; a++) boneWeightsEndIndex += bonesPerVertex[a];  
+
+                    bonesPerVertex.RemoveRange(startIndex, count);
+                    if (boneWeightsEndIndex > boneWeightsStartIndex) boneWeights.RemoveRange(boneWeightsStartIndex, boneWeightsEndIndex - boneWeightsStartIndex);  
+                }
+
+                if (blendShapes != null)
+                {
+                    foreach(var blendShape in blendShapes)
+                    {
+                        if (blendShape.frames != null)
+                        {
+                            foreach(var frame in blendShape.frames)
+                            {
+                                frame.expandable_deltaVertices.RemoveRange(startIndex, count);
+                                frame.expandable_deltaNormals.RemoveRange(startIndex, count);
+                                frame.expandable_deltaTangents.RemoveRange(startIndex, count);
+                            }
+                        }
+                    }
+                }
+
+                if (triangles != null)
+                {
+                    foreach (var subMeshTris in triangles)
+                    {
+                        bool flag = true;
+                        while (flag)
+                        {
+                            flag = false;
+                            for (int a = 0; a < subMeshTris.Count; a += 3) // remove any triangles that reference deleted vertices
+                            {
+                                int i0 = subMeshTris[a];
+                                int i1 = subMeshTris[a + 1];
+                                int i2 = subMeshTris[a + 2];
+
+                                if ((i0 >= startIndex && i0 <= endIndex) || (i1 >= startIndex && i1 <= endIndex) || (i2 >= startIndex && i2 <= endIndex))
+                                {
+                                    flag = true;
+                                    subMeshTris.RemoveRange(a, 3);
+                                    break; 
+                                }
+                            }
+                        }
+
+                        for (int a = 0; a < subMeshTris.Count; a++) // shift down any vertex indices that come after the deleted range
+                        {
+                            subMeshTris[a] = subMeshTris[a] - (subMeshTris[a] >= startIndex ? count : 0);
+                        }
+                    }
+                }
+
+                return count;
+            }
+
             protected List<Vector3> vertices;
             public List<Vector3> VertexList => vertices;
             public int VertexCount => vertices.Count;
@@ -5071,6 +5160,112 @@ namespace Swole
                 }
 
                 x += bounds.x + margin;
+            }
+        }
+
+        #endregion
+
+        #region UV Editing
+
+        [Serializable]
+        public struct UVSwizzle
+        {
+            public int uvChannelSource;
+            public int uvChannelTarget;
+
+            public XYZWChannel storeX;
+            public XYZWChannel storeY;
+            public XYZWChannel storeZ;
+            public XYZWChannel storeW;
+
+            public Mesh ApplyTo(Mesh mesh, bool instantiate = false)
+            {
+                if (mesh == null) return null;
+
+                if (instantiate) mesh = MeshUtils.DuplicateMesh(mesh);
+
+                if (uvChannelSource < 0 || uvChannelSource > 7 || uvChannelTarget < 0 || uvChannelTarget > 7)
+                {
+                    Debug.LogWarning($"Invalid UV channel index in {nameof(UVSwizzle)} for mesh '{mesh.name}', skipping...");
+                    return mesh;
+                }
+
+                var source = mesh.GetUVsByChannelAsListV4(uvChannelSource);
+                var target = mesh.GetUVsByChannelAsListV4(uvChannelTarget);
+
+                for (int a = 0; a < source.Count; a++)
+                {
+                    var uv = source[a];
+
+                    var swizzled = target[a];
+                    swizzled = swizzled.StoreValue(uv.x, storeX);
+                    swizzled = swizzled.StoreValue(uv.y, storeY);
+                    swizzled = swizzled.StoreValue(uv.z, storeZ);
+                    swizzled = swizzled.StoreValue(uv.w, storeW);
+
+                    target[a] = swizzled;
+                }
+
+                mesh.SetUVs(uvChannelTarget, target);
+
+                return mesh;
+            }
+
+            private static readonly Dictionary<int, List<Vector4>> tempUVs = new Dictionary<int, List<Vector4>>();
+            public static Mesh ApplyTo(ICollection<UVSwizzle> swizzles, Mesh mesh, bool instantiate = false)
+            {
+                if (mesh == null) return null;
+
+                if (instantiate) mesh = MeshUtils.DuplicateMesh(mesh);
+
+                if (swizzles != null)
+                {
+                    tempUVs.Clear();
+
+                    foreach (var swizzle in swizzles)
+                    {
+                        if (swizzle.uvChannelSource < 0 || swizzle.uvChannelSource > 7)
+                        {
+                            Debug.LogWarning($"Invalid UV channel index in {nameof(UVSwizzle)} for mesh '{mesh.name}', skipping...");
+                            continue;
+                        }
+
+                        tempUVs[swizzle.uvChannelSource] = mesh.GetUVsByChannelAsListV4(swizzle.uvChannelSource);
+                    }
+
+                    foreach (var swizzle in swizzles)
+                    {
+                        if (swizzle.uvChannelSource < 0 || swizzle.uvChannelSource > 7 || swizzle.uvChannelTarget < 0 || swizzle.uvChannelTarget > 7)
+                        {
+                            Debug.LogWarning($"Invalid UV channel index in {nameof(UVSwizzle)} for mesh '{mesh.name}', skipping...");
+                            return mesh;
+                        }
+
+                        var source = tempUVs[swizzle.uvChannelSource];
+                        var target = mesh.GetUVsByChannelAsListV4(swizzle.uvChannelTarget);
+                        if (target == null) target = new List<Vector4>();
+                        while (target.Count < source.Count) target.Add(Vector4.zero);
+
+                        for (int a = 0; a < source.Count; a++)
+                        {
+                            var uv = source[a];
+
+                            var swizzled = target[a];
+                            swizzled = swizzled.StoreValue(uv.x, swizzle.storeX);
+                            swizzled = swizzled.StoreValue(uv.y, swizzle.storeY);
+                            swizzled = swizzled.StoreValue(uv.z, swizzle.storeZ);
+                            swizzled = swizzled.StoreValue(uv.w, swizzle.storeW);
+
+                            target[a] = swizzled;
+                        }
+
+                        mesh.SetUVs(swizzle.uvChannelTarget, target);
+                    }
+
+                    tempUVs.Clear();
+                }
+
+                return mesh;
             }
         }
 

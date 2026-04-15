@@ -934,18 +934,18 @@ namespace Swole.API.Unity.Animation
 
             float value;
 
-            if (restPose.TryGetValueLiberal(TransformLocalPositionXKey(transformName), out value)) curve.localPositionCurveX.keys = new Keyframe[] { new Keyframe() { time = 0, value = value } };
-            if (restPose.TryGetValueLiberal(TransformLocalPositionYKey(transformName), out value)) curve.localPositionCurveY.keys = new Keyframe[] { new Keyframe() { time = 0, value = value } };
-            if (restPose.TryGetValueLiberal(TransformLocalPositionZKey(transformName), out value)) curve.localPositionCurveZ.keys = new Keyframe[] { new Keyframe() { time = 0, value = value } };
+            if (restPose.TryGetValueLiberal(TransformLocalPositionXKey(transformName), out value)) curve.localPositionCurveX.keys = new Keyframe[] { new Keyframe() { time = 0f, value = value } };
+            if (restPose.TryGetValueLiberal(TransformLocalPositionYKey(transformName), out value)) curve.localPositionCurveY.keys = new Keyframe[] { new Keyframe() { time = 0f, value = value } };
+            if (restPose.TryGetValueLiberal(TransformLocalPositionZKey(transformName), out value)) curve.localPositionCurveZ.keys = new Keyframe[] { new Keyframe() { time = 0f, value = value } };
 
-            if (restPose.TryGetValueLiberal(TransformLocalRotationXKey(transformName), out value)) curve.localRotationCurveX.keys = new Keyframe[] { new Keyframe() { time = 0, value = value } };
-            if (restPose.TryGetValueLiberal(TransformLocalRotationYKey(transformName), out value)) curve.localRotationCurveY.keys = new Keyframe[] { new Keyframe() { time = 0, value = value } };
-            if (restPose.TryGetValueLiberal(TransformLocalRotationZKey(transformName), out value)) curve.localRotationCurveZ.keys = new Keyframe[] { new Keyframe() { time = 0, value = value } };
-            if (restPose.TryGetValueLiberal(TransformLocalRotationWKey(transformName), out value)) curve.localRotationCurveW.keys = new Keyframe[] { new Keyframe() { time = 0, value = value } };
+            if (restPose.TryGetValueLiberal(TransformLocalRotationXKey(transformName), out value)) curve.localRotationCurveX.keys = new Keyframe[] { new Keyframe() { time = 0f, value = value } };
+            if (restPose.TryGetValueLiberal(TransformLocalRotationYKey(transformName), out value)) curve.localRotationCurveY.keys = new Keyframe[] { new Keyframe() { time = 0f, value = value } };
+            if (restPose.TryGetValueLiberal(TransformLocalRotationZKey(transformName), out value)) curve.localRotationCurveZ.keys = new Keyframe[] { new Keyframe() { time = 0f, value = value } };
+            if (restPose.TryGetValueLiberal(TransformLocalRotationWKey(transformName), out value)) curve.localRotationCurveW.keys = new Keyframe[] { new Keyframe() { time = 0f, value = value } };
 
-            if (restPose.TryGetValueLiberal(TransformLocalScaleXKey(transformName), out value)) curve.localScaleCurveX.keys = new Keyframe[] { new Keyframe() { time = 0, value = value } };
-            if (restPose.TryGetValueLiberal(TransformLocalScaleYKey(transformName), out value)) curve.localScaleCurveY.keys = new Keyframe[] { new Keyframe() { time = 0, value = value } };
-            if (restPose.TryGetValueLiberal(TransformLocalScaleZKey(transformName), out value)) curve.localScaleCurveZ.keys = new Keyframe[] { new Keyframe() { time = 0, value = value } };
+            if (restPose.TryGetValueLiberal(TransformLocalScaleXKey(transformName), out value)) curve.localScaleCurveX.keys = new Keyframe[] { new Keyframe() { time = 0f, value = value } };
+            if (restPose.TryGetValueLiberal(TransformLocalScaleYKey(transformName), out value)) curve.localScaleCurveY.keys = new Keyframe[] { new Keyframe() { time = 0f, value = value } };
+            if (restPose.TryGetValueLiberal(TransformLocalScaleZKey(transformName), out value)) curve.localScaleCurveZ.keys = new Keyframe[] { new Keyframe() { time = 0f, value = value } };
 
             return curve;
         }
@@ -1915,14 +1915,44 @@ namespace Swole.API.Unity.Animation
                 ApplyAnimationInternal(animation, time, additive, mix, preWrapMode, postWrapMode);
             }
 
-            private Pose ApplyTransformHierarchy(ICollection<Transform> hierarchy, CustomAvatar avatar)
+            private Pose ApplyTransformHierarchy(ICollection<Transform> hierarchy, CustomAvatar avatar, bool useRigContainer = true)
             {
                 if (hierarchy == null) return this;
 
-                foreach(var transform in hierarchy)
+                Transform rigContainer = null;
+                if (useRigContainer)
                 {
-                    if (transform == null) continue;
+                    if (avatar != null && !string.IsNullOrWhiteSpace(avatar.rigContainer))
+                    {
+                        foreach (var transform in hierarchy)
+                        {
+                            if (transform != null && transform.name == avatar.rigContainer)
+                            {
+                                rigContainer = transform;
+                                break;
+                            }
+                        }
+                    }
+
+#if UNITY_EDITOR
+                    if (avatar == null)
+                    {
+                        Debug.LogWarning("Applying transform hierarchy to pose without a provided avatar. This can lead to unexpected results if any transforms have identical names.");
+                    }
+                    else if (rigContainer == null)
+                    {
+                        Debug.LogWarning($"Applying transform hierarchy to pose using an avatar ({avatar.name}) which has a rig container ({(string.IsNullOrWhiteSpace(avatar.rigContainer) ? "null" : avatar.rigContainer)}) that could not be located. This can lead to unexpected results if any transforms have identical names.");
+                    }
+#endif
+                }
+
+                foreach (var transform in hierarchy) 
+                {
+                    if (transform == null || transform == rigContainer) continue;
+                    if (rigContainer != null && !avatar.IsIkBone(transform.name) && !transform.IsChildOf(rigContainer)) continue;
+
                     string baseId = avatar == null ? transform.name : avatar.Remap(transform.name);
+                    Debug.Log($"{(rigContainer == null ? "null" : rigContainer.name)}:: {transform.GetPathString()}");  
 
                     Vector3 localPosition = transform.localPosition;
                     Quaternion localRotation = transform.localRotation;
@@ -1962,18 +1992,37 @@ namespace Swole.API.Unity.Animation
                     else
                     {
                         tempTransforms.Clear();
-                        ApplyTransformHierarchy(animator.avatar.FindBones(animator.transform, tempTransforms), animator.avatar); 
-                        tempTransforms.Clear();
+                        if (!string.IsNullOrWhiteSpace(animator.avatar.rigContainer))
+                        {
+                            var rigContainer = animator.transform.FindDeepChild(animator.avatar.rigContainer);
+                            if (rigContainer != null) tempTransforms.Add(rigContainer);
+                        }
+                        ApplyTransformHierarchy(animator.avatar.FindBones(animator.transform, tempTransforms), animator.avatar, true); 
+                        tempTransforms.Clear(); 
                     }
                 }
-                ApplyAnimationInternal(animation, time, additive, mix, preWrapMode, postWrapMode);
+                ApplyAnimationInternal(animation, time, additive, mix, preWrapMode, postWrapMode); 
             } 
 
             public Pose(Transform rootTransform, CustomAvatar avatar = null, CustomAnimation animation = null, float time = 0, bool additive = false, float mix = 1, WrapMode preWrapMode = WrapMode.Loop, WrapMode postWrapMode = WrapMode.Loop) : base(default)
             {
                 if (rootTransform != null)
                 {
-                    ApplyTransformHierarchy(rootTransform.gameObject.GetComponentsInChildren<Transform>(), avatar);
+                    if (avatar == null)
+                    {
+                        ApplyTransformHierarchy(rootTransform.gameObject.GetComponentsInChildren<Transform>(), avatar);
+                    }
+                    else
+                    {
+                        tempTransforms.Clear();
+                        if (!string.IsNullOrWhiteSpace(avatar.rigContainer))
+                        {
+                            var rigContainer = rootTransform.FindDeepChild(avatar.rigContainer);
+                            if (rigContainer != null) tempTransforms.Add(rigContainer); 
+                        }
+                        ApplyTransformHierarchy(avatar.FindBones(rootTransform, tempTransforms), avatar, true);  
+                        tempTransforms.Clear();
+                    }
                 }
 
                 ApplyAnimationInternal(animation, time, additive, mix, preWrapMode, postWrapMode);
@@ -1995,7 +2044,10 @@ namespace Swole.API.Unity.Animation
             public Pose ApplyTo(Transform rootTransform)
             {
                 if (rootTransform == null) return this;
-                Apply((string name) => rootTransform.FindDeepChildLiberal(name));
+                Apply((string name) => rootTransform.FindDeepChildLiberal(name)); 
+#if UNITY_EDITOR
+                Debug.LogWarning($"Applying pose to a provided root transform ({rootTransform.name}). This can have unexpected results if the hierarchy has children with identical names.");
+#endif
 
                 return this;
             }
@@ -2137,6 +2189,7 @@ namespace Swole.API.Unity.Animation
                 }
                 */
 
+
                 if (transformMask == null)
                 {
                     foreach (var element in elements)
@@ -2161,7 +2214,7 @@ namespace Swole.API.Unity.Animation
                     {
                         if (transform == null) continue;
 
-                        string transformName = avatar == null ? transform.name : avatar.Remap(transform.name); 
+                        string transformName = avatar == null ? transform.name : avatar.Remap(transform.name);  
 
                         TryInsertByID(TransformLocalPositionXKey(transformName));
                         TryInsertByID(TransformLocalPositionYKey(transformName));
@@ -2212,8 +2265,10 @@ namespace Swole.API.Unity.Animation
                 if (verbose)
                 {
                     swole.Log($"Adding element '{element.Key}' [new:{!contained}] [val:{element.Value}] [delta:{diff}]]"); // Debug
-                }
-
+                } 
+                 
+                if (element.Key.Contains("head") && time <= 0f) swole.Log($"Inserting element '{element.Key}' [new:{!contained}] [val:{element.Value}] [delta:{diff}]]"); // Debug
+                 
                 string id = element.Key.ToLower();
                 string id_untrimmed = id; // Preserve length to match up with original key 
                 id = id.Trim();

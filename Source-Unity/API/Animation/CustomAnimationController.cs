@@ -564,6 +564,13 @@ namespace Swole.API.Unity.Animation
 
         }
 
+        public void ApplyTo(IAnimator animator, bool usePrefixForLayers = true, bool incrementDuplicateParameters = false, bool usePrefixForParameters = false)
+        {
+            if (animator == null) return;
+
+            animator.ApplyController(this, usePrefixForLayers, incrementDuplicateParameters, usePrefixForParameters);
+        }
+
     }
 }
 

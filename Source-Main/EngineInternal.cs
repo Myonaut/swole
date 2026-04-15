@@ -3428,7 +3428,7 @@ namespace Swole
                 instance.GetParameterIndices(indices);
             }
 
-            public void RemapParameterIndices(Dictionary<int, int> remapper, bool invalidateNonRemappedIndices = false)
+            public void RemapParameterIndices(Dictionary<int, int> remapper, bool invalidateNonRemappedIndices = false) 
             {
                 if (instance == null) return;
                 instance.RemapParameterIndices(remapper, invalidateNonRemappedIndices);
@@ -4339,10 +4339,10 @@ namespace Swole
                 instance.GetParameterIndices(layer, indices);
             }
 
-            public void RemapParameterIndices(IAnimationLayer layer, Dictionary<int, int> remapper, bool invalidateNonRemappedIndices = false)
+            public void RemapParameterIndices(IAnimationLayer layer, Dictionary<int, int> remapper, bool invalidateNonRemappedIndices = false, bool remapChildren = true)
             {
                 if (instance == null) return;
-                instance.RemapParameterIndices(layer, remapper, invalidateNonRemappedIndices);
+                instance.RemapParameterIndices(layer, remapper, invalidateNonRemappedIndices, remapChildren);
             }
 
             public float GetBiasedParameterValue(IAnimationLayer layer, int parameterIndex, float defaultValue, bool updateParameter)

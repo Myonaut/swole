@@ -269,7 +269,7 @@ namespace Swole.API.Unity.Animation
                 if (cloneController)
                 {
                     layer.states[a].motionControllerIndex = newMotionControllers.Count;
-                    newMotionControllers.Add((CustomMotionController)newMotionControllers[motionControllerIndex].Clone()); 
+                    newMotionControllers.Add((CustomMotionController)newMotionControllers[motionControllerIndex].Clone());  
                 }
             }
 
@@ -450,6 +450,12 @@ namespace Swole.API.Unity.Animation
             for(int a = 0; a < layer.m_motionControllers.Length; a++)
             {
                 var mc = layer.m_motionControllers[a];
+                if (mc == null)
+                {
+                    swole.LogWarning($"Layer {layer.name}'s motion controller at index {a} is null!"); 
+                    continue;
+                }
+
                 //string path = $"/{mc.name}";
                 var parent = mc.Parent;
                 if (parent == null) 
@@ -507,7 +513,16 @@ namespace Swole.API.Unity.Animation
             return layer;
         }
 
-        public CustomAnimationLayer() { }
+        public CustomAnimationLayer() : this(string.Empty) { }
+
+        public CustomAnimationLayer(string name) 
+        { 
+            this.name = name;
+        }
+        public CustomAnimationLayer(string name, float mix) : this(name)
+        {
+            this.mix = mix;
+        }
 
         public CustomAnimationLayer(IAnimator animator)
         {
@@ -663,7 +678,32 @@ namespace Swole.API.Unity.Animation
             if (m_motionControllers != null)
             {
 
-                foreach (var controller in m_motionControllers) if (controller != null) controller.RemapParameterIndices(this, remapper, invalidateNonRemappedIndices);
+                foreach (var controller in m_motionControllers) if (controller != null) controller.RemapParameterIndices(this, remapper, invalidateNonRemappedIndices, false);
+
+            }
+
+        }
+
+        public void RemapParameterIndicesForController(CustomAnimationController animController, Dictionary<int, int> remapper, bool invalidateNonRemappedIndices = false)
+        {
+
+            if (remapper == null) return;
+
+            if (BlendParameterIndex >= 0)
+            {
+
+                if (!remapper.TryGetValue(BlendParameterIndex, out blendParameterIndex) && invalidateNonRemappedIndices) blendParameterIndex = -1; 
+
+            }
+
+            if (motionControllerIdentifiers != null)
+            {
+
+                foreach (var id in motionControllerIdentifiers)
+                {
+                    var controller = animController.GetMotionController(id);
+                    if (controller != null) controller.RemapParameterIndices(this, remapper, invalidateNonRemappedIndices, false);  
+                }
 
             }
 
@@ -1287,6 +1327,7 @@ namespace Swole.API.Unity.Animation
         }
 
     }
+
 }
 
 #endif

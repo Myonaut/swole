@@ -15576,7 +15576,7 @@ MonoBehaviour:
   loadInEditor: 0
   inEditorResetToBindpose: 1
   inEditorMirrorAnims: 0
-  clipToLoad: {fileID: -203655887218126122, guid: 83dfda72041fcc04ba1d9d3d53dc0cc3,
+  clipToLoad: {fileID: -203655887218126122, guid: 3eae512520a854f42afc6efe27216b01,
     type: 3}
   prefabToLoad: {fileID: 919132149155446097, guid: 383dabb1c049c5846811295d613e8678,
     type: 3}

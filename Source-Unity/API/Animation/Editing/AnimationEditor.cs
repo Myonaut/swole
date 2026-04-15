@@ -7897,7 +7897,7 @@ namespace Swole.API.Unity.Animation
                 animator.disableMultithreading = false;
                 animator.enabled = false;
 
-                animator.Initialize();  
+                animator.EnsureInitialization();
             }
 
              

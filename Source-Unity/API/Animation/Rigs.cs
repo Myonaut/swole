@@ -662,6 +662,24 @@ namespace Swole.API.Unity.Animation
 #endif
             }
 
+            public int IndexOf(Transform transform) 
+            {
+                var instance = InstanceOrNull;
+                if (instance == null) return -1;
+                int trackingIndex = instance.GetTrackingIndexLocal(transform);
+                if (trackingIndex < 0) return -1;
+
+                for(int a = 0; a < transformIndexTranslator.Count; a++)
+                {
+                    var b = transformIndexTranslator[a];
+                    if (b < 0) continue;
+
+                    if (trackingIndices[b].x == trackingIndex) return a;
+                }
+
+                return -1;
+            }
+
             public float4x4 this[int transformIndex]
             {
                 get
@@ -676,6 +694,23 @@ namespace Swole.API.Unity.Animation
 
                     var ind = trackingIndices[localIndex];
                     return instance.globalPoseData[ind.x];
+                }
+
+                set
+                {
+                    var instance = InstanceOrNull;
+                    if (instance == null) return;
+
+                    if (transformIndex < 0 || transformIndex >= TransformCount) return;
+
+                    var localIndex = transformIndexTranslator[transformIndex]; 
+                    if (localIndex < 0) return;
+
+                    OutputDependency.Complete();
+
+                    var ind = trackingIndices[localIndex];
+                    //instance.globalPoseData[ind.x] = value;
+                    instance.globalPoseData[ind.x] = math.mul(value, instance.globalBindPoseData[ind.x]); 
                 }
             } 
 

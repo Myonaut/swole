@@ -988,6 +988,13 @@ namespace Swole.API.Unity.Animation
 
         public bool dontAutoInitialize;
         public bool dontInitializeBoneStates;
+        [NonSerialized]
+        protected bool hasInitialized;
+        public bool HasInitialized => hasInitialized;
+        public void EnsureInitialization()
+        {
+            if (!HasInitialized) Initialize();
+        }
         public void Initialize()
         {
             if (!ResetToPreInitializedBindPose()) ReinitializeBindPose(); 
@@ -1004,6 +1011,8 @@ namespace Swole.API.Unity.Animation
             }
 
             ResetIKControllers();
+
+            hasInitialized = true;
         }
         protected virtual void Awake()
         {
@@ -2044,6 +2053,23 @@ namespace Swole.API.Unity.Animation
             bindState = new TransformBindState(transform);
             return false;
         }
+        public bool TryGetPreInitializedBindState(string transformName, out TransformBindState bindState)
+        {
+            if (preInitializedBindPose == null || preInitializedBindPose.Length <= 0)
+            {
+                bindState = new TransformBindState(transform);
+                return false;
+            }
+
+            foreach (var bindState_ in preInitializedBindPose) if (bindState_.transform.name == transformName)
+                {
+                    bindState = bindState_;
+                    return true;
+                }
+
+            bindState = new TransformBindState(transform);
+            return false;
+        }
 
         public TransformStateReference AddOrGetState(Transform transform)
         {
@@ -2878,6 +2904,7 @@ namespace Swole.API.Unity.Animation
         {
 
             if (layer == null || !layer.Valid) return;
+            if (string.IsNullOrWhiteSpace(layer.Name)) layer.Name = $"layer_{index}";
             string idName = layer.Name.AsID();
 
             if (m_animationLayers == null) m_animationLayers = new List<IAnimationLayer>();
@@ -3206,6 +3233,123 @@ namespace Swole.API.Unity.Animation
 
         }
 
+
+        public IEnumerator BlendLayers(Dictionary<CustomAnimationLayer, float> targetMixes, float time, Action onComplete = null)
+        {
+            Dictionary<CustomAnimationLayer, float> startMixes = new Dictionary<CustomAnimationLayer, float>();
+            foreach (var entry in targetMixes)
+            {
+                startMixes[entry.Key] = entry.Key.mix;
+            }
+
+            if (time > 0f)
+            {
+                float t = 0f;
+                while (t < time)
+                {
+                    t += Time.deltaTime;
+                    if (t >= time) break;
+
+                    foreach (var entry in targetMixes)
+                    {
+                        entry.Key.mix = Mathf.LerpUnclamped(startMixes[entry.Key], entry.Value, t / time);
+                    }
+
+                    yield return null;
+                }
+            }
+
+            foreach (var entry in targetMixes)
+            {
+                entry.Key.mix = entry.Value;
+            }
+
+            onComplete?.Invoke();
+        }
+        public IEnumerator BlendLayers(Dictionary<string, float> targetMixes, float time, Action onComplete = null)
+        {
+            Dictionary<string, float> startMixes = new Dictionary<string, float>();
+            foreach (var entry in targetMixes)
+            {
+                var layer = FindTypedLayer(entry.Key);
+                if (layer == null) continue;
+
+                startMixes[entry.Key] = layer == null ? 0f : layer.mix;
+            }
+
+            if (time > 0f)
+            {
+                float t = 0f;
+                while (t < time)
+                {
+                    t += Time.deltaTime;
+                    if (t >= time) break;
+
+                    foreach (var entry in targetMixes)
+                    {
+                        var layer = FindTypedLayer(entry.Key);
+                        if (layer == null) continue;
+
+                        layer.mix = Mathf.LerpUnclamped(startMixes[entry.Key], entry.Value, t / time);
+                    }
+
+                    yield return null;
+                }
+            }
+
+            foreach (var entry in targetMixes)
+            {
+                var layer = FindTypedLayer(entry.Key);
+                if (layer == null) continue;
+
+                layer.mix = entry.Value;
+            }
+
+            onComplete?.Invoke();
+        }
+        public IEnumerator BlendLayers(Dictionary<int, float> targetMixes, float time, Action onComplete = null)
+        {
+            Dictionary<int, float> startMixes = new Dictionary<int, float>();
+            foreach (var entry in targetMixes)
+            {
+                var layer = GetTypedLayer(entry.Key);
+                if (layer == null) continue;
+
+                startMixes[entry.Key] = layer == null ? 0f : layer.mix;  
+            }
+
+            if (time > 0f)
+            {
+                float t = 0f;
+                while (t < time)
+                {
+                    t += Time.deltaTime;
+                    if (t >= time) break;
+
+                    foreach (var entry in targetMixes)
+                    {
+                        var layer = GetTypedLayer(entry.Key);
+                        if (layer == null) continue;
+
+                        layer.mix = Mathf.LerpUnclamped(startMixes[entry.Key], entry.Value, t / time);
+                    }
+
+                    yield return null;
+                }
+            }
+
+            foreach (var entry in targetMixes)
+            {
+                var layer = GetTypedLayer(entry.Key);
+                if (layer == null) continue;
+
+                layer.mix = entry.Value;
+            }
+
+            onComplete?.Invoke();
+        }
+
+
         public float GetCurrentBoneHeight(string boneName) => GetBoneHeight(boneName, 0f);
         public float GetBoneHeight(string boneName, float timeOffset)
         {
@@ -3257,6 +3401,39 @@ namespace Swole.API.Unity.Animation
         }
 
         //
+
+        public event RuntimeEventListenerDelegate onPreEventCalled;
+        public event RuntimeEventListenerDelegate onPostEventCalled;
+
+        public void SubscribePreAnimationEvent(RuntimeEventListenerDelegate listener)
+        {
+            if (listener == null) return;
+            onPreEventCalled += listener;
+        }
+        public void UnsubscribePreAnimationEvent(RuntimeEventListenerDelegate listener)
+        {
+            if (listener == null || onPreEventCalled == null) return;
+            onPreEventCalled -= listener;
+        }
+        public void SubscribePostAnimationEvent(RuntimeEventListenerDelegate listener)
+        {
+            if (listener == null) return;
+            onPostEventCalled += listener;
+        }
+        public void UnsubscribePostAnimationEvent(RuntimeEventListenerDelegate listener)
+        {
+            if (listener == null || onPreEventCalled == null) return;
+            onPostEventCalled -= listener;
+        }
+
+        public void NotifyPreEventCall(string eventName, float val, object sender)
+        {
+            onPreEventCalled?.Invoke(eventName, val, sender);
+        }
+        public void NotifyPostEventCall(string eventName, float val, object sender)
+        {
+            onPostEventCalled?.Invoke(eventName, val, sender); 
+        }
 
         [Serializable]
         public enum BehaviourEvent

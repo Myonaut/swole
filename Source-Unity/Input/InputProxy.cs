@@ -251,6 +251,40 @@ namespace Swole
             }
         }
 
+        public static bool Interact
+        {
+            get
+            {
+#if ENABLE_INPUT_SYSTEM
+                return InputSystemProxy.DefaultControls.Standard.Interact.IsPressed();
+#else
+                return false;
+#endif
+            }
+        }
+        public static bool InteractUp
+        {
+            get
+            {
+#if ENABLE_INPUT_SYSTEM
+                return InputSystemProxy.DefaultControls.Standard.Interact.WasReleasedThisFrame(); 
+#else
+                return false;
+#endif
+            }
+        }
+        public static bool InteractDown
+        {
+            get
+            {
+#if ENABLE_INPUT_SYSTEM
+                return InputSystemProxy.DefaultControls.Standard.Interact.WasPressedThisFrame();
+#else
+                return false;
+#endif
+            }
+        }
+
         #endregion
 
         #region Inventory
@@ -795,6 +829,78 @@ namespace Swole
                 return InputSystemProxy.DefaultControls.Camera.InitiateZoom.WasPressedThisFrame();
 #else
                 return false;
+#endif
+            }
+        }
+
+        #endregion
+
+        #region Object Interaction
+
+        public static bool ObjectInteraction_Pickup
+        {
+            get
+            {
+#if ENABLE_INPUT_SYSTEM
+                return InputSystemProxy.DefaultControls.ObjectInteraction.ObjectPickup.IsPressed();
+#else
+                return Input.GetKey(KeyCode.E);
+#endif
+            }
+        }
+        public static bool ObjectInteraction_PickupPressed
+        {
+            get
+            {
+#if ENABLE_INPUT_SYSTEM
+                return InputSystemProxy.DefaultControls.ObjectInteraction.ObjectPickup.WasPressedThisFrame();
+#else
+                return Input.GetKeyDown(KeyCode.E);
+#endif
+            }
+        }
+        public static bool ObjectInteraction_PickupReleased
+        {
+            get
+            {
+#if ENABLE_INPUT_SYSTEM
+                return InputSystemProxy.DefaultControls.ObjectInteraction.ObjectPickup.WasReleasedThisFrame();
+#else
+                return Input.GetKeyUp(KeyCode.E);
+#endif
+            }
+        }
+
+        public static bool ObjectInteraction_Drop
+        {
+            get
+            {
+#if ENABLE_INPUT_SYSTEM
+                return InputSystemProxy.DefaultControls.ObjectInteraction.ObjectDrop.IsPressed();
+#else
+                return Input.GetKey(KeyCode.X);
+#endif
+            }
+        }
+        public static bool ObjectInteraction_DropPressed
+        {
+            get
+            {
+#if ENABLE_INPUT_SYSTEM
+                return InputSystemProxy.DefaultControls.ObjectInteraction.ObjectDrop.WasPressedThisFrame();
+#else
+                return Input.GetKeyDown(KeyCode.X);
+#endif
+            }
+        }
+        public static bool ObjectInteraction_DropReleased
+        {
+            get
+            {
+#if ENABLE_INPUT_SYSTEM
+                return InputSystemProxy.DefaultControls.ObjectInteraction.ObjectDrop.WasReleasedThisFrame();
+#else
+                return Input.GetKeyUp(KeyCode.X);
 #endif
             }
         }

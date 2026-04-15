@@ -3443,9 +3443,12 @@ namespace Swole.Morphing
                 }
             }
 
+            public string[] boneNames;
+            public bool HasBonesArray => boneNames != null && boneNames.Length > 0;
+
             [HideInInspector]
             public Matrix4x4[] baseBindPose;
-            public int BoneCount => baseBindPose == null ? 0 : baseBindPose.Length;
+            public int BoneCount => HasBonesArray ? boneNames.Length : (baseBindPose == null ? 0 : baseBindPose.Length);
 
             [Header("Shapes")]
             public MeshShape[] meshShapes;
@@ -5554,6 +5557,7 @@ namespace Swole.Morphing
             if (instance != null && instance.IsValid) return;
 
             instance = Updater.Register(Data);
+            instance.updateManually = updateMeshManually; 
         }
         protected override void CreateInstance(List<InstancedRendering.MaterialPropertyInstanceOverride<float>> floatOverrides, List<InstancedRendering.MaterialPropertyInstanceOverride<Color>> colorOverrides, List<InstancedRendering.MaterialPropertyInstanceOverride<Vector4>> vectorOverrides)
         {
@@ -5650,9 +5654,10 @@ namespace Swole.Morphing
             muscleData = GetMuscleDataForVertex(topVertexIndex);
             flexFactor = CalculateFinalFlexFactor(muscleData.flex, muscleData.mass, subData.flexEndPointWeight, subData.flexExponent, subData.flexNerfThreshold, subData.flexNerfExponent);
 
-            delta = instance.OwnerGroup.FinalVertexDeltas[DeltasStartIndex + vertexIndex]; 
+            delta = instance.OwnerGroup.FinalVertexDeltas[DeltasStartIndex + vertexIndex];
 
-            if (rigSampler != null)
+            var rigSampler = RigSampler;
+            if (rigSampler != null)  
             {
                 var boneWeights = boneWeightsArray[vertexIndex];
                 skinningMatrix = (rigSampler.TrackingGroup[boneWeights.boneIndex0] * boneWeights.boneWeight0) +
@@ -5668,49 +5673,67 @@ namespace Swole.Morphing
             return true;
         }
 
-        public float3 GetVertexInWorld(int lod, int vertexIndex)
+        public float3 GetVertexInWorld(int lod, int vertexIndex) => GetVertexInWorld(lod, vertexIndex, out _, out _);
+        public float3 GetVertexInWorld(int lod, int vertexIndex, out float4x4 skinningMatrix, out float3 localDelta)
         {
+            skinningMatrix = float4x4.identity;
+            localDelta = default;
+
             var subData = SubData;
 
             if (!subData.TryGetVertices(lod, out var vertexArray)) return default; 
 
-            if (!PrepInWorldDataFetch(lod, vertexIndex, out int topVertexIndex, out MuscleData muscleData, out float flexFactor, out MeshVertexDelta delta, out MeshShape flexShape, out float4x4 skinningMatrix)) return default;
+            if (!PrepInWorldDataFetch(lod, vertexIndex, out int topVertexIndex, out MuscleData muscleData, out float flexFactor, out MeshVertexDelta delta, out MeshShape flexShape, out skinningMatrix)) return default;
 
-            float3 deltaV = delta.positionDelta;
-            deltaV = flexShape.BlendShape.GetTransformedVertex(deltaV, topVertexIndex, flexFactor, 1f);
+            localDelta = delta.positionDelta;
+            localDelta = flexShape.BlendShape.GetTransformedVertex(localDelta, topVertexIndex, flexFactor, 1f);
 
-            return math.transform(skinningMatrix, vertexArray[vertexIndex] + deltaV);
+            return math.transform(skinningMatrix, vertexArray[vertexIndex] + localDelta);
         }
-        public float3 GetNormalInWorld(int lod, int vertexIndex)
+        public float3 GetNormalInWorld(int lod, int vertexIndex) => GetNormalInWorld(lod, vertexIndex, out _, out _);
+        public float3 GetNormalInWorld(int lod, int vertexIndex, out float4x4 skinningMatrix, out float3 localDelta)
         {
+            skinningMatrix = float4x4.identity;
+            localDelta = default;
+
             var subData = SubData;
 
             if (!subData.TryGetNormals(lod, out var normalsArray)) return default;
 
-            if (!PrepInWorldDataFetch(lod, vertexIndex, out int topVertexIndex, out MuscleData muscleData, out float flexFactor, out MeshVertexDelta delta, out MeshShape flexShape, out float4x4 skinningMatrix)) return default;
+            if (!PrepInWorldDataFetch(lod, vertexIndex, out int topVertexIndex, out MuscleData muscleData, out float flexFactor, out MeshVertexDelta delta, out MeshShape flexShape, out skinningMatrix)) return default;
 
-            float3 deltaN = delta.normalDelta;
-            deltaN = flexShape.BlendShape.GetTransformedNormal(deltaN, topVertexIndex, flexFactor, 1f);
+            localDelta = delta.normalDelta;
+            localDelta = flexShape.BlendShape.GetTransformedNormal(localDelta, topVertexIndex, flexFactor, 1f);
 
-            return math.normalize(math.rotate(skinningMatrix, normalsArray[vertexIndex] + deltaN)); 
+            return math.normalize(math.rotate(skinningMatrix, normalsArray[vertexIndex] + localDelta)); 
         }
-        public float4 GetTangentInWorld(int lod, int vertexIndex)
+        public float4 GetTangentInWorld(int lod, int vertexIndex) => GetTangentInWorld(lod, vertexIndex, out _, out _);
+        public float4 GetTangentInWorld(int lod, int vertexIndex, out float4x4 skinningMatrix, out float3 localDelta)
         {
+            skinningMatrix = float4x4.identity;
+            localDelta = default;
+
             var subData = SubData;
 
             if (!subData.TryGetTangents(lod, out var tangentsArray)) return default;
 
-            if (!PrepInWorldDataFetch(lod, vertexIndex, out int topVertexIndex, out MuscleData muscleData, out float flexFactor, out MeshVertexDelta delta, out MeshShape flexShape, out float4x4 skinningMatrix)) return default;
+            if (!PrepInWorldDataFetch(lod, vertexIndex, out int topVertexIndex, out MuscleData muscleData, out float flexFactor, out MeshVertexDelta delta, out MeshShape flexShape, out skinningMatrix)) return default;
 
-            float3 deltaT = delta.tangentDelta;
-            deltaT = ((float4)flexShape.BlendShape.GetTransformedTangent(new Vector4(deltaT.x, deltaT.y, deltaT.z, 0f), topVertexIndex, flexFactor, 1f)).xyz;
+            localDelta = delta.tangentDelta;
+            localDelta = ((float4)flexShape.BlendShape.GetTransformedTangent(new Vector4(localDelta.x, localDelta.y, localDelta.z, 0f), topVertexIndex, flexFactor, 1f)).xyz;
 
             var tangent = tangentsArray[vertexIndex];
-            tangent.xyz = math.normalize(math.rotate(skinningMatrix, tangent.xyz + deltaT));
+            tangent.xyz = math.normalize(math.rotate(skinningMatrix, tangent.xyz + localDelta)); 
             return tangent;
         }
-        public void GetVertexInWorld(int lod, int vertexIndex, out float3 pos, out float3 normal, out float4 tangent)
+        public void GetVertexInWorld(int lod, int vertexIndex, out float3 pos, out float3 normal, out float4 tangent) => GetVertexInWorld(lod, vertexIndex, out pos, out normal, out tangent, out _, out _, out _, out _);
+        public void GetVertexInWorld(int lod, int vertexIndex, out float3 pos, out float3 normal, out float4 tangent, out float4x4 skinningMatrix, out float3 localDeltaPos, out float3 localDeltaNorm, out float3 localDeltaTan)
         {
+            skinningMatrix = float4x4.identity;
+            localDeltaPos = default;
+            localDeltaNorm = default;
+            localDeltaTan = default;
+
             pos = default;
             normal = default;
             tangent = default;
@@ -5719,23 +5742,23 @@ namespace Swole.Morphing
 
             if (!subData.TryGetVertices(lod, out var vertexArray) || !subData.TryGetNormals(lod, out var normalsArray) || !subData.TryGetTangents(lod, out var tangentsArray)) return;
 
-            if (!PrepInWorldDataFetch(lod, vertexIndex, out int topVertexIndex, out MuscleData muscleData, out float flexFactor, out MeshVertexDelta delta, out MeshShape flexShape, out float4x4 skinningMatrix)) return;
+            if (!PrepInWorldDataFetch(lod, vertexIndex, out int topVertexIndex, out MuscleData muscleData, out float flexFactor, out MeshVertexDelta delta, out MeshShape flexShape, out skinningMatrix)) return;
 
-            float3 deltaV = delta.positionDelta;
-            deltaV = flexShape.BlendShape.GetTransformedVertex(deltaV, topVertexIndex, flexFactor, 1f);
+            localDeltaPos = delta.positionDelta;
+            localDeltaPos = flexShape.BlendShape.GetTransformedVertex(localDeltaPos, topVertexIndex, flexFactor, 1f);
 
-            float3 deltaN = delta.normalDelta;
-            deltaN = flexShape.BlendShape.GetTransformedNormal(deltaN, topVertexIndex, flexFactor, 1f);
+            localDeltaNorm = delta.normalDelta;
+            localDeltaNorm = flexShape.BlendShape.GetTransformedNormal(localDeltaNorm, topVertexIndex, flexFactor, 1f); 
 
-            float3 deltaT = delta.tangentDelta;
-            deltaT = ((float4)flexShape.BlendShape.GetTransformedTangent(new Vector4(deltaT.x, deltaT.y, deltaT.z, 0f), topVertexIndex, flexFactor, 1f)).xyz;
+            localDeltaTan = delta.tangentDelta;
+            localDeltaTan = ((float4)flexShape.BlendShape.GetTransformedTangent(new Vector4(localDeltaTan.x, localDeltaTan.y, localDeltaTan.z, 0f), topVertexIndex, flexFactor, 1f)).xyz;
 
-            pos = math.transform(skinningMatrix, vertexArray[vertexIndex] + deltaV);
+            pos = math.transform(skinningMatrix, vertexArray[vertexIndex] + localDeltaPos);
 
-            normal = math.normalize(math.rotate(skinningMatrix, normalsArray[vertexIndex] + deltaN));
+            normal = math.normalize(math.rotate(skinningMatrix, normalsArray[vertexIndex] + localDeltaNorm));
 
             tangent = tangentsArray[vertexIndex];
-            tangent.xyz = math.normalize(math.rotate(skinningMatrix, tangent.xyz + deltaT));
+            tangent.xyz = math.normalize(math.rotate(skinningMatrix, tangent.xyz + localDeltaTan));
         }
 
         public List<float3> GetMuscleGroupsAffecting(int lod, int vertexIndex, List<float3> list = null)
@@ -6636,6 +6659,18 @@ namespace Swole.Morphing
 
         #endregion
 
+        [SerializeField]
+        protected bool updateMeshManually;
+        public bool UpdateMeshManually
+        {
+            get => updateMeshManually;
+            set
+            {
+                updateMeshManually = value;
+                if (instance != null) instance.updateManually = updateMeshManually;
+            }
+        }
+
         #region Animation
 
         [SerializeField]
@@ -6823,7 +6858,7 @@ namespace Swole.Morphing
                     else
                     {
                         bones = new Transform[avatar.bones.Length];
-                        for (int a = 0; a < bones.Length; a++) bones[a] = rig_root.FindDeepChildLiberal(avatar.bones[a]); 
+                        for (int a = 0; a < bones.Length; a++) bones[a] = rig_root.FindDeepChildLiberal(avatar.bones[a]);
                     }
                 }
 
@@ -6840,16 +6875,25 @@ namespace Swole.Morphing
                 {
                     var rig_root = RigRoot;
 
-                    if (avatar == null)
+                    if (SubData.HasBonesArray)
                     {
-                        skinnedBones = new Transform[] { rig_root };
+                        var boneNames = SubData.boneNames;
+                        skinnedBones = new Transform[boneNames.Length];
+                        for (int a = 0; a < skinnedBones.Length; a++) skinnedBones[a] = rig_root.FindDeepChildLiberal(boneNames[a]); 
                     }
                     else
                     {
-                        skinnedBones = new Transform[avatar.SkinnedBonesCount];
-                        for (int a = 0; a < skinnedBones.Length; a++) 
+                        if (avatar == null)
                         {
-                            skinnedBones[a] = rig_root.FindDeepChildLiberal(avatar.bones[a]);
+                            skinnedBones = new Transform[] { rig_root };
+                        }
+                        else
+                        {
+                            skinnedBones = new Transform[avatar.SkinnedBonesCount];
+                            for (int a = 0; a < skinnedBones.Length; a++)
+                            {
+                                skinnedBones[a] = rig_root.FindDeepChildLiberal(avatar.bones[a]);
+                            }
                         }
                     }
                 }
@@ -7137,8 +7181,10 @@ namespace Swole.Morphing
             {
                 var meshData = SubData;
 
+                int boneCount = SkinningBoneCount;
+
                 var rigSampler = RigSampler;
-                if (rigSampler != null) rigSampler.AddWritableInstanceBuffer(matricesBuffer, RigInstanceID * SkinningBoneCount);
+                if (rigSampler != null) rigSampler.AddWritableInstanceBuffer(matricesBuffer, RigInstanceID * boneCount); 
 
                 if (materialInstances != null)
                 {
@@ -7148,6 +7194,7 @@ namespace Swole.Morphing
 
                         Debug.Log($"{name}: Binding {meshData.SkinningMatricesPropertyName} to {mat.name}");
                         matricesBuffer.BindMaterialProperty(mat, meshData.SkinningMatricesPropertyName);
+                        mat.SetInteger(meshData.BoneCountPropertyName, boneCount);
                     }
                 }
             }
@@ -7526,7 +7573,8 @@ namespace Swole.Morphing
 
             if (!Data.SerializedData.TryGetVertices(lod, out var vertices)) return false;
             if (!Data.SerializedData.TryGetTriangles(lod, out var triangles)) return false;
-            if (!Data.SerializedData.TryGetUV(lod, Data.SerializedData.nearestVertexUVChannel, out var indexUVs)) return false;
+            NativeArray<float4> indexUVs = default;
+            if (lod > 0 && !Data.SerializedData.TryGetUV(lod, Data.SerializedData.nearestVertexUVChannel, out indexUVs)) return false;
 
             instance.UpdateIfDirty(false, true);
             instance.OwnerGroup.ActiveJob.Complete(); 
@@ -7537,33 +7585,69 @@ namespace Swole.Morphing
             {
                 using (var skinningMatrices = new NativeArray<float4x4>(SkinningBoneCount, Allocator.TempJob))
                 {
-                    if (rigSampler != null) rigSampler.TrackingGroup.CopyIntoArray(skinningMatrices, 0);
+                    if (rigSampler != null) 
+                    { 
+                        rigSampler.TrackingGroup.CopyIntoArray(skinningMatrices, 0);
+                        for (int z = 0; z < SkinningBoneCount; z++)
+                        {
+                            var m = skinningMatrices[z];
+                            Debug.DrawRay(math.transform(m, float3.zero), math.rotate(m, new float3(0f, 1f, 0f)) * 0.35f, Color.blue, 0.5f); 
+                        }
+                    }
 
-                    var handle = instance.OwnerGroup.ActiveJob; 
+                    var handle = instance.OwnerGroup.ActiveJob;
 
-                    handle = new RaycastMeshJob()
+                    if (lod > 0)
                     {
+                        handle = new RaycastMeshWithIndexUVJob()
+                        {
 
-                        deltasStartIndex = DeltasStartIndex,
+                            deltasStartIndex = DeltasStartIndex,
 
-                        indexChannel = Data.SerializedData.nearestVertexIndexElement,
+                            indexChannel = Data.SerializedData.nearestVertexIndexElement,
 
-                        errorMargin = errorMargin,
-                        origin = origin,
-                        offset = offset,
+                            errorMargin = errorMargin,
+                            origin = origin,
+                            offset = offset,
 
-                        vertices = vertices,
-                        triangles = triangles,
-                        indexUVs = indexUVs,
+                            vertices = vertices,
+                            triangles = triangles,
+                            indexUVs = indexUVs,
 
-                        deltas = instance.OwnerGroup.FinalVertexDeltas.AsArray(),
+                            deltas = instance.OwnerGroup.FinalVertexDeltas.AsArray(),
 
-                        boneWeights = Data.SerializedData.BaseBoneWeightsJob,
-                        skinningMatrices = skinningMatrices,
+                            boneWeights = Data.SerializedData.BaseBoneWeightsJob,
+                            skinningMatrices = skinningMatrices,
 
-                        results = resultQueue.AsParallelWriter()
+                            results = resultQueue.AsParallelWriter()
 
-                    }.Schedule(triangles.Length / 3, 1, handle);
+                        }.Schedule(triangles.Length / 3, 1, handle);
+                    } 
+                    else
+                    {
+                        handle = new RaycastMeshJob()
+                        {
+
+                            deltasStartIndex = DeltasStartIndex,
+
+                            indexChannel = Data.SerializedData.nearestVertexIndexElement,
+
+                            errorMargin = errorMargin,
+                            origin = origin,
+                            offset = offset,
+
+                            vertices = vertices,
+                            triangles = triangles,
+
+                            deltas = instance.OwnerGroup.FinalVertexDeltas.AsArray(),
+
+                            boneWeights = Data.SerializedData.BaseBoneWeightsJob,
+                            skinningMatrices = skinningMatrices,
+
+                            results = resultQueue.AsParallelWriter()
+
+                        }.Schedule(triangles.Length / 3, 1, handle);
+                    }
                     
                     using (var finalResultArray = new NativeArray<RaycastResult>(1, Allocator.TempJob))
                     {
@@ -7585,6 +7669,87 @@ namespace Swole.Morphing
 
         [BurstCompile]
         protected struct RaycastMeshJob : IJobParallelFor
+        {
+            public int deltasStartIndex;
+
+            public RGBAChannel indexChannel;
+
+            public float errorMargin;
+
+            public float3 origin;
+            public float3 offset;
+
+            [ReadOnly]
+            public NativeArray<float3> vertices;
+            [ReadOnly]
+            public NativeArray<int> triangles;
+            [ReadOnly]
+            public NativeArray<BoneWeight8> boneWeights;
+            [ReadOnly]
+            public NativeArray<MeshVertexDelta> deltas;
+            [ReadOnly]
+            public NativeArray<float4x4> skinningMatrices;
+
+            public NativeQueue<RaycastResult>.ParallelWriter results; 
+
+            public void Execute(int index)
+            {
+                int triIndex = index * 3;
+
+                int i0 = triangles[triIndex];
+                int i1 = triangles[triIndex + 1];
+                int i2 = triangles[triIndex + 2];
+
+                var boneWeights0 = boneWeights[i0];
+                var boneWeights1 = boneWeights[i1];
+                var boneWeights2 = boneWeights[i2]; 
+
+                var skinning0 = 
+                    (skinningMatrices[boneWeights0.boneIndex0] * boneWeights0.boneWeight0) +
+                    (skinningMatrices[boneWeights0.boneIndex1] * boneWeights0.boneWeight1) +
+                    (skinningMatrices[boneWeights0.boneIndex2] * boneWeights0.boneWeight2) +
+                    (skinningMatrices[boneWeights0.boneIndex3] * boneWeights0.boneWeight3) +
+                    (skinningMatrices[boneWeights0.boneIndex4] * boneWeights0.boneWeight4) +
+                    (skinningMatrices[boneWeights0.boneIndex5] * boneWeights0.boneWeight5) +
+                    (skinningMatrices[boneWeights0.boneIndex6] * boneWeights0.boneWeight6) +
+                    (skinningMatrices[boneWeights0.boneIndex7] * boneWeights0.boneWeight7);
+
+                var skinning1 =
+                    (skinningMatrices[boneWeights1.boneIndex0] * boneWeights1.boneWeight0) +
+                    (skinningMatrices[boneWeights1.boneIndex1] * boneWeights1.boneWeight1) +
+                    (skinningMatrices[boneWeights1.boneIndex2] * boneWeights1.boneWeight2) +
+                    (skinningMatrices[boneWeights1.boneIndex3] * boneWeights1.boneWeight3) +
+                    (skinningMatrices[boneWeights1.boneIndex4] * boneWeights1.boneWeight4) +
+                    (skinningMatrices[boneWeights1.boneIndex5] * boneWeights1.boneWeight5) +
+                    (skinningMatrices[boneWeights1.boneIndex6] * boneWeights1.boneWeight6) +
+                    (skinningMatrices[boneWeights1.boneIndex7] * boneWeights1.boneWeight7);
+
+                var skinning2 =
+                    (skinningMatrices[boneWeights2.boneIndex0] * boneWeights2.boneWeight0) +
+                    (skinningMatrices[boneWeights2.boneIndex1] * boneWeights2.boneWeight1) +
+                    (skinningMatrices[boneWeights2.boneIndex2] * boneWeights2.boneWeight2) +
+                    (skinningMatrices[boneWeights2.boneIndex3] * boneWeights2.boneWeight3) +
+                    (skinningMatrices[boneWeights2.boneIndex4] * boneWeights2.boneWeight4) +
+                    (skinningMatrices[boneWeights2.boneIndex5] * boneWeights2.boneWeight5) +
+                    (skinningMatrices[boneWeights2.boneIndex6] * boneWeights2.boneWeight6) +
+                    (skinningMatrices[boneWeights2.boneIndex7] * boneWeights2.boneWeight7); 
+
+                var v0 = math.transform(skinning0, vertices[i0] + deltas[deltasStartIndex + i0].positionDelta);
+                var v1 = math.transform(skinning1, vertices[i1] + deltas[deltasStartIndex + i1].positionDelta);
+                var v2 = math.transform(skinning2, vertices[i2] + deltas[deltasStartIndex + i2].positionDelta);
+
+                var output = new RaycastResult();
+                output.didHit = Maths.seg_intersect_triangle_include_dist(origin, offset, v0, v1, v2, out Maths.RaycastHitResult result, errorMargin);
+                result.triangleIndex = index;
+                output.hitInfo = result;
+
+                if (output.didHit) results.Enqueue(output); 
+            }
+
+        }
+
+        [BurstCompile]
+        protected struct RaycastMeshWithIndexUVJob : IJobParallelFor
         {
             public int deltasStartIndex;
 
@@ -7626,7 +7791,7 @@ namespace Swole.Morphing
                 var boneWeights1 = boneWeights[baseI1];
                 var boneWeights2 = boneWeights[baseI2];
 
-                var skinning0 = 
+                var skinning0 =
                     (skinningMatrices[boneWeights0.boneIndex0] * boneWeights0.boneWeight0) +
                     (skinningMatrices[boneWeights0.boneIndex1] * boneWeights0.boneWeight1) +
                     (skinningMatrices[boneWeights0.boneIndex2] * boneWeights0.boneWeight2) +
@@ -7654,7 +7819,7 @@ namespace Swole.Morphing
                     (skinningMatrices[boneWeights2.boneIndex4] * boneWeights2.boneWeight4) +
                     (skinningMatrices[boneWeights2.boneIndex5] * boneWeights2.boneWeight5) +
                     (skinningMatrices[boneWeights2.boneIndex6] * boneWeights2.boneWeight6) +
-                    (skinningMatrices[boneWeights2.boneIndex7] * boneWeights2.boneWeight7); 
+                    (skinningMatrices[boneWeights2.boneIndex7] * boneWeights2.boneWeight7);
 
                 var v0 = math.transform(skinning0, vertices[i0] + deltas[deltasStartIndex + baseI0].positionDelta);
                 var v1 = math.transform(skinning1, vertices[i1] + deltas[deltasStartIndex + baseI1].positionDelta);
@@ -7665,7 +7830,7 @@ namespace Swole.Morphing
                 result.triangleIndex = index;
                 output.hitInfo = result;
 
-                if (output.didHit) results.Enqueue(output); 
+                if (output.didHit) results.Enqueue(output);
             }
 
         }

@@ -1673,21 +1673,35 @@ namespace Swole.Morphing
             return false;
         }
 
+        public float3 GetVertexInWorld(int lod, int vertexIndex) => GetVertexInWorld(lod, vertexIndex, out _, out _); 
+        public float3 GetVertexInWorld(int lod, int vertexIndex, out float4x4 skinningMatrix, out float3 localDelta)
+        {
+            skinningMatrix = float4x4.identity;
+            localDelta = default;
+            return default;
+        }
+        public float3 GetNormalInWorld(int lod, int vertexIndex) => GetNormalInWorld(lod, vertexIndex, out _, out _);
+        public float3 GetNormalInWorld(int lod, int vertexIndex, out float4x4 skinningMatrix, out float3 localDelta)
+        {
+            skinningMatrix = float4x4.identity;
+            localDelta = default;
+            return default;
+        }
+        public float4 GetTangentInWorld(int lod, int vertexIndex) => GetTangentInWorld(lod, vertexIndex, out _, out _);
+        public float4 GetTangentInWorld(int lod, int vertexIndex, out float4x4 skinningMatrix, out float3 localDelta)
+        {
+            skinningMatrix = float4x4.identity;
+            localDelta = default;
+            return default;
+        }
+        public void GetVertexInWorld(int lod, int vertexIndex, out float3 pos, out float3 normal, out float4 tangent) => GetVertexInWorld(lod, vertexIndex, out pos, out normal, out tangent, out _, out _, out _, out _); 
+        public void GetVertexInWorld(int lod, int vertexIndex, out float3 pos, out float3 normal, out float4 tangent, out float4x4 skinningMatrix, out float3 localDeltaPos, out float3 localDeltaNorm, out float3 localDeltaTan)
+        {
+            skinningMatrix = float4x4.identity;
+            localDeltaPos = default;
+            localDeltaNorm = default;
+            localDeltaTan = default;
 
-        public float3 GetVertexInWorld(int lod, int vertexIndex)
-        {
-            return default;
-        }
-        public float3 GetNormalInWorld(int lod, int vertexIndex)
-        {
-            return default;
-        }
-        public float4 GetTangentInWorld(int lod, int vertexIndex)
-        {
-            return default;
-        }
-        public void GetVertexInWorld(int lod, int vertexIndex, out float3 pos, out float3 normal, out float4 tangent)
-        {
             pos = default;
             normal = default;
             tangent = default;
