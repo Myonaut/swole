@@ -1165,7 +1165,7 @@ namespace Swole.Morphing
                     else
                     {
                         skinnedBones = new Transform[avatar.SkinnedBonesCount];
-                        for (int a = 0; a < skinnedBones.Length; a++) bones[a] = rig_root.FindDeepChildLiberal(avatar.bones[a]);
+                        for (int a = 0; a < skinnedBones.Length; a++) skinnedBones[a] = rig_root.FindDeepChildLiberal(avatar.bones[a]);
                     }
                 }
 
