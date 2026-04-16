@@ -52,6 +52,10 @@ namespace Swole.Morphing
         public const string fatShapeNameDefault = "FAT";
         public const string fatMuscleBlendShapeNameDefault = "FAT_MUSCLE_BLEND";
 
+        public const string splitTag = "_SPLIT";
+        public const string leftTag = "_L";
+        public const string rightTag = "_R";
+
         #region Sub Types
 
         [Serializable]
@@ -384,6 +388,17 @@ namespace Swole.Morphing
         }
 
         [Serializable]
+        public struct ControlGroupConfiguration
+        {
+            public string id;
+            public string materialProperty;
+            public int[] materialSlots;
+            public bool clampWeights;
+            public float2 weightRange;
+            public string[] vertexGroups;
+        }
+
+        [Serializable]
         public struct MeshObject
         {
 
@@ -392,6 +407,7 @@ namespace Swole.Morphing
             public bool skip;
 
             public Material[] materials;
+            public CustomizableCharacterMeshV2.RenderSet[] renderSets;
 
             public Mesh mainMesh;
 
@@ -518,6 +534,8 @@ namespace Swole.Morphing
             public NameProperty[] meshShapeMaterialProperties;
 
             public CharacterClothBoneConfiguration[] clothBoneConfigurations;
+
+            public ControlGroupConfiguration[] controlGroups;
 
         }
 
@@ -2295,11 +2313,51 @@ namespace Swole.Morphing
                             debugRenderer.name = "PRE-VGROUP EXTRACT";
                         }
 
+                        bool[] leftRightFlags = new bool[mainMesh.vertexCount];
+                        var baseVertices = mainMesh.vertices;
+                        /*var mainUV = mainMesh.uv;
+                        if (mainUV != null && mainUV.Length > 0)
+                        {
+                            for (int i = 0; i < mainUV.Length; i++) leftRightFlags[i] = mainUV[i].x < 0.5f;
+                        }*/
+                        for (int i = 0; i < baseVertices.Length; i++) leftRightFlags[i] = baseVertices[i].x > 0f;
+
                         #region Extract Main Vertex Groups
 
                         if (standaloneVertexGroups != null)
                         {
-                            MorphUtils.ExtractVertexGroups(mainMesh, standaloneVertexGroups, finalVertexGroups, objectSetup.name, normalizeVertexGroups, 0.00001f, defaultVertexGroupMaxWeight, true, mainVertices, mainNormals, mainTangents, mainWeld);
+                            MorphUtils.ExtractVertexGroups(mainMesh, standaloneVertexGroups, false, finalVertexGroups, objectSetup.name, normalizeVertexGroups, 0.00001f, defaultVertexGroupMaxWeight, true, mainVertices, mainNormals, mainTangents, mainWeld);
+                            int vGroupCount = finalVertexGroups.Count; 
+                            
+                            for(int i = 0; i < vGroupCount; i++)
+                            {
+                                var vg = finalVertexGroups[i];
+
+                                if (vg.name.EndsWith(splitTag))
+                                {
+                                    var vgName = vg.name.Replace(splitTag, string.Empty);
+
+                                    vg.name = vgName + leftTag;
+                                    var vg_right = new VertexGroup(vgName + rightTag);
+                                    vg_right.Copy(vg);
+
+                                    for (int j = 0; j < vg.EntryCount; j++)
+                                    {
+                                        vg.GetEntry(j, out int vIndex, out float weight);
+                                        var xPos = baseVertices[i].x;
+                                        float midBlend = 1f - Mathf.Min(1f, Mathf.Abs(xPos / 0.001f)); 
+                                        bool isRight = xPos > 0f;
+
+                                        float halfWeight = weight * 0.5f;
+                                        float midWeight = (midBlend * halfWeight);
+                                        float sideWeight = (weight - midWeight);
+                                        vg.SetEntry(j, vIndex, isRight ? midWeight : sideWeight);
+                                        vg_right.SetEntry(j, vIndex, isRight ? sideWeight : midWeight); 
+                                    }
+
+                                    finalVertexGroups.Add(vg_right);
+                                }
+                            }
                         }
 
                         int standaloneIndicesEnd = finalVertexGroups.Count - 1;
@@ -2319,7 +2377,7 @@ namespace Swole.Morphing
                                 tempBlendShapeTargets.Add(target);
                             }
 
-                            MorphUtils.ExtractVertexGroups(mainMesh, tempBlendShapeTargets, finalVertexGroups, objectSetup.name, false, 0.00001f, 0f, false, mainVertices, mainNormals, mainTangents, mainWeld);
+                            MorphUtils.ExtractVertexGroups(mainMesh, tempBlendShapeTargets, true, finalVertexGroups, objectSetup.name, false, 0.00001f, 0f, false, mainVertices, mainNormals, mainTangents, mainWeld);
                             muscleGroupIndices.y = finalVertexGroups.Count - 1;
                         }
 
@@ -2337,7 +2395,7 @@ namespace Swole.Morphing
                                 tempBlendShapeTargets.Add(target);
                             }
 
-                            MorphUtils.ExtractVertexGroups(mainMesh, tempBlendShapeTargets, finalVertexGroups, objectSetup.name, false, 0.00001f, 0f, false, mainVertices, mainNormals, mainTangents, mainWeld);
+                            MorphUtils.ExtractVertexGroups(mainMesh, tempBlendShapeTargets, true, finalVertexGroups, objectSetup.name, false, 0.00001f, 0f, false, mainVertices, mainNormals, mainTangents, mainWeld);
                             fatGroupIndices.y = finalVertexGroups.Count - 1;
                         }
 
@@ -2355,7 +2413,7 @@ namespace Swole.Morphing
                                 tempBlendShapeTargets.Add(target);
                             }
 
-                            MorphUtils.ExtractVertexGroups(mainMesh, tempBlendShapeTargets, finalVertexGroups, objectSetup.name, false, 0.00001f, 0f, false, mainVertices, mainNormals, mainTangents, mainWeld);
+                            MorphUtils.ExtractVertexGroups(mainMesh, tempBlendShapeTargets, true, finalVertexGroups, objectSetup.name, false, 0.00001f, 0f, false, mainVertices, mainNormals, mainTangents, mainWeld);
                             variationGroupIndices.y = finalVertexGroups.Count - 1;
                         }
 
@@ -2842,7 +2900,7 @@ namespace Swole.Morphing
                         }
 
                         Mesh outputMeshMain = null;
-                        var baseVertices = mainMesh.vertices;
+                        /*var */baseVertices = mainMesh.vertices;
                         var baseColors = mainMesh.colors;
                         var baseUV = useUVsToFindClosestVertex ? mainMesh.GetUVsByChannelAsList((int)nearestVertexUVChannel) : null;
                         if (objectSetup.finalUvSwizzles != null && objectSetup.finalUvSwizzles.Length > 0)
@@ -3109,13 +3167,7 @@ namespace Swole.Morphing
 
                         serializedData.vertexCount = outputMeshMain.vertexCount;
 
-                        serializedData.leftRightFlags = new bool[outputMeshMain.vertexCount];
-                        /*var mainUV = outputMeshMain.uv;
-                        if (mainUV != null && mainUV.Length > 0)
-                        {
-                            for (int i = 0; i < mainUV.Length; i++) serializedData.leftRightFlags[i] = mainUV[i].x < 0.5f;
-                        }*/
-                        for (int i = 0; i < baseVertices.Length; i++) serializedData.leftRightFlags[i] = baseVertices[i].x > 0f; 
+                        serializedData.leftRightFlags = leftRightFlags;
 
                         serializedData.baseBoneWeights = mainBoneWeights;
                         serializedData.baseBindPose = origBindPose;//tempMatrices.ToArray();
@@ -3132,6 +3184,7 @@ namespace Swole.Morphing
                         }
 
                         serializedData.materials = objectSetup.materials;
+                        serializedData.renderSets = objectSetup.renderSets; 
                         serializedData.boundsCenter = objectSetup.boundsCenter;
                         serializedData.boundsExtents = objectSetup.boundsExtents;
                         meshLODs.Sort(CullingLODs.SortLODsDescending);
@@ -3164,7 +3217,7 @@ namespace Swole.Morphing
                                 foreach (var mat in objectSetup.materials)
                                 {
                                     if (mat == null) continue;
-                                    mat.SetFloat(shapeProp.property, shapeIndex);
+                                    mat.SetFloat(shapeProp.property, shapeIndex); 
                                 }
                             }
                         }
@@ -3387,6 +3440,38 @@ namespace Swole.Morphing
 
                         var animatableProperties = outputPrefab.gameObject.GetComponent<DynamicAnimationProperties>();
                         if (animatableProperties != null) characterMesh.SetAnimatablePropertiesController(animatableProperties);
+                    }
+
+                    if (objectSetup.controlGroups != null && objectSetup.controlGroups.Length > 0)
+                    {
+                        var controlGroupsManager = characterMesh.gameObject.AddOrGetComponent<CustomizableCharacterMeshVertexControlGroups>();
+                        var groups = new CustomizableCharacterMeshVertexControlGroup[objectSetup.controlGroups.Length];
+                        for(int i = 0; i <  objectSetup.controlGroups.Length; i++)
+                        {
+                            var config = objectSetup.controlGroups[i];
+                            if (config.vertexGroups == null || config.vertexGroups.Length <= 0) continue;
+
+                            var subGroups = new CustomizableCharacterMeshVertexControlGroup.SubGroup[config.vertexGroups.Length];
+                            for(int j = 0; j < subGroups.Length; j++)
+                            {
+                                var vertexGroupName = config.vertexGroups[j];
+                                var vertexGroupIndex = characterMesh.IndexOfVertexGroup(vertexGroupName, true);
+
+                                var subGroup = new CustomizableCharacterMeshVertexControlGroup.SubGroup();
+                                subGroup.displayName = vertexGroupName;
+                                if (vertexGroupIndex < 0) subGroup.vertexGroupName = vertexGroupName;
+                                subGroup.vertexGroupIndex = vertexGroupIndex;
+
+                                subGroups[j] = subGroup;
+                            }
+
+                            var group = new CustomizableCharacterMeshVertexControlGroup(config.id, subGroups, config.materialProperty, config.materialSlots == null || config.materialSlots.Length <= 0 ? null : config.materialSlots);
+                            group.clampWeights = config.clampWeights;
+                            group.weightRange = config.weightRange;
+                            groups[i] = group;
+                        }
+
+                        controlGroupsManager.SetGroups(groups); 
                     }
 
                     #endregion

@@ -55,6 +55,9 @@ namespace Swole.Cloth
         [SerializeField]
         protected Transform initParent;
 
+        protected Vector3 restPosition;
+        protected Quaternion restRotation;
+
         protected Vector3 lastPosition;
         protected Quaternion lastRotation;
 
@@ -100,6 +103,9 @@ namespace Swole.Cloth
             public Vector3 colliderOffset;
             public LayerMask colliderLayerMask;
 
+            public float positionRestorationForce;
+            public float rotationRestorationForce;
+
             public static Settings Default => new Settings
             {
                 useGravity = true,
@@ -126,7 +132,10 @@ namespace Swole.Cloth
 
                 linearLimitDistance = 0.03f,
 
-                colliderLayerMask = ~0
+                colliderLayerMask = ~0,
+
+                positionRestorationForce = 5f,
+                rotationRestorationForce = 1f
             };
         }
 
@@ -244,6 +253,9 @@ namespace Swole.Cloth
             lastPosition = transform.position;
             lastRotation = transform.rotation;
 
+            restPosition = rootTransform.InverseTransformPoint(lastPosition);
+            restRotation = lastRotation * Quaternion.Inverse(rootTransform.rotation);
+
             if (characterMesh != null) boneTrackerTransformIndex = characterMesh.RigSampler.TrackingGroup.IndexOf(transform);
 
             gameObject.layer = settings.layer;
@@ -305,13 +317,14 @@ namespace Swole.Cloth
             {
                 //transform.GetPositionAndRotation(out lastPosition, out lastRotation);
 
-                Vector3 resetPos = initPosition;
-                Quaternion resetRot = initRotation;
+                var resetPos = initPosition;
+                var resetRot = initRotation;
                 if (initParent != null)
                 {
                     resetPos = initParent.TransformPoint(initPosition);
                     resetRot = initParent.rotation * initRotation;
                 }
+
                 //transform.SetPositionAndRotation(resetPos, resetRot);
 
                 if (boneTrackerTransformIndex >= 0)
@@ -349,6 +362,18 @@ namespace Swole.Cloth
             {
                 transform.SetLocalPositionAndRotation(lastPosition, lastRotation); 
             }*/
+
+            if (settings.positionRestorationForce > 0f)
+            {
+                var restPos = rootTransform.TransformPoint(restPosition);
+                rigidbody.AddForce((restPos - rigidbody.position).normalized * settings.positionRestorationForce, ForceMode.Acceleration);
+            }
+            if (settings.rotationRestorationForce > 0f)
+            {
+                var restRot = rootTransform.rotation * restRotation; 
+                var invRot = Quaternion.Inverse(rigidbody.rotation);
+                rigidbody.angularVelocity = rigidbody.angularVelocity + (restRot * invRot).eulerAngles * settings.rotationRestorationForce * Time.deltaTime;   
+            }
         }
     }
 

@@ -17,7 +17,7 @@ namespace Swole
 
         public static unsafe void AddReplicated<T>(this NativeList<T> list, T value, int amount) where T : unmanaged
         {
-#if UNITY_2022_OR_NEWER
+#if UNITY_2022_3_OR_NEWER
             list.AddReplicate(value, amount);
 #else
             for(int a = 0; a < amount; a++) list.Add(value);

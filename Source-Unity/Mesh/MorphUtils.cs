@@ -119,7 +119,7 @@ namespace Swole.Morphing
         }
 
         #region Vertex Group Extraction
-        public static List<VertexGroup> ExtractVertexGroups(Mesh mesh, IEnumerable<BlendShapeTarget> targetShapes, List<VertexGroup> outputList = null, string queryId = null, bool normalize = true, float weightThreshold = 0.00001f, float normalizationSetMaxWeight = 0, bool clampWeights = true, Vector3[] vertices = null, Vector3[] normals = null, Vector4[] tangents = null, MeshDataTools.WeldedVertex[] mergedVertices = null)
+        public static List<VertexGroup> ExtractVertexGroups(Mesh mesh, IEnumerable<BlendShapeTarget> targetShapes, bool createEmptyShapesIfNotFound, List<VertexGroup> outputList = null, string queryId = null, bool normalize = true, float weightThreshold = 0.00001f, float normalizationSetMaxWeight = 0, bool clampWeights = true, Vector3[] vertices = null, Vector3[] normals = null, Vector4[] tangents = null, MeshDataTools.WeldedVertex[] mergedVertices = null)
         {
             if (outputList == null) outputList = new List<VertexGroup>();
 
@@ -135,6 +135,12 @@ namespace Swole.Morphing
                     BlendShape shape;
                     if (!shapeTarget.TryGetBlendShape(queryId, mesh, out shape, vertices, normals, tangents, mergedVertices))
                     {
+                        if (!createEmptyShapesIfNotFound)
+                        {
+                            Debug.LogWarning($"({mesh.name}) Target shape '{shapeTarget.targetName}' was not found."); 
+                            continue;
+                        }
+
                         shape = new BlendShape(shapeTarget.targetName); // force create an empty shape if it wasnt in the mesh
                         Debug.LogWarning($"({mesh.name}) Target shape '{shapeTarget.targetName}' was not found. Created an empty replacement.");
                     }
@@ -160,13 +166,13 @@ namespace Swole.Morphing
 
             return outputList;
         }
-        public static List<VertexGroup> ExtractVertexGroupsAsPool(out Vector2Int indexRange, Mesh mesh, IEnumerable<BlendShapeTarget> targetShapes, List<VertexGroup> outputList = null, string queryId = null, bool normalizeAsPool = true, bool averageAsPool = true, bool normalizeEachGroupFirst = false, float weightThreshold = 0.00001f, float normalizationSetMaxWeight = 0, bool clampWeights = false, Vector3[] vertices = null, Vector3[] normals = null, Vector4[] tangents = null, MeshDataTools.WeldedVertex[] mergedVertices = null)
+        public static List<VertexGroup> ExtractVertexGroupsAsPool(out Vector2Int indexRange, Mesh mesh, IEnumerable<BlendShapeTarget> targetShapes, bool createEmptyShapesIfNotFound, List<VertexGroup> outputList = null, string queryId = null, bool normalizeAsPool = true, bool averageAsPool = true, bool normalizeEachGroupFirst = false, float weightThreshold = 0.00001f, float normalizationSetMaxWeight = 0, bool clampWeights = false, Vector3[] vertices = null, Vector3[] normals = null, Vector4[] tangents = null, MeshDataTools.WeldedVertex[] mergedVertices = null)
         {
             indexRange = new Vector2Int(-1, -1);
 
             indexRange.x = outputList.Count;
 
-            outputList = ExtractVertexGroups(mesh, targetShapes, outputList, queryId, normalizeEachGroupFirst, weightThreshold, normalizationSetMaxWeight, clampWeights, vertices, normals, tangents, mergedVertices);
+            outputList = ExtractVertexGroups(mesh, targetShapes, createEmptyShapesIfNotFound, outputList, queryId, normalizeEachGroupFirst, weightThreshold, normalizationSetMaxWeight, clampWeights, vertices, normals, tangents, mergedVertices);
 
             indexRange.y = outputList.Count - 1;
 

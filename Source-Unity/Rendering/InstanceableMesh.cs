@@ -1807,7 +1807,7 @@ namespace Swole
 
         public string name;
 
-        public InstanceBuffer(string name, int initialSize, int elementPerInstance, int bufferPoolSize, ComputeBufferType bufferType, ComputeBufferMode bufferMode)
+        public InstanceBuffer(string name, int initialSize, int elementPerInstance, int bufferPoolSize, ComputeBufferType bufferType = ComputeBufferType.Structured, ComputeBufferMode bufferMode = ComputeBufferMode.SubUpdates)
         {
             this.name = name;
             this.elementsPerInstance = elementPerInstance; 

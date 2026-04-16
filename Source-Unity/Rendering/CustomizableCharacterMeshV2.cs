@@ -594,11 +594,11 @@ namespace Swole.Morphing
 
         }
 
-#endregion
+        #endregion
 
         #region Sub Types
 
-        protected class InstanceV2 : IDisposable
+        public class InstanceV2 : IDisposable
         {
             public int localID = -1;
 
@@ -736,7 +736,7 @@ namespace Swole.Morphing
         /// <summary>
         /// Handles realtime updates of meshes that use the same serialized data.
         /// </summary>
-        protected class MeshGroupV2 : IDisposable
+        public class MeshGroupV2 : IDisposable
         {
 
             #region Disposal
@@ -3041,6 +3041,13 @@ namespace Swole.Morphing
         }
 
         [Serializable, NonAnimatable]
+        public struct RenderSet
+        {
+            public int materialIndexStart;
+            public int materialCount;
+        }
+
+        [Serializable, NonAnimatable]
         public class SerializedData : IDisposable
         {
 
@@ -3048,6 +3055,9 @@ namespace Swole.Morphing
 
             [Header("Rendering")]
             public Material[] materials;
+            [Tooltip("Render sets render the same mesh instance using different materials (useful for toon outline materials)")]
+            public RenderSet[] renderSets;
+            public bool HasRenderSets => renderSets != null && renderSets.Length > 1;
 
             public int vertexCount;
 
@@ -5548,6 +5558,8 @@ namespace Swole.Morphing
         /// Handles physique update jobs and buffer writes
         /// </summary>
         new protected InstanceV2 instance;
+        public InstanceV2 Instance2 => instance;
+        public MeshGroupV2 MeshGroup2 => instance == null ? null : instance.OwnerGroup;
         public int InstanceID => instance == null ? 0 : instance.localID;
         public override int InstanceSlot => InstanceID;
         public override bool IsInitialized => instance != null && instance.IsValid;
@@ -6145,6 +6157,9 @@ namespace Swole.Morphing
         {
             public MeshFilter meshFilter;
             public MeshRenderer meshRenderer;
+
+            public MeshFilter[] additionalFilters;
+            public MeshRenderer[] additionalRenderers;
         }
 
         protected LODGroup lodGroup;
@@ -6158,13 +6173,13 @@ namespace Swole.Morphing
 
         public void InitializeRendering()
         {
-            
+
             if (RenderingIsInitialized() || !CanRender) return;
-            
+
             var meshData = SubData;
             var bounds = new Bounds(meshData.boundsCenter, meshData.boundsExtents * 2f);
-            
-            GameObject lodObj = new GameObject("renderers"); 
+
+            GameObject lodObj = new GameObject("renderers");
             lodObj.layer = gameObject.layer;
 
 
@@ -6172,9 +6187,9 @@ namespace Swole.Morphing
             lodRootTransform.SetParent(transform, false);
             lodRootTransform.SetLocalPositionAndRotation(Vector3.zero, Quaternion.identity);
             lodRootTransform.localScale = Vector3.one;
-            
+
             lodGroup = lodObj.AddComponent<LODGroup>();
-            defaultRenderedMeshes = new DefaultRenderedMesh[meshData.LevelsOfDetail]; 
+            defaultRenderedMeshes = new DefaultRenderedMesh[meshData.LevelsOfDetail];
             var lods = new LOD[meshData.LevelsOfDetail];
             for (int a = 0; a < meshData.LevelsOfDetail; a++)
             {
@@ -6183,21 +6198,70 @@ namespace Swole.Morphing
 
                 GameObject rendererObj = new GameObject($"LOD_{a}");
                 rendererObj.layer = gameObject.layer;
-                rendererObj.transform.SetParent(lodRootTransform, false); 
+                rendererObj.transform.SetParent(lodRootTransform, false);
 
-                defaultRenderedMesh.meshFilter = rendererObj.AddComponent<MeshFilter>();
-                defaultRenderedMesh.meshFilter.sharedMesh = meshLOD.mesh;
-                defaultRenderedMesh.meshRenderer = rendererObj.AddComponent<MeshRenderer>();
-                defaultRenderedMesh.meshRenderer.sharedMaterials = MaterialInstances;
-                defaultRenderedMesh.meshRenderer.localBounds = bounds;
+                Renderer[] renderers = null;
+                if (meshData.renderSets == null || meshData.renderSets.Length <= 1)
+                {
+                    defaultRenderedMesh.meshFilter = rendererObj.AddComponent<MeshFilter>();
+                    defaultRenderedMesh.meshFilter.sharedMesh = meshLOD.mesh;
+                    defaultRenderedMesh.meshRenderer = rendererObj.AddComponent<MeshRenderer>();
+                    defaultRenderedMesh.meshRenderer.sharedMaterials = MaterialInstances;
+                    defaultRenderedMesh.meshRenderer.localBounds = bounds;
+
+                    renderers = new Renderer[] { defaultRenderedMesh.meshRenderer };
+                }
+                else // render sets render the same mesh instance using different materials (useful for toon outline materials)
+                {
+                    var materials = MaterialInstances;
+
+                    renderers = new Renderer[meshData.renderSets.Length];
+
+                    MeshFilter[] additionalFilters = new MeshFilter[meshData.renderSets.Length - 1];
+                    MeshRenderer[] additionalRenderers = new MeshRenderer[additionalFilters.Length];
+                    for (int b = 0; b < meshData.renderSets.Length; b++)
+                    {
+                        var renderSet = meshData.renderSets[b];
+
+                        var renderSetObj = new GameObject($"set_{b}");
+                        renderSetObj.layer = gameObject.layer;
+                        renderSetObj.transform.SetParent(rendererObj.transform, false);
+
+                        MeshFilter meshFilter;
+                        MeshRenderer meshRenderer;
+                        if (b == 0)
+                        {
+                            defaultRenderedMesh.meshFilter = meshFilter = renderSetObj.AddComponent<MeshFilter>();
+                            defaultRenderedMesh.meshRenderer = meshRenderer = renderSetObj.AddComponent<MeshRenderer>();
+                        } 
+                        else
+                        {
+                            int ind = b - 1;
+
+                            additionalFilters[ind] = meshFilter = renderSetObj.AddComponent<MeshFilter>();
+                            additionalRenderers[ind] = meshRenderer = renderSetObj.AddComponent<MeshRenderer>();
+                        }
+
+                        meshFilter.sharedMesh = meshLOD.mesh;
+                        var mats = new Material[renderSet.materialCount];
+                        for (int c = 0; c < renderSet.materialCount; c++) mats[c] = materials[renderSet.materialIndexStart + c];
+                        meshRenderer.sharedMaterials = mats;
+                        meshRenderer.localBounds = bounds; 
+
+                        renderers[b] = meshRenderer;
+                    }
+
+                    defaultRenderedMesh.additionalFilters = additionalFilters;
+                    defaultRenderedMesh.additionalRenderers = additionalRenderers;
+                }
 
                 var lod = new LOD()
                 {
                     screenRelativeTransitionHeight = meshLOD.screenRelativeTransitionHeight,
-                    renderers = new Renderer[] { defaultRenderedMesh.meshRenderer }
+                    renderers = renderers
                 };
 
-                defaultRenderedMeshes[a] = defaultRenderedMesh;
+                defaultRenderedMeshes[a] = defaultRenderedMesh; 
                 lods[a] = lod;
             }
 
@@ -6227,9 +6291,45 @@ namespace Swole.Morphing
 
             if (defaultRenderedMeshes != null)
             {
-                foreach(var renderedMesh in defaultRenderedMeshes)
+                var renderSets = SubData.renderSets;
+                if (renderSets == null || renderSets.Length <= 1)
                 {
-                    if (renderedMesh.meshRenderer != null) renderedMesh.meshRenderer.sharedMaterials = materialInstances;  
+                    foreach (var renderedMesh in defaultRenderedMeshes)
+                    {
+                        if (renderedMesh.meshRenderer != null) renderedMesh.meshRenderer.sharedMaterials = materialInstances;
+                    }
+                } 
+                else
+                {
+                    foreach (var renderedMesh in defaultRenderedMeshes)
+                    {
+                        for (int i = 0; i < renderSets.Length; i++)
+                        {
+                            var renderSet = renderSets[i];
+
+                            MeshRenderer renderer = null;
+                            if (i == 0)
+                            {
+                                renderer = renderedMesh.meshRenderer;
+                            } 
+                            else
+                            {
+                                renderer = renderedMesh.additionalRenderers[i - 1];
+                            }
+
+                            if (renderer != null)
+                            {
+                                var mats = renderer.sharedMaterials;
+                                if (mats == null || mats.Length != renderSet.materialCount)
+                                {
+                                    mats = new Material[renderSet.materialCount];
+                                    for (int j = 0; i < renderSet.materialCount; j++) mats[j] = materialInstances[renderSet.materialIndexStart + j];
+                                }
+
+                                renderer.sharedMaterials = mats;
+                            }
+                        }
+                    }
                 }
             }
         }

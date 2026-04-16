@@ -1,14 +1,14 @@
 using System;
 using System.Collections.Generic;
 
-#if (UNITY_STANDALONE || UNITY_EDITOR)
+#if UNITY_2017_1_OR_NEWER
 using UnityEngine;
 #endif
 
 namespace Swole
 {
 
-#if (UNITY_STANDALONE || UNITY_EDITOR)
+#if UNITY_2017_1_OR_NEWER
     public abstract class SingletonBehaviour<T> : MonoBehaviour, ISingletonBehaviour where T : SingletonBehaviour<T>
     {
          
@@ -223,7 +223,7 @@ namespace Swole
     }
 #endif
 
-#if (UNITY_STANDALONE || UNITY_EDITOR)
+#if UNITY_2017_1_OR_NEWER
     public abstract class ExecutableBehaviourObject : MonoBehaviour, IExecutableBehaviour
     {
         public abstract int Priority { get; }
