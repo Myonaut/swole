@@ -4,23 +4,23 @@ using System.Collections.Generic;
 
 namespace Swole.API
 {
-    public abstract class CustomBehaviourUpdater<T> : SingletonBehaviour<CustomBehaviourUpdater<T>> where T : ICustomUpdatableBehaviour
+    public abstract class CustomBehaviourUpdater<T0, T1> : SingletonBehaviour<T0> where T0 : CustomBehaviourUpdater<T0, T1> where T1 : ICustomUpdatableBehaviour
     {
 
-        protected readonly List<T> behaviours = new List<T>();  
+        protected readonly List<T1> behaviours = new List<T1>();  
 
-        public virtual void RegisterLocal(T b)
+        public virtual void RegisterLocal(T1 b)
         {
             if (!behaviours.Contains(b)) behaviours.Add(b);
         }
 
-        private readonly List<T> toRemove = new List<T>();
-        public virtual void UnregisterLocal(T b)
+        private readonly List<T1> toRemove = new List<T1>(); 
+        public virtual void UnregisterLocal(T1 b)
         {
             toRemove.Add(b);
         }
 
-        public static void Register(T b)
+        public static void Register(T1 b)
         {
             var instance = Instance;
             if (instance == null) return;
@@ -28,7 +28,7 @@ namespace Swole.API
             instance.RegisterLocal(b);
         }
 
-        public static void Unregister(T b)
+        public static void Unregister(T1 b)
         {
             var instance = InstanceOrNull;
             if (instance == null) return;

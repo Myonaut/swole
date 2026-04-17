@@ -25,7 +25,7 @@ namespace Swole
                 {
                     if (isQuitting) return;
                     SetInstance(new GameObject("").AddComponent<T>());
-                    instance.name = instance.GetType().Name + (instance.DestroyOnLoad ? "_scene" : "_persistent");
+                    if (instance != null) instance.name = instance.GetType().Name + (instance.DestroyOnLoad ? "_scene" : "_persistent"); else swole.LogError($"Failed to create singleton instance for type '{typeof(T).Name}'"); 
                 }
             }
         }
@@ -36,7 +36,7 @@ namespace Swole
 
             get
             {
-                if (!IsCreated) Create();
+                if (!IsCreated) Create(); 
 
                 return instance;
             }
@@ -49,8 +49,10 @@ namespace Swole
         private static void SetInstance(T newInstance, bool initialize = true)
         {
             instance = newInstance;
+            if (instance == null) return;
+
             if (Application.isPlaying && !instance.DestroyOnLoad) DontDestroyOnLoad(instance.gameObject); 
-            if (initialize) instance.Init();
+            if (initialize) instance.Init(); 
         }
 
         private void Awake() { OnAwake(); }

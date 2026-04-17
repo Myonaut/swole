@@ -388,6 +388,12 @@ namespace Swole.Morphing
         }
 
         [Serializable]
+        public struct ControlGroupParent
+        {
+            public string meshObject;
+            public string groupId;
+        }
+        [Serializable]
         public struct ControlGroupConfiguration
         {
             public string id;
@@ -395,7 +401,10 @@ namespace Swole.Morphing
             public int[] materialSlots;
             public bool clampWeights;
             public float2 weightRange;
+            public float resetWeight;
+            public bool includeZeroWeights;
             public string[] vertexGroups;
+            public ControlGroupParent parent;
         }
 
         [Serializable]
@@ -536,6 +545,7 @@ namespace Swole.Morphing
             public CharacterClothBoneConfiguration[] clothBoneConfigurations;
 
             public ControlGroupConfiguration[] controlGroups;
+            public string[] meshObjectsToShareControlGroups;
 
         }
 
@@ -766,6 +776,7 @@ namespace Swole.Morphing
 
             List<CustomizableCharacterMeshV2> characterMeshes = new List<CustomizableCharacterMeshV2>();
             List<System.Action> postWork = new List<Action>();
+            List<System.Action> finalWork = new List<Action>();
             if (meshObjects != null)
             {
                 for(int objectIndex = 0; objectIndex < meshObjects.Length; objectIndex++)
@@ -3462,16 +3473,85 @@ namespace Swole.Morphing
                                 if (vertexGroupIndex < 0) subGroup.vertexGroupName = vertexGroupName;
                                 subGroup.vertexGroupIndex = vertexGroupIndex;
 
+                                subGroup.includeZeroWeights = config.includeZeroWeights;
+
                                 subGroups[j] = subGroup;
                             }
 
-                            var group = new CustomizableCharacterMeshVertexControlGroup(config.id, subGroups, config.materialProperty, config.materialSlots == null || config.materialSlots.Length <= 0 ? null : config.materialSlots);
-                            group.clampWeights = config.clampWeights;
-                            group.weightRange = config.weightRange;
-                            groups[i] = group;
-                        }
+                            var localControlGroup = new CustomizableCharacterMeshVertexControlGroup(config.id, subGroups, config.materialProperty, config.materialSlots == null || config.materialSlots.Length <= 0 ? null : config.materialSlots);
+                            localControlGroup.clampWeights = config.clampWeights;
+                            localControlGroup.weightRange = config.weightRange;
+                            localControlGroup.resetWeight = config.resetWeight; 
+                            groups[i] = localControlGroup;
 
-                        controlGroupsManager.SetGroups(groups); 
+                            if (!string.IsNullOrWhiteSpace(config.parent.meshObject) && !string.IsNullOrWhiteSpace(config.parent.groupId))
+                            {
+                                void SetupControlGroupParent()
+                                {
+                                    CustomizableCharacterMeshV2 parentMesh = null;
+                                    foreach (var mesh_ in characterMeshes)
+                                    {
+                                        if (mesh_ == null || mesh_.name != config.parent.meshObject) continue;
+                                        parentMesh = mesh_;
+                                        break;
+                                    }
+
+                                    if (parentMesh != null && !ReferenceEquals(parentMesh, characterMesh)) // avoid circular references
+                                    {
+                                        var parentControlGroupsManager = parentMesh.GetComponent<CustomizableCharacterMeshVertexControlGroups>(); 
+                                        if (parentControlGroupsManager != null && !ReferenceEquals(parentControlGroupsManager, controlGroupsManager) && parentControlGroupsManager.TryGetControlGroup(config.parent.groupId, out var parentControlGroup))
+                                        {
+                                            for (int j = 0; j < localControlGroup.SubGroupCount; j++)
+                                            {
+                                                var localSubGroup = localControlGroup.GetSubGroupUnsafe(j);
+                                                if (localSubGroup == null || !parentControlGroup.TryGetSubGroup(localSubGroup.displayName, out var parentSubGroup)) continue;
+
+                                                if (parentSubGroup.children == null) parentSubGroup.children = new CustomizableCharacterMeshVertexControlGroup.SubGroupChild[0];
+                                                parentSubGroup.children = (CustomizableCharacterMeshVertexControlGroup.SubGroupChild[])parentSubGroup.children.Add(new CustomizableCharacterMeshVertexControlGroup.SubGroupChild()
+                                                {
+                                                    manager = controlGroupsManager,
+                                                    groupId = localControlGroup.BaseID,
+                                                    subGroupName = localSubGroup.displayName
+                                                });
+                                            }
+                                        }
+                                    }
+                                }
+
+                                finalWork.Add(SetupControlGroupParent); 
+                            }
+                        } 
+
+                        controlGroupsManager.SetGroups(groups);
+
+                        if (objectSetup.meshObjectsToShareControlGroups != null && objectSetup.meshObjectsToShareControlGroups.Length > 0)
+                        {
+                            void SetAdditionalMeshes()
+                            {
+                                List<CustomizableCharacterMeshV2> additionalMeshes = new List<CustomizableCharacterMeshV2>();
+
+                                foreach(var meshName in objectSetup.meshObjectsToShareControlGroups)
+                                {
+                                    CustomizableCharacterMeshV2 mesh = null;
+
+                                    foreach(var mesh_ in characterMeshes)
+                                    {
+                                        if (mesh_ == null || mesh_.name != meshName) continue;
+                                        mesh = mesh_;
+                                        break;
+                                    }
+
+                                    if (mesh != null && !ReferenceEquals(mesh, characterMesh)) additionalMeshes.Add(mesh);
+                                }
+
+                                if (additionalMeshes.Count > 0)
+                                {
+                                    controlGroupsManager.SetAdditionalMeshes(additionalMeshes.ToArray());
+                                }
+                            }
+
+                            finalWork.Add(SetAdditionalMeshes);  
+                        }
                     }
 
                     #endregion
@@ -3507,6 +3587,9 @@ namespace Swole.Morphing
                 {
                     characterMeshesCollection.AddToCollection(characterMesh.name, characterMesh);
                 }
+
+                foreach (var act in finalWork) act.Invoke();
+                finalWork.Clear();
             }
 
             if (ikBonesToFloat != null)
