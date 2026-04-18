@@ -1085,7 +1085,7 @@ namespace Swole
                     {
                         //weightValues.Add(vg.GetEntryWeight(a) / (total.y >= 1.99f ? total.x : 1f)); // only divide by total if there was more than one contributor to the weight at this index
                         weightValues.Add(total.y >= 1.99f ? (vg.GetEntryWeight(a) / total.x): vg.GetEntryWeight(a)); // only divide by total if there was more than one contributor to the weight at this index
-                    }
+                    } 
                 }
 
                 vg.Clear();

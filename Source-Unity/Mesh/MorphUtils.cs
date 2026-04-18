@@ -344,8 +344,8 @@ namespace Swole.Morphing
                                                 continue;
                                             }
 
-                                            Debug.DrawRay(vertex, Vector3.up * 0.001f, Color.cyan, 500f);
-                                            Debug.DrawLine(vertex, baseVertices[closestVertex], Color.red, 500f);    
+                                            //Debug.DrawRay(vertex, Vector3.up * 0.001f, Color.cyan, 500f);
+                                            //Debug.DrawLine(vertex, baseVertices[closestVertex], Color.red, 500f);    
 
                                             boneWeightIndex += bpv;
 
@@ -495,7 +495,7 @@ namespace Swole.Morphing
             {
                 if (baseVertices == null) baseVertices = baseMesh.vertices;
 
-                if (vertices == null) vertices = mesh.vertices;
+                if (vertices == null) vertices = mesh.vertices; 
 
                 for (int a = 0; a < vertices.Length; a++)
                 {
@@ -516,6 +516,9 @@ namespace Swole.Morphing
 
                     if (closestVertex < 0) continue;
 
+                    //Debug.DrawRay(vertex, Vector3.up * 0.001f, Color.cyan, 500f);
+                    //Debug.DrawLine(vertex, baseVertices[closestVertex], Color.red, 500f); 
+
                     foreach (var vg in vertexGroups)
                     {
                         if (nonSeamMergable != null && nonSeamMergable.Contains(vg.name)) continue;
@@ -525,12 +528,13 @@ namespace Swole.Morphing
                             if (vg.name != baseVG.name) continue;
 
                             float baseWeight = baseVG.GetWeight(closestVertex);
-                            if (baseWeight == 0)
+                            if (baseWeight == 0f)
                             {
                                 vg.RemoveWeight(a);
                             }
                             else
                             {
+                                Debug.Log($"{baseMesh.name} -> {mesh.name} [{vg.name}] {vg.GetWeight(a)} -> {baseWeight}"); 
                                 vg.SetWeight(a, baseWeight);
                             }
 

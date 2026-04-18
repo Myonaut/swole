@@ -743,7 +743,7 @@ namespace Swole.Morphing
 
             if (tempIndexRemapper == null) tempIndexRemapper = new Dictionary<int, int>();
 
-            if (tempUVTransfers == null) tempUVTransfers = new Dictionary<int, UVTransferData>();
+            if (tempUVTransfers == null) tempUVTransfers = new Dictionary<int, UVTransferData>(); 
 
             #endregion
 
@@ -2278,7 +2278,7 @@ namespace Swole.Morphing
                         {
                             tempMeshShapes.Clear();
                             outputDatas[baseMeshIndex].GetShapes(tempMeshShapes);
-                            MergeMeshShapesAtSeam(mainMesh, meshObjects[baseMeshIndex].mainMesh, seamShapes[0], finalMeshShapes, tempMeshShapes, nonSeamMergableBlendShapes);
+                            MergeMeshShapesAtSeam(mainMesh, outputDatas[baseMeshIndex].SerializedData.Mesh, seamShapes[0], finalMeshShapes, tempMeshShapes, nonSeamMergableBlendShapes);
                         }
 
                         #endregion
@@ -2611,7 +2611,7 @@ namespace Swole.Morphing
                         {
                             tempVertexGroups.Clear();
                             outputDatas[baseMeshIndex].GetVertexGroups(tempVertexGroups); 
-                            MergeVertexGroupsAtSeam(mainMesh, meshObjects[baseMeshIndex].mainMesh, seamShapes[0], finalVertexGroups, tempVertexGroups, nonSeamMergableBlendShapes);
+                            MergeVertexGroupsAtSeam(mainMesh, outputDatas[baseMeshIndex].SerializedData.Mesh, seamShapes[0], finalVertexGroups, tempVertexGroups, nonSeamMergableBlendShapes);
                         }
 
                         #endregion
@@ -2961,7 +2961,7 @@ namespace Swole.Morphing
                             {
                                 var baseMesh_ = meshObjects[baseMeshIndex].mainMesh;
                                 var localUV_ = outputMeshMain.GetUVsByChannelV4((int)objectSetup.deltaNormalsStoreUV.uvChannel);
-                                var baseUV_ = baseMesh_.GetUVsByChannelV4((int)meshObjects[baseMeshIndex].deltaNormalsStoreUV.uvChannel); 
+                                var baseUV_ = baseMesh_.GetUVsByChannelV4((int)meshObjects[baseMeshIndex].deltaNormalsStoreUV.uvChannel);  
 
                                 var localNormals = outputMeshMain.normals;
                                 var baseNormals = baseMesh_.normals;

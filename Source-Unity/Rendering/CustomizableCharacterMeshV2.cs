@@ -5583,9 +5583,12 @@ namespace Swole.Morphing
         protected override void OnAwake()
         {
 
-            autoCreateInstance = false;
+            autoCreateInstance = false; 
 
             base.OnAwake();
+
+            bones = Bones; // force init bones
+            skinnedBones = SkinnedBones; // force init skinned bones
 
             if (data != null) SetData(data);
 
@@ -6786,9 +6789,9 @@ namespace Swole.Morphing
             {
                 if (rigRoot == null)
                 {
-                    if (avatar != null && !string.IsNullOrWhiteSpace(avatar.rigContainer))
+                    if (avatar != null && !string.IsNullOrWhiteSpace(avatar.rigContainer)) 
                     {
-                        rigRoot = (transform.parent == null ? transform : transform.parent).FindDeepChildLiberal(avatar.rigContainer);
+                        rigRoot = (transform.parent == null ? transform : transform.parent).FindDeepChildLiberal(avatar.rigContainer); 
                     }
 
                     if (rigRoot == null) rigRoot = transform.parent == null ? transform : transform.parent;
