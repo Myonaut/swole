@@ -593,7 +593,19 @@ namespace Swole.API.Unity
                 instance.standardFlexers.Remove(flexerIndex);
                 instance.preIkFlexers.Remove(flexerIndex);
 
-                instance.flexers.Remove(flexer); // wait until after so job index changes are applied to the flexer still
+                instance.flexers.RemoveAt(flexerIndex); // wait until after so job index changes are applied to the flexer still
+                for(int a = 0; a < instance.standardFlexers.Count; a++)
+                {
+                    var index = instance.standardFlexers[a];
+                    if (index >= flexerIndex) index = index - 1;
+                    instance.standardFlexers[a] = index;
+                }
+                for (int a = 0; a < instance.preIkFlexers.Count; a++)
+                {
+                    var index = instance.preIkFlexers[a];
+                    if (index >= flexerIndex) index = index - 1;
+                    instance.preIkFlexers[a] = index;
+                }
             }
             return flag;
         }
@@ -847,6 +859,8 @@ namespace Swole.API.Unity
                 var indexList = preIk ? preIkFlexers : standardFlexers;
                 foreach (var flexerIndex in indexList)
                 {
+                    //if (flexerIndex < 0 || flexerIndex >= flexers.Count) continue;
+
                     var flexer = flexers[flexerIndex];
                     if (flexer == null || flexer.autoFlexers == null) continue;
 

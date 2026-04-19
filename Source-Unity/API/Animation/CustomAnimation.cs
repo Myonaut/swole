@@ -1847,6 +1847,7 @@ namespace Swole.API.Unity.Animation
                     {
                         var curveInfo = animation.propertyAnimationCurves[a];
                         var state = GetPropertyState(curveInfo, animation, m_animator, false);
+                        if (state == null) continue;
 
                         float weight = !mask.IsValid ? 1f : mask.GetProperty(state.ID, 0f, false).weight; 
                         invertedMask.propertyMask.Add(new WeightedAvatarMask.WeightedEntry()
@@ -1961,6 +1962,7 @@ namespace Swole.API.Unity.Animation
                     {
                         var curveInfo = animation.propertyAnimationCurves[a];
                         var state = GetPropertyState(curveInfo, m_animation, m_animator, true);
+                        if (state == null) continue;
 
                         float weight = 0f;
                         if (this.topMask.IsValid || this.currentMask.IsValid)

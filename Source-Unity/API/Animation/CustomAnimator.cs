@@ -2150,17 +2150,20 @@ namespace Swole.API.Unity.Animation
 
             string propertyId = GetPropertyId(component, memberPath);
 
-            if (!m_propertyStates.TryGetValue(propertyId, out PropertyState state))
+            if (!m_propertyStates.TryGetValue(propertyId, out PropertyState state)) 
             {
-
-                BindComponent(propertyId, component);
-
                 bool isDynamic = false;
                 if (component is DynamicAnimationProperties dap)
                 {
+                    int dynamicPropertyIndex = dap.IndexOf(memberPath);
+                    if (dynamicPropertyIndex < 0) 
+                    { 
+                        swole.LogError($"Invalid dynamic property '{memberPath}' for component '{dap.name}'");
+                        return null;
+                    }
+
                     state = new PropertyState(memberPath);
-                    state.index = dap.IndexOf(memberPath);
-                    if (state.index < 0) swole.LogError($"Invalid dynamic property '{memberPath}' for component '{dap.name}'");  
+                    state.index = dynamicPropertyIndex;
 
                     isDynamic = true;
                 } 
@@ -2169,6 +2172,7 @@ namespace Swole.API.Unity.Animation
                     state = new PropertyState(memberPath, GetFieldOrProperty(component, memberPath));
                 }
 
+                BindComponent(propertyId, component);
 
                 m_propertyStates[propertyId] = state;
                 if (isDynamic)

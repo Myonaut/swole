@@ -1,12 +1,19 @@
-#if (UNITY_STANDALONE || UNITY_EDITOR)
+#if UNITY_2017_1_OR_NEWER
 
 using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.IO;
+using System.Reflection;
 
 using UnityEngine;
 using UnityEngine.UI;
+using Unity.Collections;
+using System.Runtime.CompilerServices;
+using System.Runtime.InteropServices;
+
+
+
 
 #if UNITY_EDITOR
 using UnityEditor;
@@ -373,6 +380,84 @@ namespace Swole
             return clone;
         }
 #endif
+
+        public static long PrintNativeAllocationSizes(string name, object instance, List<object> refList = null, bool printTotal = true)
+        {
+            if (instance == null) return 0;
+
+            if (printTotal) Debug.Log($"######### PRINTING NATIVE ALLOCATIONS FOR {name}");
+
+            long total = 0;
+
+            if (refList == null) refList = new List<object>();
+            refList.Add(instance);
+
+            var fields = instance.GetType().GetFields(BindingFlags.Instance |
+                                                 BindingFlags.Public |
+                                                 BindingFlags.NonPublic);
+
+            foreach (var field in fields)
+            {
+                var fieldType = field.FieldType;
+                var fieldVal = field.GetValue(instance);
+                if (!typeof(IDisposable).IsAssignableFrom(fieldType) || !typeof(IEnumerable).IsAssignableFrom(fieldType))
+                {
+                    if (fieldType.IsClass)
+                    {
+                        bool flag = true;
+                        foreach (var ref_ in refList)
+                        {
+                            if (ReferenceEquals(fieldVal, ref_))
+                            {
+                                flag = false;
+                                break;
+                            }
+                        }
+
+                        if (flag && !ReferenceEquals(fieldVal, null)) total += PrintNativeAllocationSizes($"{name}.{field.Name}", fieldVal, refList, false);
+                    }
+
+                    continue;
+                }
+
+                Type underlyingType = null;
+                if (fieldType.IsGenericType)
+                {
+                    underlyingType = fieldType.GetGenericArguments()[0];
+                }
+                if (underlyingType == null) continue;
+
+                int elementSize = Marshal.SizeOf(underlyingType);
+
+                try
+                {
+
+                    var subProps = fieldType.GetProperties(BindingFlags.Public | BindingFlags.Instance);
+                    foreach (var prop in subProps)
+                    {
+                        if (prop.Name != "Length") continue;
+
+                        int length = (int)prop.GetValue(fieldVal);
+
+                        long byteSize = elementSize * length;
+                        Debug.Log($"{name}.{field.Name}[length:{length}] -> ({((byteSize / 1024.0) / 1024.0).ToString("#.##")} mb) ({byteSize} bytes)");
+
+                        total += byteSize;
+                        break;
+                    }
+
+                }
+                catch (Exception ex)
+                {
+                    Debug.LogError($"Error accessing native container: {field.Name} for {name}"); 
+                    Debug.LogException(ex);
+                }
+            } 
+
+            if (printTotal) Debug.Log($"{name} TOTAL: ({((total / 1024.0) / 1024.0).ToString("#.##")} mb) ({total} bytes)");
+            if (printTotal) Debug.Log("##################");
+            return total;
+        }
 
     }
 

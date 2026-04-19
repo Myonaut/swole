@@ -1254,10 +1254,10 @@ namespace Swole.Morphing
 
                 try
                 {
-                    if (variationGroupVertexDeltasLR.IsCreated)
+                    if (variationVertexDeltas.IsCreated)
                     {
-                        variationGroupVertexDeltasLR.Dispose();
-                        variationGroupVertexDeltasLR = default;
+                        variationVertexDeltas.Dispose();
+                        variationVertexDeltas = default;
                     }
                 }
                 catch (Exception ex)
@@ -1623,7 +1623,6 @@ namespace Swole.Morphing
             private NativeList<GroupControlWeight2> variationGroupControlWeights;
             private NativeArray<GroupVertexControlWeight> variationGroupVertexWeights;
             private NativeArray<GroupControlWeight2> blankVariationGroupControlWeights;
-            private NativeList<MeshVertexDeltaLR> variationGroupVertexDeltasLR;
 
             public void SetVariationGroupWeightUnsafe(int instanceIndex, int shapeIndex, int groupIndex, float2 variationWeight)
             {
@@ -1646,6 +1645,9 @@ namespace Swole.Morphing
             {
                 return GetVariationGroupWeightUnsafe(instanceIndex, variationIndex % data.VariationShapesCount, variationIndex / data.VariationShapesCount);
             }
+
+            private NativeList<MeshVertexDelta> variationVertexDeltas;
+            public NativeList<MeshVertexDelta> VariationVertexDeltas => variationVertexDeltas;
 
             private NativeList<MeshVertexDelta> finalVertexDeltas;
             public NativeList<MeshVertexDelta> FinalVertexDeltas => finalVertexDeltas;
@@ -1740,6 +1742,7 @@ namespace Swole.Morphing
                         bustSizes = bustSizes,
                         bustNerfVertexGroupIndex = data.bustNerfVertexGroup,
                         vertexGroups = vertexGroups,
+                        controlGroupCount = data.FatGroupsCount,
 
                         vertexDeltas = fatGroupVertexDeltasLR,
                         fatData = fatGroupVertexDataLR
@@ -1785,6 +1788,7 @@ namespace Swole.Morphing
                         bustSizes = bustSizes,
                         bustNerfVertexGroupIndex = data.bustNerfVertexGroup,
                         vertexGroups = vertexGroups,
+                        controlGroupCount = data.MuscleGroupsCount,
 
                         fatMuscleBlendShapeIndex = fatMuscleBlendShapeInfo,
                         fatValuesPerVertex = fatValuesPerVertex,
@@ -1814,7 +1818,6 @@ namespace Swole.Morphing
                 }
 
                 JobHandle variationUpdateHandle = default;
-                int variationCombinedVertexCount = variationGroupVertexWeights.Length * data.VariationShapesCount;
                 if (indicesToVariationUpdate.Length > 0)
                 {
                     foreach (var index in indicesToVariationUpdate)
@@ -1825,69 +1828,76 @@ namespace Swole.Morphing
                             insertionFlags[index] = true;
                         }
                     }
-
-                    variationUpdateHandle = new UpdateMeshVariationVertexDeltasJob()
-                    {
-                        vertexCount = data.vertexCount,
-                        combinedVertexCount = variationCombinedVertexCount,
-                        meshIndicesToUpdate = indicesToVariationUpdate,
-                        meshShapeDeltas = meshShapeDeltas,
-                        meshShapeFrameWeights = meshShapeFrameWeights,
-                        meshShapeIndices = meshShapeInfos,
-                        variationGroupControlWeights = variationGroupControlWeights,
-                        variationGroupVertexWeights = variationGroupVertexWeights,
-
-                        variationShapesCount = data.VariationShapesCount,
-                        variationShapesStartIndex = data.variationShapes.x,
-
-                        vertexDeltas = variationGroupVertexDeltasLR
-                    }.Schedule(variationCombinedVertexCount * indicesToVariationUpdate.Length, 1, default);
                 }
 
                 if (indicesToUpdate.Length > 0)
                 {
                     //Debug.Log($"Updating {indicesToUpdate.Length} meshes");
 
-                    JobHandle resetHandle = new ResetFinalVertexDeltasJob()
+                    JobHandle resetHandle = default;
+                    if (indicesToVariationUpdate.Length > 0)
                     {
+                        resetHandle = new ResetFinalVertexDeltasJob()
+                        {
+                            finalVertexDeltas = variationVertexDeltas,
+                            meshIndicesToUpdate = indicesToVariationUpdate,
+                            vertexCount = data.vertexCount
+                        }.Schedule(indicesToVariationUpdate.Length * data.vertexCount, 64, resetHandle); // variation deltas are treated seperately from physique and only update when a variation group control weight is changed (which is supposed to be very rare)
+
+                        resetHandle = JobHandle.CombineDependencies(resetHandle, variationUpdateHandle);
+
+                        int variationControlGroupCount = data.VariationGroupsCount * data.VariationShapesCount;
+                        for (int a = 0; a < data.VariationGroupsCount; a++) // Variation
+                        {
+                            var groupInfo = variationGroupControlWeights[a * data.VariationShapesCount]; // we only need the vertexCount and vertexSequenceStartIndex from this data, which is the same for every variation shape, so we can safely use the first shape info of each group
+                            int indexCount = groupInfo.vertexCount * indicesToVariationUpdate.Length;
+                            for (int b = 0; b < data.VariationShapesCount; b++)
+                            {
+                                //var groupInfo = variationGroupControlWeights[(a * data.VariationShapesCount) + b]; // see above comment
+                                resetHandle = new UpdateMeshVariationVertexDeltasJob()
+                                {
+                                    groupIndex = a,
+                                    shapeIndex = b,
+                                    controlIndex = ((a * data.VariationShapesCount) + b),
+
+                                    groupEntryCount = groupInfo.vertexCount,
+
+                                    vertexCount = data.vertexCount,
+                                    vertexGroups = vertexGroups,
+
+                                    meshIndicesToUpdate = indicesToVariationUpdate,
+                                    meshShapeDeltas = meshShapeDeltas,
+                                    meshShapeFrameWeights = meshShapeFrameWeights,
+                                    meshShapeIndices = meshShapeInfos,
+                                    variationGroupControlWeights = variationGroupControlWeights,
+                                    variationGroupVertexWeights = variationGroupVertexWeights,
+
+                                    variationShapesCount = data.VariationShapesCount,
+                                    variationShapesStartIndex = data.variationShapes.x,
+                                    controlGroupCount = variationControlGroupCount,
+
+                                    leftRightFlagBuffer = leftRightFlagBuffer,
+                                    midlineVertexGroupIndexPreMul = midlineVertexGroupPreMul,
+
+                                    finalVertexDeltas = variationVertexDeltas
+                                }.Schedule(groupInfo.vertexCount * indicesToVariationUpdate.Length, 1, resetHandle);  
+                            }
+                        }
+                    }
+
+                    JobHandle finalizeHandle = JobHandle.CombineDependencies(resetHandle, physiqueUpdateHandle);
+
+                    finalizeHandle = new ResetFinalVertexDeltasToTargetDeltasJob()
+                    {
+                        targetVertexDeltas = variationVertexDeltas,
                         finalVertexDeltas = finalVertexDeltas,
                         meshIndicesToUpdate = indicesToUpdate,
                         vertexCount = data.vertexCount
-                    }.Schedule(indicesToUpdate.Length * data.vertexCount, 64, default); 
+                    }.Schedule(indicesToUpdate.Length * data.vertexCount, 64, finalizeHandle); // use variation deltas as reset base
 
-                    JobHandle finalizeHandle = JobHandle.CombineDependencies(resetHandle, JobHandle.CombineDependencies(physiqueUpdateHandle, variationUpdateHandle));
-                    //if (indicesToVariationUpdate.Length > 0)
-                    //{
-                        for (int a = 0; a < data.VariationGroupsCount; a++) // Variation
-                        {
-                            var groupInfo = variationGroupControlWeights[a * data.VariationShapesCount]; // we only need the vertexCount and vertexSequenceStartIndex from this data, which is the same for every shape, so we can safely use the first shape info of each group
-                            int indexCount = groupInfo.vertexCount * indicesToUpdate.Length;//indicesToVariationUpdate.Length;
-                            for (int b = 0; b < data.VariationShapesCount; b++)
-                            {
-                                //var groupInfo = variationGroupControlWeights[(a * data.VariationShapesCount) + b];
-                                finalizeHandle = new ApplyGroupVertexDeltasWithIndexGroupsJob()
-                                {
-                                    groupInfo = groupInfo,
-                                    meshVertexCount = data.vertexCount,
-                                    combinedVertexCount = variationCombinedVertexCount,
-                                    vertexGroups = vertexGroups,
-                                    groupVertexWeights = variationGroupVertexWeights,
-                                    leftRightFlagBuffer = leftRightFlagBuffer,
-                                    meshIndicesToUpdate = indicesToUpdate,//indicesToVariationUpdate,
-                                    vertexDeltasLR = variationGroupVertexDeltasLR,
-                                    midlineVertexGroupIndexPreMul = midlineVertexGroupPreMul,
-
-                                    indexOffset = b,
-                                    indexGroupSize = data.VariationShapesCount,
-
-                                    finalVertexDeltas = finalVertexDeltas
-                                }.Schedule(indexCount/*groupInfo.vertexCount * indicesToVariationUpdate.Length*/, 1, finalizeHandle);
-                            }
-                        }
-                    //}
                     //if (indicesToPhysiqueUpdate.Length > 0)
                     //{
-                        for (int a = 0; a < data.FatGroupsCount; a++) // Fat
+                    for (int a = 0; a < data.FatGroupsCount; a++) // Fat
                         {
                             var groupInfo = fatGroupControlWeights[a];
                             finalizeHandle = new ApplyGroupVertexDeltasJob()
@@ -1945,7 +1955,7 @@ namespace Swole.Morphing
                              
 
                             finalVertexDeltas = finalVertexDeltas
-                        }.Schedule(data.vertexCount * indicesToUpdate.Length, 1, finalizeHandle);
+                        }.Schedule(data.vertexCount * indicesToUpdate.Length, 1, finalizeHandle); 
 
                     }
 
@@ -1987,7 +1997,8 @@ namespace Swole.Morphing
                 bustSizes = new NativeList<float2>(maxInstanceCount, Allocator.Persistent);
                 bustSizes.AddReplicated(0f, maxInstanceCount);
 
-                data.TryPrecache();
+                //data.TryPrecache();
+                data.Precache(); // only precaches what isn't already 
                 bool isPrecached = data.IsPrecached;
                 if (!isPrecached)
                 {
@@ -2000,7 +2011,7 @@ namespace Swole.Morphing
 
 #if UNITY_EDITOR
                 Debug.Log($"CHECKING DATA FOR {debug}");
-                for(int a = data.standaloneShapes.x; a <= data.standaloneShapes.y; a++)
+                for(int a = data.standaloneShapes.x; a <= data.standaloneShapes.y; a++) 
                 {
                     var shape = data.GetShape(a);
                     if (shape == null)
@@ -2039,120 +2050,19 @@ namespace Swole.Morphing
                     }
                 }
 #endif
+                meshShapeDeltas = new NativeArray<MeshVertexDelta>(data.precache_meshShapeDeltas, Allocator.Persistent);
+                meshShapeInfos = new NativeArray<int2>(data.precache_meshShapeInfos, Allocator.Persistent);
+                meshShapeFrameWeights = new NativeArray<float>(data.precache_meshShapeFrameWeights, Allocator.Persistent);
 
-                if (isPrecached)
-                {
-                    meshShapeDeltas = new NativeArray<MeshVertexDelta>(data.precache_meshShapeDeltas, Allocator.Persistent);
-                    meshShapeInfos = new NativeArray<int2>(data.precache_meshShapeInfos, Allocator.Persistent);
-                    meshShapeFrameWeights = new NativeArray<float>(data.precache_meshShapeFrameWeights, Allocator.Persistent);
-
-                    vertexGroups = new NativeArray<float>(data.precache_vertexGroups, Allocator.Persistent);
-                } 
-                else
-                {
-                    meshShapeDeltas = new NativeArray<MeshVertexDelta>(data.MeshShapeDeltasCount, Allocator.Persistent);
-                    meshShapeInfos = new NativeArray<int2>(data.MeshShapeCount, Allocator.Persistent);
-                    if (data.meshShapes != null)
-                    {
-                        int ind = 0;
-                        int frameInd = 0;
-                        for (int i = 0; i < data.meshShapes.Length; i++)
-                        {
-                            var shape = data.meshShapes[i];
-
-                            if (shape == null) continue;
-
-                            meshShapeInfos[i] = new int2(frameInd, shape.frames == null ? 0 : shape.frames.Length); // x = start index in frame weights buffer, y = frame count
-
-                            if (shape.frames == null) continue;
-
-                            for (int j = 0; j < shape.frames.Length; j++)
-                            {
-                                var frame = shape.frames[j];
-                                tempFloats.Add(frame.weight);
-                                frameInd++;
-
-                                if (frame.deltas == null)
-                                {
-                                    ind += data.vertexCount;
-                                    continue;
-                                }
-
-                                int subCount = Mathf.Min(data.vertexCount, frame.deltas.Length);
-                                for (int k = 0; k < subCount; k++)
-                                {
-                                    meshShapeDeltas[ind] = frame.deltas[k];
-                                    ind++;
-                                }
-
-                                ind += data.vertexCount - subCount;
-
-                            }
-                        }
-                    }
-                    meshShapeFrameWeights = new NativeArray<float>(tempFloats.ToArray(), Allocator.Persistent);
-
-                    vertexGroups = new NativeArray<float>(data.VertexGroupCount * data.vertexCount, Allocator.Persistent);
-                    if (data.vertexGroups != null)
-                    {
-                        for (int i = 0; i < data.vertexGroups.Length; i++)
-                        {
-                            var group = data.vertexGroups[i];
-                            if (group == null) continue;
-
-                            group.InsertIntoNativeArray(vertexGroups, i * data.vertexCount);
-                        }
-                    }
-                }
+                vertexGroups = new NativeArray<float>(data.precache_vertexGroups, Allocator.Persistent);
 
                 leftRightFlagBuffer = new NativeArray<bool>(data.leftRightFlags, Allocator.Persistent);
 
 
                 #region Init Muscle Groups
 
-                if (isPrecached)
-                {
-                    blankMuscleGroupControlWeights = new NativeArray<GroupControlWeight2>(data.precache_blankMuscleGroupControlWeights, Allocator.Persistent);
-                    muscleGroupVertexWeights = new NativeArray<GroupVertexControlWeight>(data.precache_muscleGroupVertexWeights, Allocator.Persistent);
-                } 
-                else
-                {
-                    tempGroupControlWeights.Clear();
-                    tempGroupVertexWeights.Clear();
-                    if (data.muscleGroups.y >= data.muscleGroups.x)
-                    {
-                        for (int g = data.muscleGroups.x; g <= data.muscleGroups.y; g++)
-                        {
-                            int localGroupIndex = g - data.muscleGroups.x;
-                            var vertexGroup = data.vertexGroups[g];
-                            int weightsStartIndex = tempGroupVertexWeights.Count;
-                            tempGroupControlWeights.Add(new GroupControlWeight2()
-                            {
-                                groupIndex = localGroupIndex,
-                                vertexCount = vertexGroup.EntryCount,
-                                vertexSequenceStartIndex = weightsStartIndex,
-                                weight = 0f
-                            });
-
-                            for (int i = 0; i < vertexGroup.EntryCount; i++)
-                            {
-                                vertexGroup.GetEntry(i, out int vertexIndex, out float vertexWeight);
-#if UNITY_EDITOR
-                                if (vertexWeight > 1.001f) Debug.LogWarning($"Vertex index {vertexIndex} for muscle group {vertexGroup.name} has weight of {vertexWeight}");
-#endif
-                                tempGroupVertexWeights.Add(new GroupVertexControlWeight()
-                                {
-                                    groupIndex = localGroupIndex,
-                                    vertexIndex = vertexIndex,
-                                    weight = vertexWeight
-                                });
-                            }
-                        }
-                    }
-
-                    blankMuscleGroupControlWeights = new NativeArray<GroupControlWeight2>(tempGroupControlWeights.ToArray(), Allocator.Persistent);
-                    muscleGroupVertexWeights = new NativeArray<GroupVertexControlWeight>(tempGroupVertexWeights.ToArray(), Allocator.Persistent);
-                }
+                blankMuscleGroupControlWeights = new NativeArray<GroupControlWeight2>(data.precache_blankMuscleGroupControlWeights, Allocator.Persistent);
+                muscleGroupVertexWeights = new NativeArray<GroupVertexControlWeight>(data.precache_muscleGroupVertexWeights, Allocator.Persistent);
 
                 muscleGroupControlWeights = new NativeList<GroupControlWeight2>(blankMuscleGroupControlWeights.Length * maxInstanceCount, Allocator.Persistent);
                 muscleGroupControlWeightsNext = new NativeList<GroupControlWeight2>(blankMuscleGroupControlWeights.Length * maxInstanceCount, Allocator.Persistent);
@@ -2177,46 +2087,8 @@ namespace Swole.Morphing
 
                 #region Init Fat Groups
 
-                if (isPrecached)
-                {
-                    blankFatGroupControlWeights = new NativeArray<GroupControlWeight2>(data.precache_blankFatGroupControlWeights, Allocator.Persistent);
-                    fatGroupVertexWeights = new NativeArray<GroupVertexControlWeight>(data.precache_fatGroupVertexWeights, Allocator.Persistent);
-                } 
-                else
-                {
-                    tempGroupControlWeights.Clear();
-                    tempGroupVertexWeights.Clear();
-                    if (data.fatGroups.y >= data.fatGroups.x)
-                    {
-                        for (int g = data.fatGroups.x; g <= data.fatGroups.y; g++)
-                        {
-                            int localGroupIndex = g - data.fatGroups.x;
-                            var vertexGroup = data.vertexGroups[g];
-                            tempGroupControlWeights.Add(new GroupControlWeight2()
-                            {
-                                groupIndex = localGroupIndex,
-                                vertexCount = vertexGroup.EntryCount,
-                                vertexSequenceStartIndex = tempGroupVertexWeights.Count,
-                                weight = new float2(0f, 0f) // TODO: Apply fat muscle modifier value to y component
-                            });
-
-                            for (int i = 0; i < vertexGroup.EntryCount; i++)
-                            {
-                                vertexGroup.GetEntry(i, out int vertexIndex, out float vertexWeight);
-
-                                tempGroupVertexWeights.Add(new GroupVertexControlWeight()
-                                {
-                                    groupIndex = localGroupIndex,
-                                    vertexIndex = vertexIndex,
-                                    weight = vertexWeight
-                                });
-                            }
-                        }
-                    }
-
-                    blankFatGroupControlWeights = new NativeArray<GroupControlWeight2>(tempGroupControlWeights.ToArray(), Allocator.Persistent);
-                    fatGroupVertexWeights = new NativeArray<GroupVertexControlWeight>(tempGroupVertexWeights.ToArray(), Allocator.Persistent);
-                }
+                blankFatGroupControlWeights = new NativeArray<GroupControlWeight2>(data.precache_blankFatGroupControlWeights, Allocator.Persistent);
+                fatGroupVertexWeights = new NativeArray<GroupVertexControlWeight>(data.precache_fatGroupVertexWeights, Allocator.Persistent);
 
                 fatGroupControlWeights = new NativeList<GroupControlWeight2>(blankFatGroupControlWeights.Length * maxInstanceCount, Allocator.Persistent);
                 fatGroupControlWeightsNext = new NativeList<GroupControlWeight2>(blankFatGroupControlWeights.Length * maxInstanceCount, Allocator.Persistent);
@@ -2240,51 +2112,9 @@ namespace Swole.Morphing
                 #endregion
 
                 #region Init Variation Groups
-
-                if (isPrecached)
-                {
-                    blankVariationGroupControlWeights = new NativeArray<GroupControlWeight2>(data.precache_blankVariationGroupControlWeights, Allocator.Persistent);
-                    variationGroupVertexWeights = new NativeArray<GroupVertexControlWeight>(data.precache_variationGroupVertexWeights, Allocator.Persistent);
-                } 
-                else
-                {
-                    tempGroupControlWeights.Clear();
-                    tempGroupVertexWeights.Clear();
-                    if (data.variationGroups.y >= data.variationGroups.x)
-                    {
-                        for (int g = data.variationGroups.x; g <= data.variationGroups.y; g++)
-                        {
-                            int localGroupIndex = g - data.variationGroups.x;
-                            var vertexGroup = data.vertexGroups[g];
-
-                            for (int s = data.variationShapes.x; s <= data.variationShapes.y; s++)
-                            {
-                                tempGroupControlWeights.Add(new GroupControlWeight2()
-                                {
-                                    groupIndex = (localGroupIndex * data.VariationShapesCount) + s,
-                                    vertexCount = vertexGroup.EntryCount,
-                                    vertexSequenceStartIndex = tempGroupVertexWeights.Count,
-                                    weight = 0f
-                                });
-                            }
-
-                            for (int i = 0; i < vertexGroup.EntryCount; i++)
-                            {
-                                vertexGroup.GetEntry(i, out int vertexIndex, out float vertexWeight);
-
-                                tempGroupVertexWeights.Add(new GroupVertexControlWeight()
-                                {
-                                    groupIndex = localGroupIndex,
-                                    vertexIndex = vertexIndex,
-                                    weight = vertexWeight
-                                });
-                            }
-                        }
-                    }
-
-                    blankVariationGroupControlWeights = new NativeArray<GroupControlWeight2>(tempGroupControlWeights.ToArray(), Allocator.Persistent);
-                    variationGroupVertexWeights = new NativeArray<GroupVertexControlWeight>(tempGroupVertexWeights.ToArray(), Allocator.Persistent);
-                }
+                
+                blankVariationGroupControlWeights = new NativeArray<GroupControlWeight2>(data.precache_blankVariationGroupControlWeights, Allocator.Persistent);
+                variationGroupVertexWeights = new NativeArray<GroupVertexControlWeight>(data.precache_variationGroupVertexWeights, Allocator.Persistent);
 
                 variationGroupControlWeights = new NativeList<GroupControlWeight2>(blankVariationGroupControlWeights.Length * maxInstanceCount, Allocator.Persistent);
                 variationGroupControlWeightsNext = new NativeList<GroupControlWeight2>(blankVariationGroupControlWeights.Length * maxInstanceCount, Allocator.Persistent);
@@ -2293,15 +2123,15 @@ namespace Swole.Morphing
                     variationGroupControlWeights.AddRange(blankVariationGroupControlWeights);
                     variationGroupControlWeightsNext.AddRange(blankVariationGroupControlWeights);
                 }
-                int variationGroupDeltasCount = variationGroupVertexWeights.Length * data.VariationShapesCount * maxInstanceCount;
-                variationGroupVertexDeltasLR = new NativeList<MeshVertexDeltaLR>(variationGroupDeltasCount, Allocator.Persistent);
-                if (variationGroupDeltasCount > 0) variationGroupVertexDeltasLR.AddReplicated(MeshVertexDeltaLR.Default, variationGroupDeltasCount);
 
                 #endregion
 
                 int initialDeltasCount = data.vertexCount * maxInstanceCount;
                 finalVertexDeltas = new NativeList<MeshVertexDelta>(initialDeltasCount, Allocator.Persistent);
                 finalVertexDeltas.AddReplicated(MeshVertexDelta.Default, initialDeltasCount);
+
+                variationVertexDeltas = new NativeList<MeshVertexDelta>(initialDeltasCount, Allocator.Persistent);
+                variationVertexDeltas.AddReplicated(MeshVertexDelta.Default, initialDeltasCount); 
 
                 finalVertexDeltasBufferIndex = CreateInstanceMaterialBuffer<MeshVertexDelta>(data.PerVertexDeltaDataPropertyName, data.vertexCount, 3, true, out var finalVertexDeltasBuffer);
                 EnsureInstanceBufferSize(finalVertexDeltasBuffer);
@@ -2311,6 +2141,10 @@ namespace Swole.Morphing
                 initialized = true;
 
                 TrackDisposables();
+
+#if UNITY_EDITOR
+                //Utils.PrintNativeAllocationSizes($"MeshGroupV2 {debug}", this);
+#endif
             }
 
 #if UNITY_EDITOR
@@ -2353,9 +2187,9 @@ namespace Swole.Morphing
 
                     variationGroupControlWeights.AddRange(blankVariationGroupControlWeights);
                     variationGroupControlWeightsNext.AddRange(blankVariationGroupControlWeights);
-                    variationGroupVertexDeltasLR.AddReplicated(MeshVertexDeltaLR.Default, variationGroupVertexWeights.Length * data.VariationShapesCount);
 
                     finalVertexDeltas.AddReplicated(MeshVertexDelta.Default, data.vertexCount); // expand the vertex delta buffer
+                    variationVertexDeltas.AddReplicated(MeshVertexDelta.Default, data.vertexCount);
 
                     EnsureInstanceBufferSizes();
                 }
@@ -2458,6 +2292,8 @@ namespace Swole.Morphing
             /// </summary>
             public int combinedVertexCount;
 
+            public int controlGroupCount;
+
             public int bustNerfVertexGroupIndex;
 
             public int2 fatShapeIndex;
@@ -2498,7 +2334,8 @@ namespace Swole.Morphing
                 var localVertexSequenceIndex = vertexSequenceIndex - (meshIndexBufferIndex * combinedVertexCount);
                 var groupVertexWeight = fatGroupVertexWeights[localVertexSequenceIndex];
 
-                GroupControlWeight2 fatGroupControlData = fatGroupControlWeights[groupVertexWeight.groupIndex];
+                int fatGroupControlIndex = (meshIndex * controlGroupCount) + groupVertexWeight.groupIndex;
+                GroupControlWeight2 fatGroupControlData = fatGroupControlWeights[fatGroupControlIndex];
 
                 float bustNerfFactor = CalculateBustNerfFactor(bustSizes[meshIndex].x, vertexGroups, bustNerfVertexGroupIndex, vertexCount, groupVertexWeight.vertexIndex, 0.6f);
 
@@ -2635,6 +2472,8 @@ namespace Swole.Morphing
             /// </summary>
             public int combinedVertexCount;
 
+            public int controlGroupCount;
+
             public int bustNerfVertexGroupIndex;
 
             public int2 muscleShapeIndex;
@@ -2676,9 +2515,9 @@ namespace Swole.Morphing
             public NativeList<float2> muscleData;
 
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            public static MeshVertexDeltaLR CalculateMuscleVertexDelta(int groupIndex, float groupWeightAtIndex, int vertexIndex, int vertexCount, float minShapeMassWeight, float defaultShapeMassWeight, float muscleMassRange, int2 muscleShapeIndex, int2 fatMuscleBlendShapeIndex, NativeList<GroupControlWeight2> muscleGroupControlWeights, NativeArray<float> meshShapeFrameWeights, NativeArray<MeshVertexDelta> meshShapeDeltas, NativeList<float2> fatValuesPerVertex, out float2 muscleGroupMassWeight)
+            public static MeshVertexDeltaLR CalculateMuscleVertexDelta(int groupControlIndex, float groupWeightAtIndex, int vertexIndex, int vertexCount, float minShapeMassWeight, float defaultShapeMassWeight, float muscleMassRange, int2 muscleShapeIndex, int2 fatMuscleBlendShapeIndex, NativeList<GroupControlWeight2> muscleGroupControlWeights, NativeArray<float> meshShapeFrameWeights, NativeArray<MeshVertexDelta> meshShapeDeltas, NativeList<float2> fatValuesPerVertex, out float2 muscleGroupMassWeight)
             {
-                GroupControlWeight2 muscleGroupMass = muscleGroupControlWeights[groupIndex];
+                GroupControlWeight2 muscleGroupMass = muscleGroupControlWeights[groupControlIndex];
 
                 float2 fat = fatValuesPerVertex[vertexIndex];
 
@@ -2712,7 +2551,8 @@ namespace Swole.Morphing
                 var localVertexSequenceIndex = vertexSequenceIndex - (meshIndexBufferIndex * combinedVertexCount);
                 var groupVertexWeight = muscleGroupVertexWeights[localVertexSequenceIndex];
 
-                var deltas = CalculateMuscleVertexDelta(groupVertexWeight.groupIndex, groupVertexWeight.weight, groupVertexWeight.vertexIndex, vertexCount, minShapeMassWeight, defaultShapeMassWeight, muscleMassRange, muscleShapeIndex, fatMuscleBlendShapeIndex, muscleGroupControlWeights, meshShapeFrameWeights, meshShapeDeltas, fatValuesPerVertex, out var muscleGroupMassWeight);
+                int muscleGroupControlIndex = (meshIndex * controlGroupCount) + groupVertexWeight.groupIndex;
+                var deltas = CalculateMuscleVertexDelta(muscleGroupControlIndex, groupVertexWeight.weight, groupVertexWeight.vertexIndex, vertexCount, minShapeMassWeight, defaultShapeMassWeight, muscleMassRange, muscleShapeIndex, fatMuscleBlendShapeIndex, muscleGroupControlWeights, meshShapeFrameWeights, meshShapeDeltas, fatValuesPerVertex, out var muscleGroupMassWeight);
 
                 int bufferIndex = (meshIndex * combinedVertexCount) + localVertexSequenceIndex;
                 vertexDeltas[bufferIndex] = deltas;
@@ -2784,18 +2624,26 @@ namespace Swole.Morphing
         public struct UpdateMeshVariationVertexDeltasJob : IJobParallelFor
         {
 
-            public int vertexCount;
+            public int groupIndex;
+            public int shapeIndex;
+            public int controlIndex; // cached ((groupIndex * variationShapesCount) + shapeIndex)
 
-            /// <summary>
-            /// The combined vertex count for all variation groups and shapes
-            /// </summary>
-            public int combinedVertexCount;
+            public int groupEntryCount;
+
+            public int vertexCount;
 
             public int variationShapesStartIndex;
             public int variationShapesCount;
 
+            public int controlGroupCount;
+
+            public int midlineVertexGroupIndexPreMul;
+
             [ReadOnly]
             public NativeList<int> meshIndicesToUpdate;
+
+            [ReadOnly]
+            public NativeArray<float> vertexGroups;
 
             [ReadOnly]
             public NativeArray<MeshVertexDelta> meshShapeDeltas;
@@ -2813,30 +2661,34 @@ namespace Swole.Morphing
             [ReadOnly]
             public NativeArray<GroupVertexControlWeight> variationGroupVertexWeights;
 
+            [ReadOnly]
+            public NativeArray<bool> leftRightFlagBuffer;
+
             [NativeDisableParallelForRestriction]
-            public NativeList<MeshVertexDeltaLR> vertexDeltas;
+            public NativeList<MeshVertexDelta> finalVertexDeltas;
 
             public void Execute(int vertexSequenceIndex)
             {
-                int meshIndexBufferIndex = vertexSequenceIndex / combinedVertexCount;
+                int meshIndexBufferIndex = vertexSequenceIndex / groupEntryCount;
                 int meshIndex = meshIndicesToUpdate[meshIndexBufferIndex];
 
-                var localVertexSequenceIndex = vertexSequenceIndex - (meshIndexBufferIndex * combinedVertexCount);
-                var groupVertexBufferIndex = localVertexSequenceIndex / variationShapesCount;
-                var shapeIndex = localVertexSequenceIndex % variationShapesCount;
-                var groupVertexWeight = variationGroupVertexWeights[groupVertexBufferIndex];
+                int variationGroupControlIndexOffset = (meshIndex * controlGroupCount);
+                GroupControlWeight2 variationGroupControlWeight = variationGroupControlWeights[controlIndex + variationGroupControlIndexOffset];
 
-                GroupControlWeight2 variationGroupControlWeight = variationGroupControlWeights[(groupVertexWeight.groupIndex * variationShapesCount) + shapeIndex];
+                int localVertexSequenceIndex = vertexSequenceIndex - (meshIndexBufferIndex * groupEntryCount);
+                var groupVertexWeight = variationGroupVertexWeights[variationGroupControlWeight.vertexSequenceStartIndex + localVertexSequenceIndex]; 
+
+                int vertexIndex = groupVertexWeight.vertexIndex;
 
                 int2 variationShapeIndex = meshShapeIndices[variationShapesStartIndex + shapeIndex]; 
-                var shapeDeltaL = meshShapeDeltas.SampleDeltaShapeBuffer(groupVertexWeight.vertexIndex, meshShapeFrameWeights, variationShapeIndex.x, variationShapeIndex.y, variationGroupControlWeight.weight.x, vertexCount) * groupVertexWeight.weight;
-                var shapeDeltaR = meshShapeDeltas.SampleDeltaShapeBuffer(groupVertexWeight.vertexIndex, meshShapeFrameWeights, variationShapeIndex.x, variationShapeIndex.y, variationGroupControlWeight.weight.y, vertexCount) * groupVertexWeight.weight;
+                var shapeDeltaL = meshShapeDeltas.SampleDeltaShapeBuffer(vertexIndex, meshShapeFrameWeights, variationShapeIndex.x, variationShapeIndex.y, variationGroupControlWeight.weight.x, vertexCount) * groupVertexWeight.weight;
+                var shapeDeltaR = meshShapeDeltas.SampleDeltaShapeBuffer(vertexIndex, meshShapeFrameWeights, variationShapeIndex.x, variationShapeIndex.y, variationGroupControlWeight.weight.y, vertexCount) * groupVertexWeight.weight;
 
-                vertexDeltas[(meshIndex * combinedVertexCount) + localVertexSequenceIndex] = new MeshVertexDeltaLR()
-                {
-                    deltaLeft = shapeDeltaL,
-                    deltaRight = shapeDeltaR
-                };
+                float midlineWeight = vertexGroups[midlineVertexGroupIndexPreMul + vertexIndex];
+                float2 weightLeftRight = math.lerp(math.select(new float2(1f, 0f), new float2(0f, 1f), leftRightFlagBuffer[vertexIndex]), new float2(0.5f, 0.5f), midlineWeight);
+
+                int finalindex = (meshIndex * vertexCount) + vertexIndex;
+                finalVertexDeltas[finalindex] = finalVertexDeltas[finalindex] + (shapeDeltaL * weightLeftRight.x) + (shapeDeltaR * weightLeftRight.y);
             }
 
         }
@@ -2920,6 +2772,34 @@ namespace Swole.Morphing
 
                 int finalindex = vertexIndex + (meshIndex * vertexCount);
                 finalVertexDeltas[finalindex] = MeshVertexDelta.Default;
+            }
+
+        }
+
+        [BurstCompile]
+        public struct ResetFinalVertexDeltasToTargetDeltasJob : IJobParallelFor
+        {
+
+            public int vertexCount;
+
+            [ReadOnly]
+            public NativeList<int> meshIndicesToUpdate;
+
+            [NativeDisableParallelForRestriction]
+            public NativeList<MeshVertexDelta> targetVertexDeltas;
+
+            [NativeDisableParallelForRestriction]
+            public NativeList<MeshVertexDelta> finalVertexDeltas;
+
+            public void Execute(int vertexSequenceIndex)
+            {
+                int meshIndexBufferIndex = vertexSequenceIndex / vertexCount;
+                int meshIndex = meshIndicesToUpdate[meshIndexBufferIndex];
+
+                int vertexIndex = vertexSequenceIndex - (meshIndexBufferIndex * vertexCount);
+
+                int finalindex = vertexIndex + (meshIndex * vertexCount);
+                finalVertexDeltas[finalindex] = targetVertexDeltas[finalindex];
             }
 
         }
@@ -4634,7 +4514,7 @@ namespace Swole.Morphing
                         catch (Exception ex)
                         {
 #if UNITY_EDITOR
-                            Debug.LogException(ex);
+                            Debug.LogException(ex); 
 #endif
                         }
                     }
@@ -4864,6 +4744,7 @@ namespace Swole.Morphing
                 precache_muscleGroupInfluences = tempBoneWeights.ToArray();
 
                 tempBoneWeights.Clear();
+                tempWeights.Clear();
             }
 
             public void PrecacheFatGroupInfluences()
@@ -4914,6 +4795,7 @@ namespace Swole.Morphing
                 precache_fatGroupInfluences = tempBoneWeights.ToArray();
 
                 tempBoneWeights.Clear();
+                tempWeights.Clear();
             }
 
             [SerializeField, HideInInspector]
@@ -4985,15 +4867,15 @@ namespace Swole.Morphing
                 if (IsPrecached) return;
                 Precache();
             }
+            private static readonly List<GroupControlWeight2> tempGroupControlWeights = new List<GroupControlWeight2>();
+            private static readonly List<GroupVertexControlWeight> tempGroupVertexWeights = new List<GroupVertexControlWeight>();
             public void Precache()
             {
-                List<float> tempFloats = new List<float>();
-                List<GroupControlWeight2> tempGroupControlWeights = new List<GroupControlWeight2>();
-                List<GroupVertexControlWeight> tempGroupVertexWeights = new List<GroupVertexControlWeight>();
-
                 if (precache_meshShapeDeltas == null || precache_meshShapeDeltas.Length == 0 || precache_meshShapeInfos == null || precache_meshShapeInfos.Length == 0 || precache_meshShapeFrameWeights == null || precache_meshShapeFrameWeights.Length == 0)
                 {
                     Debug.Log("Pre-caching mesh shape data...");
+
+                    tempFloats.Clear();
 
                     precache_meshShapeDeltas = new MeshVertexDelta[MeshShapeDeltasCount];
                     precache_meshShapeInfos = new int2[MeshShapeCount];
@@ -5035,8 +4917,9 @@ namespace Swole.Morphing
                             }
                         }
                     }
-                    precache_meshShapeFrameWeights = tempFloats.ToArray();
 
+                    precache_meshShapeFrameWeights = tempFloats.ToArray();
+                    tempFloats.Clear();
                 }
 
                 if (precache_vertexGroups == null || precache_vertexGroups.Length != VertexGroupCount * vertexCount)
@@ -5098,6 +4981,8 @@ namespace Swole.Morphing
 
                     precache_blankMuscleGroupControlWeights = tempGroupControlWeights.ToArray();
                     precache_muscleGroupVertexWeights = tempGroupVertexWeights.ToArray();
+                    tempGroupControlWeights.Clear();
+                    tempGroupVertexWeights.Clear();
 
                 }
 
@@ -5163,21 +5048,14 @@ namespace Swole.Morphing
                             int localGroupIndex = g - variationGroups.x;
                             var vertexGroup = vertexGroups[g];
 
-                            for (int s = variationShapes.x; s <= variationShapes.y; s++)
-                            {
-                                tempGroupControlWeights.Add(new GroupControlWeight2()
-                                {
-                                    groupIndex = (localGroupIndex * VariationShapesCount) + s,
-                                    vertexCount = vertexGroup.EntryCount,
-                                    vertexSequenceStartIndex = tempGroupVertexWeights.Count,
-                                    weight = 0f
-                                });
-                            }
-
+                            int startIndex = tempGroupVertexWeights.Count;
+                            int entryCount = 0;
                             for (int i = 0; i < vertexGroup.EntryCount; i++)
                             {
                                 vertexGroup.GetEntry(i, out int vertexIndex, out float vertexWeight);
+                                if (vertexWeight <= 0f) continue;
 
+                                entryCount++;
                                 tempGroupVertexWeights.Add(new GroupVertexControlWeight()
                                 {
                                     groupIndex = localGroupIndex,
@@ -5185,11 +5063,24 @@ namespace Swole.Morphing
                                     weight = vertexWeight
                                 });
                             }
+
+                            for (int s = variationShapes.x; s <= variationShapes.y; s++)
+                            {
+                                tempGroupControlWeights.Add(new GroupControlWeight2()
+                                {
+                                    groupIndex = (localGroupIndex * VariationShapesCount) + s,
+                                    vertexCount = entryCount,
+                                    vertexSequenceStartIndex = startIndex,
+                                    weight = 0f
+                                });
+                            }
                         }
                     }
 
                     precache_blankVariationGroupControlWeights = tempGroupControlWeights.ToArray();
                     precache_variationGroupVertexWeights = tempGroupVertexWeights.ToArray();
+                    tempGroupControlWeights.Clear();
+                    tempGroupVertexWeights.Clear();
                 }
 
                 #endregion
@@ -5583,14 +5474,17 @@ namespace Swole.Morphing
         protected override void OnAwake()
         {
 
-            autoCreateInstance = false; 
+            autoCreateInstance = false;  
 
             base.OnAwake();
 
-            bones = Bones; // force init bones
-            skinnedBones = SkinnedBones; // force init skinned bones
+            if (data != null) 
+            { 
+                SetData(data);
 
-            if (data != null) SetData(data);
+                bones = Bones; // force init bones
+                skinnedBones = SkinnedBones; // force init skinned bones
+            }
 
             if (animatablePropertiesController == null) animatablePropertiesController = gameObject.GetComponent<DynamicAnimationProperties>();
             if (animatablePropertiesController == null && transform.parent != null) animatablePropertiesController = transform.parent.GetComponent<DynamicAnimationProperties>(); 
@@ -5606,6 +5500,9 @@ namespace Swole.Morphing
 
         protected override void OnStart()
         {
+#if UNITY_EDITOR
+            //Utils.PrintNativeAllocationSizes($"{nameof(CustomizableCharacterMeshV2)}:{name}", this);
+#endif
         }
 
         #region Data
@@ -7263,7 +7160,7 @@ namespace Swole.Morphing
                             {
                                 if (children != null)
                                 {
-                                    foreach (var child in children) if (child.IsValid && child.type.HasFlag(ChildType.Rig)) child.instance.BindSkinningMatricesBufferToMaterials();
+                                    foreach (var child in children) if (child.IsValid && child.type.HasFlag(ChildType.Rig) && child.instance.IsRendering()) child.instance.BindSkinningMatricesBufferToMaterials();
                                 }
                             }
                         }
@@ -7312,7 +7209,7 @@ namespace Swole.Morphing
             {
                 var meshData = SubData;
 
-                var rigSampler = RigSampler;
+                //var rigSampler = RigSampler;
                 if (rigSampler != null) rigSampler.RemoveWritableInstanceBuffer(skinningMatricesBuffer);
 
                 if (materialInstances != null)
