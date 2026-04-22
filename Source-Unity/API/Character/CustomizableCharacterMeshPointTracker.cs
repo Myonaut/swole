@@ -255,6 +255,13 @@ namespace Swole.Morphing
             if (reinitialize) Initialize();
         }
 
+        public MeshTracker GetTracker(int index)
+        {
+            if (index < 0 || meshTrackers == null || index >= meshTrackers.Length) return null;
+            return GetTrackerUnsafe(index);
+        }
+        public MeshTracker GetTrackerUnsafe(int index) => meshTrackers[index];
+
         [NonSerialized]
         protected List<int> activeTrackers;
 

@@ -5537,7 +5537,7 @@ namespace Swole.Morphing
 
         public int DeltasStartIndex => SubData.vertexCount * instance.localID;
 
-        private bool PrepInWorldDataFetch(int lod, int vertexIndex, out int topVertexIndex, out MuscleData muscleData, out float flexFactor, out MeshVertexDelta delta, out MeshShape flexShape, out float4x4 skinningMatrix)
+        private bool PrepInWorldDataFetch(int lod, int vertexIndex, out int topVertexIndex, out MuscleData muscleData, out float flexFactor, out MeshVertexDelta delta, out MeshShape flexShape, out float4x4 skinningMatrix) 
         {
             delta = default;
             flexShape = null;
@@ -5548,7 +5548,7 @@ namespace Swole.Morphing
 
             var subData = SubData;
 
-            if (!subData.TryGetBoneWeights(lod, out var boneWeightsArray)) return false;
+            if (instance == null || !subData.TryGetBoneWeights(lod, out var boneWeightsArray)) return false;
 
             instance.UpdateIfDirty(false, true);
             instance.OwnerGroup.ActiveJob.Complete();

@@ -281,7 +281,7 @@ namespace Swole.Morphing
             {
                 if (!mesh.MeshGroup2.TryGetInstanceBuffer(materialPropertyName, out var iInstanceBuffer) || iInstanceBuffer is not InstanceBuffer<float>)
                 {
-                    mesh.MeshGroup2.CreateInstanceMaterialBuffer(materialPropertyName, materialSlots, mesh.SubData.vertexCount, 2, true, out instanceBuffer);
+                    mesh.MeshGroup2.CreateInstanceMaterialBuffer(materialPropertyName, materialSlots == null || materialSlots.Length <= 0 ? null : materialSlots, mesh.SubData.vertexCount, 2, true, out instanceBuffer);
                 }
                 else
                 {
@@ -529,10 +529,10 @@ namespace Swole.Morphing
 
         public void Init(CustomizableCharacterMeshV2 mesh, int groupindex)
         {
-            var id = ID;
-
             this.mesh = mesh;
             this.groupIndex = groupindex;
+
+            var id = ID;
 
             for (int i = 0; i < subGroups.Length; i++)
             {

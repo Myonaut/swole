@@ -13,7 +13,7 @@ namespace Swole.API
     {
 
         [Serializable]
-        public struct RipEvent
+        public class RipEvent
         {
             [Range(0f, 1f)]
             public float minChance;
@@ -25,6 +25,13 @@ namespace Swole.API
 
             public UnityEvent OnCall;
 
+            private float deltaAccum;
+
+            public void Reset()
+            {
+                deltaAccum = 0f;
+            }
+
             public bool TryCall(float ripDelta)
             {
                 if (ripDeltaRange.x == ripDeltaRange.y)
@@ -33,23 +40,33 @@ namespace Swole.API
                 }
                 else
                 {
-                    float t = (ripDelta - ripDeltaRange.x) / (ripDeltaRange.y - ripDeltaRange.x);
+                    deltaAccum += ripDelta;
+                    float t = (deltaAccum - ripDeltaRange.x) / (ripDeltaRange.y - ripDeltaRange.x); 
                     if (clampRange) t = Mathf.Clamp01(t);
-
+                    
                     if (UnityEngine.Random.value > Mathf.LerpUnclamped(minChance, maxChance, t)) return false; 
                 }
 
-                OnCall?.Invoke();
+                Call();
                 return true;
+            }
+
+            public void Call()
+            {
+                OnCall?.Invoke();
+                deltaAccum = 0f;
             }
         }
 
         [Serializable]
-        public struct RipLevel : IComparable<RipLevel>
+        public class RipLevel : IComparable<RipLevel>
         {
             public float threshold;
             public float visualRippage;
             public float ripSpeed;
+
+            public MuscleRipContributor[] muscleRipContributors;
+            public FatRipContributor[] fatRipContributors;
 
             public int maxChanceRipEventCalls;
             public RipEvent[] chanceRipEvents;
@@ -60,6 +77,14 @@ namespace Swole.API
             public int CompareTo(RipLevel other)
             {
                 return threshold.CompareTo(other.threshold);
+            }
+
+            public void Reset()
+            {
+                if (chanceRipEvents != null)
+                {
+                    foreach(var event_ in chanceRipEvents) event_.Reset();
+                }
             }
         }
 
@@ -105,7 +130,7 @@ namespace Swole.API
 
                 massRangeSize = massRange.y - massRange.x; // small optimization
                 flexRangeSize = flexRange.y - flexRange.x;
-                pumpRangeSize = pumpRange.y - pumpRange.y;
+                pumpRangeSize = pumpRange.y - pumpRange.x;  
             }
 
             public float CurrentRipDelta
@@ -189,10 +214,9 @@ namespace Swole.API
         {
             public string name;
 
-            public List<RipLevel> ripLevels;
+            public float pieceRipOffRippageThreshold = 0.9f;
 
-            public MuscleRipContributor[] muscleRipContributors;
-            public FatRipContributor[] fatRipContributors;
+            public List<RipLevel> ripLevels;
 
             public CustomizableCharacterMeshVertexControlGroup.SubGroup.Reference[] visualControlGroups;
 
@@ -234,76 +258,107 @@ namespace Swole.API
 
             public void Init(CustomizableCharacterGarment garment, GarmentPiece piece)
             {
-                if (ripLevels != null)
-                {
-                    ripLevels.Sort();
-                }
-
                 this.garment = garment;
                 this.piece = piece;
 
-                if (muscleRipContributors != null)
+                if (ripLevels != null)
                 {
-                    foreach (var cont in muscleRipContributors) cont.Init(garment);
-                }
-                if (fatRipContributors != null)
-                {
-                    foreach (var cont in fatRipContributors) cont.Init(garment); 
+                    ripLevels.Sort();
+
+                    foreach (var level in ripLevels)
+                    {
+                        if (level.muscleRipContributors != null)
+                        {
+                            foreach (var cont in level.muscleRipContributors) cont.Init(garment);
+                        }
+                        if (level.fatRipContributors != null)
+                        {
+                            foreach (var cont in level.fatRipContributors) cont.Init(garment);
+                        }
+                    }
                 }
             }
 
+            private RipLevel contributorRipLevel;
+            private RipLevel currentRipLevel;
             public void Update(float deltaTime)
             {
-                float prevVisualRippage = visualRippage;
-
-                lastRipDelta = 0f;
-                if (muscleRipContributors != null) 
-                {
-                    foreach (var cont in muscleRipContributors) lastRipDelta += cont.CurrentRipDelta;
-                }
-                if (fatRipContributors != null)
-                {
-                    foreach (var cont in fatRipContributors) lastRipDelta += cont.CurrentRipDelta; 
-                }
-                rippage = Mathf.Min(1f, rippage + lastRipDelta * deltaTime);
-
-                RipLevel currentRipLevel = default;
+                contributorRipLevel = default;
+                currentRipLevel = default;
                 if (ripLevels != null)
                 {
-                    for(int i = 0; i < ripLevels.Count; i++)
+                    for (int i = 0; i < ripLevels.Count; i++)
                     {
                         var level = ripLevels[i];
+                        contributorRipLevel = level;
                         if (rippage < level.threshold) break;
 
                         currentRipLevel = level;
                     }
-
-                    if (visualRippage < currentRipLevel.visualRippage) visualRippage = Mathf.MoveTowards(visualRippage, currentRipLevel.visualRippage, deltaTime * (currentRipLevel.ripSpeed == 0f ? 1f : currentRipLevel.ripSpeed));
                 }
 
-                if (visualRippage != prevVisualRippage) 
-                { 
-                    float delta = visualRippage - prevVisualRippage;
-
-                    if (delta > 0f)
+                lastRipDelta = 0f;
+                if (contributorRipLevel != null)
+                {
+                    if (contributorRipLevel.muscleRipContributors != null)
                     {
-                        currentRipLevel.OnRip?.Invoke();
-                        if (currentRipLevel.chanceRipEvents != null)
+                        foreach (var cont in contributorRipLevel.muscleRipContributors) lastRipDelta += cont.CurrentRipDelta;
+                    }
+                    if (contributorRipLevel.fatRipContributors != null)
+                    {
+                        foreach (var cont in contributorRipLevel.fatRipContributors) lastRipDelta += cont.CurrentRipDelta;
+                    }
+                }
+                rippage = Mathf.Min(1f, rippage + lastRipDelta * deltaTime);
+
+
+
+                UpdateVisually(deltaTime);
+            }
+
+            public void UpdateVisually(float deltaTime)
+            {
+                float prevVisualRippage = visualRippage;
+
+                if (currentRipLevel != null)
+                {
+                    if (visualRippage < currentRipLevel.visualRippage) visualRippage = Mathf.MoveTowards(visualRippage, currentRipLevel.visualRippage, deltaTime * (currentRipLevel.ripSpeed == 0f ? 1f : currentRipLevel.ripSpeed));
+
+                    if (visualRippage != prevVisualRippage)
+                    {
+                        float delta = visualRippage - prevVisualRippage;
+
+                        if (delta > 0f)
                         {
-                            int count = 0;
-                            foreach (var e in currentRipLevel.chanceRipEvents) 
+                            currentRipLevel.OnRip?.Invoke();
+                            if (currentRipLevel.chanceRipEvents != null)
                             {
-                                if (e.TryCall(delta)) count++;
-                                if (count >= currentRipLevel.maxChanceRipEventCalls) break;
+                                int count = 0;
+                                foreach (var e in currentRipLevel.chanceRipEvents)
+                                {
+                                    if (e.TryCall(delta)) count++;
+                                    if (count >= currentRipLevel.maxChanceRipEventCalls) break;
+                                }
                             }
                         }
+
+                        currentRipLevel.OnRipDelta?.Invoke(delta);
+
+                        RefreshVisualRippage();
                     }
-
-                    currentRipLevel.OnRipDelta?.Invoke(delta);
-
-                    RefreshVisualRippage();
                 }
             }
+
+            public void Reset()
+            {
+                Rippage = 0f;
+
+                if (ripLevels != null)
+                {
+                    foreach (var level in ripLevels) level.Reset();
+                }
+            }
+
         }
 
         [Serializable]
@@ -355,14 +410,47 @@ namespace Swole.API
                 {
                     if (ripGroups != null)
                     {
-                        foreach (var ripGroup in ripGroups) 
-                        { 
-                            ripGroup.Update(deltaTime); 
-                            if (!hasRipped && ripGroup.VisualRippage > firstRipThreshold)
+                        bool canRipOff = true; 
+                        foreach (var ripGroup in ripGroups)
+                        {
+                            if (ripGroup.Rippage < ripGroup.pieceRipOffRippageThreshold)
                             {
-                                OnFirstRip?.Invoke(); 
-                                hasRipped = true;
+                                canRipOff = false;
+                                break;
                             }
+                        }
+
+                        if (canRipOff)
+                        {
+                            RipOff();
+                        }
+                        else
+                        {
+                            foreach (var ripGroup in ripGroups)
+                            {
+                                ripGroup.Update(deltaTime);
+                                if (!hasRipped && ripGroup.VisualRippage > firstRipThreshold)
+                                {
+                                    OnFirstRip?.Invoke();
+                                    hasRipped = true;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            public void UpdateVisually(float deltaTime)
+            {
+                if (disable) return;
+
+                if (!IsRippedOff)
+                {
+                    if (ripGroups != null)
+                    {
+                        foreach (var ripGroup in ripGroups)
+                        {
+                            ripGroup.UpdateVisually(deltaTime);
                         }
                     }
                 }
@@ -374,12 +462,21 @@ namespace Swole.API
 
                 if (ripGroups != null)
                 {
-                    foreach (var ripGroup in ripGroups) ripGroup.Rippage = 0f;
+                    foreach (var ripGroup in ripGroups) ripGroup.Reset();
                 }
 
                 hasRipped = false;
 
                 OnRestore?.Invoke();
+            }
+
+            public void RipOff()
+            {
+                if (disable || IsRippedOff) return;
+
+                Debug.Log($"RIPPED OFF {name}"); 
+                isRippedOff = true;
+                OnRipOff?.Invoke();
             }
 
         }
@@ -410,17 +507,18 @@ namespace Swole.API
 
         private List<CustomizableCharacterMeshV2> dependentMeshes;
         private List<int> validMuscleGroupIndices;
-        private List<int> validFatGroupIndices;
+        private List<int> validFatGroupIndices; 
         protected virtual void Start()
         {
             if (pieces != null)
             {
                 foreach (var piece in pieces) piece.Init(this);
+                isDirty = true;
             }
 
             if (onlyUpdateIfDirty)
             {
-                dependentMeshes = new List<CustomizableCharacterMeshV2>();
+                dependentMeshes = new List<CustomizableCharacterMeshV2>(); 
 
                 if (pieces != null)
                 {
@@ -430,42 +528,48 @@ namespace Swole.API
                         {
                             foreach(var ripGroup in piece.ripGroups)
                             {
-                                if (ripGroup.muscleRipContributors != null && ripGroup.muscleRipContributors.Length > 0)
+                                if (ripGroup.ripLevels != null)
                                 {
-                                    foreach(var cont in ripGroup.muscleRipContributors)
+                                    foreach (var ripLevel in ripGroup.ripLevels)
                                     {
-                                        if (cont.characterMeshOverride == null) continue;
-                                        if (dependentMeshes == null) dependentMeshes = new List<CustomizableCharacterMeshV2>();
-                                        if (!dependentMeshes.Contains(cont.characterMeshOverride))
+                                        if (ripLevel.muscleRipContributors != null && ripLevel.muscleRipContributors.Length > 0)
                                         {
-                                            dependentMeshes.Add(cont.characterMeshOverride);
-                                            cont.characterMeshOverride.AddListener(Unity.ICustomizableCharacter.ListenableEvent.OnMuscleDataChanged, MarkDirtyFromMuscleUpdate);
+                                            foreach (var cont in ripLevel.muscleRipContributors)
+                                            {
+                                                if (cont.characterMeshOverride == null) continue;
+                                                if (dependentMeshes == null) dependentMeshes = new List<CustomizableCharacterMeshV2>();
+                                                if (!dependentMeshes.Contains(cont.characterMeshOverride))
+                                                {
+                                                    dependentMeshes.Add(cont.characterMeshOverride);
+                                                    cont.characterMeshOverride.AddListener(Unity.ICustomizableCharacter.ListenableEvent.OnMuscleDataChanged, MarkDirtyFromMuscleUpdate);
+                                                }
+
+                                                if (cont.MuscleGroupIndex >= 0)
+                                                {
+                                                    if (validMuscleGroupIndices == null) validMuscleGroupIndices = new List<int>();
+                                                    if (!validMuscleGroupIndices.Contains(cont.MuscleGroupIndex)) validMuscleGroupIndices.Add(cont.MuscleGroupIndex);
+                                                }
+                                            }
                                         }
 
-                                        if (cont.MuscleGroupIndex >= 0)
+                                        if (ripLevel.fatRipContributors != null && ripLevel.fatRipContributors.Length > 0)
                                         {
-                                            if (validMuscleGroupIndices == null) validMuscleGroupIndices = new List<int>();
-                                            if (!validMuscleGroupIndices.Contains(cont.MuscleGroupIndex)) validMuscleGroupIndices.Add(cont.MuscleGroupIndex);
-                                        }
-                                    }
-                                }
+                                            foreach (var cont in ripLevel.fatRipContributors)
+                                            {
+                                                if (cont.characterMeshOverride == null) continue;
+                                                if (dependentMeshes == null) dependentMeshes = new List<CustomizableCharacterMeshV2>();
+                                                if (!dependentMeshes.Contains(cont.characterMeshOverride))
+                                                {
+                                                    dependentMeshes.Add(cont.characterMeshOverride);
+                                                    cont.characterMeshOverride.AddListener(Unity.ICustomizableCharacter.ListenableEvent.OnFatDataChanged, MarkDirtyFromFatUpdate);
+                                                }
 
-                                if (ripGroup.fatRipContributors != null && ripGroup.fatRipContributors.Length > 0)
-                                {
-                                    foreach (var cont in ripGroup.fatRipContributors)
-                                    {
-                                        if (cont.characterMeshOverride == null) continue;
-                                        if (dependentMeshes == null) dependentMeshes = new List<CustomizableCharacterMeshV2>();
-                                        if (!dependentMeshes.Contains(cont.characterMeshOverride))
-                                        {
-                                            dependentMeshes.Add(cont.characterMeshOverride);
-                                            cont.characterMeshOverride.AddListener(Unity.ICustomizableCharacter.ListenableEvent.OnFatDataChanged, MarkDirtyFromFatUpdate);
-                                        }
-
-                                        if (cont.FatGroupIndex >= 0)
-                                        {
-                                            if (validFatGroupIndices == null) validFatGroupIndices = new List<int>();
-                                            if (!validFatGroupIndices.Contains(cont.FatGroupIndex)) validFatGroupIndices.Add(cont.FatGroupIndex);  
+                                                if (cont.FatGroupIndex >= 0)
+                                                {
+                                                    if (validFatGroupIndices == null) validFatGroupIndices = new List<int>();
+                                                    if (!validFatGroupIndices.Contains(cont.FatGroupIndex)) validFatGroupIndices.Add(cont.FatGroupIndex);
+                                                }
+                                            }
                                         }
                                     }
                                 }
@@ -473,7 +577,7 @@ namespace Swole.API
                         }
                     }
                 }
-            }
+            } 
         }
 
         protected virtual void OnDestroy()
@@ -505,18 +609,26 @@ namespace Swole.API
 
         public virtual void CustomUpdate()
         {
-            if (onlyUpdateIfDirty && !IsDirty) return;
-
-            if (pieces != null)
+            if (!onlyUpdateIfDirty || IsDirty)
             {
-                foreach (var piece in pieces) piece.Update(Time.deltaTime);
-            }
+                if (pieces != null)
+                {
+                    foreach (var piece in pieces) piece.Update(Time.deltaTime);
+                }
 
-            isDirty = false;
+                isDirty = false;
+            }
+            else
+            {
+                foreach (var piece in pieces)
+                {
+                    piece.UpdateVisually(Time.deltaTime);
+                }
+            }
         }
 
         public virtual void CustomLateUpdate() { }
-        public virtual void CustomFixedUpdate() { }
+        public virtual void CustomFixedUpdate() { } 
 
     }
 
