@@ -266,17 +266,48 @@ namespace Swole.API.Unity.Animation
                 m_Buffers.RemoveAll(i => i == null || ReferenceEquals(i.Buffer, buffer));
             }*/
             protected List<InstanceBufferWithStartIndex> m_InstanceBuffers;
-            public void AddWritableInstanceBuffer(IInstanceBuffer buffer, int startIndex)
+            public void AddWritableInstanceBuffer(IInstanceBuffer buffer, int startIndex) 
             {
+                if (ReferenceEquals(buffer, null)) return;
+
                 if (m_InstanceBuffers == null) m_InstanceBuffers = new List<InstanceBufferWithStartIndex>();
 
+                if (IsWritingToBufferAt(buffer, startIndex))
+                {
+                    Debug.LogWarning($"Tried to add writable buffer entry at an existing write index (buffer:{buffer.Name})"); 
+                    return;
+                }
                 m_InstanceBuffers.Add(new InstanceBufferWithStartIndex(buffer, startIndex));
+            }
+            public void RemoveWritableInstanceBuffer(IInstanceBuffer buffer, int startIndex)
+            {
+                if (m_InstanceBuffers == null) return;
+
+                m_InstanceBuffers.RemoveAll(i => i == null || (i.startIndex == startIndex && ReferenceEquals(i.Buffer, buffer)));
             }
             public void RemoveWritableInstanceBuffer(IInstanceBuffer buffer)
             {
                 if (m_InstanceBuffers == null) return;
 
                 m_InstanceBuffers.RemoveAll(i => i == null || ReferenceEquals(i.Buffer, buffer));
+            }
+            public bool IsWritingToBuffer(IInstanceBuffer buffer)
+            {
+                if (m_InstanceBuffers != null)
+                {
+                    foreach(var buffer_ in m_InstanceBuffers) if (ReferenceEquals(buffer_.Buffer, buffer)) return true; 
+                }
+
+                return false;
+            }
+            public bool IsWritingToBufferAt(IInstanceBuffer buffer, int startIndex)
+            {
+                if (m_InstanceBuffers != null)
+                {
+                    foreach (var buffer_ in m_InstanceBuffers) if (buffer_.startIndex == startIndex && ReferenceEquals(buffer_.Buffer, buffer)) return true;
+                }
+
+                return false;
             }
 
             protected void WriteToBuffers()

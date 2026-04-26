@@ -394,6 +394,13 @@ namespace Swole.Morphing
             public string groupId;
         }
         [Serializable]
+        public struct OneSidedVertexGroupReference
+        {
+            public string groupName;
+            public string vertexGroupName;
+            public bool isLeftSide;
+        }
+        [Serializable]
         public struct ControlGroupConfiguration
         {
             public string id;
@@ -403,7 +410,9 @@ namespace Swole.Morphing
             public float2 weightRange;
             public float resetWeight;
             public bool includeZeroWeights;
+            public CustomizableCharacterMeshVertexControlGroup.MixOperation mixOperation;
             public string[] vertexGroups;
+            public OneSidedVertexGroupReference[] oneSidedVertexGroups;
             public ControlGroupParent parent;
         }
 
@@ -414,6 +423,9 @@ namespace Swole.Morphing
             public string name;
 
             public bool skip;
+
+            [TextArea]
+            public string note;
 
             public Material[] materials;
             public CustomizableCharacterMeshV2.RenderSet[] renderSets;
@@ -2036,7 +2048,7 @@ namespace Swole.Morphing
                                     }
                                 }
 
-                                if (!isEmpty)
+                                if (!isEmpty || standaloneShape.mandatory)
                                 {
                                     var finalShape = MeshShape.CreateFromBlendShapes(standaloneShape.name, tempBlendShapes, true);
                                     finalShape.animatable = standaloneShape.animatable;
@@ -3460,18 +3472,34 @@ namespace Swole.Morphing
                         for(int i = 0; i <  objectSetup.controlGroups.Length; i++)
                         {
                             var config = objectSetup.controlGroups[i];
-                            if (config.vertexGroups == null || config.vertexGroups.Length <= 0) continue;
+                            int subGroupCount = (config.vertexGroups == null ? 0 : config.vertexGroups.Length) + (config.oneSidedVertexGroups == null ? 0 : config.oneSidedVertexGroups.Length);
+                            if (subGroupCount <= 0) continue;
 
-                            var subGroups = new CustomizableCharacterMeshVertexControlGroup.SubGroup[config.vertexGroups.Length];
+                            var subGroups = new CustomizableCharacterMeshVertexControlGroup.SubGroup[subGroupCount];
                             for(int j = 0; j < subGroups.Length; j++)
                             {
-                                var vertexGroupName = config.vertexGroups[j];
-                                var vertexGroupIndex = characterMesh.IndexOfVertexGroup(vertexGroupName, true);
+                                Side side = Side.Both;
+                                string displayName = null;
+                                string vertexGroupName = null;
+                                if (j < (config.vertexGroups == null ? 0 : config.vertexGroups.Length))
+                                {
+                                    side = Side.Both;
+                                    displayName = vertexGroupName = config.vertexGroups[j];
+                                }
+                                else
+                                {
+                                    var vgOneSided = config.oneSidedVertexGroups[j - (config.vertexGroups == null ? 0 : config.vertexGroups.Length)]; 
+                                    displayName = vgOneSided.groupName;
+                                    side = vgOneSided.isLeftSide ? Side.Left : Side.Right; 
+                                    vertexGroupName = vgOneSided.vertexGroupName;
+                                }
+                                var vertexGroupIndex = characterMesh.IndexOfVertexGroup(vertexGroupName, true);  
 
                                 var subGroup = new CustomizableCharacterMeshVertexControlGroup.SubGroup();
-                                subGroup.displayName = vertexGroupName;
-                                if (vertexGroupIndex < 0) subGroup.vertexGroupName = vertexGroupName;
+                                subGroup.displayName = displayName;
+                                if (vertexGroupIndex < 0) subGroup.vertexGroupName = vertexGroupName; 
                                 subGroup.vertexGroupIndex = vertexGroupIndex;
+                                subGroup.side = side;
 
                                 subGroup.includeZeroWeights = config.includeZeroWeights;
 
@@ -3481,10 +3509,11 @@ namespace Swole.Morphing
                             var localControlGroup = new CustomizableCharacterMeshVertexControlGroup(config.id, subGroups, config.materialProperty, config.materialSlots == null || config.materialSlots.Length <= 0 ? null : config.materialSlots);
                             localControlGroup.clampWeights = config.clampWeights;
                             localControlGroup.weightRange = config.weightRange;
-                            localControlGroup.resetWeight = config.resetWeight; 
+                            localControlGroup.resetWeight = config.resetWeight;
+                            localControlGroup.mixOperation = config.mixOperation;
                             groups[i] = localControlGroup;
 
-                            if (!string.IsNullOrWhiteSpace(config.parent.meshObject) && !string.IsNullOrWhiteSpace(config.parent.groupId))
+                            if (!string.IsNullOrWhiteSpace(config.parent.meshObject) && !string.IsNullOrWhiteSpace(config.parent.groupId)) 
                             {
                                 void SetupControlGroupParent()
                                 {

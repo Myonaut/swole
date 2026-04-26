@@ -135,14 +135,14 @@ namespace Swole.Morphing
                     BlendShape shape;
                     if (!shapeTarget.TryGetBlendShape(queryId, mesh, out shape, vertices, normals, tangents, mergedVertices))
                     {
-                        if (!createEmptyShapesIfNotFound)
+                        if (!createEmptyShapesIfNotFound && !shapeTarget.mandatory)
                         {
                             Debug.LogWarning($"({mesh.name}) Target shape '{shapeTarget.targetName}' was not found."); 
                             continue;
                         }
 
                         shape = new BlendShape(shapeTarget.targetName); // force create an empty shape if it wasnt in the mesh
-                        Debug.LogWarning($"({mesh.name}) Target shape '{shapeTarget.targetName}' was not found. Created an empty replacement.");
+                        Debug.LogWarning($"({mesh.name}) Target shape '{shapeTarget.targetName}' was not found. Created an empty replacement."); 
                     }
                     if (shape.frames == null || shape.frames.Length <= 0) // if shape has no frames, create an empty one
                     {
@@ -2888,6 +2888,8 @@ namespace Swole.Morphing
         public string newName;
         public string targetName;
         public string[] alternateTargetNames;
+        [Tooltip("Used in some scenarios to make sure the shape is created even if not found")]
+        public bool mandatory;
         public float frameWeightNormalizationThreshold;
         [Tooltip("Optional. Makes this shape relative to the base target shapes.")]
         public BlendShapeBase[] baseTargetNames;
@@ -3381,6 +3383,8 @@ namespace Swole.Morphing
     {
         public string name;
         public bool animatable;
+
+        public bool mandatory;
 
         public BlendShapeTarget[] targets;
     }

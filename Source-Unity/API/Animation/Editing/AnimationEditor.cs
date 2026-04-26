@@ -7864,6 +7864,9 @@ namespace Swole.API.Unity.Animation
                     type = type.BaseType;
                 }
             }
+
+            var rigidbodies = gameObject.GetComponentsInChildren<Rigidbody>();
+            foreach(var rb in rigidbodies) rb.isKinematic = !active; 
         }
 
         public static void DisableEditorBreakingComponents(GameObject gameObject)

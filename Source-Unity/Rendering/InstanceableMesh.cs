@@ -750,14 +750,14 @@ namespace Swole
 
         protected override void OnDestroyed()
         {
-            base.OnDestroyed();
-
-            if (rigSampler != null) 
-            { 
-                rigSampler.RemoveWritableInstanceBuffer(skinningMatricesBuffer);
+            if (rigSampler != null)
+            {
+                rigSampler.RemoveWritableInstanceBuffer(skinningMatricesBuffer, RigInstanceID * SkinningBoneCount);
                 rigSampler.UnregisterAsUser();
                 rigSampler.TryDispose();
             }
+
+            base.OnDestroyed();
         }
         
         public virtual InstanceableSkinnedMeshDataBase SkinnedMeshData => ((InstanceableSkinnedMeshDataBase)MeshData);

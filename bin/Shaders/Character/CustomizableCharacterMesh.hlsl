@@ -330,8 +330,58 @@ StructuredBuffer<DeltaData> _PerVertexDeltaData;
 
 StructuredBuffer<float4> _VertexColorDeltas;
 
+#ifdef USE_LEFTRIGHT_BUFFER
+StructuredBuffer<bool> _LeftRightFlags;
+#endif
+
 //#else
 //#endif
+
+void CalculateLeftRightMaskingFromFlag_float(bool isRightSide, float midlineWeight, out float2 maskingLR)
+{
+	float mid = midlineWeight * 0.5;
+
+	float maskLeft = 1.0;
+	float maskRight = 1.0;
+	if (isRightSide) 
+	{		
+		maskLeft = mid;
+		maskRight = 1.0 - mid;
+	} 
+	else 
+	{
+		maskLeft = 1.0 - mid;
+		maskRight = mid;
+	}
+
+	//float maskTotal = maskLeft + maskRight;
+	//if (maskTotal > 1.0) 
+	//{
+	//	maskLeft = maskLeft / maskTotal;
+	//	maskRight = maskRight / maskTotal;
+	//}
+
+	maskingLR = float2(maskLeft, maskRight);
+}
+
+#ifdef USE_LEFTRIGHT_BUFFER
+void CalculateLeftRightMasking_float(int vertexIndex, float midlineWeight, out float2 maskingLR) 
+#elif USE_LEFTRIGHT_UV
+void CalculateLeftRightMasking_float(float2 uv, float midlineWeight, out float2 maskingLR)
+#else
+void CalculateLeftRightMasking_float(float3 initialVertexPosition, float midlineWeight, out float2 maskingLR)
+#endif
+{
+	#ifdef USE_LEFTRIGHT_BUFFER
+	bool isRightSide = _LeftRightFlags[vertexIndex];
+	#elif USE_LEFTRIGHT_UV
+	bool isRightSide = uv.x > 0.5;
+	#else
+	bool isRightSide = initialVertexPosition.x > 0;
+	#endif
+
+	CalculateLeftRightMaskingFromFlag_float(isRightSide, midlineWeight, maskingLR);
+}
 
 void SampleVertexGroup_float(int groupIndex, int vertexIndex, int vertexCount, out float weight)
 {
@@ -393,7 +443,7 @@ uniform int _HandsVertexGroupIndex;
 uniform int _LegsVertexGroupIndex;
 uniform int _FeetVertexGroupIndex;
 
-void SampleCustomizationGroups_float(int vertexIndex, int vertexCount, float2 mainUV, float midlineWeight, 
+void SampleCustomizationGroups_float(int vertexIndex, int vertexCount, float maskLeft, float maskRight, 
 	out float faceLeft, out float faceRight, 
 	out float headLeft, out float headRight, 
 	out float neckLeft, out float neckRight, 
@@ -405,26 +455,6 @@ void SampleCustomizationGroups_float(int vertexIndex, int vertexCount, float2 ma
 	out float legsLeft, out float legsRight,
 	out float feetLeft, out float feetRight) 
 {
-	float maskLeft = 1.0;
-	float maskRight = 1.0;
-	if (mainUV.x > 0.5) 
-	{
-		maskLeft = 1.0;
-		maskRight = midlineWeight;
-	} 
-	else if (mainUV.x < 0.5) 
-	{		
-		maskLeft = midlineWeight;
-		maskRight = 1.0;
-	}
-
-	float maskTotal = maskLeft + maskRight;
-	if (maskTotal > 1.0) 
-	{
-		maskLeft = maskLeft / maskTotal;
-		maskRight = maskRight / maskTotal;
-	}
-
 	SampleVertexGroup_float(_FaceVertexGroupIndex, vertexIndex, vertexCount, faceLeft);
 	faceRight = faceLeft * maskRight;
 	faceLeft = faceLeft * maskLeft;
@@ -653,24 +683,16 @@ void BuildPhysique_float(int shapesID, int rigID, int characterID, int vertexInd
 
 	midlineWeight = 0;
 	SampleMidlineVertexGroup_float(vertexIndex, vertexCount, midlineWeight);
-	float maskLeft = 1;
-	float maskRight = 1;
-	if (mainUV.x > 0.5) 
-	{
-		maskLeft = 1;
-		maskRight = midlineWeight;
-	} 
-	else if (mainUV.x < 0.5) 
-	{		
-		maskLeft = midlineWeight;
-		maskRight = 1;
-	}
-	float maskTotal = maskLeft + maskRight; 
-	if (maskTotal > 1.0) 
-	{
-		maskLeft = maskLeft / maskTotal;
-		maskRight = maskRight / maskTotal;
-	}
+	float2 maskingLR = float2(1,1);
+	#ifdef USE_LEFTRIGHT_BUFFER
+	CalculateLeftRightMasking_float(vertexIndex, midlineWeight, maskingLR);
+	#elif USE_LEFTRIGHT_UV
+	CalculateLeftRightMasking_float(uv, midlineWeight, maskingLR);
+	#else
+	CalculateLeftRightMasking_float(inPosition, midlineWeight, maskingLR);
+	#endif
+	float maskLeft = maskingLR.x;
+	float maskRight = maskingLR.y;
 
 	CalculateMuscleData_float(characterID, vertexIndex, vertexCount, maskLeft, maskRight, muscleData);
 
@@ -778,24 +800,16 @@ void SkinPreCalculated_float(int localID, int shapesID, int rigID, int character
 
 	midlineWeight = 0;
 	SampleMidlineVertexGroup_float(vertexIndex, vertexCount, midlineWeight);
-	float maskLeft = 1;
-	float maskRight = 1;
-	if (mainUV.x > 0.5) 
-	{
-		maskLeft = 1;
-		maskRight = midlineWeight;
-	} 
-	else if (mainUV.x < 0.5) 
-	{		
-		maskLeft = midlineWeight;
-		maskRight = 1;
-	}
-	float maskTotal = maskLeft + maskRight; 
-	if (maskTotal > 1.0) 
-	{
-		maskLeft = maskLeft / maskTotal;
-		maskRight = maskRight / maskTotal;
-	}
+	float2 maskingLR = float2(1,1);
+	#ifdef USE_LEFTRIGHT_BUFFER
+	CalculateLeftRightMasking_float(vertexIndex, midlineWeight, maskingLR);
+	#elif USE_LEFTRIGHT_UV
+	CalculateLeftRightMasking_float(uv, midlineWeight, maskingLR);
+	#else
+	CalculateLeftRightMasking_float(inPosition, midlineWeight, maskingLR);
+	#endif
+	float maskLeft = maskingLR.x;
+	float maskRight = maskingLR.y;
 
 	CalculateMuscleDataPreCalculated_float(characterID, vertexIndex, vertexCount, maskLeft, maskRight, muscleData);
 
@@ -857,24 +871,16 @@ void SkinPreCalculatedVeins_float(int shrinkShapeIndex, int growShapeIndex, int 
 
 	midlineWeight = 0;
 	SampleMidlineVertexGroup_float(vertexIndex, vertexCount, midlineWeight);
-	float maskLeft = 1;
-	float maskRight = 1;
-	if (mainUV.x > 0.5) 
-	{
-		maskLeft = 1;
-		maskRight = midlineWeight;
-	} 
-	else if (mainUV.x < 0.5) 
-	{		
-		maskLeft = midlineWeight;
-		maskRight = 1;
-	}
-	float maskTotal = maskLeft + maskRight; 
-	if (maskTotal > 1.0) 
-	{
-		maskLeft = maskLeft / maskTotal;
-		maskRight = maskRight / maskTotal;
-	}
+	float2 maskingLR = float2(1,1);
+	#ifdef USE_LEFTRIGHT_BUFFER
+	CalculateLeftRightMasking_float(vertexIndex, midlineWeight, maskingLR);
+	#elif USE_LEFTRIGHT_UV
+	CalculateLeftRightMasking_float(uv, midlineWeight, maskingLR);
+	#else
+	CalculateLeftRightMasking_float(inPosition, midlineWeight, maskingLR);
+	#endif
+	float maskLeft = maskingLR.x;
+	float maskRight = maskingLR.y;
 
 	CalculateMuscleDataPreCalculated_float(characterID, vertexIndex, vertexCount, maskLeft, maskRight, muscleData);
 

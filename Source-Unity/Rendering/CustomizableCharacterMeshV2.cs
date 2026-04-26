@@ -1691,11 +1691,18 @@ namespace Swole.Morphing
 
                 indicesToUpdate.Clear();
 
+                int midlineVertexGroupPreMul = data.midlineVertexGroup * data.vertexCount;
+#if UNITY_EDITOR
+                if (midlineVertexGroupPreMul < 0) 
+                {
+                    Debug.LogError($"[{debugName}] Midline vertex group premul index is negative, which likely means no midline vertex group exists! ({midlineVertexGroupPreMul})");
+                    return;
+                }
+#endif
+
                 muscleGroupControlWeights.CopyFrom(muscleGroupControlWeightsNext);
                 fatGroupControlWeights.CopyFrom(fatGroupControlWeightsNext);
                 variationGroupControlWeights.CopyFrom(variationGroupControlWeightsNext);
-
-                int midlineVertexGroupPreMul = data.midlineVertexGroup * data.vertexCount;
 
                 JobHandle physiqueUpdateHandle = default;
                 if (indicesToPhysiqueUpdate.Length > 0)
@@ -1975,12 +1982,17 @@ namespace Swole.Morphing
 
             private int finalVertexDeltasBufferIndex = -1;
 #if UNITY_EDITOR
+            private string debugName;
             public void Initialize(string debug)
 #else
             public void Initialize()
 #endif
             {
                 if (IsInitialized || data == null || disposed) return;
+
+#if UNITY_EDITOR
+                debugName = debug;
+#endif
 
                 List<float> tempFloats = new List<float>();
                 List<GroupControlWeight2> tempGroupControlWeights = new List<GroupControlWeight2>();
@@ -5455,12 +5467,16 @@ namespace Swole.Morphing
         public override int InstanceSlot => InstanceID;
         public override bool IsInitialized => instance != null && instance.IsValid;
 
+        public UnityEvent<InstanceV2> OnClaimInstance = new UnityEvent<InstanceV2>();
+
         protected override void CreateInstance()
         {
             if (instance != null && instance.IsValid) return;
 
             instance = Updater.Register(Data);
-            instance.updateManually = updateMeshManually; 
+            instance.updateManually = updateMeshManually;
+
+            OnClaimInstance?.Invoke(instance);
         }
         protected override void CreateInstance(List<InstancedRendering.MaterialPropertyInstanceOverride<float>> floatOverrides, List<InstancedRendering.MaterialPropertyInstanceOverride<Color>> colorOverrides, List<InstancedRendering.MaterialPropertyInstanceOverride<Vector4>> vectorOverrides)
         {
@@ -5492,7 +5508,7 @@ namespace Swole.Morphing
 
             Animator = animator; // force subscribe listeners
 
-            if (characterInstanceReference != null) CharacterInstanceReference = characterInstanceReference;
+            if (characterInstanceReference != null) CharacterInstanceReference = characterInstanceReference; 
             if (rigInstanceReference != null) RigInstanceReference = rigInstanceReference;
             if (shapesInstanceReference != null) ShapesInstanceReference = shapesInstanceReference;  
 
@@ -6223,8 +6239,8 @@ namespace Swole.Morphing
                                 if (mats == null || mats.Length != renderSet.materialCount)
                                 {
                                     mats = new Material[renderSet.materialCount];
-                                    for (int j = 0; i < renderSet.materialCount; j++) mats[j] = materialInstances[renderSet.materialIndexStart + j];
                                 }
+                                for (int j = 0; j < renderSet.materialCount; j++) mats[j] = materialInstances[renderSet.materialIndexStart + j]; 
 
                                 renderer.sharedMaterials = mats;
                             }
@@ -6242,7 +6258,7 @@ namespace Swole.Morphing
             UnbindFatGroupsControlBufferFromMaterials(materialInstances);
             UnbindVariationGroupsControlBufferFromMaterials(materialInstances);
 
-            if (lodGroup != null) lodGroup.gameObject.SetActive(false);
+            if (lodGroup != null) lodGroup.gameObject.SetActive(false); 
             if (instance != null) Updater.Unregister(ref instance);
         }
 
@@ -6858,7 +6874,7 @@ namespace Swole.Morphing
                     else
                     {
                         bones = new Transform[avatar.bones.Length];
-                        for (int a = 0; a < bones.Length; a++) bones[a] = rig_root.FindDeepChildLiberal(avatar.bones[a]);
+                        for (int a = 0; a < bones.Length; a++) bones[a] = rig_root.FindDeepChildLiberal(avatar.bones[a]); 
                     }
                 }
 
@@ -6979,12 +6995,19 @@ namespace Swole.Morphing
                     meshV2.RemoveChild(this, ChildType.Rig);
                 }
 
-                if (value is CustomizableCharacterMeshV2 meshV2_)
-                {
-                    meshV2_.AddChild(this, ChildType.Rig);
-                }
-
                 rigInstanceReference = value;
+
+                if (RigInstanceReferenceIsValid)
+                {
+                    if (rigInstanceReference is CustomizableCharacterMeshV2 meshV2_)
+                    {
+                        meshV2_.AddChild(this, ChildType.Rig); 
+                    }
+                } 
+                else
+                {
+                    rigInstanceReference = null;
+                }
             }
         }
         public bool RigInstanceReferenceIsValid => rigInstanceReference != null && rigInstanceReference.SkinningBoneCount == SkinningBoneCount;
@@ -7183,8 +7206,11 @@ namespace Swole.Morphing
 
                 int boneCount = SkinningBoneCount;
 
-                var rigSampler = RigSampler;
-                if (rigSampler != null) rigSampler.AddWritableInstanceBuffer(matricesBuffer, RigInstanceID * boneCount); 
+                if (!RigInstanceReferenceIsValid)
+                {
+                    var rigSampler = RigSampler;
+                    if (rigSampler != null) rigSampler.AddWritableInstanceBuffer(matricesBuffer, RigInstanceID * boneCount);
+                }
 
                 if (materialInstances != null)
                 {
@@ -7209,8 +7235,10 @@ namespace Swole.Morphing
             {
                 var meshData = SubData;
 
-                //var rigSampler = RigSampler;
-                if (rigSampler != null) rigSampler.RemoveWritableInstanceBuffer(skinningMatricesBuffer);
+                if (!RigInstanceReferenceIsValid)
+                {
+                    if (rigSampler != null) rigSampler.RemoveWritableInstanceBuffer(skinningMatricesBuffer, RigInstanceID * SkinningBoneCount); 
+                }
 
                 if (materialInstances != null)
                 {
@@ -7574,7 +7602,7 @@ namespace Swole.Morphing
             if (!Data.SerializedData.TryGetVertices(lod, out var vertices)) return false;
             if (!Data.SerializedData.TryGetTriangles(lod, out var triangles)) return false;
             NativeArray<float4> indexUVs = default;
-            if (lod > 0 && !Data.SerializedData.TryGetUV(lod, Data.SerializedData.nearestVertexUVChannel, out indexUVs)) return false;
+            if (lod > 0 && !Data.SerializedData.TryGetUV(lod, Data.SerializedData.nearestVertexUVChannel, out indexUVs)) return false; 
 
             instance.UpdateIfDirty(false, true);
             instance.OwnerGroup.ActiveJob.Complete(); 

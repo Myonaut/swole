@@ -225,24 +225,25 @@ namespace Swole
         /// </summary>
         public const string sideSuffixRight = "_Right";
 
-        public static string AsSuffix(this Side side)
+        public static string AsSuffix(this Side side) => AsSuffix(side, sideSuffixLeft, sideSuffixRight, sideSuffixBoth);
+        public static string AsSuffix(this Side side, string leftSuffix, string rightSuffix, string bothSuffix = "") 
         {
 
             switch (side)
             {
 
                 case Side.Both:
-                    return sideSuffixBoth;
+                    return bothSuffix;
 
                 case Side.Left:
-                    return sideSuffixLeft;
+                    return leftSuffix;
 
                 case Side.Right:
-                    return sideSuffixRight;
+                    return rightSuffix;
 
             }
 
-            return "";
+            return string.Empty;
 
         }
 

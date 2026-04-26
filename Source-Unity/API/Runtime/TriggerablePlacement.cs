@@ -17,6 +17,7 @@ namespace Swole.API.Unity
         [Serializable]
         public struct Placement
         {
+            public float delay;
             public int[] targetPlaceables;
             public Transform parent;
             public Vector3 position;
@@ -36,6 +37,8 @@ namespace Swole.API.Unity
             public int trackerIndex;
             [NonSerialized]
             public int trackedPointIndex;
+
+            public UnityEvent OnTriggered;
 
             public void Trigger(Transform[] placeables)
             {
@@ -97,6 +100,8 @@ namespace Swole.API.Unity
                         placeable.localScale = scale_;
                     }
                 }
+
+                OnTriggered?.Invoke();
             }
         }
 
@@ -148,6 +153,11 @@ namespace Swole.API.Unity
             }
 
             private static readonly HashSet<int> tempIndices = new HashSet<int>();
+            private IEnumerator TriggerDelayedPlacement(Placement placement, Transform[] placeables)
+            {
+                yield return new WaitForSeconds(placement.delay);
+                placement.Trigger(placeables);
+            }
             public void Trigger(Transform[] placeables)
             {
                 if (placements != null && placeables != null)
@@ -163,14 +173,22 @@ namespace Swole.API.Unity
                             while(tempIndices.Contains(j)) j = UnityEngine.Random.Range(0, placements.Length); 
 
                             tempIndices.Add(j);
-                            placements[j].Trigger(placeables);
+                            var placement = placements[j];
+                            if (placement.delay > 0f)
+                            {
+                                CoroutineProxy.Start(TriggerDelayedPlacement(placement, placeables));
+                            }
+                            else
+                            {
+                                placement.Trigger(placeables);
+                            }
                         }
                     }
                     else
                     {
                         foreach (var placement in placements)
                         {
-                            placement.Trigger(placeables);
+                            placement.Trigger(placeables); 
                         }
                     }
                 }
@@ -197,6 +215,18 @@ namespace Swole.API.Unity
             }
         }
 
+        public int IndexOfTriggerPoint(string triggerPointName)
+        {
+            if (triggerPoints != null)
+            {
+                for (int i = 0; i < triggerPoints.Length; i++)
+                {
+                    if (triggerPoints[i].name == triggerPointName) return i;
+                }
+            }
+            return -1;
+        }
+
         public override void Trigger(int triggerIndex)
         {
             if (triggerIndex >= 0 && triggerPoints != null && triggerIndex < triggerPoints.Length)
@@ -205,6 +235,12 @@ namespace Swole.API.Unity
             }
 
             base.Trigger(triggerIndex);
+        }
+
+        public void TriggerByName(string triggerPointName)
+        {
+            int index = IndexOfTriggerPoint(triggerPointName); 
+            if (index >= 0) Trigger(index);
         }
     }
 }

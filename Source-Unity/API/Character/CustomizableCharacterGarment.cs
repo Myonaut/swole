@@ -12,6 +12,28 @@ namespace Swole.API
     public class CustomizableCharacterGarment : MonoBehaviour, ICustomUpdatableBehaviour 
     {
 
+#if UNITY_EDITOR
+        [SerializeField]
+#endif
+        protected bool applyAutoRipGroupCreators;
+
+#if UNITY_EDITOR
+        protected void OnValidate()
+        {
+            if (applyAutoRipGroupCreators)
+            {
+                applyAutoRipGroupCreators = false; 
+                if (pieces != null)
+                {
+                    foreach (var piece in pieces)
+                    {
+                        if (piece != null && piece.ripGroupCreators != null && piece.ripGroupCreators.Length > 0) piece.CreateRipGroupsFromCreators(piece.ripGroupCreators); 
+                    }
+                }
+            }
+        }
+#endif
+
         [Serializable]
         public class RipEvent
         {
@@ -65,14 +87,126 @@ namespace Swole.API
             public float visualRippage;
             public float ripSpeed;
 
+            public bool copyFirstContributors;
+            public float copyMuscleContributorsMassMultiplier = 1f;
+            public float copyFatContributorsMultiplier = 1f;
+
             public MuscleRipContributor[] muscleRipContributors;
             public FatRipContributor[] fatRipContributors;
+
+            public void CopyContributorsFrom(RipLevel level)
+            {
+#if UNITY_EDITOR
+                if (!Application.isPlaying) return;
+#endif
+
+                if (level.muscleRipContributors != null && level.muscleRipContributors.Length > 0)
+                {
+                    float massMul = copyMuscleContributorsMassMultiplier == 0f ? 1f : copyMuscleContributorsMassMultiplier;
+                    if (muscleRipContributors != null && muscleRipContributors.Length > 0)
+                    {
+                        var tempArray = new MuscleRipContributor[muscleRipContributors.Length + level.muscleRipContributors.Length];
+                        Array.Copy(level.muscleRipContributors, tempArray, muscleRipContributors.Length);
+                        Array.Copy(muscleRipContributors, 0, tempArray, level.muscleRipContributors.Length, muscleRipContributors.Length); 
+                        muscleRipContributors = tempArray;
+                    } 
+                    else
+                    {
+                        muscleRipContributors = (MuscleRipContributor[])level.muscleRipContributors.Clone();
+                    }
+                    for(int i = 0; i < level.muscleRipContributors.Length; i++)
+                    {
+                        var cont = muscleRipContributors[i].Duplicate();
+                        cont.massRange = cont.massRange * massMul;
+                        muscleRipContributors[i] = cont;
+                    }
+                }
+
+                if (level.fatRipContributors != null && level.fatRipContributors.Length > 0)
+                {
+                    float fatMul = copyFatContributorsMultiplier == 0f ? 1f : copyFatContributorsMultiplier;
+                    if (fatRipContributors != null && fatRipContributors.Length > 0)
+                    {
+                        var tempArray = new FatRipContributor[fatRipContributors.Length + level.fatRipContributors.Length];
+                        Array.Copy(level.fatRipContributors, tempArray, fatRipContributors.Length);
+                        Array.Copy(fatRipContributors, 0, tempArray, level.fatRipContributors.Length, fatRipContributors.Length);
+                        fatRipContributors = tempArray;
+                    }
+                    else
+                    {
+                        fatRipContributors = (FatRipContributor[])level.fatRipContributors.Clone();
+                    }
+                    for (int i = 0; i < level.fatRipContributors.Length; i++)
+                    {
+                        var cont = fatRipContributors[i].Duplicate();
+                        cont.fatRange = cont.fatRange * fatMul;
+                        fatRipContributors[i] = cont;
+                    }
+                }
+            }
+
+            public bool copyFirstChanceEvents;
 
             public int maxChanceRipEventCalls;
             public RipEvent[] chanceRipEvents;
 
+            public void CopyChanceEventsFrom(RipLevel level)
+            {
+#if UNITY_EDITOR
+                if (!Application.isPlaying) return;
+#endif
+
+                if (level.chanceRipEvents != null && level.chanceRipEvents.Length > 0)
+                {
+                    if (chanceRipEvents != null && chanceRipEvents.Length > 0)
+                    {
+                        var tempArray = new RipEvent[chanceRipEvents.Length + level.chanceRipEvents.Length];
+                        Array.Copy(level.chanceRipEvents, tempArray, chanceRipEvents.Length);
+                        Array.Copy(chanceRipEvents, 0, tempArray, level.chanceRipEvents.Length, chanceRipEvents.Length);
+                        chanceRipEvents = tempArray;
+                    }
+                    else
+                    {
+                        chanceRipEvents = level.chanceRipEvents;
+                    }
+                }
+            }
+
+            public bool copyFirstEvents;
+
             public UnityEvent OnRip;
             public UnityEvent<float> OnRipDelta;
+
+            public void CopyEventsFrom(RipLevel level)
+            {
+#if UNITY_EDITOR
+                if (!Application.isPlaying) return;
+#endif
+
+                if (level.OnRip != null)
+                {
+                    if (OnRip != null)
+                    {
+                        OnRip.AddListener(level.OnRip.Invoke);
+                    }
+                    else
+                    {
+                        OnRip = level.OnRip;
+                    }
+                }
+
+                if (level.OnRipDelta != null)
+                {
+                    if (OnRipDelta != null)
+                    {
+                        OnRipDelta.AddListener(level.OnRipDelta.Invoke);
+                    }
+                    else
+                    {
+                        OnRipDelta = level.OnRipDelta;
+                    }
+                }
+            }
 
             public int CompareTo(RipLevel other)
             {
@@ -84,6 +218,24 @@ namespace Swole.API
                 if (chanceRipEvents != null)
                 {
                     foreach(var event_ in chanceRipEvents) event_.Reset();
+                }
+            }
+
+            public void CopySettingsFrom(RipLevel level)
+            {
+                var fields = typeof(RipLevel).GetFields();
+                foreach (var field in fields)
+                {
+                    field.SetValue(this, field.GetValue(level));
+                }
+            }
+            public void CopyNonNullSettingsFrom(RipLevel level)
+            {
+                var fields = typeof(RipLevel).GetFields();
+                foreach (var field in fields)
+                {
+                    var val = field.GetValue(level);
+                    if (!ReferenceEquals(val, null)) field.SetValue(this, val);
                 }
             }
         }
@@ -119,6 +271,42 @@ namespace Swole.API
             public float maxPumpMassMultiplier = 1f;
 
             public CustomizableCharacterMeshV2 characterMeshOverride;
+
+            public MuscleRipContributor Duplicate()
+            {
+                MuscleRipContributor newCont = new MuscleRipContributor();
+                var fields = typeof(MuscleRipContributor).GetFields(System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+                foreach (var field in fields)
+                {
+                    field.SetValue(newCont, field.GetValue(this));
+                }
+                return newCont;
+            }
+
+            public MuscleRipContributor LerpInto(MuscleRipContributor other, float t)
+            {
+                MuscleRipContributor newCont = new MuscleRipContributor();
+
+                newCont.muscleGroupName = other.muscleGroupName;
+                newCont.muscleGroupIndex = other.muscleGroupIndex;
+                newCont.side = other.side;
+
+                newCont.massRange = Vector2.LerpUnclamped(massRange, other.massRange, t);
+                newCont.minRipDelta = Mathf.LerpUnclamped(minRipDelta, other.minRipDelta, t);
+                newCont.maxRipDelta = Mathf.LerpUnclamped(maxRipDelta, other.maxRipDelta, t);
+
+                newCont.flexRange = Vector2.LerpUnclamped(flexRange, other.flexRange, t);
+                newCont.minFlexMassMultiplier = Mathf.LerpUnclamped(minFlexMassMultiplier, other.minFlexMassMultiplier, t);
+                newCont.maxFlexMassMultiplier = Mathf.LerpUnclamped(maxFlexMassMultiplier, other.maxFlexMassMultiplier, t);
+
+                newCont.pumpRange = Vector2.LerpUnclamped(pumpRange, other.pumpRange, t);
+                newCont.minPumpMassMultiplier = Mathf.LerpUnclamped(minPumpMassMultiplier, other.minPumpMassMultiplier, t);
+                newCont.maxPumpMassMultiplier = Mathf.LerpUnclamped(maxPumpMassMultiplier, other.maxPumpMassMultiplier, t);
+
+                newCont.characterMeshOverride = other.characterMeshOverride;
+
+                return newCont;
+            }
 
             public void Init(CustomizableCharacterGarment garment)
             {
@@ -182,6 +370,35 @@ namespace Swole.API
             public float maxRipDelta;
 
             public CustomizableCharacterMeshV2 characterMeshOverride;
+
+            public FatRipContributor Duplicate()
+            {
+                FatRipContributor newCont = new FatRipContributor();
+                var fields = typeof(FatRipContributor).GetFields(System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+                foreach (var field in fields)
+                {
+                    field.SetValue(newCont, field.GetValue(this));
+                }
+                return newCont;
+            }
+
+            public FatRipContributor LerpInto(FatRipContributor other, float t)
+            {
+                FatRipContributor newCont = new FatRipContributor();
+
+                newCont.fatGroupName = other.fatGroupName;
+                newCont.fatGroupIndex = other.fatGroupIndex;
+                newCont.side = other.side;
+
+                newCont.fatRange = Vector2.LerpUnclamped(fatRange, other.fatRange, t);
+
+                newCont.minRipDelta = Mathf.LerpUnclamped(minRipDelta, other.minRipDelta, t);
+                newCont.maxRipDelta = Mathf.LerpUnclamped(maxRipDelta, other.maxRipDelta, t); 
+
+                newCont.characterMeshOverride = other.characterMeshOverride;
+
+                return newCont;
+            }
 
             public void Init(CustomizableCharacterGarment garment)
             {
@@ -258,13 +475,24 @@ namespace Swole.API
 
             public void Init(CustomizableCharacterGarment garment, GarmentPiece piece)
             {
-                this.garment = garment;
+                this.garment = garment; 
                 this.piece = piece;
 
                 if (ripLevels != null)
                 {
                     ripLevels.Sort();
 
+                    var firstRipLevel = ripLevels.Count > 0 ? ripLevels[0] : null;
+                    if (firstRipLevel != null)
+                    {
+                        for (int i = 1; i < ripLevels.Count; i++)
+                        {
+                            var level = ripLevels[i];
+                            if (level.copyFirstContributors) level.CopyContributorsFrom(firstRipLevel);
+                            if (level.copyFirstChanceEvents) level.CopyChanceEventsFrom(firstRipLevel);
+                            if (level.copyFirstEvents) level.CopyEventsFrom(firstRipLevel); 
+                        }
+                    }
                     foreach (var level in ripLevels)
                     {
                         if (level.muscleRipContributors != null)
@@ -362,11 +590,147 @@ namespace Swole.API
         }
 
         [Serializable]
+        public class AutoRipGroupCreator
+        {
+            public string groupName;
+
+            public string mainContributingGroupName;
+            public bool isFatGroup;
+
+            public Side side;
+            public bool mirror;
+
+            public MuscleRipContributor muscleContributorStart;
+            public MuscleRipContributor muscleContributorEnd;
+
+            public FatRipContributor fatContributorStart;
+            public FatRipContributor fatContributorEnd;
+
+            public RipLevel[] baseRipLevels;
+
+            public CustomizableCharacterMeshVertexControlGroups controlGroupManager;
+            public string controlGroupId;
+            public string optionalSubGroupId;
+
+            public AutoRipGroupCreator Duplicate()
+            {
+                var newCreator = new AutoRipGroupCreator();
+
+                var fields = typeof(AutoRipGroupCreator).GetFields(System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+                foreach (var field in fields)
+                {
+                    field.SetValue(newCreator, field.GetValue(this));
+                }
+
+                return newCreator;
+            }
+        }
+
+        [Serializable]
         public class GarmentPiece
         {
 
             public string name;
             public bool disable;
+
+#if UNITY_EDITOR
+            [SerializeField]
+#else
+            [NonSerialized]
+#endif
+            public AutoRipGroupCreator[] ripGroupCreators;
+
+            public void CreateRipGroupsFromCreators(AutoRipGroupCreator[] creators)
+            {
+                List<RipGroup> ripGroups = new List<RipGroup>();
+                if (this.ripGroups != null)
+                {
+                    ripGroups.AddRange(this.ripGroups);
+                }
+
+                if (creators != null)
+                {
+                    void EvaluateCreator(AutoRipGroupCreator creator)
+                    {
+                        RipGroup ripGroup = null;
+                        int existingIndex = ripGroups.FindIndex(g => g.name == creator.groupName);
+                        if (existingIndex >= 0)
+                        {
+                            ripGroup = ripGroups[existingIndex];
+                        }
+                        else
+                        {
+                            ripGroup = new RipGroup() { name = creator.groupName };
+                            ripGroups.Add(ripGroup);
+                        }
+
+                        if (ripGroup.ripLevels == null) ripGroup.ripLevels = new List<RipLevel>();
+                        while (ripGroup.ripLevels.Count < creator.baseRipLevels.Length) ripGroup.ripLevels.Add(new RipLevel());
+                        if (ripGroup.ripLevels.Count > creator.baseRipLevels.Length) ripGroup.ripLevels.RemoveRange(creator.baseRipLevels.Length, ripGroup.ripLevels.Count - creator.baseRipLevels.Length);
+
+                        for (int i = 0; i < creator.baseRipLevels.Length; i++)
+                        {
+                            float t = i / (float)(creator.baseRipLevels.Length - 1f);
+
+                            var baseLevel = creator.baseRipLevels[i];
+                            var level = ripGroup.ripLevels[i];
+                            bool copyFirstContributors = level.copyFirstContributors;
+                            bool copyFirstChanceEvents = level.copyFirstChanceEvents;
+                            bool copyFirstEvents = level.copyFirstEvents;
+                            level.CopyNonNullSettingsFrom(baseLevel);
+                            level.copyFirstContributors = copyFirstContributors;
+                            level.copyFirstChanceEvents = copyFirstChanceEvents; 
+                            level.copyFirstEvents = copyFirstEvents;
+                            if (!level.copyFirstContributors)
+                            {
+                                if (creator.isFatGroup)
+                                {
+                                    if (level.fatRipContributors == null) level.fatRipContributors = new FatRipContributor[0];
+                                    var cont = creator.fatContributorStart.LerpInto(creator.fatContributorEnd, t);
+                                    cont.fatGroupName = creator.mainContributingGroupName;
+                                    cont.side = creator.side;
+                                    level.fatRipContributors = (FatRipContributor[])level.fatRipContributors.Add(cont);
+                                }
+                                else
+                                {
+                                    if (level.muscleRipContributors == null) level.muscleRipContributors = new MuscleRipContributor[0];
+                                    var cont = creator.muscleContributorStart.LerpInto(creator.muscleContributorEnd, t);
+                                    cont.muscleGroupName = creator.mainContributingGroupName;
+                                    cont.side = creator.side;
+                                    level.muscleRipContributors = (MuscleRipContributor[])level.muscleRipContributors.Add(cont);
+                                }
+                            }
+                        }
+
+                        if (creator.controlGroupManager != null)
+                        {
+                            if (creator.controlGroupManager.TryGetControlGroup(creator.controlGroupId, out var controlGroup) && controlGroup != null)
+                            {
+                                var subGroupName = string.IsNullOrWhiteSpace(creator.optionalSubGroupId) ? (creator.side != Side.Both ? (creator.mainContributingGroupName == Utils.GetMirroredName(creator.mainContributingGroupName) ? $"{creator.mainContributingGroupName}{creator.side.AsSuffix("_L", "_R")}" : creator.mainContributingGroupName) : creator.mainContributingGroupName) : creator.optionalSubGroupId;
+                                if (controlGroup.TryGetSubGroup(subGroupName, out CustomizableCharacterMeshVertexControlGroup.SubGroup subGroup) && subGroup != null)
+                                {
+                                    ripGroup.visualControlGroups = new CustomizableCharacterMeshVertexControlGroup.SubGroup.Reference[] { new CustomizableCharacterMeshVertexControlGroup.SubGroup.Reference() { controlGroupManager = creator.controlGroupManager, controlGroupId = creator.controlGroupId, subControlGroupName = subGroup.displayName } };
+                                }
+                            }
+                        }
+                    }
+
+                    foreach (var creator in creators)
+                    {
+                        EvaluateCreator(creator);
+                        if (creator.mirror && creator.side != Side.Both)
+                        {
+                            var mirroredCreator = creator.Duplicate();
+                            mirroredCreator.groupName = Utils.GetMirroredName(creator.groupName);
+                            mirroredCreator.mainContributingGroupName = Utils.GetMirroredName(creator.mainContributingGroupName); 
+                            mirroredCreator.side = creator.side == Side.Left ? Side.Right : Side.Left; 
+                            EvaluateCreator(mirroredCreator);
+                        }
+                    }
+                }
+
+                this.ripGroups = ripGroups.ToArray();
+            }
 
             public RipGroup[] ripGroups;
 
