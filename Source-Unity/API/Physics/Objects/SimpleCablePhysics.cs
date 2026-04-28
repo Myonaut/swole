@@ -75,6 +75,8 @@ namespace Swole.API.Unity
         [Range(0f, 1f)]
         public float colliderLengthRatio = 1f;
 
+        public LayerMask collisionMask = ~0;
+
         protected float averageSpacing;
         public float AverageSpacing => averageSpacing;
 
@@ -170,6 +172,8 @@ namespace Swole.API.Unity
             collider.radius = colliderRadius;
             collider.height = distanceBetweenPoints * colliderLengthRatio;
             collider.center = (collider.direction == 0 ? Vector3.right : collider.direction == 1 ? Vector3.up : Vector3.forward) * distanceBetweenPoints * 0.5f;  
+            collider.includeLayers = collisionMask;
+            collider.excludeLayers = ~collisionMask;
         }
 
         public void Initialize()

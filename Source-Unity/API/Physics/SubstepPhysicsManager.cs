@@ -70,7 +70,7 @@ namespace Swole.API.Unity
         {
             base.OnAwake();
 
-#if UNITY_2022_OR_NEWER
+#if UNITY_2022_3_OR_NEWER
             if (forceSetSimulationMode) Physics.simulationMode = SimulationMode.Script; 
 #else
             if (forceSetSimulationMode) Physics.autoSimulation = false; 
@@ -133,7 +133,7 @@ namespace Swole.API.Unity
 
                     // simulate pre upate bhaviours here
                     PreUpdateBehaviours();
-                    Physics.Simulate(remainingTime);
+                    Physics.Simulate(remainingTime); 
                     UpdateBehaviours();
                 }
 

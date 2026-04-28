@@ -1673,6 +1673,8 @@ namespace Swole.Morphing
             return false;
         }
 
+        public float4x4 GetVertexLocalToWorld(int lod, int vertexIndex) => float4x4.identity;
+
         public float3 GetVertexInWorld(int lod, int vertexIndex) => GetVertexInWorld(lod, vertexIndex, out _, out _); 
         public float3 GetVertexInWorld(int lod, int vertexIndex, out float4x4 skinningMatrix, out float3 localDelta)
         {

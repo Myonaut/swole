@@ -176,6 +176,36 @@ namespace Swole.Morphing
         }
 
         [Serializable]
+        public class PointTrackingTransform
+        {
+            public Transform transform;
+
+            public bool ignorePosition;
+            public bool ignoreRotation;
+
+            public Vector3 positionOffset;
+            public Vector3 rotationOffset;
+            [NonSerialized]
+            public Quaternion rotationOffsetQuat;
+
+            [NonSerialized]
+            public Vector3 initPosition;
+            [NonSerialized]
+            public Quaternion initRotation;
+
+            public void Init()
+            {
+                if (transform != null)
+                {
+                    initPosition = transform.position;
+                    initRotation = transform.rotation;
+                }
+
+                rotationOffsetQuat = Quaternion.Euler(rotationOffset);
+            }
+        }
+
+        [Serializable]
         public class PointTracker
         {
             public string name;
@@ -192,9 +222,19 @@ namespace Swole.Morphing
 
             public int boundSkinningVertexIndex;
 
+            public List<PointTrackingTransform> transformsToSync;
+            [NonSerialized]
+            private bool syncTransforms;
+
             public void Init(int indexInTracker)
             {
                 this.indexInTracker = indexInTracker;
+
+                if (transformsToSync != null && transformsToSync.Count > 0)
+                {
+                    syncTransforms = true;
+                    foreach (var transform in transformsToSync) transform.Init(); 
+                }
             }
 
             private Vector3 currentPosition;
@@ -234,6 +274,18 @@ namespace Swole.Morphing
                     currentL2W = l2w;
 
                     OnPositionUpdate?.Invoke(currentPosition, currentRotationOffset, currentL2W);
+
+                    if (syncTransforms)
+                    {
+                        foreach(var transform_ in transformsToSync)
+                        {
+                            if (transform_.transform != null)
+                            {
+                                if (!transform_.ignorePosition) transform_.transform.position = currentPosition + (currentRotationOffset * transform_.positionOffset);
+                                if (!transform_.ignoreRotation) transform_.transform.rotation = currentRotationOffset * transform_.rotationOffsetQuat * transform_.initRotation;
+                            }
+                        }
+                    }
                 }
             }
         }

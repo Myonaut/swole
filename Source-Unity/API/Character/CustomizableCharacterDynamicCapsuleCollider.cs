@@ -26,9 +26,16 @@ namespace Swole.Morphing
         protected string pointB;
 
         [SerializeField]
+        protected string pointMeshC;
+        [SerializeField]
+        protected string pointC;
+
+        [SerializeField]
         protected Vector2Int pointA_index;
         [SerializeField]
         protected Vector2Int pointB_index;
+        [SerializeField]
+        protected Vector2Int pointC_index;
 
         new protected CapsuleCollider collider;
 
@@ -36,7 +43,7 @@ namespace Swole.Morphing
 
         protected void Start()
         {
-            pointA_index = pointB_index = new Vector2Int(-1, -1);
+            pointA_index = pointB_index = pointC_index = new Vector2Int(-1, -1);
 
             collider = gameObject.AddOrGetComponent<CapsuleCollider>();
 
@@ -58,6 +65,14 @@ namespace Swole.Morphing
 
                         collider.direction = 2; 
                     } 
+                }
+
+                if (!string.IsNullOrWhiteSpace(pointMeshC) && !string.IsNullOrWhiteSpace(pointC) && trackerManager.TryGetTracker(pointMeshC, out var trackerMeshC))
+                {
+                    if (trackerMeshC.TryGetPoint(pointC, out var trackerPointC))
+                    {
+                        pointC_index = new Vector2Int(trackerMeshC.Index, trackerPointC.IndexInTracker);
+                    }
                 }
             }
 
@@ -92,21 +107,32 @@ namespace Swole.Morphing
 
                     float dist = Vector3.Distance(posA, posB);
 
-                    float radius = radiusRange.x;
-                    if (referenceDistanceRange.x != referenceDistanceRange.y)
-                    {
-                        float t = ((dist - referenceDistanceRange.x) / (referenceDistanceRange.y - referenceDistanceRange.x));
-                        if (clampDistanceRange) t = Mathf.Clamp01(t);
-
-                        radius = Mathf.LerpUnclamped(radiusRange.x, radiusRange.y, t);
-                    }
-
-                    collider.radius = radius;
                     collider.height = dist;
                     collider.center = new Vector3(collider.center.x, collider.center.y, dist * 0.5f);
 
                     transform.position = posA;
                     transform.LookAt(posB);
+
+                    float radius;
+                    if (pointC_index.x >= 0 && pointC_index.y >= 0)
+                    {
+                        Vector3 posC = trackerManager.GetPointPositionUnsafe(pointC_index.x, pointC_index.y);
+                        var closestPoint = Maths.GetPointOnSegment(posC, posA, posB); 
+                        radius = Vector3.Distance(posC, closestPoint); 
+                    } 
+                    else
+                    {
+                        radius = radiusRange.x;
+                        if (referenceDistanceRange.x != referenceDistanceRange.y)
+                        {
+                            float t = ((dist - referenceDistanceRange.x) / (referenceDistanceRange.y - referenceDistanceRange.x));
+                            if (clampDistanceRange) t = Mathf.Clamp01(t);
+
+                            radius = Mathf.LerpUnclamped(radiusRange.x, radiusRange.y, t);
+                        }
+                    }
+
+                    collider.radius = radius;
                 }
                 else
                 {

@@ -6,6 +6,7 @@ using UnityEngine;
 using UnityEngine.Events;
 
 using Swole.Morphing;
+using Swole.Cloth;
 
 namespace Swole.API
 {
@@ -774,7 +775,7 @@ namespace Swole.API
                 {
                     if (ripGroups != null)
                     {
-                        bool canRipOff = true; 
+                        bool canRipOff = true;
                         foreach (var ripGroup in ripGroups)
                         {
                             if (ripGroup.Rippage < ripGroup.pieceRipOffRippageThreshold)
@@ -790,13 +791,35 @@ namespace Swole.API
                         }
                         else
                         {
-                            foreach (var ripGroup in ripGroups)
+                            if (HasRipped)
                             {
-                                ripGroup.Update(deltaTime);
-                                if (!hasRipped && ripGroup.VisualRippage > firstRipThreshold)
+                                foreach (var ripGroup in ripGroups)
                                 {
-                                    OnFirstRip?.Invoke();
-                                    hasRipped = true;
+                                    ripGroup.Update(deltaTime);
+                                }
+                            }
+                            else
+                            {
+                                foreach (var ripGroup in ripGroups)
+                                {
+                                    ripGroup.Update(deltaTime);
+                                    if (!HasRipped && ripGroup.VisualRippage > firstRipThreshold)
+                                    {
+                                        OnFirstRip?.Invoke();
+                                        hasRipped = true;
+
+                                        bool isFirst = true;
+                                        foreach (var piece in garment.pieces)
+                                        {
+                                            if (piece != this && piece.HasRipped)
+                                            {
+                                                isFirst = false;
+                                                break;
+                                            }
+                                        }
+
+                                        if (isFirst) garment.OnFirstRipAny?.Invoke();
+                                    }
                                 }
                             }
                         }
@@ -824,6 +847,16 @@ namespace Swole.API
             {
                 if (disable) return;
 
+                bool wasFullyRippedOff = true;
+                foreach (var piece in garment.pieces)
+                {
+                    if (!piece.IsRippedOff)
+                    {
+                        wasFullyRippedOff = false;
+                        break;
+                    }
+                }
+
                 if (ripGroups != null)
                 {
                     foreach (var ripGroup in ripGroups) ripGroup.Reset();
@@ -832,15 +865,31 @@ namespace Swole.API
                 hasRipped = false;
 
                 OnRestore?.Invoke();
+
+                if (wasFullyRippedOff) garment.OnRestoreFromRipOff?.Invoke(); 
             }
 
             public void RipOff()
             {
                 if (disable || IsRippedOff) return;
 
-                Debug.Log($"RIPPED OFF {name}"); 
                 isRippedOff = true;
                 OnRipOff?.Invoke();
+
+                if (garment != null)
+                {
+                    bool isFinal = true;
+                    foreach (var piece in garment.pieces) 
+                    {
+                        if (!piece.IsRippedOff)
+                        {
+                            isFinal = false;
+                            break;
+                        }
+                    }
+
+                    if (isFinal) garment.OnFinalRipOff?.Invoke();
+                }
             }
 
         }
@@ -868,6 +917,11 @@ namespace Swole.API
         }
 
         public GarmentPiece[] pieces;
+
+        public UnityEvent OnInit;
+        public UnityEvent OnFirstRipAny;
+        public UnityEvent OnFinalRipOff;
+        public UnityEvent OnRestoreFromRipOff;
 
         private List<CustomizableCharacterMeshV2> dependentMeshes;
         private List<int> validMuscleGroupIndices;
@@ -941,7 +995,9 @@ namespace Swole.API
                         }
                     }
                 }
-            } 
+            }
+
+            OnInit?.Invoke();
         }
 
         protected virtual void OnDestroy()
@@ -973,6 +1029,10 @@ namespace Swole.API
 
         public virtual void CustomUpdate()
         {
+        }
+
+        public virtual void CustomLateUpdate() 
+        {
             if (!onlyUpdateIfDirty || IsDirty)
             {
                 if (pieces != null)
@@ -990,13 +1050,14 @@ namespace Swole.API
                 }
             }
         }
-
-        public virtual void CustomLateUpdate() { }
         public virtual void CustomFixedUpdate() { } 
 
     }
 
     public class CustomizableCharacterGarmentUpdater : CustomBehaviourUpdater<CustomizableCharacterGarmentUpdater, CustomizableCharacterGarment>
     {
+        public static int ExecutionPriority => CustomizableCharacterClothBoneUpdater.ExecutionPriority + 5; 
+
+        public override int Priority => ExecutionPriority;
     }
 }

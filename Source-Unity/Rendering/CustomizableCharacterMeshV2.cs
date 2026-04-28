@@ -5601,6 +5601,28 @@ namespace Swole.Morphing
             return true;
         }
 
+        public float4x4 GetVertexLocalToWorld(int lod, int vertexIndex)
+        {
+            var subData = SubData;
+            if (!subData.TryGetBoneWeights(lod, out var boneWeightsArray)) return float4x4.identity;
+
+            var rigSampler = RigSampler;
+            if (rigSampler != null)
+            {
+                var boneWeights = boneWeightsArray[vertexIndex];
+                return (rigSampler.TrackingGroup[boneWeights.boneIndex0] * boneWeights.boneWeight0) +
+                    (rigSampler.TrackingGroup[boneWeights.boneIndex1] * boneWeights.boneWeight1) +
+                    (rigSampler.TrackingGroup[boneWeights.boneIndex2] * boneWeights.boneWeight2) +
+                    (rigSampler.TrackingGroup[boneWeights.boneIndex3] * boneWeights.boneWeight3) +
+                    (rigSampler.TrackingGroup[boneWeights.boneIndex4] * boneWeights.boneWeight4) +
+                    (rigSampler.TrackingGroup[boneWeights.boneIndex5] * boneWeights.boneWeight5) +
+                    (rigSampler.TrackingGroup[boneWeights.boneIndex6] * boneWeights.boneWeight6) +
+                    (rigSampler.TrackingGroup[boneWeights.boneIndex7] * boneWeights.boneWeight7);
+            }
+
+            return float4x4.identity;
+        }
+
         public float3 GetVertexInWorld(int lod, int vertexIndex) => GetVertexInWorld(lod, vertexIndex, out _, out _);
         public float3 GetVertexInWorld(int lod, int vertexIndex, out float4x4 skinningMatrix, out float3 localDelta)
         {

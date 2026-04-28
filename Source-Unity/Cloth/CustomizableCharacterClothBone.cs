@@ -49,7 +49,15 @@ namespace Swole.Cloth
 
         protected bool initialized;
 
+#if UNITY_EDITOR
+        [SerializeField]
+#endif
+        protected bool initializeStartPosRot;
+        [SerializeField]
+        protected bool initializedStartPosRot;
+        [SerializeField]
         protected Vector3 initPosition;
+        [SerializeField]
         protected Quaternion initRotation;
 
         [SerializeField]
@@ -151,11 +159,49 @@ namespace Swole.Cloth
             Initialize();
         }
 
-        public void Initialize()
+#if UNITY_EDITOR
+        protected void OnValidate()
         {
+            if (initializeStartPosRot)
+            {
+                initializeStartPosRot = false;
+                InitializeStartPosRot();               
+            }
+        }
+#endif
+
+        public void InitializeStartPosRot()
+        {
+            initializeStartPosRot = false;
+            initializedStartPosRot = true;
+
             if (initParent == null) initParent = transform.parent;
             initPosition = initParent == null ? transform.localPosition : initParent.InverseTransformPoint(transform.position);
             initRotation = initParent == null ? transform.localRotation : (Quaternion.Inverse(initParent.rotation) * transform.rotation);
+        }
+
+        public void Initialize()
+        {
+            if (characterMesh != null)
+            {
+                float4x4 l2w;
+                if (boundSkinningVertexIndex >= 0 && boundSkinningVertexIndex != boundVertexIndex)
+                {
+                    l2w = characterMesh.GetVertexLocalToWorld(0, boundSkinningVertexIndex);
+
+                }
+                else
+                {
+                    l2w = characterMesh.GetVertexLocalToWorld(0, boundVertexIndex); 
+                }
+
+                startRot = Quaternion.Inverse(l2w.GetRotation());
+            }
+
+            if (!initializedStartPosRot)
+            {
+                InitializeStartPosRot();
+            }
 
             transform.SetParent(null, true);
 
@@ -177,6 +223,7 @@ namespace Swole.Cloth
             rigidbody.useGravity = settings.useGravity;
             rigidbody.mass = 1f;
             rigidbody.isKinematic = false;
+            rigidbody.collisionDetectionMode = CollisionDetectionMode.ContinuousDynamic;
 
             joint = rigidbody.gameObject.AddComponent<ConfigurableJoint>();
             joint.connectedBody = rootBody;
@@ -253,10 +300,10 @@ namespace Swole.Cloth
             lastPosition = transform.position;
             lastRotation = transform.rotation;
 
-            restPosition = rootTransform.InverseTransformPoint(lastPosition);
-            restRotation = lastRotation * Quaternion.Inverse(rootTransform.rotation);
+            restPosition = Vector3.zero;//rootTransform.InverseTransformPoint(lastPosition);
+            restRotation = (initParent == null ? initRotation : (initParent.rotation * initRotation)) * Quaternion.Inverse(rootTransform.rotation);//lastRotation * Quaternion.Inverse(rootTransform.rotation);
 
-            if (characterMesh != null) boneTrackerTransformIndex = characterMesh.RigSampler.TrackingGroup.IndexOf(transform);
+            if (characterMesh != null) boneTrackerTransformIndex = characterMesh.RigSampler.TrackingGroup.IndexOf(transform); 
 
             gameObject.layer = settings.layer;
 
@@ -356,7 +403,6 @@ namespace Swole.Cloth
             }
 
             var worldRot = l2w.GetRotation();
-            if (startRot.x == 0 && startRot.y == 0 && startRot.z == 0 && startRot.w == 0) startRot = Quaternion.Inverse(worldRot); 
             rootTransform.SetPositionAndRotation(vertexPosition + math.rotate(l2w, boundOffset), worldRot * startRot);
             /*if (settings.resetPositionBeforeAnimation)
             {
