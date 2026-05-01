@@ -843,18 +843,33 @@ namespace Swole.API.Unity
             if (index >= 0)
             {
                 var bindingsList = preIk ? autoFlexBindingsPreIk : autoFlexBindings;
+                var transformsArray = preIk ? transformsPreIk : transforms;
+
+                var binding = bindingsList[index];
+                if (binding.transformIndices.x >= 0)
+                {
+                    UnregisterTransformUser(transformsArray[binding.transformIndices.x], preIk);
+                    binding = bindingsList[index]; // refetch binding in case transform user changes modified it
+                }
+                if (binding.transformIndices.y >= 0)
+                {
+                    UnregisterTransformUser(transformsArray[binding.transformIndices.y], preIk);
+                    binding = bindingsList[index]; // refetch binding in case transform user changes modified it
+                }
+                if (binding.transformIndices.z >= 0)
+                {
+                    UnregisterTransformUser(transformsArray[binding.transformIndices.z], preIk);
+                    binding = bindingsList[index]; // refetch binding in case transform user changes modified it
+                }
+                if (binding.transformIndices.w >= 0) 
+                { 
+                    UnregisterTransformUser(transformsArray[binding.transformIndices.w], preIk);
+                    binding = bindingsList[index]; // refetch binding in case transform user changes modified it
+                }
 
                 int swapIndex = bindingsList.Length - 1;
                 if (swapIndex == index) swapIndex = -1;
                 bindingsList.RemoveAtSwapBack(index);
-
-                for (int a = 0; a < bindingsList.Length; a++)
-                {
-                    var binding = bindingsList[a];
-                    binding.transformIndices = math.select(binding.transformIndices, -1, binding.transformIndices == index);
-                    if (swapIndex >= 0) binding.transformIndices = math.select(binding.transformIndices, index, binding.transformIndices == swapIndex);
-                    bindingsList[a] = binding;
-                }
 
                 var indexList = preIk ? preIkFlexers : standardFlexers;
                 foreach (var flexerIndex in indexList)
@@ -892,7 +907,7 @@ namespace Swole.API.Unity
                 foreach (var autoFlexer in flexer.autoFlexers)
                 {
                     if (!autoFlexer.preIK) continue;
-                    autoFlexer.UpdateFlexOutputs(deltaTime, flexer.CharacterMesh, autoFlexer.jobIndexLeft >= 0 ? autoFlexBindings[autoFlexer.jobIndexLeft].output : 0f, autoFlexer.jobIndexRight >= 0 ? autoFlexBindings[autoFlexer.jobIndexRight].output : 0f);
+                    autoFlexer.UpdateFlexOutputs(deltaTime, flexer.CharacterMesh, autoFlexer.jobIndexLeft >= 0 ? autoFlexBindingsPreIk[autoFlexer.jobIndexLeft].output : 0f, autoFlexer.jobIndexRight >= 0 ? autoFlexBindingsPreIk[autoFlexer.jobIndexRight].output : 0f);
                 }
 
                 flexer.UpdateFlexing();

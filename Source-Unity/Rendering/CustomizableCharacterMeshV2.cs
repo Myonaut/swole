@@ -2147,7 +2147,9 @@ namespace Swole.Morphing
 
                 finalVertexDeltasBufferIndex = CreateInstanceMaterialBuffer<MeshVertexDelta>(data.PerVertexDeltaDataPropertyName, data.vertexCount, 3, true, out var finalVertexDeltasBuffer);
                 EnsureInstanceBufferSize(finalVertexDeltasBuffer);
-                Debug.Log($"{MaxInstanceCount} -- {finalVertexDeltasBuffer.InstanceCount}"); 
+#if UNITY_EDITOR
+                Debug.Log($"{MaxInstanceCount} -- {finalVertexDeltasBuffer.InstanceCount}");
+#endif
                 finalVertexDeltasBuffer.WriteToBuffer(finalVertexDeltas.AsArray(), 0, 0, finalVertexDeltas.Length); 
 
                 initialized = true;
@@ -7230,8 +7232,9 @@ namespace Swole.Morphing
 
                 if (!RigInstanceReferenceIsValid)
                 {
+                    int writeStartIndex = RigInstanceID * boneCount;
                     var rigSampler = RigSampler;
-                    if (rigSampler != null) rigSampler.AddWritableInstanceBuffer(matricesBuffer, RigInstanceID * boneCount);
+                    if (rigSampler != null && !rigSampler.IsWritingToBufferAt(matricesBuffer, writeStartIndex)) rigSampler.AddWritableInstanceBuffer(matricesBuffer, writeStartIndex); 
                 }
 
                 if (materialInstances != null)
@@ -7240,7 +7243,9 @@ namespace Swole.Morphing
                     {
                         if (mat == null) continue;
 
+#if UNITY_EDITOR
                         Debug.Log($"{name}: Binding {meshData.SkinningMatricesPropertyName} to {mat.name}");
+#endif
                         matricesBuffer.BindMaterialProperty(mat, meshData.SkinningMatricesPropertyName);
                         mat.SetInteger(meshData.BoneCountPropertyName, boneCount);
                     }
@@ -7323,7 +7328,9 @@ namespace Swole.Morphing
                 {
                     if (mat == null) continue;
 
+#if UNITY_EDITOR
                     Debug.Log($"{name}: Binding {meshData.StandaloneShapesControlPropertyName} to {mat.name}");
+#endif
                     shapeBuffer.BindMaterialProperty(mat, meshData.StandaloneShapesControlPropertyName);
                 }
             }
@@ -7395,7 +7402,9 @@ namespace Swole.Morphing
                 {
                     if (mat == null) continue;
 
+#if UNITY_EDITOR
                     Debug.Log($"{name}: Binding {meshData.MuscleGroupsControlPropertyName} to {mat.name}");
+#endif
                     muscleBuffer.BindMaterialProperty(mat, meshData.MuscleGroupsControlPropertyName);
                 }
             }
@@ -7467,7 +7476,9 @@ namespace Swole.Morphing
                 {
                     if (mat == null) continue;
 
+#if UNITY_EDITOR
                     Debug.Log($"{name}: Binding {meshData.FatGroupsControlPropertyName} to {mat.name}");
+#endif
                     fatBuffer.BindMaterialProperty(mat, meshData.FatGroupsControlPropertyName);
                 }
             }
@@ -7539,7 +7550,9 @@ namespace Swole.Morphing
                 {
                     if (mat == null) continue;
 
+#if UNITY_EDITOR
                     Debug.Log($"{name}: Binding {meshData.VariationShapesControlPropertyName} to {mat.name}");
+#endif
                     variationBuffer.BindMaterialProperty(mat, meshData.VariationShapesControlPropertyName);
                 }
             }
