@@ -53,6 +53,15 @@ namespace Swole.API.Unity.Animation
                         additiveRig[a] = data;
                     }
                 }
+                if (auxiliaryRig != null)
+                {
+                    for (int a = 0; a < auxiliaryRig.Length; a++)
+                    {
+                        var data = auxiliaryRig[a];
+                        data.inspectorName = data.id.name;
+                        auxiliaryRig[a] = data;
+                    }
+                }               
             }
         }
 #endif
@@ -131,7 +140,7 @@ namespace Swole.API.Unity.Animation
             public bool IsBone(string boneName) => id.IsBone(boneName);
             public bool IsBone(string boneName, string boneNameId) => id.IsBone(boneName, boneNameId);
 
-            public static BoneInfo GetDefault(string boneName) => new BoneInfo() { id = new BoneID() { name = boneName }, dontDrawConnection = false, scale = 1, childScale = 1, isDefault = true };
+            public static BoneInfo GetDefault(string boneName) => new BoneInfo() { id = new BoneID() { name = boneName }, dontDrawConnection = false, scale = 1f, childScale = 1f, isDefault = true };
         }
         [Serializable]
         public struct BoneID

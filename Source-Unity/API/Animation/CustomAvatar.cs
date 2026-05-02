@@ -259,9 +259,21 @@ namespace Swole.API.Unity.Animation
             if (bone == null) return nonDefaultParentBoneInfo;
 
             nonDefaultParentBone = bone.parent;
-            while (nonDefaultParentBone != null && nonDefaultParentBoneInfo.isDefault)
+            while (nonDefaultParentBone != null)
             {
-                TryGetBoneInfo(nonDefaultParentBone.name, findBoneTransform, out nonDefaultParentBoneInfo);
+                if (nonDefaultParentBoneInfo.isDefault)
+                {
+                    TryGetBoneInfo(nonDefaultParentBone.name, findBoneTransform, out nonDefaultParentBoneInfo);
+                }
+                else
+                {
+                    if (TryGetBoneInfo(nonDefaultParentBone.name, findBoneTransform, out var boneInfo))
+                    {
+                        float parentScale = boneInfo.scale * boneInfo.childScale;
+                        nonDefaultParentBoneInfo.scale = parentScale * nonDefaultParentBoneInfo.scale;
+                    }
+                }
+
                 nonDefaultParentBone = nonDefaultParentBone.parent;
             }
 

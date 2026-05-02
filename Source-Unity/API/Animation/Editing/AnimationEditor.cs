@@ -9806,7 +9806,7 @@ namespace Swole.API.Unity.Animation
                 rootT.SetParent(bone, false);
                 rootT.localPosition = boneInfo.offset;//Vector3.zero;
                 rootT.localRotation = Quaternion.identity;
-                float scale = nonDefaultParentBoneInfo.childScale * (boneInfo.isDefault ? nonDefaultParentBoneInfo.scale : boneInfo.scale);
+                float scale = nonDefaultParentBoneInfo.scale * nonDefaultParentBoneInfo.childScale * (boneInfo.isDefault ? 1f : boneInfo.scale); 
                 rootT.localScale = new Vector3(scale, scale, scale);
 
                 int parentIndex = -1;

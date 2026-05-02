@@ -442,8 +442,11 @@ namespace Swole.API.Unity.Animation
         public virtual bool IsSpacePressed => InputNotSupported();
 
         public virtual bool PressedCurveFocusKey => InputNotSupported();
-         public virtual bool PressedDeleteKey => InputNotSupported();
-         public virtual bool PressedSelectAllDeselectAllKey => InputNotSupported();
+        public virtual bool PressedDeleteKey => InputNotSupported();
+        public virtual bool PressedSelectAllDeselectAllKey => InputNotSupported();
+        public virtual bool PressedClipboardCopyKey => InputNotSupported();
+        public virtual bool PressedClipboardCutKey => InputNotSupported();
+        public virtual bool PressedClipboardPasteKey => InputNotSupported();
 
         public virtual float Scroll => InputValueNotSupported();
 
@@ -458,6 +461,9 @@ namespace Swole.API.Unity.Animation
         public virtual bool PressedCurveFocusKey => Input.GetKeyDown(KeyCode.F);
         public virtual bool PressedDeleteKey => Input.GetKeyDown(KeyCode.Delete);
         public virtual bool PressedSelectAllDeselectAllKey => Input.GetKeyDown(KeyCode.A);
+        public virtual bool PressedClipboardCopyKey => Input.GetKey(KeyCode.LeftControl) && Input.GetKeyDown(KeyCode.C);
+        public virtual bool PressedClipboardCutKey => Input.GetKey(KeyCode.LeftControl) && Input.GetKeyDown(KeyCode.X);
+        public virtual bool PressedClipboardPasteKey => Input.GetKey(KeyCode.LeftControl) && Input.GetKeyDown(KeyCode.V);
 
         public virtual float Scroll => Input.mouseScrollDelta.y * ScrollSpeed;
 
@@ -3659,7 +3665,7 @@ namespace Swole.API.Unity.Animation
                 {
                     if (key == null || ReferenceEquals(key, keyReference)) continue;
 
-                    if (key.Time == time) 
+                    if (Mathf.Approximately(key.Time, time)) 
                     {
                         flag = true;
                         time += 0.0001f; 
@@ -4211,6 +4217,14 @@ namespace Swole.API.Unity.Animation
                 {
                     if (selectedKeys.Count > 0) DeselectAll(); else SelectAll();
                 }
+
+                if (InputProxy.PressedClipboardCopyKey) CopySelectedKeysToClipboard();
+                if (InputProxy.PressedClipboardCutKey)
+                {
+                    CopySelectedKeysToClipboard();
+                    DeleteSelectedKeys();
+                }
+                if (InputProxy.PressedClipboardPasteKey) PasteKeysFromClipboard();
             }
 
             float zoom = InputProxy.Scroll * zoomSensitivity;
@@ -4400,24 +4414,25 @@ namespace Swole.API.Unity.Animation
             }
         }
 
+        protected readonly List<KeyframeData> keyCountEditKeys = new List<KeyframeData>();
         protected virtual void PrepKeyCountEdit()
         {
             if (keyframeData == null) return;
 
-            tempKeys2.Clear();
+            keyCountEditKeys.Clear();
             foreach (var selectedIndex in selectedKeys)
             {
                 if (selectedIndex < 0 || selectedIndex >= keyframeData.Length) continue;
                 var key = keyframeData[selectedIndex];
                 if (key == null) continue;
-                tempKeys2.Add(key);
+                keyCountEditKeys.Add(key);
             }
             selectedKeys.Clear();
         }
 
         protected virtual void FinalizeKeyCountEdit()
         {
-            foreach (var key in tempKeys2) if (key.index >= 0) selectedKeys.Add(key.index);
+            foreach (var key in keyCountEditKeys) if (key.index >= 0) selectedKeys.Add(key.index);
         }
 
         #endregion
@@ -5044,7 +5059,7 @@ namespace Swole.API.Unity.Animation
             }
         }
 
-        public virtual void AddKeyByTransformWorldPosition(Transform transform) => AddKey(transform);     
+        public virtual void AddKeyByTransformWorldPosition(Transform transform) => AddKey(transform);    
         public virtual int AddKey(Transform transform)
         {
             if (transform == null) return -1;
@@ -5546,6 +5561,68 @@ namespace Swole.API.Unity.Animation
                 if (key != null && !ReferenceEquals(key, exemptKey)) tempKeys.Add(key); // Place keys in a temporary collection before doing any work
             }
             foreach (var key in tempKeys) toApply(key);
+        }
+
+        private static readonly List<KeyframeState> clipboard = new List<KeyframeState>();
+
+        public virtual void CopySelectedKeysToClipboard()
+        {
+            if (keyframeData == null) return;
+
+            clipboard.Clear();
+            foreach (var index in selectedKeys)
+            {
+                if (index < 0 || index >= keyframeData.Length) continue;
+
+                var key = keyframeData[index];
+                if (key != null) clipboard.Add(key.state);
+            }
+        }
+
+        public virtual void PasteKeysFromClipboard(bool redraw = true, float timeOffset = 0f, float valueOffset = 0f)
+        {
+            if (clipboard.Count <= 0) return;
+
+            PrepNewState();
+            PrepKeyCountEdit();
+            tempKeys.Clear();
+            tempKeys2.Clear();
+            if (keyframeData != null) tempKeys.AddRange(keyframeData);
+            foreach (var keyState in clipboard)
+            {
+                var newKey = CreateNewKeyframeData(default, -1, default, false);
+                newKey.state = keyState;
+                bool hasKeyAtTime = true;
+                while (hasKeyAtTime)
+                {
+                    hasKeyAtTime = false;
+                    foreach (var existingKey in tempKeys)
+                    {
+                        if (existingKey == null || ReferenceEquals(existingKey, newKey)) continue; 
+
+                        if (Mathf.Approximately(existingKey.Time, newKey.Time))
+                        {
+                            hasKeyAtTime = true;
+                            newKey.Time += 0.0001f;
+                            break;
+                        }
+                    }
+                }
+
+                tempKeys.Add(newKey); 
+                tempKeys2.Add(newKey);
+            }
+            tempKeys.RemoveAll(i => i == null);
+            SortKeys(tempKeys);
+            for (int a = 0; a < tempKeys.Count; a++) tempKeys[a].index = a;
+            keyframeData = tempKeys.ToArray();
+            FinalizeKeyCountEdit();
+            FinalizeState();
+            RefreshKeyframes();
+
+            if (redraw) Redraw();
+
+            foreach (var newKey in tempKeys2) OnKeyAdd?.Invoke(newKey.index); 
         }
 
         #endregion
