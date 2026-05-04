@@ -90,6 +90,31 @@ namespace Swole.DataStructures
 
     }
 
+    [Serializable]
+    public struct StringPair
+    {
+        public string a;
+        public string b;
+
+        public StringPair(string a, string b)
+        {
+            this.a = a;
+            this.b = b;
+        }
+    }
+    [Serializable]
+    public struct KeyValuePair
+    {
+        public string key;
+        public float value;
+
+        public KeyValuePair(string key, float value)
+        {
+            this.key = key;
+            this.value = value;
+        }
+    }
+
     [Serializable, StructLayout(LayoutKind.Sequential)]
     public struct BlendShapeHeader
     {

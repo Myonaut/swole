@@ -2,3 +2,6 @@
 [submodule "MiniScript/.hidden/.source"]
 	path = MiniScript/.hidden/.source
 	url = https://github.com/JoeStrout/miniscript.git
+[submodule "bin/Third Party Assets/SimpleJSON"]
+	path = bin/Third Party Assets/SimpleJSON/source
+	url = https://github.com/Bunny83/SimpleJSON.git

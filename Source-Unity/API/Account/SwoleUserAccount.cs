@@ -30,7 +30,7 @@ namespace Swole.API.Unity
 
         [NonSerialized]
         private ISwoleUser user;
-
+        public ISwoleUser User => user;
         public bool HasUser => !ReferenceEquals(user, null);
 
         public void SetUser(ISwoleUser user)
@@ -105,6 +105,33 @@ namespace Swole.API.Unity
             return user.FetchCashShop(storeId);
         }
 
+        public int PopupCount =>HasUser ? user.PopupCount : 0;
+        public Popup GetPopup(int index)
+        {
+            if (!HasUser) return default;
+            return user.GetPopup(index);
+        }
+        public void DismissPopup(int index)
+        {
+            if (!HasUser) return;
+            user.DismissPopup(index);
+        }
+        public void DismissPopup(string id)
+        {
+            if (!HasUser) return;
+            user.DismissPopup(id);
+        }
+        public void DismissAllPopups()
+        {
+            if (!HasUser) return;
+            user.DismissAllPopups();
+        }
+        public void FetchPopups(Action callback)
+        {
+            if (!HasUser) return;
+            user.FetchPopups(callback);
+        }
+
         public void ListenForConnectionInitiation(Action onInitiateConnection)
         {
             if (!HasUser) return;
@@ -123,6 +150,12 @@ namespace Swole.API.Unity
             user.ListenForConnectionInitiation(onDisconnect);
         }
 
+        public void ListenForDataChanges(Action onDataChanged)
+        {
+            if (!HasUser) return;
+            user.ListenForDataChanges(onDataChanged);
+        }
+
         public void StopListeningForConnectionInitiation(Action onInitiateConnection)
         {
             if (!HasUser) return;
@@ -139,6 +172,12 @@ namespace Swole.API.Unity
         {
             if (!HasUser) return;
             user.ListenForConnectionInitiation(onDisconnect);
+        }
+
+        public void StopListeningForDataChanges(Action onDataChanged)
+        {
+            if (!HasUser) return;
+            user.StopListeningForDataChanges(onDataChanged);
         }
 
         #endregion

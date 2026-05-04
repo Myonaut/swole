@@ -19,7 +19,8 @@
         "Unity.RenderPipelines.Core.Runtime",
         "Unity.RenderPipelines.Universal.Shaders",
         "Unity.RenderPipelines.Universal.Config.Runtime",
-        "swolescr.andywiecko.BurstTriangulator"
+        "swolescr.andywiecko.BurstTriangulator",
+        "SimpleJSON"
     ],
     "includePlatforms": [],
     "excludePlatforms": [],
