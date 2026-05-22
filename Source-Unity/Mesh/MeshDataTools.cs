@@ -2067,7 +2067,7 @@ namespace Swole
                         outputs = initialOutputs,
                         finalOutputs = secondaryOutputs.AsParallelWriter() 
                     }
-#if UNITY_2022_OR_NEWER
+#if UNITY_2022_3_OR_NEWER
                     .Schedule(initialOutputs.Length, 100, handle);
 #else
                     .ScheduleBatch(initialOutputs.Length, 100, handle);
@@ -2165,7 +2165,7 @@ namespace Swole
                         outputs = initialOutputs,
                         finalOutputs = secondaryOutputs.AsParallelWriter()
                     }
-#if UNITY_2022_OR_NEWER
+#if UNITY_2022_3_OR_NEWER
                     .Schedule(initialOutputs.Length, 100, handle);
 #else
                     .ScheduleBatch(initialOutputs.Length, 100, handle);
@@ -4956,7 +4956,7 @@ namespace Swole
 
             tempMesh.uv2 = null;
 
-#if UNITY_2022_OR_NEWER
+#if UNITY_2022_3_OR_NEWER
             if (settings.IsInvalid)
             {
                 if (!UnityEditor.Unwrapping.GenerateSecondaryUVSet(tempMesh) && tempMesh.indexFormat == IndexFormat.UInt16)

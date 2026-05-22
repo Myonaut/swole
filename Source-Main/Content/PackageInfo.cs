@@ -7,7 +7,7 @@ namespace Swole
 {
 
     [Serializable]
-    public struct PackageInfo : IEquatable<PackageInfo>
+    public struct PackageInfo : IEquatable<PackageInfo>, IEquatable<PackageIdentifier>
     {
 
         public static explicit operator string(PackageInfo info) => info.GetIdentityString();
@@ -76,6 +76,21 @@ namespace Swole
 
         public string ConvertToAssetPath(string assetName) => ((PackageIdentifier)this).ConvertToAssetPath(assetName);
         public AssetIdentifier ConvertToAssetIdentifier(string assetName) => ((PackageIdentifier)this).ConvertToAssetIdentifier(assetName);
+
+        public bool Equals(PackageIdentifier other)
+        {
+
+            if (name != other.name) return false;
+            if (VersionIsValid && other.VersionIsValid && version != other.version) return false;
+
+            return true;
+        }
+
+        public static bool operator ==(PackageInfo A, PackageIdentifier B) => A.Equals(B);
+        public static bool operator !=(PackageInfo A, PackageIdentifier B) => !A.Equals(B);
+
+        public static bool operator ==(PackageIdentifier A, PackageInfo B) => B.Equals(A);
+        public static bool operator !=(PackageIdentifier A, PackageInfo B) => !B.Equals(A);
 
     }
 

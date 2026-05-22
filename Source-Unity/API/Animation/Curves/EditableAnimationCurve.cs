@@ -1,4 +1,4 @@
-﻿#if (UNITY_STANDALONE || UNITY_EDITOR)
+﻿#if UNITY_2017_1_OR_NEWER
 
 using System;
 using System.Collections.Generic;
@@ -43,6 +43,11 @@ namespace Swole.API.Unity
 
     public class EditableAnimationCurve : SwoleObject<EditableAnimationCurve, SerializedAnimationCurve>, ICloneable, IAnimationCurveProxy
     {
+
+        public void Dispose()
+        {
+            instance = null;
+        }
 
         public event VoidParameterlessDelegate OnStateChange;
         public void ClearAllListeners() => OnStateChange = null;
@@ -517,6 +522,10 @@ namespace Swole.API.Unity
     public struct AnimationCurveProxy : IAnimationCurveProxy
     {
 
+        public void Dispose()
+        {
+        }
+
         public object Clone() => new AnimationCurveProxy(unityCurve == null ? null : (AnimationCurve)new EditableAnimationCurve(unityCurve).Duplicate(), name); 
 
         public string name;
@@ -676,7 +685,7 @@ namespace Swole.API.Unity
         {
             if (unityCurve == null) return;
 
-#if UNITY_2022_OR_NEWER
+#if UNITY_2022_3_OR_NEWER
             unityCurve.ClearKeys();
 #else
             unityCurve.keys = new Keyframe[0];

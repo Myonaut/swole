@@ -537,7 +537,7 @@ namespace Swole.API.Unity.Animation
             var rb = RootBody;
             if (rb != null)
             {
-#if UNITY_2022_OR_NEWER
+#if UNITY_2022_3_OR_NEWER
                 rb.excludeLayers = rb.excludeLayers | rootBodyIgnoreLayers;
 #endif
             }

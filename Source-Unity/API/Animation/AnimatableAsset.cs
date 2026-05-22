@@ -10,8 +10,48 @@ namespace Swole.API.Unity
 {
 
     [CreateAssetMenu(fileName = "AnimatableAsset", menuName = "Swole/Animation/AnimatableAsset", order = 1)]
-    public class AnimatableAsset : ScriptableObject, IActorAsset
+    public class AnimatableAsset : ScriptableObject, IActorAsset, IResourceItemMetaData
     {
+
+        #region Metadata
+
+        public bool TryGetMetaData(string key, out string value)
+        {
+            value = null;
+            if (key == nameof(name))
+            {
+                value = name;
+                return true;
+            }
+            else if (key == nameof(type))
+            {
+                value = type.ToString();
+                return true;
+            }
+
+            return false;
+        }
+        public bool HasMetaData(string key) => TryGetMetaData(key, out _);
+        public string GetMetaData(string key)
+        {
+            if (TryGetMetaData(key, out var value)) return value;
+            return string.Empty;
+        }
+
+        public IEnumerable<MetadataPair> GetAllMetaData()
+        {
+            yield return new MetadataPair(nameof(name), name);
+            yield return new MetadataPair(nameof(type), type.ToString());
+        }
+
+        public IEnumerator<MetadataPair> GetEnumerator() => GetAllMetaData().GetEnumerator();
+
+        IEnumerator IEnumerable.GetEnumerator()
+        {
+            return GetEnumerator();
+        }
+
+        #endregion
 
 #if UNITY_EDITOR
         public void OnValidate()

@@ -599,14 +599,14 @@ namespace Swole.API.Unity.Animation
             unityType.positionSpring = positionSpringMax * strength;
             unityType.positionDamper = positionDamper;
             unityType.maximumForce = maximumForce;
-#if UNITY_2022_OR_NEWER
+#if UNITY_2022_3_OR_NEWER
             unityType.useAcceleration = useAcceleration;
 #endif
 
             return unityType; 
         }
         public static implicit operator RagdollJointDrive(JointDrive drive) => new RagdollJointDrive() { positionSpringMax = drive.positionSpring, positionDamper = drive.positionDamper, maximumForce = drive.maximumForce,
-#if UNITY_2022_OR_NEWER
+#if UNITY_2022_3_OR_NEWER
             useAcceleration = drive.useAcceleration
 #endif
             };
@@ -890,11 +890,11 @@ namespace Swole.API.Unity.Animation
             rigidbody.freezeRotation = freezeRotation;
             rigidbody.constraints = constraints.AsUnityType();
             rigidbody.collisionDetectionMode = collisionDetectionMode.AsUnityType();
-#if UNITY_2022_OR_NEWER
+#if UNITY_2022_3_OR_NEWER
             rigidbody.automaticCenterOfMass = automaticCenterOfMass;
 #endif
             rigidbody.centerOfMass = centerOfMass;
-#if UNITY_2022_OR_NEWER
+#if UNITY_2022_3_OR_NEWER
             rigidbody.automaticInertiaTensor = automaticInertiaTensor;
 #endif
             rigidbody.inertiaTensorRotation = inertiaTensorRotation;
@@ -914,11 +914,11 @@ namespace Swole.API.Unity.Animation
             settings.freezeRotation = rigidbody.freezeRotation;
             settings.constraints = rigidbody.constraints.AsSwoleType();
             settings.collisionDetectionMode = rigidbody.collisionDetectionMode.AsSwoleType();
-#if UNITY_2022_OR_NEWER
+#if UNITY_2022_3_OR_NEWER
             settings.automaticCenterOfMass = rigidbody.automaticCenterOfMass;
 #endif
             settings.centerOfMass = rigidbody.centerOfMass;
-#if UNITY_2022_OR_NEWER
+#if UNITY_2022_3_OR_NEWER
             settings.automaticInertiaTensor = rigidbody.automaticInertiaTensor;
 #endif
             settings.inertiaTensorRotation = rigidbody.inertiaTensorRotation;

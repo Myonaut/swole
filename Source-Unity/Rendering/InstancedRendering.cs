@@ -975,7 +975,7 @@ namespace Swole
             public int InstanceDataSize => instanceData.Length;
             public void GrowInstanceData(int amount) 
             {
-#if UNITY_2022_OR_NEWER
+#if UNITY_2022_3_OR_NEWER
                 instanceData.AddReplicate(default, amount); 
 #else
                 for (int a = 0; a < amount; a++) instanceData.Add(default);

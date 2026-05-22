@@ -13,10 +13,10 @@ namespace Swole.API.Unity
     public static class AnimationLibrary
     {
 
-        private static List<CustomAnimationAsset> animationAssets;
-        public static void ReloadAnimationAssets()
+        //private static List<CustomAnimationAsset> animationAssets;
+        public static void ReloadAnimationAssets() 
         {
-            if (animationAssets == null) animationAssets = new List<CustomAnimationAsset>();
+            /*if (animationAssets == null) animationAssets = new List<CustomAnimationAsset>();
 
             var assets = Resources.LoadAll<CustomAnimationAsset>(string.Empty);
             if (assets != null)
@@ -42,17 +42,17 @@ namespace Swole.API.Unity
 
                     animationAssets.Add(asset);
                 }
-            }
+            }*/
         }
         public static CustomAnimationAsset FindAnimationAsset(string animationName)
         {
-            if (animationAssets == null) ReloadAnimationAssets();
+            /*if (animationAssets == null) ReloadAnimationAssets();
 
             foreach (var asset in animationAssets) if (asset.name == animationName) return asset;
             animationName = animationName.AsID();
-            foreach (var asset in animationAssets) if (asset.name.AsID() == animationName) return asset;
+            foreach (var asset in animationAssets) if (asset.name.AsID() == animationName) return asset; */
 
-            return null;
+            return ResourceDB.GetAsset<CustomAnimationAsset>(animationName);
         }
         public static CustomAnimation FindAnimation(string animationName)
         {
@@ -101,29 +101,39 @@ namespace Swole.API.Unity
             return anim;
         }
 
-        private static AnimatableAsset[] animatableAssets;
-        public static List<AnimatableAsset> GetAllAnimatables(List<AnimatableAsset> list = null)
+        //private static AnimatableAsset[] animatableAssets;
+        public static IEnumerable<AnimatableAsset> GetAllAnimatables()
+        {
+            //if (animatableAssets == null) animatableAssets = Resources.LoadAll<AnimatableAsset>("");
+            //foreach(var asset in animatableAssets) if (asset != null) yield return asset;
+
+            return ResourceDB.GetAllAssets<AnimatableAsset>();
+        }
+        public static List<AnimatableAsset> GetAllAnimatablesAsList(List<AnimatableAsset> list = null)
         {
             if (list == null) list = new List<AnimatableAsset>();
-            if (animatableAssets == null) animatableAssets = Resources.LoadAll<AnimatableAsset>("");
-            list.AddRange(animatableAssets);
+            //if (animatableAssets == null) animatableAssets = Resources.LoadAll<AnimatableAsset>("");
+            //list.AddRange(animatableAssets);
+            list.AddRange(GetAllAnimatables());
             return list;
         }
         public static AnimatableAsset FindAnimatable(string id)
         {
-            if (animatableAssets == null) animatableAssets = Resources.LoadAll<AnimatableAsset>("");
+            /*if (animatableAssets == null) animatableAssets = Resources.LoadAll<AnimatableAsset>("");
 
             foreach (var asset in animatableAssets) if (asset.name == id) return asset;
             id = id.AsID();
             foreach (var asset in animatableAssets) if (asset.name.AsID() == id) return asset;
 
-            return null;
+            return null;*/
+
+            return ResourceDB.GetAsset<AnimatableAsset>(id);
         }
 
-        private static List<CustomAvatarMaskAsset> avatarMasks;
+        //private static List<CustomAvatarMaskAsset> avatarMasks;
         public static void ReloadAvatarMasks()
         {
-            if (avatarMasks == null) avatarMasks = new List<CustomAvatarMaskAsset>();
+            /*if (avatarMasks == null) avatarMasks = new List<CustomAvatarMaskAsset>();
 
             var assets = Resources.LoadAll<CustomAvatarMaskAsset>(string.Empty);
             if (assets != null)
@@ -149,17 +159,19 @@ namespace Swole.API.Unity
 
                     avatarMasks.Add(asset);
                 }
-            }
+            }*/
         }
         public static CustomAvatarMaskAsset FindAvatarMaskAsset(string assetName)
         {
-            if (avatarMasks == null) ReloadAvatarMasks();
+            /*if (avatarMasks == null) ReloadAvatarMasks();
 
             foreach (var asset in avatarMasks) if (asset.name == assetName) return asset;
             assetName = assetName.AsID();
             foreach (var asset in avatarMasks) if (asset.name.AsID() == assetName) return asset;
 
-            return null;
+            return null;*/
+
+            return ResourceDB.GetAsset<CustomAvatarMaskAsset>(assetName);
         }
         public static WeightedAvatarMask FindAvatarMask(string assetName)
         {
@@ -168,7 +180,7 @@ namespace Swole.API.Unity
             {
                 if (assetName.TrySplitPackageContentPath(out string pkgStr, out string contentName))
                 {
-                    return FindAvatarMask(pkgStr, contentName);  
+                    return FindAvatarMask(pkgStr, contentName);   
                 }
             }
             return asset == null ? null : asset.mask;

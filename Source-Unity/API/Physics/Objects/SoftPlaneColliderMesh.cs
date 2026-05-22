@@ -416,7 +416,7 @@ namespace Swole.API.Unity
                 objRB.useGravity = false;
                 objRB.isKinematic = false;
                 objRB.collisionDetectionMode = collisionDetectionMode;
-#if UNITY_2022_OR_NEWER
+#if UNITY_2022_3_OR_NEWER
                 objRB.automaticCenterOfMass = false;
                 objRB.automaticInertiaTensor = false;
 #endif

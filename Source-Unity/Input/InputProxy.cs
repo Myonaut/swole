@@ -929,8 +929,9 @@ namespace Swole
         public static bool CursorAuxiliaryButtonDown { get { return Input.GetMouseButtonDown(CursorAuxiliaryButtonID); } }
 
         public static EngineInternal.Vector2 CursorScreenPosition { get { return UnityEngineHook.AsSwoleVector(Input.mousePosition); } set { /* Currently unsupported */ } }
-        public static EngineInternal.Vector3 CursorWorldPositionMainCameraNCP => GetCursorWorldPositionFromCamera(Camera.main);
-        public static EngineInternal.Vector3 GetCursorWorldPositionFromCamera(Camera camera) => UnityEngineHook.AsSwoleVector(Utils.MousePositionWorld(camera)); 
+        public static EngineInternal.Vector3 CursorWorldPositionMainCameraNCP => GetCursorWorldPositionFromMainCamera();
+        public static EngineInternal.Vector3 GetCursorWorldPositionFromCamera(Camera camera, float distance = 0f) => UnityEngineHook.AsSwoleVector(Utils.MousePositionWorld(camera, distance));
+        public static EngineInternal.Vector3 GetCursorWorldPositionFromMainCamera(float distance = 0f) => UnityEngineHook.AsSwoleVector(Utils.MousePositionWorld(Camera.main, distance));
 
         public static float CursorAxisX
         {

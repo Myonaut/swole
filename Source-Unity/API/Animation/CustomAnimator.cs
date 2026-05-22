@@ -319,6 +319,9 @@ namespace Swole.API.Unity.Animation
         public bool HasControllerData(IAnimationController controller)
         {
             if (controller == null) return false;
+
+            if (m_animationLayers != null) foreach (var layer in m_animationLayers) if (layer != null && ReferenceEquals(layer.Source, controller)) return true; 
+
             return HasControllerData(controller.Prefix);
         }
         public bool HasControllerData(string prefix)
@@ -1062,7 +1065,7 @@ namespace Swole.API.Unity.Animation
             {
 
                 transform.SetLocalPositionAndRotation(unmodifiedLocalPosition, unmodifiedLocalRotation);
-                transform.localScale = unmodifiedLocalScale + ((float3)transform.localScale - modifiedLocalScale); // REVIEW: Why are we not setting scale back to bind pose scale?
+                transform.localScale = unmodifiedLocalScale; //+ ((float3)transform.localScale - modifiedLocalScale); // REVIEW: Why are we not setting scale back to bind pose scale?
 
             }
 

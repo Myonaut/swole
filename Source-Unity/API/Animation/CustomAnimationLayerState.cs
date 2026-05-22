@@ -48,6 +48,11 @@ namespace Swole.API.Unity.Animation
             this.name = name;
         }
 
+        public CustomAnimationLayerState(string name, int motionControllerIndex) : this(name)
+        {
+            this.motionControllerIndex = motionControllerIndex;
+        }
+
         [NonSerialized]
         protected IAnimationLayer m_layer;
         public IAnimationLayer Layer => m_layer; 

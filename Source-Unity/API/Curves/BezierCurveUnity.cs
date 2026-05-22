@@ -21,6 +21,17 @@ namespace Swole.API.Unity
         }
         public static BezierCurveUnity Create(IBezierCurve refCurve) => Create((Vector3[])refCurve.GetPoints().Clone(), refCurve.VertexSpacing, refCurve.VertexAccuracy);
 
+        public void Dispose()
+        {
+            if (curve != null) 
+            { 
+                curve.Dispose(); 
+                curve = null;
+            }
+
+            if (this != null) Destroy(this);
+        }
+
         public float vertexSpacing = 0.1f;
         public int vertexAccuracy = 10;
 
@@ -156,6 +167,24 @@ namespace Swole.API.Unity
             if (curve != null) curve.SetPoints(points);
             return true;
         }
+
+        public void SetVertices(Vector3[] vertices, int[] originalVertexIndices) 
+        { 
+            if (curve != null) curve.SetVertices(vertices, originalVertexIndices);
+        }
+        public void SetVertices2D(Vector2[] vertices, int[] originalVertexIndices)
+        {
+            if (curve != null) curve.SetVertices2D(vertices, originalVertexIndices);
+        }
+        public void SetVertex(int index, Vector3 vertex)
+        {
+            if (curve != null) curve.SetVertex(index, vertex);
+        }
+        public void SetVertex2D(int index, Vector2 vertex)
+        {
+            if (curve != null) curve.SetVertex2D(index, vertex);
+        }
+
         #endregion
 
     }

@@ -6,6 +6,7 @@ using UnityEngine;
 using UnityEngine.Events;
 
 using Swole.User;
+using Swole.DataStructures;
 
 namespace Swole.API.Unity
 {
@@ -14,6 +15,7 @@ namespace Swole.API.Unity
 
         private static SwoleUserAccount activeAccount;
         public static SwoleUserAccount ActiveAccount => activeAccount;
+        public static bool IsLoggedIn => activeAccount != null && activeAccount.HasUser;
 
         [SerializeField]
         protected GameObject usernameDisplay; 
@@ -32,6 +34,8 @@ namespace Swole.API.Unity
         private ISwoleUser user;
         public ISwoleUser User => user;
         public bool HasUser => !ReferenceEquals(user, null);
+
+        public string ApiEndPoint => HasUser ? user.ApiEndPoint : null;
 
         public void SetUser(ISwoleUser user)
         {
@@ -105,6 +109,28 @@ namespace Swole.API.Unity
             return user.FetchCashShop(storeId);
         }
 
+        public void FetchCurrencyBalance(string currencyId, Action<float> callback, Action<string> errorCallback, bool forceRefetch = false)
+        {
+            if (!HasUser)
+            {
+                errorCallback?.Invoke("User is not logged in.");
+                return;
+            }
+
+            user.FetchCurrencyBalance(currencyId, callback, errorCallback, forceRefetch);
+        }
+
+        public void FetchCurrrencyBalanceAsInt(string currencyId, Action<int> callback, Action<string> errorCallback, bool forceRefetch = false)
+        {
+            if (!HasUser)
+            {
+                errorCallback?.Invoke("User is not logged in.");
+                return;
+            }
+
+            user.FetchCurrrencyBalanceAsInt(currencyId, callback, errorCallback, forceRefetch);
+        }
+
         public int PopupCount =>HasUser ? user.PopupCount : 0;
         public Popup GetPopup(int index)
         {
@@ -126,10 +152,15 @@ namespace Swole.API.Unity
             if (!HasUser) return;
             user.DismissAllPopups();
         }
-        public void FetchPopups(Action callback)
+        public void FetchPopups(Action callback, Action<string> errorCallback)
         {
-            if (!HasUser) return;
-            user.FetchPopups(callback);
+            if (!HasUser)
+            {
+                errorCallback?.Invoke("User is not logged in.");
+                return;
+            }
+
+            user.FetchPopups(callback, errorCallback);
         }
 
         public void ListenForConnectionInitiation(Action onInitiateConnection)
@@ -178,6 +209,18 @@ namespace Swole.API.Unity
         {
             if (!HasUser) return;
             user.StopListeningForDataChanges(onDataChanged);
+        }
+
+        public IEnumerator HttpsGet(string url, ISwoleUser.HttpsResponseHandler callback, ISwoleUser.HttpsResponseHandler errorCallback, Action callbackAction, Action<string> callbackActionStr, Action errorCallbackAction, Action<string> errorCallbackActionStr, IEnumerable<StringPair> headers = null, int timeout = 10)
+        {
+            if (!HasUser) yield break;
+            yield return user.HttpsGet(url, callback, errorCallback, callbackAction, callbackActionStr, errorCallbackAction, errorCallbackActionStr, headers, timeout);
+        }
+
+        public IEnumerator HttpsPost(string url, string json, ISwoleUser.HttpsResponseHandler callback, ISwoleUser.HttpsResponseHandler errorCallback, Action callbackAction, Action<string> callbackActionStr, Action errorCallbackAction, Action<string> errorCallbackActionStr, IEnumerable<StringPair> headers = null, int timeout = 10)
+        {
+            if (!HasUser) yield break;
+            yield return user.HttpsPost(url, json, callback, errorCallback, callbackAction, callbackActionStr, errorCallbackAction, errorCallbackActionStr, headers, timeout);
         }
 
         #endregion

@@ -152,7 +152,7 @@ namespace Swole.API.Unity.Animation
             if (speedMultiplierParameter >= 0)
             {
                 var p = layer.GetParameter(speedMultiplierParameter); 
-                if (p != null) speed = speed * p.Value;  
+                if (p != null) speed = speed * p.Value;
             }
 
             return speed;
@@ -3595,7 +3595,7 @@ namespace Swole.API.Unity.Animation
 
             motionVertices = vertices.ToArray();
 
-            using (var positions = new NativeArray<double2>(motionVertices.Length, Allocator.Persistent))
+            using (var positions = new NativeArray<double2>(motionVertices.Length, Allocator.TempJob))
             {
                 var positions_ = positions;
                 for (int a = 0; a < motionVertices.Length; a++) positions_[a] = motionVertices[a];

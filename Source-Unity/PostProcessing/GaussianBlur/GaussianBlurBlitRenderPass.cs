@@ -46,7 +46,7 @@ namespace Swole
                 outputTarget.Create();
             }
 
-#if UNITY_2022_OR_NEWER
+#if UNITY_2022_3_OR_NEWER
             // Check if the descriptor has changed, and reallocate the RTHandle if necessary
             RenderingUtils.ReAllocateIfNeeded(ref blurTextureHandle, blurTextureDescriptor);
 #endif
@@ -71,7 +71,7 @@ namespace Swole
             material.SetInteger("_GridSize", gridSize);
             material.SetFloat("_Spread", blurStrength);
 
-#if UNITY_2022_OR_NEWER
+#if UNITY_2022_3_OR_NEWER
             RTHandle cameraTargetHandle = renderingData.cameraData.renderer.cameraColorTargetHandle;
 
             if (cameraTargetHandle != null)

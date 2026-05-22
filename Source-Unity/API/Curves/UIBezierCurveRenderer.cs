@@ -11,19 +11,25 @@ namespace Swole.UI
     public class UIBezierCurveRenderer : UIAnimationCurveRenderer
     {
         new public IBezierCurve curve;
+        public MorphingBezierCurve morphingCurve;
+        [Range(0f, 1f)]
+        public float morphWeight;
+        private Vector2[] morphingVerts;
 
         public override void Rebuild()
         {
             if (!Initialized) return;
             
-            if (curve == null)
+            bool isValid = curve != null || morphingCurve != null;
+            if (!isValid)
             {
                 foreach (var renderer in activeRenderers) lineRendererPool.Release(renderer.lineRenderer);
                 activeRenderers.Clear();
                 return;
             }
 
-            Vector2[] verts = curve.GetVertices2D(); 
+            if (morphingCurve != null && (morphingVerts == null || morphingVerts.Length != morphingCurve.VertexCount)) morphingVerts = new Vector2[morphingCurve.VertexCount];
+            Vector2[] verts = morphingCurve == null ? curve.GetVertices2D() : morphingCurve.GetVertices2D(morphWeight, morphingVerts); 
             if (verts == null || verts.Length <= 1)
             {
                 foreach (var renderer in activeRenderers) lineRendererPool.Release(renderer.lineRenderer);

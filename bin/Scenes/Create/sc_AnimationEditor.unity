@@ -11581,6 +11581,8 @@ MonoBehaviour:
   paddingBottom: 0
   listMemberPrototype: {fileID: 25351540}
   scrollbar: {fileID: 1746356213}
+  minScrollbarSize: 0.02
+  maxScrollbarSize: 1
   container: {fileID: 0}
 --- !u!1 &456983858
 GameObject:
@@ -11795,6 +11797,8 @@ MonoBehaviour:
   paddingBottom: 3
   listMemberPrototype: {fileID: 1153991946}
   scrollbar: {fileID: 516437485}
+  minScrollbarSize: 0.02
+  maxScrollbarSize: 1
   container: {fileID: 460363542}
 --- !u!114 &460363545
 MonoBehaviour:
@@ -35834,6 +35838,8 @@ MonoBehaviour:
   paddingBottom: 0
   listMemberPrototype: {fileID: 1185671955}
   scrollbar: {fileID: 1594768567}
+  minScrollbarSize: 0.02
+  maxScrollbarSize: 1
   container: {fileID: 373602436}
 --- !u!1 &1188179095
 GameObject:
@@ -39834,6 +39840,8 @@ MonoBehaviour:
   paddingBottom: 0
   listMemberPrototype: {fileID: 1312803121}
   scrollbar: {fileID: 543579461}
+  minScrollbarSize: 0.02
+  maxScrollbarSize: 1
   container: {fileID: 1043861802}
 --- !u!1001 &1315902809
 PrefabInstance:
@@ -52694,6 +52702,8 @@ MonoBehaviour:
   paddingBottom: 0
   listMemberPrototype: {fileID: 1782332582}
   scrollbar: {fileID: 1820165484}
+  minScrollbarSize: 0.02
+  maxScrollbarSize: 1
   container: {fileID: 1258035723}
 --- !u!224 &1783987908 stripped
 RectTransform:
@@ -59017,6 +59027,7 @@ MonoBehaviour:
   mode: 0
   orientation: 0
   progress: 0
+  nonNormalizedMaxValue: 1
 --- !u!1 &2013920411
 GameObject:
   m_ObjectHideFlags: 0
@@ -59515,6 +59526,8 @@ MonoBehaviour:
   paddingBottom: 0
   listMemberPrototype: {fileID: 2028260842}
   scrollbar: {fileID: 1305515854}
+  minScrollbarSize: 0.02
+  maxScrollbarSize: 1
   container: {fileID: 198114669}
 --- !u!1 &2028260842 stripped
 GameObject:

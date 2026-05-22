@@ -199,12 +199,12 @@ namespace Swole
         /// <summary>
         /// Sweep and actually take into consideration exclusion layers...
         /// </summary>
-        public static bool SweepTestExtended(this Rigidbody rigidbody, Vector3 direction, out RaycastHit hit, float distance, int layerMask = ~0, QueryTriggerInteraction queryTriggerInteraction = QueryTriggerInteraction.Ignore, RaycastHitSortOrder sortOrder = RaycastHitSortOrder.Ascending)
+        public static bool SweepTestExtended(this Rigidbody rigidbody, Vector3 direction, out RaycastHit hit, float distance, int layerMask = ~0, QueryTriggerInteraction queryTriggerInteraction = QueryTriggerInteraction.Ignore, RaycastHitSortOrder sortOrder = RaycastHitSortOrder.Ascending, bool addIncludeLayers = true)
         {
 
             hit = default;
 
-            var hits = SweepTestAllExtended(rigidbody, direction, distance, layerMask, queryTriggerInteraction);
+            var hits = SweepTestAllExtended(rigidbody, direction, distance, layerMask, queryTriggerInteraction, null, addIncludeLayers);
             if (hits.Count > 0)
             {
                 if (hits.Count > 1)
@@ -230,7 +230,7 @@ namespace Swole
         /// <summary>
         /// Sweep and actually take into consideration exclusion layers...
         /// </summary>
-        public static List<RaycastHit> SweepTestAllExtended(this Rigidbody rigidbody, Vector3 direction, float distance, int layerMask = ~0, QueryTriggerInteraction queryTriggerInteraction = QueryTriggerInteraction.Ignore, List<RaycastHit> hitList = null)
+        public static List<RaycastHit> SweepTestAllExtended(this Rigidbody rigidbody, Vector3 direction, float distance, int layerMask = ~0, QueryTriggerInteraction queryTriggerInteraction = QueryTriggerInteraction.Ignore, List<RaycastHit> hitList = null, bool addIncludeLayers = true)
         {
 
             if (hitList == null) hitList = tempHits;
@@ -239,7 +239,8 @@ namespace Swole
             var hits = rigidbody.SweepTestAll(direction, distance, queryTriggerInteraction);
             if (hits != null && hits.Length > 0)
             {
-#if UNITY_2022_OR_NEWER
+#if UNITY_2022_3_OR_NEWER
+                if (addIncludeLayers) layerMask = layerMask | rigidbody.includeLayers;
                 layerMask = layerMask & ~rigidbody.excludeLayers;
 #endif
                 

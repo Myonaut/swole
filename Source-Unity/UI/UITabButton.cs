@@ -46,8 +46,15 @@ namespace Swole.UI
         public UnityEvent OnClick = new UnityEvent();
         public UnityEvent OnHoverBegin = new UnityEvent();
         public UnityEvent OnHoverEnd = new UnityEvent();
+
         public UnityEvent OnToggleOn = new UnityEvent();
         public UnityEvent OnToggleOff = new UnityEvent();
+
+        public UnityEvent<GameObject> OnToggleOnHookGO = new UnityEvent<GameObject>();
+        public UnityEvent<GameObject> OnToggleOffHookGO = new UnityEvent<GameObject>();
+
+        public UnityEvent<RectTransform> OnToggleOnHookRT = new UnityEvent<RectTransform>();
+        public UnityEvent<RectTransform> OnToggleOffHookRT = new UnityEvent<RectTransform>();
 
         protected void OnDestroy()
         {
@@ -55,12 +62,27 @@ namespace Swole.UI
             OnClick?.RemoveAllListeners();
             OnHoverBegin?.RemoveAllListeners();
             OnHoverEnd?.RemoveAllListeners();
+
             OnToggleOn?.RemoveAllListeners();
             OnToggleOff?.RemoveAllListeners();
+
+            OnToggleOnHookGO?.RemoveAllListeners();
+            OnToggleOffHookGO?.RemoveAllListeners();
+
+            OnToggleOnHookRT?.RemoveAllListeners();
+            OnToggleOffHookRT?.RemoveAllListeners();
 
         }
 
         public GameObject[] togglableObjects;
+
+        protected RectTransform rectTransform;
+        public RectTransform RectTransform => rectTransform;
+
+        protected void Awake()
+        {
+            rectTransform = GetComponent<RectTransform>();
+        }
 
         public void Start()
         {
@@ -96,14 +118,14 @@ namespace Swole.UI
             if (toggleOnObject != null)
             {
 
-                toggleOnObject.SetActive(disable ? false : (toggleOnObject == toggleOffObject) ? (toggleHoverObject == null ? true : (hoverWhileActive ? (isHovering ? !disableToggleObjectsOnHover : true) : true)) : (toggleHoverObject == null ? toggle : (hoverWhileActive ? (isHovering ? !disableToggleObjectsOnHover : toggle) : toggle)));
+                toggleOnObject.SetActive(disable ? false : (toggleOnObject == toggleOffObject) ? (toggleHoverObject == null ? true : (hoverWhileActive ? (isHovering ? !disableToggleObjectsOnHover : true) : true)) : (toggleHoverObject == null ? toggle : (hoverWhileActive ? (isHovering ? (!disableToggleObjectsOnHover && toggle) : toggle) : toggle)));
 
             }
 
             if (toggleOffObject != null)
             {
 
-                toggleOffObject.SetActive(disable ? false : (toggleHoverObject == null ? !toggle : (isHovering ? !disableToggleObjectsOnHover : !toggle)));
+                toggleOffObject.SetActive(disable ? false : (toggleHoverObject == null ? !toggle : (isHovering ? (!disableToggleObjectsOnHover && !toggle) : !toggle)));
 
             }
 
@@ -135,7 +157,9 @@ namespace Swole.UI
 
             UpdateGraphic();
 
-            OnToggleOn.Invoke();
+            OnToggleOn?.Invoke();
+            OnToggleOnHookGO?.Invoke(gameObject);
+            OnToggleOnHookRT?.Invoke(rectTransform);
 
         }
 
@@ -150,7 +174,9 @@ namespace Swole.UI
 
             UpdateGraphic();
 
-            OnToggleOff.Invoke();
+            OnToggleOff?.Invoke();
+            OnToggleOffHookGO?.Invoke(gameObject);
+            OnToggleOffHookRT?.Invoke(rectTransform);
 
         }
 
@@ -175,7 +201,7 @@ namespace Swole.UI
 
             ToggleOn();
 
-            if (toggleState ? clickWhileActive : true) OnClick.Invoke();
+            if (toggleState ? clickWhileActive : true) OnClick?.Invoke();
 
         }
 
@@ -201,7 +227,7 @@ namespace Swole.UI
 
             UpdateGraphic();
 
-            if (isHovering) OnHoverBegin.Invoke();
+            if (isHovering) OnHoverBegin?.Invoke();
 
         }
 
@@ -227,7 +253,7 @@ namespace Swole.UI
 
             UpdateGraphic();
 
-            if (setHover) OnHoverEnd.Invoke();
+            if (setHover) OnHoverEnd?.Invoke();
 
         }
 

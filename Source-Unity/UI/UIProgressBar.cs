@@ -394,7 +394,11 @@ namespace Swole.UI
 
         [SerializeField, Range(0, 1)]
         private float progress;
-        public float Progress => progress;
+        public float Progress
+        {
+            get => progress;
+            set => SetProgress(value);
+        }
         /// <summary>
         /// Set the progress of the progress bar. 0 = Empty, 1 = Full
         /// </summary>
@@ -409,6 +413,18 @@ namespace Swole.UI
 #endif
 
             Refresh();
+        }
+
+        [SerializeField]
+        public float nonNormalizedMaxValue = 1f;
+        public void SetProgressByValue(float value)
+        {
+            SetProgress(Mathf.Approximately(nonNormalizedMaxValue, 0f) ? value : (value / nonNormalizedMaxValue));
+        }
+        public float ProgressAsValue
+        {
+            get => Mathf.Approximately(nonNormalizedMaxValue, 0f) ? Progress : (Progress * nonNormalizedMaxValue);
+            set => SetProgressByValue(value); 
         }
 
         public void Refresh()

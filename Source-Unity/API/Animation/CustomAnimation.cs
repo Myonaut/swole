@@ -3327,7 +3327,7 @@ namespace Swole.API.Unity.Animation
             } 
             else
             {
-#if UNITY_2022_OR_NEWER
+#if UNITY_2022_3_OR_NEWER
                 finalCurve.ClearKeys();
 #else
                 finalCurve.keys = new Keyframe[0];

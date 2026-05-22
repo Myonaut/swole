@@ -7,16 +7,18 @@ namespace Swole.API
     public abstract class CustomBehaviourUpdater<T0, T1> : SingletonBehaviour<T0> where T0 : CustomBehaviourUpdater<T0, T1> where T1 : ICustomUpdatableBehaviour
     {
 
-        protected readonly List<T1> behaviours = new List<T1>();  
+        protected readonly List<T1> behaviours = new List<T1>();
 
+        protected readonly List<T1> toRegister = new List<T1>();
         public virtual void RegisterLocal(T1 b)
         {
-            if (!behaviours.Contains(b)) behaviours.Add(b);
+            if (!toRegister.Contains(b)) toRegister.Add(b);
         }
 
-        private readonly List<T1> toRemove = new List<T1>(); 
+        protected readonly List<T1> toRemove = new List<T1>(); 
         public virtual void UnregisterLocal(T1 b)
         {
+            toRegister.Remove(b);
             toRemove.Add(b);
         }
 
@@ -36,29 +38,29 @@ namespace Swole.API
             instance.UnregisterLocal(b);
         }
 
-        public override void OnFixedUpdate()
+        public bool IsRegisteredLocal(T1 b) => behaviours.Contains(b);
+        public static bool IsRegistered(T1 b)
         {
-            foreach (var b in behaviours)
-            {
-                if (b != null) b.CustomFixedUpdate();
-            }
+            var instance = InstanceOrNull;
+            if (instance == null) return false;
+
+            return instance.IsRegisteredLocal(b);
         }
 
-        public override void OnUpdate()
+        public virtual void RegisterQueued()
         {
-            foreach (var b in behaviours)
+            if (toRegister.Count > 0)
             {
-                if (b != null) b.CustomUpdate();
+                foreach (var behaviour in toRegister)
+                {
+                    if (!behaviours.Contains(behaviour)) behaviours.Add(behaviour);
+                }
+
+                toRegister.Clear();
             }
         }
-
-        public override void OnLateUpdate()
+        public virtual void RemoveQueued()
         {
-            foreach (var bone in behaviours)
-            {
-                if (bone != null) bone.CustomLateUpdate();
-            }
-
             if (toRemove.Count > 0)
             {
                 foreach (var b in toRemove) if (b != null) behaviours.Remove(b);
@@ -70,6 +72,49 @@ namespace Swole.API
                 behaviours.RemoveAll(b => b == null);
 #endif
             }
+        }
+
+        public virtual bool CallFixedUpdate => true;
+
+        public override void OnFixedUpdate()
+        {
+            if (CallFixedUpdate)
+            {
+                foreach (var b in behaviours)
+                {
+                    if (b != null) b.CustomFixedUpdate();
+                }
+            }
+        }
+
+        public virtual bool CallUpdate => true;
+
+        public override void OnUpdate()
+        {
+            RegisterQueued();
+
+            if (CallUpdate)
+            {
+                foreach (var b in behaviours)
+                {
+                    if (b != null) b.CustomUpdate();
+                }
+            }
+        }
+
+        public virtual bool CallLateUpdate => true;
+
+        public override void OnLateUpdate()
+        {
+            if (CallLateUpdate)
+            {
+                foreach (var b in behaviours)
+                {
+                    if (b != null) b.CustomLateUpdate();
+                }
+            }
+
+            RemoveQueued();
         }
 
     }

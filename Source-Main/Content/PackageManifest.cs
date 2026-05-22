@@ -7,7 +7,7 @@ namespace Swole
 {
 
     [Serializable]
-    public struct PackageManifest : IEquatable<PackageManifest>
+    public struct PackageManifest : IEquatable<PackageManifest>, IEquatable<PackageInfo>, IEquatable<PackageIdentifier>
     {
 
         public static PackageManifest FromRaw(byte[] buffer)
@@ -116,8 +116,21 @@ namespace Swole
             return base.Equals(obj);
         }
 
-        public string ConvertToAssetPath(string assetName) => ((PackageManifest)this).ConvertToAssetPath(assetName);
-        public AssetIdentifier ConvertToAssetIdentifier(string assetName) => ((PackageManifest)this).ConvertToAssetIdentifier(assetName);
+        public bool Equals(PackageInfo other) => info.Equals(other);
+
+        public static bool operator ==(PackageManifest A, PackageInfo B) => A.Equals(B);
+        public static bool operator !=(PackageManifest A, PackageInfo B) => !A.Equals(B);
+
+        public static bool operator ==(PackageInfo A, PackageManifest B) => B.Equals(A);
+        public static bool operator !=(PackageInfo A, PackageManifest B) => !B.Equals(A);
+
+        public bool Equals(PackageIdentifier other) => info.Equals(other);
+
+        public static bool operator ==(PackageManifest A, PackageIdentifier B) => A.Equals(B);
+        public static bool operator !=(PackageManifest A, PackageIdentifier B) => !A.Equals(B);
+
+        public static bool operator ==(PackageIdentifier A, PackageManifest B) => B.Equals(A);
+        public static bool operator !=(PackageIdentifier A, PackageManifest B) => !B.Equals(A);
 
     }
 

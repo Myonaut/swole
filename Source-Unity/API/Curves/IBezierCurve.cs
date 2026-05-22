@@ -1,4 +1,4 @@
-#if (UNITY_STANDALONE || UNITY_EDITOR)
+#if UNITY_2017_1_OR_NEWER
 
 using System;
 
@@ -36,6 +36,11 @@ namespace Swole.API.Unity
         public Vector2 GetVertex2D(int index);
         public float VertexSpacing { get; set; }
         public int VertexAccuracy { get; set; }
+        public void SetVertices(Vector3[] vertices, int[] originalVertexIndices);
+        public void SetVertices2D(Vector2[] vertices, int[] originalVertexIndices);
+        public void SetVertex(int index, Vector3 vertex);
+        public void SetVertex2D(int index, Vector2 vertex);
+
 
         public Vector3 GetPositionOnCurve(float normalizedPos, SwoleEndOfPathInstruction endOfPathInstruction = SwoleEndOfPathInstruction.Stop);
         public Vector2 GetPositionOnCurve2D(float normalizedPos, SwoleEndOfPathInstruction endOfPathInstruction = SwoleEndOfPathInstruction.Stop);
@@ -82,6 +87,7 @@ namespace Swole.API.Unity
 
     [Serializable]
     public enum SwoleEndOfPathInstruction { Loop, Reverse, Stop };
+
 }
 
 #endif

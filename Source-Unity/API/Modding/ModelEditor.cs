@@ -2630,7 +2630,7 @@ namespace Swole
                 list.Clear(false);
 
                 animatablesCache.Clear();
-                animatablesCache = AnimationLibrary.GetAllAnimatables(animatablesCache);
+                animatablesCache = AnimationLibrary.GetAllAnimatablesAsList(animatablesCache);
 
                 foreach (var animatable in animatablesCache)
                 {

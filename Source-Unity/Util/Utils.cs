@@ -5,14 +5,14 @@ using System.Collections;
 using System.Collections.Generic;
 using System.IO;
 using System.Reflection;
-
-using UnityEngine;
-using UnityEngine.UI;
-using Unity.Collections;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 
+using UnityEngine;
+using UnityEngine.UI;
+using UnityEngine.SceneManagement;
 
+using Unity.Collections;
 
 
 #if UNITY_EDITOR
@@ -25,14 +25,31 @@ namespace Swole
     public static class Utils
     {
 
-        public static Vector3 MousePositionWorld(Camera camera = null)
+        public static List<GameObject> GetAllRootObjects(List<GameObject> output = null)
+        {
+            if (output == null) output = new List<GameObject>();
+
+            for (int i = 0; i < SceneManager.sceneCount; i++)
+            {
+                Scene scene = SceneManager.GetSceneAt(i);
+
+                if (scene.isLoaded)
+                {
+                    scene.GetRootGameObjects(output);
+                }
+            }
+
+            return output;
+        }
+
+        public static Vector3 MousePositionWorld(Camera camera = null, float distance = 0f)
         {
 
-            return MousePositionWorld(UnityEngineHook.AsUnityVector(InputProxy.CursorScreenPosition), camera);
+            return MousePositionWorld(UnityEngineHook.AsUnityVector(InputProxy.CursorScreenPosition), camera, distance);
 
         }
 
-        public static Vector3 MousePositionWorld(Vector3 mousePos, Camera camera = null)
+        public static Vector3 MousePositionWorld(Vector3 mousePos, Camera camera = null, float distance = 0f)
         {
 
             if (camera == null)
@@ -41,7 +58,7 @@ namespace Swole
                 if (camera == null) return mousePos;
             }
 
-            mousePos.z = camera.nearClipPlane + 0.001f;
+            mousePos.z = camera.nearClipPlane + 0.001f + Mathf.Max(0f, distance);
 
             return camera.ScreenToWorldPoint(mousePos);
 

@@ -769,7 +769,7 @@ namespace Swole
 
             quaternion midQFlipped = new quaternion(math.lerp(lastQ.value, flipped.value, 0.5f));
 
-#if UNITY_2022_OR_NEWER
+#if UNITY_2022_3_OR_NEWER
             float angle = math.angle(lastQ, midQ);
             float angleFlipped = math.angle(lastQ, midQFlipped);
 #else

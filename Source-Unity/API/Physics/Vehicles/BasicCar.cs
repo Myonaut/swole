@@ -461,7 +461,7 @@ namespace Swole.API.Unity
             }
 
             carBody.useGravity = false;
-#if UNITY_2022_OR_NEWER
+#if UNITY_2022_3_OR_NEWER
             carBody.automaticCenterOfMass = false;
 #endif
             carBody.centerOfMass = centerOfMass; 

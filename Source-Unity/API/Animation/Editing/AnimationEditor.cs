@@ -4251,7 +4251,7 @@ namespace Swole.API.Unity.Animation
 
             if (ContentManager.TryFindLocalPackage(target.package, out ContentManager.LocalPackage localPackage))
             {
-                SetPushPullMode(localPackage);
+                SetPushPullMode(localPackage); 
             } 
             else
             {
@@ -4270,9 +4270,9 @@ namespace Swole.API.Unity.Animation
 
         public void BindTargetToPackage() => BindTargetToPackage(exportTarget, packageTarget);
         public bool BindTargetToPackage(AnimationSource exportTarget, PackageIdentifier packageTarget) => BindTargetToPackage(exportTarget, packageTarget, out _);
-        public bool BindTargetToPackage(AnimationSource exportTarget, PackageIdentifier packageTarget, out ContentManager.LocalPackage localPackage)
+        public bool BindTargetToPackage(AnimationSource exportTarget, PackageIdentifier packageTarget, out ContentManager.LocalPackage localPackage) 
         {
-            localPackage = default;
+            localPackage = default;          
             if (exportTarget == null) return false;
 
             this.exportTarget = exportTarget;
@@ -6474,6 +6474,16 @@ namespace Swole.API.Unity.Animation
         public Sprite icon_humanoidRig;
         public Sprite icon_mechanicalRig;
 
+        protected Sprite GetRigIcon(string type)
+        {
+            if (string.IsNullOrWhiteSpace(type)) return null;
+            if (System.Enum.TryParse<AnimatableAsset.ObjectType>(type, true, out var typeE))
+            {
+                GetRigIcon(typeE);
+            }
+
+            return null;
+        }
         protected Sprite GetRigIcon(AnimatableAsset.ObjectType type)
         {
             switch (type)
@@ -7809,7 +7819,8 @@ namespace Swole.API.Unity.Animation
 
         #endregion
 
-        private List<AnimatableAsset> animatablesCache = new List<AnimatableAsset>();
+        //private List<AnimatableAsset> animatablesCache = new List<AnimatableAsset>();
+        private List<ResourceItem> animatablesCache = new List<ResourceItem>();
         public void OpenAnimatableImporter()
         {
             if (animatableImporterWindow == null) return;
@@ -7821,17 +7832,18 @@ namespace Swole.API.Unity.Animation
             {
                 list.Clear(false); 
 
-                animatablesCache.Clear(); 
-                animatablesCache = AnimationLibrary.GetAllAnimatables(animatablesCache);
+                animatablesCache.Clear();
+                //animatablesCache = AnimationLibrary.GetAllAnimatablesAsList(animatablesCache);
+                animatablesCache.AddRange(ResourceDB.GetAllShallowAssets<AnimatableAsset>());
 
-                foreach(var animatable in animatablesCache)
+                foreach (var animatable in animatablesCache)
                 {
-                    list.AddNewListMember(animatable.name, animatable.type.ToString().ToUpper(), () => {
+                    list.AddNewListMember(/*animatable.name*/animatable.GetMetaData(nameof(AnimatableAsset.name)), /*animatable.type*/animatable.GetMetaData(nameof(AnimatableAsset.type)).ToString().ToUpper(), () => {
                         
                         if (popup != null) popup.Close();
-                        ImportNewAnimatable(animatable, true, true);
+                        ImportNewAnimatable(/*animatable*/animatable.Load<AnimatableAsset>(), true, true);
                     
-                    }, GetRigIcon(animatable.type)); 
+                    }, GetRigIcon(/*animatable.type*/animatable.GetMetaData(nameof(AnimatableAsset.type))));  
                 }
             } 
 

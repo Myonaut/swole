@@ -303,6 +303,10 @@ namespace Swole.UI
 
         [SerializeField]
         private Scrollbar scrollbar;
+        [Range(0f, 1f)]
+        public float minScrollbarSize = 0.02f;
+        [Range(0f, 1f)]
+        public float maxScrollbarSize = 1f;
         public void SetScrollbar(Scrollbar scrollbar)
         {
             if (this.scrollbar != null && this.scrollbar.onValueChanged != null) this.scrollbar.onValueChanged.RemoveListener(SetViewPosition);
@@ -391,6 +395,12 @@ namespace Swole.UI
         {
             public string name;
             public UnityAction onClick;
+            public UnityAction<MemberData> onClickWithData;
+            public readonly void OnClick()
+            {
+                onClick?.Invoke();
+                onClickWithData?.Invoke(this);
+            }
 
             public MemberID id;
 
@@ -439,6 +449,7 @@ namespace Swole.UI
             public int index = -1;
         }
         public MemberID AddNewMember(string name, UnityAction onClick, bool refreshUI = false, OnRefreshMember onRefresh = null, object storage = null) => AddOrUpdateMember(new MemberData() { name = name, onClick = onClick, onRefresh = onRefresh, storage = storage }, refreshUI);
+        public MemberID AddNewMemberWithClickData(string name, UnityAction<MemberData> onClick, bool refreshUI = false, OnRefreshMember onRefresh = null, object storage = null) => AddOrUpdateMember(new MemberData() { name = name, onClickWithData = onClick, onRefresh = onRefresh, storage = storage }, refreshUI);
         public MemberID AddOrUpdateMember(MemberData data, bool refreshUI = true)
         {
             isDirty = true;
@@ -818,7 +829,7 @@ namespace Swole.UI
                 CustomEditorUtils.SetInputOrTextComponentText(nameTransform, data.name);
                 if (!membersAreNotButtons)
                 {
-                    if (data.onClick == null && setDisableMemberButtonsWithNoOnClick) CustomEditorUtils.SetButtonInteractable(instanceTransform, false); else CustomEditorUtils.SetButtonOnClickAction(instanceTransform, data.onClick);
+                    if ((data.onClick == null && data.onClickWithData == null) && setDisableMemberButtonsWithNoOnClick) CustomEditorUtils.SetButtonInteractable(instanceTransform, false); else CustomEditorUtils.SetButtonOnClickAction(instanceTransform, data.OnClick);
                 }
 
                 instanceTransform.SetParent(layoutTransform, false); 
@@ -906,7 +917,7 @@ namespace Swole.UI
             if (scrollbar != null && scrollbar.gameObject.activeInHierarchy)
             {
                 if (isInFocus) scrollbar.value = Mathf.Clamp01(scrollbar.value + (InputProxy.Scroll * scrollSpeedMultiplier * InputProxy.ScrollSpeed * (scrollbar.direction == Scrollbar.Direction.TopToBottom || scrollbar.direction == Scrollbar.Direction.RightToLeft ? -1 : 1)) / (1 + (NonHiddenCount * 0.1f)));
-                scrollbar.size = 1f / Mathf.Min(25, NonHiddenCount + 1); 
+                scrollbar.size = Mathf.Clamp(1f / Mathf.Min(25, NonHiddenCount + 1), minScrollbarSize, maxScrollbarSize); 
             }
         }
 

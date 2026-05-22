@@ -6,7 +6,7 @@ using System;
 
 namespace Swole
 {
-    public interface ICurve : ICloneable
+    public interface ICurve : ICloneable, IDisposable
     {
 
         public string Name { get; set; }
