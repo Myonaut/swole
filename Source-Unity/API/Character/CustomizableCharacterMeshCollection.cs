@@ -26,7 +26,7 @@ namespace Swole.Morphing
         public struct V2
         {
             public string id;
-            public CustomizableCharacterMeshV2 mesh;
+            public CustomizableCharacterMeshBase mesh;
         }
 
         #endregion
@@ -50,7 +50,7 @@ namespace Swole.Morphing
                     mesh = v1
                 });
             } 
-            else if (mesh is CustomizableCharacterMeshV2 v2)
+            else if (mesh is CustomizableCharacterMeshBase v2)
             {
                 if (meshesV2 == null) meshesV2 = new V2[0];
                 meshesV2 = (V2[])meshesV2.Add(new V2()
@@ -114,7 +114,7 @@ namespace Swole.Morphing
             }
         }
 
-        public int MeshCount => (meshesV1 == null ? 0 : meshesV1.Length) + (meshesV2 == null ? 0 : meshesV2.Length);
+        public int MeshCount => (meshesV1 == null ? 0 : meshesV1.Length) + (meshesV2 == null ? 0 : meshesV2.Length); 
 
         public ICustomizableCharacter First => this[0];
         public bool HasMeshes => MeshCount > 0;

@@ -237,6 +237,7 @@ namespace Swole.API.Unity.Animation
             public override void SetWeight(float weight)
             {
                 baseWeight = weight;
+
                 SetPositionWeight(positionWeight);
                 SetRotationWeight(rotationWeight);
             }

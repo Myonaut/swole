@@ -13,51 +13,51 @@ namespace Swole.API.Unity
     public class DefaultHumanoidIK : IKControlProxy
     { 
 
-        [AnimatableProperty]
+        [AnimatableProperty(true, 0f)]
         public bool Active_ArmLeft { set => SetActiveByProxy(value, boundIndices_armLeft); get => GetActiveByProxy(boundIndices_armLeft); }
-        [AnimatableProperty]
+        [AnimatableProperty(true, 1f)]
         public float Weight_ArmLeft { set => SetWeightByProxy(value, boundIndices_armLeft); get => GetWeightByProxy(boundIndices_armLeft); } 
-        [AnimatableProperty]
+        [AnimatableProperty(true, 1f)]
         public float PositionWeight_ArmLeft { set => SetPositionWeightByProxy(value, boundIndices_armLeft); get => GetPositionWeightByProxy(boundIndices_armLeft); }
-        [AnimatableProperty]
+        [AnimatableProperty(true, 1f)]
         public float RotationWeight_ArmLeft { set => SetRotationWeightByProxy(value, boundIndices_armLeft); get => GetRotationWeightByProxy(boundIndices_armLeft); }
-        [AnimatableProperty]
+        [AnimatableProperty(true, 1f)]
         public float BendGoalWeight_ArmLeft { set => SetBendGoalWeightByProxy(value, boundIndices_armLeft); get => GetBendGoalWeightByProxy(boundIndices_armLeft); }
-        public string[] bindings_armLeft; protected List<int> boundIndices_armLeft;
+        public string[] bindings_armLeft; protected List<int> boundIndices_armLeft; 
 
-        [AnimatableProperty]
+        [AnimatableProperty(true, 0f)]
         public bool Active_ArmRight { set => SetActiveByProxy(value, boundIndices_armRight); get => GetActiveByProxy(boundIndices_armRight); }
-        [AnimatableProperty]
+        [AnimatableProperty(true, 1f)]
         public float Weight_ArmRight { set => SetWeightByProxy(value, boundIndices_armRight); get => GetWeightByProxy(boundIndices_armRight); }
-        [AnimatableProperty]
+        [AnimatableProperty(true, 1f)]
         public float PositionWeight_ArmRight { set => SetPositionWeightByProxy(value, boundIndices_armRight); get => GetPositionWeightByProxy(boundIndices_armRight); }
-        [AnimatableProperty]
+        [AnimatableProperty(true, 1f)]
         public float RotationWeight_ArmRight { set => SetRotationWeightByProxy(value, boundIndices_armRight); get => GetRotationWeightByProxy(boundIndices_armRight); }
-        [AnimatableProperty]
+        [AnimatableProperty(true, 1f)]
         public float BendGoalWeight_ArmRight { set => SetBendGoalWeightByProxy(value, boundIndices_armRight); get => GetBendGoalWeightByProxy(boundIndices_armRight); }
         public string[] bindings_armRight; protected List<int> boundIndices_armRight;
 
-        [AnimatableProperty]
+        [AnimatableProperty(true, 0f)]
         public bool Active_LegLeft { set => SetActiveByProxy(value, boundIndices_legLeft); get => GetActiveByProxy(boundIndices_legLeft); }
-        [AnimatableProperty]
+        [AnimatableProperty(true, 1f)]
         public float Weight_LegLeft { set => SetWeightByProxy(value, boundIndices_legLeft); get => GetWeightByProxy(boundIndices_legLeft); }
-        [AnimatableProperty]
+        [AnimatableProperty(true, 1f)]
         public float PositionWeight_LegLeft { set => SetPositionWeightByProxy(value, boundIndices_legLeft); get => GetPositionWeightByProxy(boundIndices_legLeft); }
-        [AnimatableProperty]
+        [AnimatableProperty(true, 1f)]
         public float RotationWeight_LegLeft { set => SetRotationWeightByProxy(value, boundIndices_legLeft); get => GetRotationWeightByProxy(boundIndices_legLeft); }
-        [AnimatableProperty]
+        [AnimatableProperty(true, 1f)]
         public float BendGoalWeight_LegLeft { set => SetBendGoalWeightByProxy(value, boundIndices_legLeft); get => GetBendGoalWeightByProxy(boundIndices_legLeft); }
         public string[] bindings_legLeft; protected List<int> boundIndices_legLeft;
 
-        [AnimatableProperty]
+        [AnimatableProperty(true, 0f)]
         public bool Active_LegRight { set => SetActiveByProxy(value, boundIndices_legRight); get => GetActiveByProxy(boundIndices_legRight); }
-        [AnimatableProperty]
+        [AnimatableProperty(true, 1f)]
         public float Weight_LegRight { set => SetWeightByProxy(value, boundIndices_legRight); get => GetWeightByProxy(boundIndices_legRight); }
-        [AnimatableProperty]
+        [AnimatableProperty(true, 1f)]
         public float PositionWeight_LegRight { set => SetPositionWeightByProxy(value, boundIndices_legRight); get => GetPositionWeightByProxy(boundIndices_legRight); }
-        [AnimatableProperty]
+        [AnimatableProperty(true, 1f)]
         public float RotationWeight_LegRight { set => SetRotationWeightByProxy(value, boundIndices_legRight); get => GetRotationWeightByProxy(boundIndices_legRight); }
-        [AnimatableProperty]
+        [AnimatableProperty(true, 1f)]
         public float BendGoalWeight_LegRight { set => SetBendGoalWeightByProxy(value, boundIndices_legRight); get => GetBendGoalWeightByProxy(boundIndices_legRight); }
         public string[] bindings_legRight; protected List<int> boundIndices_legRight;
 

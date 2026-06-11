@@ -139,16 +139,16 @@ namespace Swole.API.Unity.Animation
 
         #endregion
 
-        [Serializable]
-        public struct AnimatablePropertyInfo
-        {
-            public string id;
-            public string displayName;
-            public float defaultValue;
-            public bool isDynamic;
-        }
-
         protected readonly List<AnimatablePropertyInfo> animatableProperties = new List<AnimatablePropertyInfo>();
+        public void AddAnimatableProperty(AnimatablePropertyInfo info)
+        {
+            if (restPose != null)
+            {
+                restPose.ReplaceElement(new AnimationUtils.AnimatableElement(info.id, info.defaultValue));
+            }
+
+            animatableProperties.Add(info);
+        }
         public int AnimatablePropertyCount => animatableProperties.Count;
         public AnimatablePropertyInfo GetAnimatablePropertyUnsafe(int index) => animatableProperties[index];
         public AnimatablePropertyInfo GetAnimatableProperty(int index) => index < 0 || index >= animatableProperties.Count ? default : animatableProperties[index]; 
@@ -164,20 +164,57 @@ namespace Swole.API.Unity.Animation
 
             return false;
         }
-        public void SetAnimatablePropertyInfo(string id, AnimatablePropertyInfo info)
+        /*public void SetAnimatablePropertyInfo(AnimatablePropertyInfo info)
         {
+            if (restPose != null)
+            {
+                restPose.ReplaceElement(new AnimationUtils.AnimatableElement(info.id, info.defaultValue));
+            }
+
             for (int a = 0; a < animatableProperties.Count; a++)
             {
                 var info_ = animatableProperties[a];
-                if (info_.id == id)
+                if (info_.id == info.id)
                 {
                     animatableProperties[a] = info;
                     return;
                 }
             }
+
+            animatableProperties.Add(info);
+        }*/
+        public void SetAnimatablePropertyInfo(AnimatablePropertyInfo info) // refactored so that the first property with given id is the one that is always used
+        {
+            for (int a = 0; a < animatableProperties.Count; a++) 
+            {
+                var info_ = animatableProperties[a];
+                if (info_.id == info.id)
+                {
+                    return;
+                }
+            }
+
+            if (restPose != null)
+            {
+                restPose.ReplaceElement(new AnimationUtils.AnimatableElement(info.id, info.defaultValue));
+            }
+
             animatableProperties.Add(info);
         }
 
+        private static PropertyInfo[] baseMonobehaviourProperties;
+        private bool CheckIfIsUnityDefinedProperty(PropertyInfo propToCheck)
+        {
+            if (propToCheck == null) return false;
+
+            var declaringType = propToCheck.DeclaringType;
+            foreach(var prop in baseMonobehaviourProperties)
+            {
+                if (prop.Name == propToCheck.Name && prop.DeclaringType == declaringType) return true; 
+            }
+
+            return false;
+        }
         private static readonly List<object> _tempReferenceChain = new List<object>();
         private static readonly List<CustomAnimator.PropertyMemberInfo> _tempInfoChain = new List<CustomAnimator.PropertyMemberInfo>();
         public void Initialize(AnimatableAsset asset)
@@ -265,14 +302,21 @@ namespace Swole.API.Unity.Animation
                 restPose = new AnimationUtils.Pose(instance.transform, animator == null ? null : animator.avatar);
             }
 
-            int[] checkCount = new int[] { 0 };
-            IEnumerator LoadAnimatableProperties()
+            if (rootTransform != null && restPose != null)
             {
+                restPose.InsertDefaultPropertyValues(rootTransform.gameObject, true);          
+            }
+
+            int[] checkCount = new int[] { 0 };
+            IEnumerator LoadAnimatableProperties(bool clearExisting)
+            {
+
+                if (clearExisting) animatableProperties.Clear();
+
+                if (baseMonobehaviourProperties == null) baseMonobehaviourProperties = typeof(MonoBehaviour).GetProperties(BindingFlags.Instance | BindingFlags.Public);
 
                 if (rootTransform != null)
                 {
-                    animatableProperties.Clear();
-
                     object GetInstanceFromChain(object topInstance, List<CustomAnimator.PropertyMemberInfo> infoChain)
                     {
                         var instance = topInstance;
@@ -311,6 +355,8 @@ namespace Swole.API.Unity.Animation
                     IEnumerator AddAnimatableProperties(object topInstance, object instance, Type typeInfo, string displayPrefix, bool hideReferenceChain, string idPrefix, int depth, List<object> referenceChain, List<CustomAnimator.PropertyMemberInfo> infoChain)
                     {
                         if (depth > 2 || typeInfo == null || typeof(Type).IsAssignableFrom(typeInfo) || typeof(MemberInfo).IsAssignableFrom(typeInfo) || (depth > 0 && typeof(UnityEngine.Object).IsAssignableFrom(typeInfo))) yield break; 
+
+                        bool isTopInstance = ReferenceEquals(instance, topInstance); 
 
                         infoChain = new List<CustomAnimator.PropertyMemberInfo>(infoChain); // TODO: avoid creating a new list
 
@@ -355,17 +401,22 @@ namespace Swole.API.Unity.Animation
 
                             referenceChain.Add(instance);
                         }
-                         
+
+                        bool isUnityObject = typeof(UnityEngine.Object).IsAssignableFrom(typeInfo);
                         var props = typeInfo.GetProperties(System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.Public);
                         foreach (var prop in props)
                         {
-                            if (prop == null || Attribute.IsDefined(prop, typeof(ObsoleteAttribute)) || Attribute.IsDefined(prop.PropertyType, typeof(NonAnimatableAttribute))) continue;
+                            if (prop == null || Attribute.IsDefined(prop, typeof(ObsoleteAttribute)) || Attribute.IsDefined(prop.PropertyType, typeof(NonAnimatableAttribute)) || (isUnityObject && CheckIfIsUnityDefinedProperty(prop))) continue;
 
-                            checkCount[0] = checkCount[0] + 1;
-                            if (checkCount[0] > 5000)
+                            if (!isTopInstance)
                             {
-                                yield return null;
-                                checkCount[0] = 0;
+                                checkCount[0] = checkCount[0] + 1;
+                                if (checkCount[0] > 30000)
+                                {
+                                    yield return null;
+                                    if (this == null) yield break;
+                                    checkCount[0] = 0;
+                                }
                             }
 
                             string displayName = string.IsNullOrWhiteSpace(displayPrefix) ? prop.Name : $"{displayPrefix}.{prop.Name}";
@@ -395,7 +446,7 @@ namespace Swole.API.Unity.Animation
                                     }
                                 }
 
-                                animatableProperties.Add(new AnimatablePropertyInfo() { id = id, displayName = displayName, defaultValue = defaultValue });
+                                SetAnimatablePropertyInfo(new AnimatablePropertyInfo() { id = id, displayName = displayName, defaultValue = defaultValue });
                             }
                             else
                             {
@@ -441,6 +492,7 @@ namespace Swole.API.Unity.Animation
                                                 
 
                                                 yield return AddAnimatableProperties(topInstance, item, itemType, itemName, hideReferenceChain, $"{id}[{a}]", depth + 1, referenceChain, infoChain);
+                                                if (this == null) yield break;
 
                                                 if (infoChain.Count > revertChainCount) infoChain.RemoveRange(revertChainCount, infoChain.Count - revertChainCount);
                                             }
@@ -488,6 +540,7 @@ namespace Swole.API.Unity.Animation
                                                 infoChain.Add(new CustomAnimator.PropertyMemberInfo(prop, a, item.GetType()));
 
                                                 yield return AddAnimatableProperties(topInstance, item, item.GetType(), itemName, hideReferenceChain, $"{id}[{a}]", depth + 1, referenceChain, infoChain);
+                                                if (this == null) yield break;
 
                                                 if (infoChain.Count > revertChainCount) infoChain.RemoveRange(revertChainCount, infoChain.Count - revertChainCount);
                                             }
@@ -502,6 +555,7 @@ namespace Swole.API.Unity.Animation
                                         int revertChainCount = infoChain.Count;
                                         infoChain.Add(new CustomAnimator.PropertyMemberInfo(prop, 0, null));
                                         yield return AddAnimatableProperties(topInstance, null, prop.PropertyType, displayNameAsPrefix, hideReferenceChain, id, depth + 1, referenceChain, infoChain);
+                                        if (this == null) yield break;
 
                                         if (infoChain.Count > revertChainCount) infoChain.RemoveRange(revertChainCount, infoChain.Count - revertChainCount);
 
@@ -515,11 +569,15 @@ namespace Swole.API.Unity.Animation
                         {
                             if (field == null || Attribute.IsDefined(field, typeof(ObsoleteAttribute)) || Attribute.IsDefined(field.FieldType, typeof(NonAnimatableAttribute)) || (!field.IsPublic && !Attribute.IsDefined(field, typeof(SerializeField)))) continue;
 
-                            checkCount[0] = checkCount[0] + 1;
-                            if (checkCount[0] > 5000)
+                            if (!isTopInstance)
                             {
-                                yield return null;
-                                checkCount[0] = 0;
+                                checkCount[0] = checkCount[0] + 1;
+                                if (checkCount[0] > 30000)
+                                {
+                                    yield return null;
+                                    if (this == null) yield break;
+                                    checkCount[0] = 0;
+                                }
                             }
 
                             string displayName = string.IsNullOrWhiteSpace(displayPrefix) ? field.Name : $"{displayPrefix}.{field.Name}";
@@ -549,7 +607,7 @@ namespace Swole.API.Unity.Animation
                                     }
                                 }
 
-                                animatableProperties.Add(new AnimatablePropertyInfo() { id = id, displayName = displayName, defaultValue = defaultValue }); 
+                                SetAnimatablePropertyInfo(new AnimatablePropertyInfo() { id = id, displayName = displayName, defaultValue = defaultValue }); 
                             }
                             else
                             {
@@ -594,6 +652,7 @@ namespace Swole.API.Unity.Animation
                                                 infoChain.Add(new CustomAnimator.PropertyMemberInfo(field, a, item.GetType()));
 
                                                 yield return AddAnimatableProperties(topInstance, item, item.GetType(), itemName, hideReferenceChain, $"{id}[{a}]", depth + 1, referenceChain, infoChain);
+                                                if (this == null) yield break;
 
                                                 if (infoChain.Count > revertChainCount) infoChain.RemoveRange(revertChainCount, infoChain.Count - revertChainCount);
                                             }
@@ -641,6 +700,7 @@ namespace Swole.API.Unity.Animation
                                                 infoChain.Add(new CustomAnimator.PropertyMemberInfo(field, a, item.GetType()));
 
                                                 yield return AddAnimatableProperties(topInstance, item, item.GetType(), itemName, hideReferenceChain, $"{id}[{a}]", depth + 1, referenceChain, infoChain);
+                                                if (this == null) yield break;
 
                                                 if (infoChain.Count > revertChainCount) infoChain.RemoveRange(revertChainCount, infoChain.Count - revertChainCount);
                                             }
@@ -652,6 +712,7 @@ namespace Swole.API.Unity.Animation
                                     int revertChainCount = infoChain.Count;
                                     infoChain.Add(new CustomAnimator.PropertyMemberInfo(field, 0, null));
                                     yield return AddAnimatableProperties(topInstance, null, field.FieldType, displayNameAsPrefix, hideReferenceChain, id, depth + 1, referenceChain, infoChain);
+                                    if (this == null) yield break;
 
                                     if (infoChain.Count > revertChainCount) infoChain.RemoveRange(revertChainCount, infoChain.Count - revertChainCount); 
                                 }
@@ -666,6 +727,7 @@ namespace Swole.API.Unity.Animation
                         {
                             yield return null;
                             yield return null;
+                            if (this == null) yield break;
 
                             foreach (var dap in dynamicAnimationPropertyComponents)
                             {
@@ -679,21 +741,14 @@ namespace Swole.API.Unity.Animation
 
                                     string id = $"{(isRoot ? IAnimator._animatorTransformPropertyStringPrefix : dap.name)}.{compType.Name}.{prop.name}";
                                     string displayName = $"{(isRoot ? string.Empty : (dap.name + "."))}{prop.DisplayName}";
-                                    animatableProperties.Add(new AnimatablePropertyInfo() { id = id, displayName = displayName, defaultValue = prop.defaultValue, isDynamic = true }); 
+                                    SetAnimatablePropertyInfo(new AnimatablePropertyInfo() { id = id, displayName = displayName, defaultValue = prop.defaultValue, isDynamic = true }); 
                                 }
-                            }
-                        }
-
-                        if (restPose != null)
-                        {
-                            foreach (var prop in animatableProperties)
-                            {
-                                restPose.ReplaceElement(new AnimationUtils.AnimatableElement(prop.id, prop.defaultValue));
                             }
                         }
                     }
 
-                    yield return WaitToFetchDynamicProperties(); 
+                    yield return WaitToFetchDynamicProperties();
+                    if (this == null) yield break;
 
                     _tempReferenceChain.Clear();
                     _tempInfoChain.Clear();
@@ -723,7 +778,8 @@ namespace Swole.API.Unity.Animation
                             string id = $"{(isRoot ? IAnimator._animatorTransformPropertyStringPrefix : component.name)}.{compType.Name}";
 
                             _tempInfoChain.Clear();  
-                            yield return AddAnimatableProperties(component, component, component.GetType(), displayName, hideReferenceChain, id, 0, _tempReferenceChain, _tempInfoChain);  
+                            yield return AddAnimatableProperties(component, component, component.GetType(), displayName, hideReferenceChain, id, 0, _tempReferenceChain, _tempInfoChain);
+                            if (this == null) yield break;
                             _tempInfoChain.Clear();
                         }
                     }
@@ -733,13 +789,21 @@ namespace Swole.API.Unity.Animation
 
             }
 
-            CoroutineProxy.Start(LoadAnimatableProperties());
+            animatableProperties.Clear();
+            foreach (var animProp in AnimationUtils.GetAllAnimatableProperties(rootTransform.gameObject))
+            {
+                AddAnimatableProperty(animProp); 
+            } 
+
+            CoroutineProxy.Start(LoadAnimatableProperties(false));
 
             IEnumerator WaitToApplyLastPose()
             {
                 yield return null;
                 yield return null;
                 yield return null;
+
+                if (this == null) yield break;
 
                 if (lastPose != null)
                 {
@@ -1062,7 +1126,7 @@ namespace Swole.API.Unity.Animation
                 yield return null;
                 yield return null;
                 yield return null;
-                yield return null;
+                yield return null; 
 
                 pose.ApplyTo(copy);
             }

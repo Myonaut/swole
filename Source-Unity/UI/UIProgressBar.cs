@@ -270,7 +270,7 @@ namespace Swole.UI
                     maskTransform = maskObj.GetComponent<RectTransform>();
                 }
                 maskTransform.gameObject.SetActive(true);
-                maskTransform.SetParent(barContainer);
+                maskTransform.SetParent(barContainer, false);
                 switch(orientation)
                 {
                     case Orientation.LeftToRight:
@@ -293,7 +293,7 @@ namespace Swole.UI
             if (!IsPipBased)
             {
                 barTransform.gameObject.SetActive(true);
-                barTransform.SetParent(IsMaskBased ? maskTransform : barContainer);
+                barTransform.SetParent(IsMaskBased ? maskTransform : barContainer, false);
                 if (!IsMaskBased) barTransform.SetAnchor(AnchorPresets.StretchAll, false);
                 switch (orientation)
                 {
@@ -589,11 +589,11 @@ namespace Swole.UI
 
                     if (IsMaskBased)
                     {
-                        pip.rectTransform.SetParent(maskTransform);
+                        pip.rectTransform.SetParent(maskTransform, false);
                     } 
                     else
                     {
-                        pip.rectTransform.SetParent(barContainer);
+                        pip.rectTransform.SetParent(barContainer, false);
                     } 
                     pip.rectTransform.gameObject.SetActive(true);
 

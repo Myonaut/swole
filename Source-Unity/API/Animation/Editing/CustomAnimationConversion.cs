@@ -15,6 +15,8 @@ using UnityEngine;
 using TriLibCore;
 #endif
 
+using Swole.API.Unity.Animation.Curves;
+
 namespace Swole.API.Unity.Animation
 {
     [ExecuteInEditMode]

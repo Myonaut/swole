@@ -598,7 +598,7 @@ namespace Swole.API.Unity.Animation
         public override void Reset(IAnimationLayer layer)
         {
             if (AnimationPlayer == null) return;  
-            AnimationPlayer.Time = 0f; 
+            AnimationPlayer.Time = normalizedTimeStart * m_animationPlayer.LengthInSeconds;  
         }
 
         public override void SetWeight(float weight)

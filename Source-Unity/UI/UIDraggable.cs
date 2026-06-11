@@ -9,7 +9,7 @@ using UnityEngine.Events;
 using UnityEngine.EventSystems;
 using UnityEngine.UI;
 
-using Swole.API.Unity.Animation;
+using Swole.API.Unity.Animation.Curves;
 
 namespace Swole.UI
 {

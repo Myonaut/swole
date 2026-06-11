@@ -15,26 +15,27 @@ using static Swole.API.Unity.ICustomizableCharacter.Defaults;
 namespace Swole.Morphing
 {
     [NonAnimatable]
-    public class CustomizableCharacterMeshV2_DATA : ScriptableObject, CustomizableCharacterMeshBase.ICustomizableCharacterMeshBaseData
+    public class CustomizableCharacterUnitySkinnedMesh_DATA : ScriptableObject, CustomizableCharacterMeshBase.ICustomizableCharacterMeshBaseData
     {
 
-        public static CustomizableCharacterMeshV2_DATA CreateInstance(string name, CustomizableCharacterMeshV2.SerializedData data)
+        public static CustomizableCharacterUnitySkinnedMesh_DATA CreateInstance(string name, CustomizableCharacterUnitySkinnedMesh.SerializedData data)
         {
-            var instance = ScriptableObject.CreateInstance<CustomizableCharacterMeshV2_DATA>();
+            var instance = ScriptableObject.CreateInstance<CustomizableCharacterUnitySkinnedMesh_DATA>(); 
             instance.name = name;
-            instance.serializedData = data;
+            instance.serializedData = data; 
 
             return instance;
         }
 
         [SerializeField]
-        protected CustomizableCharacterMeshV2.SerializedData serializedData;
-        public CustomizableCharacterMeshV2.SerializedData SerializedData => serializedData;
+        protected CustomizableCharacterUnitySkinnedMesh.SerializedData serializedData;
+        public CustomizableCharacterUnitySkinnedMesh.SerializedData SerializedData => serializedData;
 
 #if UNITY_EDITOR
         public void ReplaceData(CustomizableCharacterMeshBase.ICustomizableCharacterMeshBaseData data)
         {
-            if (data is CustomizableCharacterMeshV2.SerializedData data_) serializedData = data_;
+            Debug.Log($"Replacing serializedData for {name} : {data != null}");
+            if (data is CustomizableCharacterUnitySkinnedMesh.SerializedData data_) serializedData = data_;
         }
 #endif
 

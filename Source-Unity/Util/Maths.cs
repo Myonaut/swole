@@ -546,6 +546,28 @@ namespace Swole
 
         }
 
+
+        public static bool AABB_CheckIntersection(Vector3 minA, Vector3 maxA, Vector3 minB, Vector3 maxB)
+        {
+            return (minA.x <= maxB.x && maxA.x >= minB.x) &&
+                   (minA.y <= maxB.y && maxA.y >= minB.y) &&
+                   (minA.z <= maxB.z && maxA.z >= minB.z);
+        }
+
+        public static bool AABB_PointIn(Vector3 point, Vector3 min, Vector3 max)
+        {
+            return (point.x >= min.x && point.x <= max.x) &&
+                   (point.y >= min.y && point.y <= max.y) &&
+                   (point.z >= min.z && point.z <= max.z);
+        }
+        public static bool AABB_PointInCenterExtents(Vector3 point, Vector3 center, Vector3 extents)
+        {
+            return Mathf.Abs(point.x - center.x) <= extents.x &&
+                   Mathf.Abs(point.y - center.y) <= extents.y &&
+                   Mathf.Abs(point.z - center.z) <= extents.z;
+        }
+        public static bool AABB_PointInCenterSize(Vector3 point, Vector3 center, Vector3 size) => AABB_PointInCenterExtents(point, center, size * 0.5f); 
+
         /// <summary>
         /// Find the smallest distance between two angles. (in degrees)
         /// </summary>

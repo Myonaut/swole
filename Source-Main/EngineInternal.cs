@@ -2749,6 +2749,13 @@ namespace Swole
                 return instance.FindParameter(name);
             }
 
+            public bool TryGetParameter(string name, out IAnimationParameter parameter)
+            {
+                parameter = null;
+                if (IsDestroyed) return false;
+                return instance.TryGetParameter(name, out parameter);
+            }
+
             public Dictionary<int, int> RecalculateParameterIndices()
             {
                 if (IsDestroyed) return null;

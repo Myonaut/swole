@@ -389,14 +389,14 @@ namespace Swole
 
         }
 
-        public static int GetChildDepth(this Transform child, Transform parent = null)
+        public static int GetChildDepth(this Transform child, Transform upperTargetParent = null)
         {
 
             int depth = 0;
 
             Transform parent_ = child.parent;
 
-            while (parent_ != null && parent_ != parent)
+            while (parent_ != null && parent_ != upperTargetParent)
             {
 
                 depth++;
@@ -789,6 +789,55 @@ namespace Swole
         {
             RectTransformUtility.ScreenPointToLocalPointInRectangle(rectTransform, screenPos, camera, out Vector2 localPos);
             return localPos;
+        }
+
+        public static Vector3 ScreenToWorldPosition(this RectTransform rectTransform, float depth) => ScreenToWorldPosition(rectTransform, Camera.main, depth);
+        public static Vector3 ScreenToWorldPosition(this RectTransform rectTransform, Camera uiCamera, float depth)
+        {
+            // 1. Get the UI element's screen space coordinates
+            Vector2 screenPoint = RectTransformUtility.WorldToScreenPoint(uiCamera, rectTransform.position);
+
+            // 2. Resolve the camera depending on Overlay vs Camera space
+            // If the canvas is Overlay, Camera is usually null
+            Camera renderCamera = uiCamera != null ? uiCamera : Camera.main;
+
+            // 3. Convert screen position to world point
+            Vector3 worldPoint;
+            Plane plane = new Plane(-renderCamera.transform.forward, renderCamera.transform.position + renderCamera.transform.forward * depth);
+
+            RectTransformUtility.ScreenPointToWorldPointInRectangle(
+                rectTransform,
+                screenPoint,
+                renderCamera,
+                out worldPoint
+            );
+
+            return worldPoint;
+        }
+
+        public static void MoveToWorldPositionPreserveDepth(this RectTransform rectTransform, Vector3 worldPosition) => MoveToWorldPositionPreserveDepth(rectTransform, worldPosition, null, null);
+        public static void MoveToWorldPositionPreserveDepth(this RectTransform rectTransform, Vector3 worldPosition, Camera worldCamera, Camera uiCamera)
+        {
+            worldCamera = worldCamera == null ? Camera.main : worldCamera;
+
+            // 1. Convert 3D world position to 2D screen pixels
+            Vector2 screenPoint = worldCamera.WorldToScreenPoint(worldPosition);
+
+            // 2. Get the parent RectTransform to calculate local space
+            RectTransform parentRect = rectTransform.parent as RectTransform;
+            if (parentRect == null) return;
+
+            // 3. Convert screen pixels to the parent's local UI coordinates
+            Vector2 localPoint;
+            RectTransformUtility.ScreenPointToLocalPointInRectangle(
+                parentRect,
+                screenPoint,
+                uiCamera, // Automatically handles null for Overlay canvases
+                out localPoint
+            );
+
+            // 4. Apply the new 2D position while preserving the original Z depth
+            rectTransform.anchoredPosition = localPoint;  
         }
 
         public static Vector2 GetNormalizedPointFromWorldPosition(this RectTransform t, Vector3 worldPos) => GetNormalizedPointFromLocalPosition(t, t.InverseTransformPoint(worldPos));

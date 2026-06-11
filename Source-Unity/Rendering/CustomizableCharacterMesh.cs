@@ -1778,6 +1778,10 @@ namespace Swole.Morphing
             set => BustSize = value;
         }
 
+        public bool HasValidInstance => throw new NotImplementedException();
+
+        public bool CanRender => throw new NotImplementedException();
+
         public bool SetMuscleGroupValues(int muscleGroupIndex, float3 values, bool updateDependencies = true)
         {
             int localGroupIndex = muscleGroupIndex / 2;
@@ -2045,6 +2049,51 @@ namespace Swole.Morphing
         }
 
         #endregion
+
+        public bool IsParentOf(ICustomizableCharacter child, out int index)
+        {
+            throw new NotImplementedException();
+        }
+
+        public void AddChild(ICustomizableCharacter child, ICustomizableCharacter.ChildType type)
+        {
+            throw new NotImplementedException();
+        }
+
+        public void RemoveChild(ICustomizableCharacter child, ICustomizableCharacter.ChildType type)
+        {
+            throw new NotImplementedException();
+        }
+
+        public void RemoveChild(ICustomizableCharacter child)
+        {
+            throw new NotImplementedException();
+        }
+
+        public void SetBustShape(float value)
+        {
+            throw new NotImplementedException();
+        }
+
+        public bool RenderingIsInitialized()
+        {
+            throw new NotImplementedException();
+        }
+
+        public bool IsRendering()
+        {
+            throw new NotImplementedException();
+        }
+
+        public void InitializeRendering()
+        {
+            throw new NotImplementedException();
+        }
+
+        public void ApplyIDsToMaterials()
+        {
+            throw new NotImplementedException();
+        }
 
     }
 

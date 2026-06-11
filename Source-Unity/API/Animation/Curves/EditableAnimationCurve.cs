@@ -6,8 +6,9 @@ using System.Collections.Generic;
 using UnityEngine;
 
 using Swole.API.Unity.Animation;
+using Swole.API.Unity.Animation.Curves;
 
-using static Swole.API.Unity.Animation.AnimationCurveEditor;
+using static Swole.API.Unity.Animation.Curves.AnimationCurveEditor;
 
 namespace Swole.API.Unity
 {

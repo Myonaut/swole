@@ -1,4 +1,4 @@
-#if (UNITY_EDITOR || UNITY_STANDALONE)
+#if UNITY_2017_1_OR_NEWER
 #define FOUND_UNITY
 using UnityEngine;
 using Swole.Unity;
@@ -18,6 +18,53 @@ namespace Swole
 
     public class UnityEngineHook : EngineHook
     {
+
+        public static bool IsProjectClone
+        {
+            get
+            {
+                System.Type clonesManagerType = System.Type.GetType("ParrelSync.ClonesManager, ParrelSync");  
+
+                // If not found in the explicit assembly, scan all loaded assemblies
+                if (clonesManagerType == null)
+                {
+                    clonesManagerType = CSharpExtensions.GetTypeFromAllAssemblies("ParrelSync.ClonesManager");
+                }
+
+                if (clonesManagerType != null)
+                {
+                    Debug.Log($"[{nameof(UnityEngineHook)}] ParrelSync and ClonesManager exist in the project.");
+
+                    System.Reflection.MethodInfo isCloneMethod = clonesManagerType.GetMethod("IsClone", System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Static);
+                    //System.Reflection.MethodInfo getArgumentMethod = clonesManagerType.GetMethod("GetArgument", System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Static);
+
+                    if (isCloneMethod != null)
+                    {
+                        bool isClone = (bool)isCloneMethod.Invoke(null, null);
+
+                        if (isClone)
+                        {
+                            Debug.Log($"[{nameof(UnityEngineHook)}] This is a clone project.");
+
+                            //if (getArgumentMethod != null)
+                            //{
+                            // Invoke ClonesManager.GetArgument()
+                            //    string customArgument = (string)getArgumentMethod.Invoke(null, null);
+                            //    Debug.Log("The custom argument of this clone project is: " + customArgument);
+                            //}
+
+                            return true;
+                        }
+                    }
+                }
+                else
+                {
+                    Debug.Log($"[{nameof(UnityEngineHook)}] ParrelSync or ClonesManager was not found in this project.");
+                }
+
+                return false;
+            }
+        }
 
         public override string Name => "Unity";
 

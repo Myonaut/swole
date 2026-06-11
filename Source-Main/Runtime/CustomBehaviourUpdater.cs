@@ -53,7 +53,14 @@ namespace Swole.API
             {
                 foreach (var behaviour in toRegister)
                 {
-                    if (!behaviours.Contains(behaviour)) behaviours.Add(behaviour);
+#if UNITY_2017_1_OR_NEWER
+                    if (behaviour != null && !behaviours.Contains(behaviour) && (behaviour is not UnityEngine.Behaviour b_ || b_ != null))
+#else
+                    if (behaviour != null && !behaviours.Contains(behaviour)) 
+#endif
+                    {
+                        behaviours.Add(behaviour); 
+                    }
                 }
 
                 toRegister.Clear();
@@ -82,7 +89,21 @@ namespace Swole.API
             {
                 foreach (var b in behaviours)
                 {
-                    if (b != null) b.CustomFixedUpdate();
+                    try
+                    {
+#if UNITY_2017_1_OR_NEWER
+                        if (b != null && (b is not UnityEngine.Behaviour b_ || b_ != null))
+#else
+                        if (b != null) 
+#endif
+                        {
+                            b.CustomFixedUpdate();
+                        }
+                    }
+                    catch (Exception e)
+                    {
+                        swole.LogError(e);
+                    }
                 }
             }
         }
@@ -97,7 +118,21 @@ namespace Swole.API
             {
                 foreach (var b in behaviours)
                 {
-                    if (b != null) b.CustomUpdate();
+                    try
+                    {
+#if UNITY_2017_1_OR_NEWER
+                        if (b != null && (b is not UnityEngine.Behaviour b_ || b_ != null))
+#else
+                        if (b != null) 
+#endif
+                        { 
+                            b.CustomUpdate(); 
+                        }
+                    }
+                    catch (Exception e)
+                    {
+                        swole.LogError(e);
+                    }
                 }
             }
         }
@@ -110,7 +145,21 @@ namespace Swole.API
             {
                 foreach (var b in behaviours)
                 {
-                    if (b != null) b.CustomLateUpdate();
+                    try
+                    {
+#if UNITY_2017_1_OR_NEWER
+                        if (b != null && (b is not UnityEngine.Behaviour b_ || b_ != null))
+#else
+                        if (b != null) 
+#endif
+                        {
+                            b.CustomLateUpdate();
+                        }
+                    } 
+                    catch(Exception e)
+                    {
+                        swole.LogError(e); 
+                    }
                 }
             }
 

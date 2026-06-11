@@ -51,6 +51,7 @@ namespace Swole.Animation
         public int FindParameterIndex(string name);
         public IAnimationParameter FindParameter(string name, out int parameterIndex);
         public IAnimationParameter FindParameter(string name);
+        public bool TryGetParameter(string name, out IAnimationParameter parameter);
         public Dictionary<int, int> RecalculateParameterIndices();
 
         public void AddLayer(IAnimationLayer layer, bool instantiate = true, string prefix = "", List<IAnimationLayer> outList = null, bool onlyOutputNew = false, IAnimationController animationController = null);

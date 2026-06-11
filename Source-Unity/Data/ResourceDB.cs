@@ -70,7 +70,8 @@ namespace Swole
         public string Name { get { return name; } }
         public string Ext { get { return ext; } }
         public string Path { get { return path; } }
-        public string ResourcesPath { get { return string.IsNullOrWhiteSpace(path) ? name : path + "/" + name; } }
+        public string ResourcesPath => string.IsNullOrWhiteSpace(path) ? name : path + "/" + name;
+        public string ResourcesPathWithExtension => $"{ResourcesPath}.{Ext}";
         public Type ResourcesType { get { return type; } }
         public ResourceItem Parent { get { return parent; } }
 
@@ -132,13 +133,20 @@ namespace Swole
             if (type == Type.Asset) // assets don't have children
                 yield break;
             bool checkName = !string.IsNullOrWhiteSpace(aName);
+            string baseName = checkName ? System.IO.Path.GetFileNameWithoutExtension(aName) : null;
+            bool checkExtension = checkName && aName.IndexOf('.') > -1;
+            string extension = checkExtension ? System.IO.Path.GetExtension(aName) : null;
+            if (extension != null && extension.StartsWith('.')) extension = extension.Substring(1); 
+            bool extIsEmpty = string.IsNullOrWhiteSpace(extension);
             bool typeCheck = aAssetType != null;
             var items = childs.Values;
             foreach (var item in items)
             {
                 if (aResourceType != Type.Any && item.type != aResourceType)
                     continue;
-                if (checkName && aName != item.Name)
+                if (checkName && item.Name != baseName)
+                    continue;
+                if (checkExtension && item.Ext != extension && (!string.IsNullOrWhiteSpace(item.Ext) || !extIsEmpty))
                     continue;
                 if (typeCheck && !aAssetType.IsAssignableFrom(item.objectType))
                     continue;
@@ -385,6 +393,8 @@ namespace Swole
 
         public void MarkAsOutdated()
         {
+            if (UnityEngineHook.IsProjectClone) return; 
+
             isOutdated = true;
             if (notifyWhenOutdated)
             {
@@ -417,6 +427,18 @@ namespace Swole
         public int FileCount { get { return m_FileCount; } }
         public int FolderCount { get { return m_FolderCount; } }
 
+        private const string _resourcesFolderName = "Resources";
+        public static string GetRelativePath(string fullPath)
+        {
+            if (string.IsNullOrWhiteSpace(fullPath)) return string.Empty;
+
+            var resourceFolderInd = fullPath.LastIndexOf(_resourcesFolderName + "/");
+            if (resourceFolderInd < 0) resourceFolderInd = fullPath.LastIndexOf(_resourcesFolderName + @"\"); 
+            if (resourceFolderInd >= 0) fullPath = fullPath.Substring(Mathf.Min(resourceFolderInd + _resourcesFolderName.Length, fullPath.Length - 1));
+            if (fullPath.StartsWith("/")) fullPath = fullPath.Substring(1);
+            if (fullPath.StartsWith(@"\")) fullPath = fullPath.Substring(1);
+            return fullPath.Trim();
+        }
         public static ResourceItem GetFolder(string aPath)
         {
             return Instance.root.GetChild(aPath, ResourceItem.Type.Folder);
@@ -448,6 +470,19 @@ namespace Swole
 
             return null;
         }
+        public static bool TryGetShallowAsset(string aName, System.Type aAssetType, out ResourceItem item)
+        {
+            item = GetShallowAsset(aName, aAssetType);
+            return item != null;
+        }
+        public static bool TryGetShallowAsset(string aName, out ResourceItem item) => TryGetShallowAsset(aName, null, out item);
+        public static bool TryGetAsset<T>(string aName, out T asset) where T : UnityEngine.Object
+        {
+            asset = GetAsset<T>(aName);
+            return asset != null;
+        }
+        public static bool Contains(string aName) => TryGetShallowAsset(aName, out _);
+        public static bool Contains(string aName, System.Type aAssetType) => TryGetShallowAsset(aName, aAssetType, out _);
 
         internal readonly Dictionary<ResourceItem, UnityEngine.Object> fullyLoadedItems = new Dictionary<ResourceItem, UnityEngine.Object>();
         internal static readonly List<ResourceItem> tempItems = new List<ResourceItem>();
@@ -544,6 +579,10 @@ namespace Swole
 
         public void UpdateDB(bool aSetDirty = false)
         {
+            if (UnityEngineHook.IsProjectClone) return;
+
+            var startT = System.DateTime.Now;
+
             items.Clear();
             root.childs.Clear();
             var topFolders = FindResourcesFolders(true);
@@ -571,8 +610,10 @@ namespace Swole
             if (aSetDirty)
             {
                 UnityEditor.EditorUtility.SetDirty(this);
-                UnityEditor.AssetDatabase.SaveAssets();
+                UnityEditor.AssetDatabase.SaveAssets(); 
             }
+
+            Debug.Log($"[{nameof(ResourceDB)}] Resource database was indexed successfully. ({(System.DateTime.Now - startT).TotalSeconds:F2}s)"); 
         }
 #endif
 
@@ -586,7 +627,7 @@ namespace Swole
 #endif
         }
 
-        public void OnAfterDeserialize()
+        public void RegenerateHierarchy()
         {
             root.childs.Clear();
             foreach (var item in items)
@@ -594,6 +635,10 @@ namespace Swole
                 if (item != null)
                     item.OnDeserialize();
             }
+        }
+        public void OnAfterDeserialize()
+        {
+            RegenerateHierarchy();
         }
     }
 
@@ -607,17 +652,34 @@ namespace Swole
             if (ResourceDB.FindInstance() == null)
                 return;
             var files = importedAssets.Concat(deletedAssets).Concat(movedAssets).Concat(movedFromAssetPaths);
-            bool update = false;
-            foreach (var file in files)
+            bool update = ResourceDB.Instance.IsOutdated && !UnityEngineHook.IsProjectClone; 
+            bool regenerateHierarchy = false;
+            if (!update)
             {
-                var fn = file.ToLower();
-                if (!fn.Contains("resourcedb.asset") && fn.Contains("/resources/"))
+                ResourceDB.Instance.RegenerateHierarchy(); // makes sure hierarchy is initialized
+                foreach (var file in files)
                 {
-                    update = true; 
-                    break;
+                    var fn = file.ToLower();
+                    if (!fn.Contains("resourcedb.asset") && fn.Contains("/resources/"))  
+                    {
+                        var fileName = System.IO.Path.GetFileName(file); 
+                        if (ResourceDB.TryGetShallowAsset(fileName, null, out var item))
+                        {
+                            if (deletedAssets.Contains(file))
+                            {
+                                ResourceDB.Instance.items.Remove(item);
+                                regenerateHierarchy = true;
+                            }
+                        }
+                        else
+                        {
+                            update = true;
+                            break;
+                        }
+                    }
                 }
             }
-
+             
             if (update)
             {
                 if (ResourceDB.Instance.UpdateAutomatically)
@@ -628,6 +690,10 @@ namespace Swole
                 {
                     ResourceDB.Instance.MarkAsOutdated();
                 }                    
+            }
+            if (regenerateHierarchy)
+            {
+                ResourceDB.Instance.RegenerateHierarchy(); 
             }
         }
     }

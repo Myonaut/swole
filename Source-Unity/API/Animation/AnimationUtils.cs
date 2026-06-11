@@ -10,6 +10,9 @@ using UnityEngine;
 
 using Unity.Mathematics;
 
+using Swole.Animation;
+using Swole.API.Unity.Animation.Curves;
+
 namespace Swole.API.Unity.Animation
 {
     public static class AnimationUtils
@@ -922,6 +925,125 @@ namespace Swole.API.Unity.Animation
             return SetProperty(component, substrings, value, finalSubstringIndex + 2);
         }
 
+        public static IEnumerable<AnimatablePropertyInfo> GetAllAnimatableProperties(GameObject root)
+        {
+            if (root == null) yield break;
+
+            foreach (var component in root.GetComponentsInChildren<Component>(true))
+            {
+                bool isRoot = component.gameObject == root;
+                if (component is DynamicAnimationProperties dap)
+                {
+                    var compType = component.GetType();
+                    for (int i = 0; i < dap.PropertyCount; i++)
+                    {
+                        var element = dap.GetProperty(i);
+                        string id = $"{(isRoot ? IAnimator._animatorTransformPropertyStringPrefix : component.name)}.{compType.Name}.{element.name}";
+                        string displayName = $"{(isRoot ? string.Empty : (dap.name + "."))}{element.DisplayName}"; 
+                        float val = element.GetDefaultValue();
+                        yield return new AnimatablePropertyInfo
+                        {
+                            id = id,
+                            displayName = displayName,
+                            defaultValue = val,
+                            isDynamic = true
+                        };
+                    }
+                }
+
+                foreach (var p in GetAnimatableProperties(component, isRoot))
+                {
+                    yield return p;
+                }
+            }
+        }
+        public static IEnumerable<AnimatablePropertyInfo> GetAnimatableProperties(GameObject obj, bool isRoot)
+        {
+            if (obj == null) yield break;
+
+            foreach (var component in obj.GetComponents<Component>())
+            {
+                if (component is DynamicAnimationProperties dap)
+                {
+                    var compType = component.GetType();
+                    for (int i = 0; i < dap.PropertyCount; i++)
+                    {
+                        var element = dap.GetProperty(i);
+                        string id = $"{(isRoot ? IAnimator._animatorTransformPropertyStringPrefix : component.name)}.{compType.Name}.{element.name}";
+                        float val = element.GetDefaultValue();
+                        yield return new AnimatablePropertyInfo
+                        {
+                            id = id,
+                            displayName = element.displayName,
+                            defaultValue = val,
+                            isDynamic = true
+                        };
+                    }
+                }
+
+                foreach (var p in GetAnimatableProperties(component, isRoot))
+                {
+                    yield return p;
+                }
+            }
+        }
+        public static IEnumerable<AnimatablePropertyInfo> GetAnimatableProperties(Component component, bool isRoot)
+        {
+            if (component == null) yield break;
+
+            var compType = component.GetType();
+            string baseId = $"{(isRoot ? IAnimator._animatorTransformPropertyStringPrefix : component.name)}.{compType.Name}";
+
+            string prefix = string.Empty;
+            bool hideReferenceChain = false;
+            if (Attribute.IsDefined(compType, typeof(AnimatablePropertyPrefixAttribute)))
+            {
+                var attr = (AnimatablePropertyPrefixAttribute)Attribute.GetCustomAttribute(compType, typeof(AnimatablePropertyPrefixAttribute));
+                if (attr != null)
+                {
+                    prefix = attr.prefix;
+                    hideReferenceChain = attr.hideReferenceChain;
+                }
+            }
+
+            string displayName = $"{prefix}{(hideReferenceChain ? string.Empty : (isRoot ? string.Empty : (component.name + ".")))}";
+
+            var fields = compType.GetFields(BindingFlags.Public | BindingFlags.Instance);
+            foreach (var field in fields)
+            {
+                var attr = field.GetCustomAttribute<AnimatablePropertyAttribute>();
+                if (attr == null) continue;
+
+                string id = $"{baseId}.{field.Name}";
+                float val = CustomAnimator.PropertyState.GetDefaultValue(field, component);
+                yield return new AnimatablePropertyInfo
+                {
+                    id = id,
+                    displayName = $"{displayName}{field.Name}",
+                    defaultValue = val,
+                    isDynamic = false
+                };
+            }
+
+
+            var props = compType.GetProperties(BindingFlags.Public | BindingFlags.Instance);
+            foreach (var prop in props)
+            {
+                var attr = prop.GetCustomAttribute<AnimatablePropertyAttribute>();
+                if (attr == null) continue;
+
+                string id = $"{baseId}.{prop.Name}";
+                float val = CustomAnimator.PropertyState.GetDefaultValue(prop, component);
+                yield return new AnimatablePropertyInfo
+                {
+                    id = id,
+                    displayName = $"{displayName}{prop.Name}",
+                    defaultValue = val,
+                    isDynamic = false
+                };
+            }
+        }
+
         /// <summary>
         /// Creates a single keyframe base curve that represents the rest pose of the transform
         /// </summary>
@@ -975,6 +1097,72 @@ namespace Swole.API.Unity.Animation
         }
 
         /// <summary>
+        /// Creates a single keyframe base curve that represents the rest pose of the transform
+        /// </summary>
+        public static TransformLinearCurve GetNewBaseTransformLinearCurve(string transformName, Pose restPose)
+        {
+            if (restPose == null) return null;
+            var curve = new TransformLinearCurve();
+            curve.name = transformName;
+            //curve.isBone <- might need to do something with this
+
+            float value;
+            curve.frames = new ITransformCurve.Frame[1]
+            {
+                new ITransformCurve.Frame()
+                {
+                    timelinePosition = 0, 
+                    data = new ITransformCurve.Data()
+                    {
+                        localPosition = new Vector3(
+                            restPose.TryGetValueLiberal(TransformLocalPositionXKey(transformName), out value) ? value : 0,
+                            restPose.TryGetValueLiberal(TransformLocalPositionYKey(transformName), out value) ? value : 0,
+                            restPose.TryGetValueLiberal(TransformLocalPositionZKey(transformName), out value) ? value : 0
+                        ),
+                        localRotation = new Quaternion(
+                            restPose.TryGetValueLiberal(TransformLocalRotationXKey(transformName), out value) ? value : 0,
+                            restPose.TryGetValueLiberal(TransformLocalRotationYKey(transformName), out value) ? value : 0,
+                            restPose.TryGetValueLiberal(TransformLocalRotationZKey(transformName), out value) ? value : 0,
+                            restPose.TryGetValueLiberal(TransformLocalRotationWKey(transformName), out value) ? value : 1
+                        ),
+                        localScale = new Vector3(
+                            restPose.TryGetValueLiberal(TransformLocalScaleXKey(transformName), out value) ? value : 1,
+                            restPose.TryGetValueLiberal(TransformLocalScaleYKey(transformName), out value) ? value : 1,
+                            restPose.TryGetValueLiberal(TransformLocalScaleZKey(transformName), out value) ? value : 1
+                        )
+                    }
+                }
+            };
+
+            return curve;
+        }
+        /// <summary>
+        /// Creates a single keyframe base curve that represents the rest pose of the transform
+        /// </summary>
+        public static TransformLinearCurve GetNewBaseTransformLinearCurve(string transformName, Vector3 localPosition, Quaternion localRotation, Vector3 localScale)
+        {
+            var curve = new TransformLinearCurve();
+            curve.name = transformName;
+            //curve.isBone <- might need to do something with this
+
+            curve.frames = new ITransformCurve.Frame[1]
+            {
+                new ITransformCurve.Frame()
+                {
+                    timelinePosition = 0,
+                    data = new ITransformCurve.Data()
+                    {
+                        localPosition = localPosition,
+                        localRotation = localRotation,
+                        localScale = localScale
+                    }
+                }
+            };
+
+            return curve;
+        }
+
+        /// <summary>
         /// Creates a single keyframe base curve that represents the rest value of the property
         /// </summary>
         public static PropertyCurve GetNewBasePropertyCurve(string propertyString, Pose restPose)
@@ -983,8 +1171,62 @@ namespace Swole.API.Unity.Animation
             var curve = PropertyCurve.NewInstance;
             curve.name = propertyString;
 
+            /*if (*/restPose.TryGetValueLiberal($"{propertyString}", out float value)/*) Debug.Log($"FOUND BASE PROPERTY DEFAULT VALUE: {propertyString}:{value}"); else Debug.Log($"DID NOT FIND BASE PROPERTY DEFAULT VALUE: {propertyString}")*/;
+            curve.propertyValueCurve.keys = new Keyframe[] { new Keyframe() { time = 0, value = value } };  
+
+            return curve;
+        }
+
+        /// <summary>
+        /// Creates a single keyframe base curve that represents the rest value of the property
+        /// </summary>
+        public static PropertyCurve GetNewBasePropertyCurve(string propertyString, float defaultValue)
+        {
+            var curve = PropertyCurve.NewInstance;
+            curve.name = propertyString;
+
+            curve.propertyValueCurve.keys = new Keyframe[] { new Keyframe() { time = 0, value = defaultValue } };
+
+            return curve;
+        }
+
+        /// <summary>
+        /// Creates a single keyframe base curve that represents the rest value of the property
+        /// </summary>
+        public static PropertyLinearCurve GetNewBasePropertyLinearCurve(string propertyString, Pose restPose)
+        {
+            var curve = new PropertyLinearCurve();
+            curve.name = propertyString;
+
             restPose.TryGetValueLiberal($"{propertyString}", out float value);
-            curve.propertyValueCurve.keys = new Keyframe[] { new Keyframe() { time = 0, value = value } };
+            curve.frames = new IPropertyCurve.Frame[1]
+            {
+                new IPropertyCurve.Frame()
+                {
+                    timelinePosition = 0,
+                    value = value
+                }
+            };
+
+            return curve;
+        }
+
+        /// <summary>
+        /// Creates a single keyframe base curve that represents the rest value of the property
+        /// </summary>
+        public static PropertyLinearCurve GetNewBasePropertyLinearCurve(string propertyString, float defaultValue)
+        {
+            var curve = new PropertyLinearCurve();
+            curve.name = propertyString;
+
+            curve.frames = new IPropertyCurve.Frame[1]
+            {
+                new IPropertyCurve.Frame()
+                {
+                    timelinePosition = 0,
+                    value = defaultValue
+                }
+            };
 
             return curve;
         }
@@ -1499,6 +1741,7 @@ namespace Swole.API.Unity.Animation
                 if (elements == null) return false;
                 return elements.ContainsKey(id);
             }
+            public bool ContainsElement(AnimatableElement element) => ContainsElement(element.id);
 
             public Pose ReplaceElement(AnimatableElement element)
             {
@@ -1511,6 +1754,13 @@ namespace Swole.API.Unity.Animation
                 if (!elements.TryGetValue(element.id, out float value)) value = 0;
                 elements[element.id] = value + element.value * mix;
 
+                return this;
+            }
+            public Pose TryAddNewElement(AnimatableElement element)
+            {
+                if (ContainsElement(element.id)) return this;
+
+                ReplaceElement(element);
                 return this;
             }
 
@@ -1952,7 +2202,7 @@ namespace Swole.API.Unity.Animation
                     if (rigContainer != null && !avatar.IsIkBone(transform.name) && !transform.IsChildOf(rigContainer)) continue;
 
                     string baseId = avatar == null ? transform.name : avatar.Remap(transform.name);
-                    Debug.Log($"{(rigContainer == null ? "null" : rigContainer.name)}:: {transform.GetPathString()}");  
+                    //Debug.Log($"{(rigContainer == null ? "null" : rigContainer.name)}:: {transform.GetPathString()}");  
 
                     Vector3 localPosition = transform.localPosition;
                     Quaternion localRotation = transform.localRotation;
@@ -2512,6 +2762,115 @@ namespace Swole.API.Unity.Animation
 
             }
 
+            private static readonly List<AnimatableElement> _tempElements = new List<AnimatableElement>();
+            public void InsertDefaultPropertyValues(GameObject root, bool onlyMissing) => InsertPropertyValues(root, onlyMissing, true);
+            public void InsertPropertyValues(GameObject root, bool onlyMissing, bool useDefaultValues = false)
+            {
+                if (root == null) return;
+
+                foreach (var component in root.GetComponentsInChildren<Component>(true))
+                {
+                    var isRoot = component.gameObject == root;
+                    if (component is DynamicAnimationProperties dap)
+                    {
+                        _tempElements.Clear(); 
+
+                        var compType = component.GetType();
+                        for (int i = 0; i < dap.PropertyCount; i++)
+                        {
+                            var element = dap.GetProperty(i);
+                            string id = $"{(isRoot ? IAnimator._animatorTransformPropertyStringPrefix : component.name)}.{compType.Name}.{element.name}";
+                            float val = useDefaultValues ? element.GetDefaultValue() : element.GetValue();
+                            _tempElements.Add(new AnimatableElement(id, val));
+                        }
+
+                        InsertPropertyValues(_tempElements, onlyMissing);
+                    }
+
+                    InsertPropertyValues(component, onlyMissing, useDefaultValues, isRoot); 
+                }
+            }
+            public void InsertDefaultPropertyValues(Component component, bool onlyMissing, bool isRoot = false) => InsertPropertyValues(component, onlyMissing, true, isRoot);
+            public void InsertPropertyValues(Component component, bool onlyMissing, bool useDefaultValues = false, bool isRoot = false)
+            {
+                if (component == null) return;
+
+                _tempElements.Clear();
+
+                var compType = component.GetType();
+                string baseId = $"{(isRoot ? IAnimator._animatorTransformPropertyStringPrefix : component.name)}.{compType.Name}";
+
+                var fields = compType.GetFields(BindingFlags.Public | BindingFlags.Instance);
+                if (useDefaultValues)
+                {
+                    foreach (var field in fields)
+                    {
+                        var attr = field.GetCustomAttribute<AnimatablePropertyAttribute>();
+                        if (attr == null) continue;
+
+                        string id = $"{baseId}.{field.Name}";
+                        float val = CustomAnimator.PropertyState.GetDefaultValue(field, component);
+                        _tempElements.Add(new AnimatableElement(id, val));
+                    }
+                } 
+                else
+                {
+                    foreach (var field in fields)
+                    {
+                        var attr = field.GetCustomAttribute<AnimatablePropertyAttribute>();
+                        if (attr == null) continue;
+
+                        string id = $"{baseId}.{field.Name}";
+                        float val = CustomAnimator.PropertyState.GetValue(field, component);
+                        _tempElements.Add(new AnimatableElement(id, val));
+                    }
+                }
+
+                var props = compType.GetProperties(BindingFlags.Public | BindingFlags.Instance);
+                if (useDefaultValues)
+                {
+                    foreach (var prop in props)
+                    {
+                        var attr = prop.GetCustomAttribute<AnimatablePropertyAttribute>();
+                        if (attr == null) continue;
+
+                        string id = $"{baseId}.{prop.Name}";
+                        float val = CustomAnimator.PropertyState.GetDefaultValue(prop, component);
+                        _tempElements.Add(new AnimatableElement(id, val));
+                    }
+                }
+                else
+                {
+                    foreach (var prop in props)
+                    {
+                        var attr = prop.GetCustomAttribute<AnimatablePropertyAttribute>();
+                        if (attr == null) continue;
+
+                        string id = $"{baseId}.{prop.Name}";
+                        float val = CustomAnimator.PropertyState.GetValue(prop, component);
+                        _tempElements.Add(new AnimatableElement(id, val));
+                    }
+                }
+
+                InsertPropertyValues(_tempElements, onlyMissing); 
+            }
+            public void InsertPropertyValues(IEnumerable<AnimatableElement> paths, bool onlyMissing)
+            {
+                if (onlyMissing)
+                {
+                    foreach(var element in paths)
+                    {
+                        TryAddNewElement(element);
+                    }
+                }
+                else
+                {
+                    foreach (var element in paths)
+                    {
+                        ReplaceElement(element);
+                    }
+                }
+            }
         }
 
     }
@@ -2519,6 +2878,15 @@ namespace Swole.API.Unity.Animation
     public delegate int TimelinePositionToFrameIndex(decimal timelinePos);
     public delegate int TimelinePositionFloatToFrameIndex(float timelinePos);
     public delegate decimal FrameIndexToTimelinePosition(int frameIndex);
+
+    [Serializable]
+    public struct AnimatablePropertyInfo
+    {
+        public string id;
+        public string displayName;
+        public float defaultValue;
+        public bool isDynamic;
+    }
 
 }
 

@@ -162,6 +162,7 @@ namespace Swole.API.Unity.Animation
 
         public int IndexOf(string propertyName)
         {
+            if (!initialized) Initialize();
             if (propertiesLookup.TryGetValue(propertyName, out var index)) return index;
             return -1;
         }
@@ -439,6 +440,8 @@ namespace Swole.API.Unity.Animation
 
         public Property CreateProperty(string name, GetPropertyValueDelegate getValue, SetPropertyValueDelegate setValue, float defaultValue = 0, string displayName = null)
         {
+            if (!initialized) Initialize(); 
+
             var prop = new Property(); 
 
             prop.name = name;

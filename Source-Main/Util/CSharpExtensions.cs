@@ -68,5 +68,15 @@ namespace Swole
             return false;
         }
 
+        public static Type GetTypeFromAllAssemblies(string typeName)
+        {
+            foreach (var assembly in AppDomain.CurrentDomain.GetAssemblies())
+            {
+                Type type = assembly.GetType(typeName);
+                if (type != null) return type;
+            }
+            return null;
+        }
+
     }
 }

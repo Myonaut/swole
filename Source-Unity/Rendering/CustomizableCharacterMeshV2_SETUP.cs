@@ -1,4 +1,4 @@
-#if (UNITY_STANDALONE || UNITY_EDITOR)
+#if UNITY_2017_1_OR_NEWER
 
 using System;
 using System.IO;
@@ -447,6 +447,8 @@ namespace Swole.Morphing
 
             public CustomAvatar avatar;
             public SkinnedMeshRenderer skinnedRendererReference;
+            public bool createAsSkinnedMeshRenderer;
+            public bool useMonoGroupsForSkinnedMeshRenderer;
 
             public Vector3 boundsCenter;
             public Vector3 boundsExtents;
@@ -657,7 +659,7 @@ namespace Swole.Morphing
         public float averageFatGroupsAsPoolMaxWeight = 1f;
         public BodyMask[] fatGroups;
 
-        public CustomizableCharacterMeshV2.DefaultMuscleGroupConversion[] basicMuscleGroupConversions;
+        public ICustomizableCharacter.DefaultMuscleGroupConversion[] basicMuscleGroupConversions;
 
         public float flexEndPointWeight;
         public float flexExponent;
@@ -691,12 +693,22 @@ namespace Swole.Morphing
         [Header("Output")]
         public GameObject outputPrefab;
         public List<Mesh> outputMeshes = new List<Mesh>();
-        public List<CustomizableCharacterMeshV2_DATA> outputDatas = new List<CustomizableCharacterMeshV2_DATA>();
+        public List<ScriptableObject> outputDatas = new List<ScriptableObject>();
 
         #region Utility Fields
 
         protected List<MeshShape> finalMeshShapes = new List<MeshShape>();
+        protected MeshShape FindFinalMeshShape(string shapeName)
+        {
+            foreach (var shape in finalMeshShapes) if (shape.name == shapeName) return shape;
+            return null;
+        }
         protected List<VertexGroup> finalVertexGroups = new List<VertexGroup>();
+        protected VertexGroup FindFinalVertexGroup(string groupName)
+        {
+            foreach (var group in finalVertexGroups) if (group.name == groupName) return group;
+            return null;
+        }
         protected List<CustomizableCharacterMeshV2> finalMeshObjects = new List<CustomizableCharacterMeshV2>();
         protected List<SkinnedMeshRenderer> finalSkinnedRenderers = new List<SkinnedMeshRenderer>();
 
@@ -730,7 +742,7 @@ namespace Swole.Morphing
         public virtual void Execute()
         {
 
-            if (outputDatas == null) outputDatas = new List<CustomizableCharacterMeshV2_DATA>();
+            if (outputDatas == null) outputDatas = new List<ScriptableObject>();
             outputDatas.Clear();
             if (outputMeshes == null) outputMeshes = new List<Mesh>();
             outputMeshes.Clear();
@@ -764,6 +776,7 @@ namespace Swole.Morphing
             #region Prepare Ouput Prefab
 
             outputPrefab = Instantiate(prefabRootReference);
+            outputPrefab.SetActive(true);
             outputPrefab.name = string.IsNullOrWhiteSpace(prefabName) ? prefabRootReference.name : prefabName;
             var prefabRoot = outputPrefab.transform;
             if (deleteInactiveChildrenInPrefab)
@@ -786,7 +799,7 @@ namespace Swole.Morphing
 
             Vector2Int indicesDefault = new Vector2Int(0, -1);
 
-            List<CustomizableCharacterMeshV2> characterMeshes = new List<CustomizableCharacterMeshV2>();
+            List<CustomizableCharacterMeshBase> characterMeshes = new List<CustomizableCharacterMeshBase>();
             List<System.Action> postWork = new List<Action>();
             List<System.Action> finalWork = new List<Action>();
             if (meshObjects != null)
@@ -805,18 +818,28 @@ namespace Swole.Morphing
                     #region Initialize Output Data Object
 
                     string dataName = $"DATA_{objectSetup.name}";
-                    CustomizableCharacterMeshV2_DATA outputData = null;
+                    //CustomizableCharacterMeshV2_DATA outputData = null;
+                    ScriptableObject outputData = null;
                     bool canSkip = false;
 #if UNITY_EDITOR
                     string savePath = Extensions.CreateUnityAssetPathString(dataSavePath, dataName, string.Empty);
-                    outputData = AssetDatabase.LoadAssetAtPath<CustomizableCharacterMeshV2_DATA>(savePath);
-                    if (outputData == null) outputData = ScriptableObject.CreateInstance<CustomizableCharacterMeshV2_DATA>(); else canSkip = true;
+                    outputData = objectSetup.createAsSkinnedMeshRenderer ? AssetDatabase.LoadAssetAtPath<CustomizableCharacterUnitySkinnedMesh_DATA>(savePath) : AssetDatabase.LoadAssetAtPath<CustomizableCharacterMeshV2_DATA>(savePath);
+                    if (outputData == null) 
+                    { 
+                        outputData = objectSetup.createAsSkinnedMeshRenderer ? ScriptableObject.CreateInstance<CustomizableCharacterUnitySkinnedMesh_DATA>() : ScriptableObject.CreateInstance<CustomizableCharacterMeshV2_DATA>(); 
+                    }
+                    else
+                    {
+                        canSkip = true;
+                    }
 #endif
                     outputData.name = dataName;
 
                     #endregion
 
-                    CustomizableCharacterMeshV2 characterMesh = null;
+                    CustomizableCharacterMeshBase characterMesh = null;
+                    CustomizableCharacterUnitySkinnedMesh characterMeshSkinned = null;
+                    CustomizableCharacterMeshV2 characterMeshV2 = null;
 
                     if (!(objectSetup.skip && canSkip)) 
                     {
@@ -825,8 +848,10 @@ namespace Swole.Morphing
                         Mesh[] lodMeshes = objectSetup.lods == null ? null : new Mesh[objectSetup.lods.Length];
                         if (lodMeshes != null) for (int b = 0; b < objectSetup.lods.Length; b++) lodMeshes[b] = objectSetup.lods[b].mesh;
 
-                        CustomizableCharacterMeshV2 meshObject = null;
-                        CustomizableCharacterMeshV2.SerializedData serializedData = new CustomizableCharacterMeshV2.SerializedData();
+                        CustomizableCharacterMeshBase meshObject = null;
+                        CustomizableCharacterUnitySkinnedMesh.SerializedData serializedDataSkinned = objectSetup.createAsSkinnedMeshRenderer ? new CustomizableCharacterUnitySkinnedMesh.SerializedData() : null;
+                        CustomizableCharacterMeshV2.SerializedData serializedDataV2 = !objectSetup.createAsSkinnedMeshRenderer ? new CustomizableCharacterMeshV2.SerializedData() : null;
+                        CustomizableCharacterMeshBase.ICustomizableCharacterMeshBaseData serializedData = objectSetup.createAsSkinnedMeshRenderer ? serializedDataSkinned : serializedDataV2;
 
                         finalMeshShapes.Clear();
                         finalVertexGroups.Clear();
@@ -2015,7 +2040,8 @@ namespace Swole.Morphing
                             }
                         }
 
-                        serializedData.standaloneShapes = indicesDefault;
+                        if (serializedDataSkinned != null) serializedDataSkinned.standaloneShapes = indicesDefault;
+                        if (serializedDataV2 != null) serializedDataV2.standaloneShapes = indicesDefault;
                         if (standaloneShapes != null)
                         {
                             int rangeStartIndex = finalMeshShapes.Count;
@@ -2060,7 +2086,8 @@ namespace Swole.Morphing
                                 }
                             }
 
-                            serializedData.standaloneShapes = new Vector2Int(rangeStartIndex, finalMeshShapes.Count - 1);
+                            if (serializedDataSkinned != null) serializedDataSkinned.standaloneShapes = new Vector2Int(rangeStartIndex, finalMeshShapes.Count - 1);
+                            if (serializedDataV2 != null) serializedDataV2.standaloneShapes = new Vector2Int(rangeStartIndex, finalMeshShapes.Count - 1);
                         }
 
                         if (massShapes != null)
@@ -2089,7 +2116,8 @@ namespace Swole.Morphing
                             }
 
                             var massShape = MeshShape.CreateFromBlendShapes(massShapeName, tempBlendShapes, true);
-                            serializedData.massShape = finalMeshShapes.Count;
+                            if (serializedDataSkinned != null) serializedDataSkinned.massShape = finalMeshShapes.Count;
+                            if (serializedDataV2 != null) serializedDataV2.massShape = finalMeshShapes.Count;
                             finalMeshShapes.Add(massShape);
 
                             if (prepVertexGroupMuscleMasks != null)
@@ -2131,7 +2159,8 @@ namespace Swole.Morphing
                             }
 
                             var flexShape = MeshShape.CreateFromBlendShapes(flexShapeName, tempBlendShapes, true);
-                            serializedData.flexShape = finalMeshShapes.Count;
+                            if (serializedDataSkinned != null) serializedDataSkinned.flexShape = finalMeshShapes.Count;
+                            if (serializedDataV2 != null) serializedDataV2.flexShape = finalMeshShapes.Count;
                             finalMeshShapes.Add(flexShape);
 
                             if (prepVertexGroupMuscleMasks != null)
@@ -2173,7 +2202,8 @@ namespace Swole.Morphing
                             }
 
                             var fatShape = MeshShape.CreateFromBlendShapes(fatShapeName, tempBlendShapes, true);
-                            serializedData.fatShape = finalMeshShapes.Count;
+                            if (serializedDataSkinned != null) serializedDataSkinned.fatShape = finalMeshShapes.Count;
+                            if (serializedDataV2 != null) serializedDataV2.fatShape = finalMeshShapes.Count;
                             finalMeshShapes.Add(fatShape);
 
                             if (prepVertexGroupFatMasks != null)
@@ -2215,7 +2245,8 @@ namespace Swole.Morphing
                             }
 
                             var fatMuscleBlendShape = MeshShape.CreateFromBlendShapes(fatMuscleBlendShapeName, tempBlendShapes, true);
-                            serializedData.fatMuscleBlendShape = finalMeshShapes.Count;
+                            if (serializedDataSkinned != null) serializedDataSkinned.fatMuscleBlendShape = finalMeshShapes.Count;
+                            if (serializedDataV2 != null) serializedDataV2.fatMuscleBlendShape = finalMeshShapes.Count;
                             finalMeshShapes.Add(fatMuscleBlendShape);
 
                             if (prepVertexGroupFatMasks != null)
@@ -2279,7 +2310,8 @@ namespace Swole.Morphing
                                 }
                             }
 
-                            serializedData.variationShapes = new Vector2Int(startIndex, finalMeshShapes.Count - 1);
+                            if (serializedDataSkinned != null) serializedDataSkinned.variationShapes = new Vector2Int(startIndex, finalMeshShapes.Count - 1);
+                            if (serializedDataV2 != null) serializedDataV2.variationShapes = new Vector2Int(startIndex, finalMeshShapes.Count - 1);
                         }
 
                         #endregion
@@ -2288,9 +2320,14 @@ namespace Swole.Morphing
 
                         if (baseMeshIndex >= 0 && baseMeshIndex < objectIndex && seamShapes.Count > 0)
                         {
-                            tempMeshShapes.Clear();
-                            outputDatas[baseMeshIndex].GetShapes(tempMeshShapes);
-                            MergeMeshShapesAtSeam(mainMesh, outputDatas[baseMeshIndex].SerializedData.Mesh, seamShapes[0], finalMeshShapes, tempMeshShapes, nonSeamMergableBlendShapes);
+                            var baseData = outputDatas[baseMeshIndex];
+
+                            if (baseData is CustomizableCharacterMeshV2_DATA baseDataV2)
+                            {
+                                tempMeshShapes.Clear();
+                                baseDataV2.SerializedData.GetShapes(tempMeshShapes);
+                                MergeMeshShapesAtSeam(mainMesh, baseDataV2.SerializedData.Mesh, seamShapes[0], finalMeshShapes, tempMeshShapes, nonSeamMergableBlendShapes);
+                            }
                         }
 
                         #endregion
@@ -2312,7 +2349,7 @@ namespace Swole.Morphing
                                 }
                             }
 
-                            serializedData.vertexColorDeltas = tempVertexColorDeltas.ToArray();
+                            if (serializedDataV2 != null) serializedDataV2.vertexColorDeltas = tempVertexColorDeltas.ToArray();
                             tempVertexColorDeltas.Clear();
                         }
                  
@@ -2322,9 +2359,14 @@ namespace Swole.Morphing
 
                         if (baseMeshIndex >= 0 && baseMeshIndex < objectIndex && seamShapes.Count > 0)
                         {
-                            tempVertexColorDeltas.Clear();
-                            outputDatas[baseMeshIndex].GetVertexColorDeltas(tempVertexColorDeltas);
-                            MergeVertexColorDeltasAtSeam(mainMesh, meshObjects[baseMeshIndex].mainMesh, seamShapes[0], serializedData.vertexColorDeltas, tempVertexColorDeltas, nonSeamMergableVertexColorDeltas); 
+                            var baseData = outputDatas[baseMeshIndex];
+
+                            if (baseData is CustomizableCharacterMeshV2_DATA baseDataV2)
+                            {
+                                tempVertexColorDeltas.Clear();
+                                baseDataV2.SerializedData.GetVertexColorDeltas(tempVertexColorDeltas);
+                                MergeVertexColorDeltasAtSeam(mainMesh, meshObjects[baseMeshIndex].mainMesh, seamShapes[0], serializedDataV2.vertexColorDeltas, tempVertexColorDeltas, nonSeamMergableVertexColorDeltas);
+                            }
                         }
 
                         #endregion
@@ -2621,9 +2663,14 @@ namespace Swole.Morphing
 
                         if (baseMeshIndex >= 0 && baseMeshIndex < objectIndex && seamShapes.Count > 0)
                         {
-                            tempVertexGroups.Clear();
-                            outputDatas[baseMeshIndex].GetVertexGroups(tempVertexGroups); 
-                            MergeVertexGroupsAtSeam(mainMesh, outputDatas[baseMeshIndex].SerializedData.Mesh, seamShapes[0], finalVertexGroups, tempVertexGroups, nonSeamMergableBlendShapes);
+                            var baseData = outputDatas[baseMeshIndex];
+
+                            if (baseData is CustomizableCharacterMeshV2_DATA baseDataV2)
+                            {
+                                tempVertexGroups.Clear();
+                                baseDataV2.SerializedData.GetVertexGroups(tempVertexGroups);
+                                MergeVertexGroupsAtSeam(mainMesh, baseDataV2.SerializedData.Mesh, seamShapes[0], finalVertexGroups, tempVertexGroups, nonSeamMergableBlendShapes);
+                            }
                         }
 
                         #endregion
@@ -2786,7 +2833,12 @@ namespace Swole.Morphing
                         var existingSetup = objectSetup.existingSetup.data;
                         if (existingSetup == null && baseMeshIndex >= 0 && !objectSetup.skipSecondTransferPassFromBaseSetup)
                         {
-                            existingSetup = outputDatas[baseMeshIndex];
+                            var baseData = outputDatas[baseMeshIndex];
+
+                            if (baseData is CustomizableCharacterMeshV2_DATA baseDataV2)
+                            {
+                                existingSetup = baseDataV2;
+                            }
                         }
                         
                         if (surfaceDataTransferVertexData != null && existingSetup != null) 
@@ -2799,7 +2851,7 @@ namespace Swole.Morphing
                                 var refGroupIndex = existingSetup.IndexOfVertexGroup(vertexGroup.name, true);
                                 if (refGroupIndex >= 0)
                                 {
-                                    var refGroup = existingSetup.GetVertexGroup(refGroupIndex);
+                                    var refGroup = existingSetup.SerializedData.GetVertexGroup(refGroupIndex);
                                     if (refGroup != null)
                                     {
                                         refGroup.AsLinearWeightArray(tempWeights);
@@ -2829,7 +2881,7 @@ namespace Swole.Morphing
                                     var refShapeIndex = existingSetup.IndexOfShape(meshShape.name, true);
                                     if (refShapeIndex >= 0)
                                     {
-                                        var refShape = existingSetup.GetShape(refShapeIndex);
+                                        var refShape = existingSetup.SerializedData.GetShape(refShapeIndex);
                                         if (refShape != null && refShape.frames != null)
                                         {
                                             for (int f = 0; f < Mathf.Min(meshShape.frames.Length, refShape.frames.Length); f++)
@@ -3168,32 +3220,48 @@ namespace Swole.Morphing
 
                         #endregion
 
-                        serializedData.meshShapes = finalMeshShapes.ToArray();
-                        serializedData.vertexGroups = finalVertexGroups.ToArray();
+                        void TrySetSerializedDataField(string name, object value)
+                        {
+                            try
+                            {
+                                serializedData.GetType().GetField(name, System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance).SetValue(serializedData, value);
+                            }
+                            catch (Exception e)
+                            {
+                                Debug.LogWarning($"Error setting serialized data field '{name}' on mesh '{objectSetup.name}': {e.Message}"); 
+                            }
+                        }
 
-                        serializedData.standaloneGroups = new Vector2Int(0, muscleGroupIndices.x - 1);
-                        serializedData.muscleGroups = muscleGroupIndices;
-                        serializedData.fatGroups = fatGroupIndices;
-                        serializedData.variationGroups = variationGroupIndices;
-                    
-                        serializedData.midlineVertexGroup = serializedData.IndexOfVertexGroup(midlineVertexGroup);
-                        serializedData.bustVertexGroup = serializedData.IndexOfVertexGroup(bustVertexGroup);
-                        serializedData.bustNerfVertexGroup = serializedData.IndexOfVertexGroup(bustNerfVertexGroup);
-                        serializedData.bustSizeShape = serializedData.IndexOfShape(bustSizeShape);
-                        serializedData.bustSizeMuscleShape = serializedData.IndexOfShape(bustSizeMuscleShape);
-                        serializedData.bustShapeShape = serializedData.IndexOfShape(bustShapeShape);                 
-                        serializedData.nippleMaskVertexGroup = serializedData.IndexOfVertexGroup(nippleMaskVertexGroup); 
-                        serializedData.genitalMaskVertexGroup = serializedData.IndexOfVertexGroup(genitalMaskVertexGroup);
+                        if (serializedDataV2 != null)
+                        {
+                            serializedDataV2.meshShapes = finalMeshShapes.ToArray();
+                            serializedDataV2.vertexGroups = finalVertexGroups.ToArray();
+                        }
 
-                        serializedData.defaultMassShapeWeight = defaultMassShapeWeight;
-                        serializedData.minMassShapeWeight = minMassShapeWeight;
+                        TrySetSerializedDataField(nameof(serializedDataV2.standaloneGroups), new Vector2Int(0, muscleGroupIndices.x - 1));
+                        TrySetSerializedDataField(nameof(serializedDataV2.muscleGroups), muscleGroupIndices);
+                        TrySetSerializedDataField(nameof(serializedDataV2.fatGroups), fatGroupIndices);
+                        TrySetSerializedDataField(nameof(serializedDataV2.variationGroups), variationGroupIndices);
 
-                        serializedData.vertexCount = outputMeshMain.vertexCount;
+                        TrySetSerializedDataField(nameof(serializedDataV2.midlineVertexGroup), serializedData.IndexOfVertexGroup(midlineVertexGroup));
+                        TrySetSerializedDataField(nameof(serializedDataV2.bustVertexGroup), serializedData.IndexOfVertexGroup(bustVertexGroup));
+                        TrySetSerializedDataField(nameof(serializedDataV2.bustNerfVertexGroup), serializedData.IndexOfVertexGroup(bustNerfVertexGroup));
+                        TrySetSerializedDataField(nameof(serializedDataV2.bustSizeShape), serializedData.IndexOfShape(bustSizeShape));
+                        TrySetSerializedDataField(nameof(serializedDataV2.bustSizeMuscleShape), serializedData.IndexOfShape(bustSizeMuscleShape));
+                        TrySetSerializedDataField(nameof(serializedDataV2.bustShapeShape), serializedData.IndexOfShape(bustShapeShape));
 
-                        serializedData.leftRightFlags = leftRightFlags;
+                        TrySetSerializedDataField(nameof(serializedDataV2.nippleMaskVertexGroup), serializedData.IndexOfVertexGroup(nippleMaskVertexGroup));
+                        TrySetSerializedDataField(nameof(serializedDataV2.genitalMaskVertexGroup), serializedData.IndexOfVertexGroup(genitalMaskVertexGroup));
 
-                        serializedData.baseBoneWeights = mainBoneWeights;
-                        serializedData.baseBindPose = origBindPose;//tempMatrices.ToArray();
+                        TrySetSerializedDataField(nameof(serializedDataV2.defaultMassShapeWeight), defaultMassShapeWeight);
+                        TrySetSerializedDataField(nameof(serializedDataV2.minMassShapeWeight), minMassShapeWeight);
+
+                        TrySetSerializedDataField(nameof(serializedDataV2.vertexCount), outputMeshMain.vertexCount);
+
+                        TrySetSerializedDataField(nameof(serializedDataV2.leftRightFlags), leftRightFlags);
+
+                        TrySetSerializedDataField(nameof(serializedDataV2.baseBoneWeights), mainBoneWeights);
+                        TrySetSerializedDataField(nameof(serializedDataV2.baseBindPose), origBindPose/*tempMatrices.ToArray()*/);
 
                         if (bones != null)
                         {                          
@@ -3203,26 +3271,218 @@ namespace Swole.Morphing
                                 if (bones[b] != null) boneNames[b] = bones[b].name; else boneNames[b] = string.Empty;  
                             }
 
-                            serializedData.boneNames = boneNames;
+                            TrySetSerializedDataField(nameof(serializedDataV2.boneNames), boneNames);
                         }
 
-                        serializedData.materials = objectSetup.materials;
-                        serializedData.renderSets = objectSetup.renderSets; 
-                        serializedData.boundsCenter = objectSetup.boundsCenter;
-                        serializedData.boundsExtents = objectSetup.boundsExtents;
+                        TrySetSerializedDataField(nameof(serializedDataV2.materials), objectSetup.materials);
+                        TrySetSerializedDataField(nameof(serializedDataV2.renderSets), objectSetup.renderSets);
+                        TrySetSerializedDataField(nameof(serializedDataV2.boundsCenter), objectSetup.boundsCenter);
+                        TrySetSerializedDataField(nameof(serializedDataV2.boundsExtents), objectSetup.boundsExtents);
+
                         meshLODs.Sort(CullingLODs.SortLODsDescending);
-                        serializedData.meshLODs = meshLODs.ToArray();
-                        serializedData.nearestVertexUVChannel = nearestVertexUVChannel;
-                        serializedData.nearestVertexIndexElement = nearestVertexIndexElement;
+                        TrySetSerializedDataField(nameof(serializedDataV2.meshLODs), meshLODs.ToArray());
 
-                        serializedData.defaultMuscleGroupConversions = basicMuscleGroupConversions == null ? null : ((CustomizableCharacterMeshV2.DefaultMuscleGroupConversion[])basicMuscleGroupConversions.Clone());
+                        TrySetSerializedDataField(nameof(serializedDataV2.nearestVertexUVChannel), nearestVertexUVChannel);
+                        TrySetSerializedDataField(nameof(serializedDataV2.nearestVertexIndexElement), nearestVertexIndexElement);
 
-                        serializedData.flexEndPointWeight = flexEndPointWeight;
-                        serializedData.flexExponent = flexExponent;
-                        serializedData.flexNerfThreshold = flexNerfThreshold;
-                        serializedData.flexNerfExponent = flexNerfExponent;
+                        TrySetSerializedDataField(nameof(serializedDataV2.defaultMuscleGroupConversions), basicMuscleGroupConversions == null ? null : ((ICustomizableCharacter.DefaultMuscleGroupConversion[])basicMuscleGroupConversions.Clone()));
 
-                        if (outputData == null) outputData = CustomizableCharacterMeshV2_DATA.CreateInstance(dataName, serializedData); else outputData.ReplaceData(serializedData);
+                        TrySetSerializedDataField(nameof(serializedDataV2.flexEndPointWeight), flexEndPointWeight);
+                        TrySetSerializedDataField(nameof(serializedDataV2.flexExponent), flexExponent);
+                        TrySetSerializedDataField(nameof(serializedDataV2.flexNerfThreshold), flexNerfThreshold);
+                        TrySetSerializedDataField(nameof(serializedDataV2.flexNerfExponent), flexNerfExponent);
+
+                        if (serializedDataSkinned != null)
+                        {
+                            BlendShape CreateCombinationBlendShape(string name, int vertexCount, MeshShape meshShape, int frameIndex, float[] vertexWeights, Vector4[] indexUVs, bool[] leftRightFlags, bool useLeftRightFlags, bool isRight)
+                            {
+                                if (meshShape == null || vertexWeights == null) return null;
+
+                                BlendShape shape = new BlendShape(name);
+                                shape.frames = new BlendShape.Frame[1/*meshShape.FrameCount*/];
+                                //for (int frameIndex = 0; frameIndex < meshShape.FrameCount; frameIndex++)
+                                //{
+                                    var meshShapeFrame = meshShape.frames[frameIndex];
+                                    var frame = new BlendShape.Frame(shape, frameIndex, 1f/*meshShapeFrame.weight*/, new Vector3[vertexCount], new Vector3[vertexCount], new Vector3[vertexCount], false);
+                                    shape.frames[0/*frameIndex*/] = frame;
+
+                                    for (int z = 0; z < vertexCount; z++)
+                                    {
+                                        var ind = indexUVs == null ? z : FetchIndexFromUV(indexUVs[z]);
+
+                                        var deltas = meshShapeFrame.deltas[ind];
+
+                                        float vWeight = vertexWeights[ind];
+                                        if (useLeftRightFlags) vWeight = leftRightFlags[ind] == isRight ? vWeight : 0f;
+
+                                        frame.deltaVertices[z] = deltas.deltaVertex * vWeight;
+                                        frame.deltaNormals[z] = deltas.deltaNormal * vWeight;
+                                        frame.deltaTangents[z] = deltas.deltaTangent * vWeight;
+                                    }
+                                //}
+
+                                return shape;
+                            }
+
+                            serializedDataSkinned.monoGroups = objectSetup.useMonoGroupsForSkinnedMeshRenderer;
+
+                            serializedDataSkinned.meshShapes = new ShapeInfo[finalMeshShapes.Count];
+                            for (int z = 0; z < finalMeshShapes.Count; z++)
+                            {
+                                var shape = finalMeshShapes[z];
+                                if (shape != null)
+                                {
+                                    serializedDataSkinned.meshShapes[z] = shape;
+                                }
+                            }
+
+                            serializedDataSkinned.vertexGroups = new VertexGroupInfo[finalVertexGroups.Count];
+                            for (int z = 0; z < finalVertexGroups.Count; z++)
+                            {
+                                var vg = finalVertexGroups[z];
+                                if (vg != null)
+                                {
+                                    serializedDataSkinned.vertexGroups[z] = vg;
+                                }
+                            }
+
+                            float[] tempVertexWeights = new float[outputMeshMain.vertexCount];
+                            foreach (var lod in meshLODs) // create the combination blend shapes
+                            {
+                                var mesh_ = lod.mesh;
+                                var isMainMesh = ReferenceEquals(mesh_, outputMeshMain);
+                                if (mesh_ == null || (!storeNearestVertexInUV && !isMainMesh)) continue;
+
+                                var indexUVs = isMainMesh ? null : mesh_.GetUVsByChannelV4(3);
+
+                                List<BlendShape> blendShapes = new List<BlendShape>();
+                                for (int a = 0; a < serializedDataSkinned.StandaloneShapesCount; a++)
+                                {
+                                    var standaloneShape = finalMeshShapes[serializedDataSkinned.standaloneShapes.x + a];
+                                    blendShapes.Add(standaloneShape.BlendShape);
+                                }
+
+                                var massShape = serializedDataSkinned.massShape >= 0 ? finalMeshShapes[serializedDataSkinned.massShape] : null;
+                                var flexShape = serializedDataSkinned.flexShape >= 0 ? finalMeshShapes[serializedDataSkinned.flexShape] : null;
+                                for (int a = 0; a < serializedDataSkinned.MuscleGroupsCount; a++)
+                                {
+                                    var group = finalVertexGroups[a + serializedDataSkinned.muscleGroups.x];
+                                    tempVertexWeights = group.AsLinearWeightArray(tempVertexWeights, true, 0);
+
+                                    if (massShape != null)
+                                    {
+                                        for (int b = 0; b < massShape.FrameCount; b++)
+                                        {
+                                            if (serializedDataSkinned.monoGroups)
+                                            {
+                                                var shapeName = CustomizableCharacterUnitySkinnedMesh.GetMuscleMassBlendShapeNameForGroup(group.name, b);
+                                                var shape = CreateCombinationBlendShape(shapeName, mesh_.vertexCount, massShape, b, tempVertexWeights, indexUVs, leftRightFlags, false, false);
+                                                if (shape != null) blendShapes.Add(shape);
+                                            }
+                                            else
+                                            {
+                                                var shapeName = CustomizableCharacterUnitySkinnedMesh.GetMuscleMassBlendShapeNameForGroupLR(group.name, b, true);
+                                                var shape = CreateCombinationBlendShape(shapeName, mesh_.vertexCount, massShape, b, tempVertexWeights, indexUVs, leftRightFlags, true, false);
+                                                if (shape != null) blendShapes.Add(shape);
+
+                                                shapeName = CustomizableCharacterUnitySkinnedMesh.GetMuscleMassBlendShapeNameForGroupLR(group.name, b, false);
+                                                shape = CreateCombinationBlendShape(shapeName, mesh_.vertexCount, massShape, b, tempVertexWeights, indexUVs, leftRightFlags, true, true);
+                                                if (shape != null) blendShapes.Add(shape);
+                                            }
+
+                                        }
+                                    }
+                                    if (flexShape != null)
+                                    {
+                                        for (int b = 0; b < flexShape.FrameCount; b++)
+                                        {
+                                            if (serializedDataSkinned.monoGroups)
+                                            {
+                                                var shapeName = CustomizableCharacterUnitySkinnedMesh.GetMuscleFlexBlendShapeNameForGroup(group.name, b);
+                                                var shape = CreateCombinationBlendShape(shapeName, mesh_.vertexCount, flexShape, b, tempVertexWeights, indexUVs, leftRightFlags, false, false);
+                                                if (shape != null) blendShapes.Add(shape);
+                                            }
+                                            else
+                                            {
+                                                var shapeName = CustomizableCharacterUnitySkinnedMesh.GetMuscleFlexBlendShapeNameForGroupLR(group.name, b, true);
+                                                var shape = CreateCombinationBlendShape(shapeName, mesh_.vertexCount, flexShape, b, tempVertexWeights, indexUVs, leftRightFlags, true, false);
+                                                if (shape != null) blendShapes.Add(shape);
+
+                                                shapeName = CustomizableCharacterUnitySkinnedMesh.GetMuscleFlexBlendShapeNameForGroupLR(group.name, b, false);
+                                                shape = CreateCombinationBlendShape(shapeName, mesh_.vertexCount, flexShape, b, tempVertexWeights, indexUVs, leftRightFlags, true, true);
+                                                if (shape != null) blendShapes.Add(shape);
+                                            }
+                                        }
+                                    }
+                                }
+
+                                var fatShape = serializedDataSkinned.fatShape >= 0 ? finalMeshShapes[serializedDataSkinned.fatShape] : null;
+                                if (fatShape != null)
+                                {
+                                    for (int a = 0; a < serializedDataSkinned.FatGroupsCount; a++)
+                                    {
+                                        var group = finalVertexGroups[a + serializedDataSkinned.fatGroups.x];
+                                        tempVertexWeights = group.AsLinearWeightArray(tempVertexWeights, true, 0);
+
+                                        for (int b = 0; b < fatShape.FrameCount; b++)
+                                        {
+                                            var shapeName = CustomizableCharacterUnitySkinnedMesh.GetFatBlendShapeNameForGroup(group.name, b);
+                                            var shape = CreateCombinationBlendShape(shapeName, mesh_.vertexCount, fatShape, b, tempVertexWeights, indexUVs, leftRightFlags, false, false);
+                                            if (shape != null) blendShapes.Add(shape);
+                                        }
+                                    }
+                                }
+
+                                for (int a = 0; a < serializedDataSkinned.VariationShapesCount; a++)
+                                {
+                                    var variationShapeIndex = serializedDataSkinned.variationShapes.x + a;
+                                    var varShape = finalMeshShapes[variationShapeIndex];
+                                    if (varShape != null)
+                                    {
+                                        for (int b = 0; b < serializedDataSkinned.VariationGroupsCount; b++)
+                                        {
+                                            var variationGroupIndex = serializedDataSkinned.variationGroups.x + b;
+                                            var group = finalVertexGroups[variationGroupIndex];
+                                            if (group != null)
+                                            {
+                                                for (int c = 0; c < varShape.FrameCount; c++)
+                                                {
+                                                    if (serializedDataSkinned.monoGroups)
+                                                    {
+                                                        var shapeName = CustomizableCharacterUnitySkinnedMesh.GetVariationBlendShapeNameForGroup(group.name, varShape.name, c);
+                                                        var shape = CreateCombinationBlendShape(shapeName, mesh_.vertexCount, varShape, c, tempVertexWeights, indexUVs, leftRightFlags, false, false);
+                                                        if (shape != null) blendShapes.Add(shape);
+                                                    }
+                                                    else
+                                                    {
+                                                        var shapeName = CustomizableCharacterUnitySkinnedMesh.GetVariationBlendShapeNameForGroupLR(group.name, varShape.name, c, true);
+                                                        var shape = CreateCombinationBlendShape(shapeName, mesh_.vertexCount, varShape, c, tempVertexWeights, indexUVs, leftRightFlags, true, false);
+                                                        if (shape != null) blendShapes.Add(shape);
+
+                                                        shapeName = CustomizableCharacterUnitySkinnedMesh.GetVariationBlendShapeNameForGroupLR(group.name, varShape.name, c, false);
+                                                        shape = CreateCombinationBlendShape(shapeName, mesh_.vertexCount, varShape, c, tempVertexWeights, indexUVs, leftRightFlags, true, true);
+                                                        if (shape != null) blendShapes.Add(shape);
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+
+                                mesh_.ClearBlendShapes();
+                                foreach (var blendShape in blendShapes) blendShape.AddToMesh(mesh_);
+                            }
+                        }
+
+                        if (outputData == null) 
+                        { 
+                            outputData = objectSetup.createAsSkinnedMeshRenderer ? CustomizableCharacterUnitySkinnedMesh_DATA.CreateInstance(dataName, serializedDataSkinned) : CustomizableCharacterMeshV2_DATA.CreateInstance(dataName, serializedDataV2);
+                        }
+                        else
+                        {
+                            var replaceData = outputData.GetType().GetMethod("ReplaceData", System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance);
+                            if (replaceData != null) replaceData.Invoke(outputData, new object[] { serializedData });
+                        }
 
                         if (objectSetup.meshShapeMaterialProperties != null && objectSetup.meshShapeMaterialProperties.Length > 0 && objectSetup.materials != null)
                         {
@@ -3443,15 +3703,23 @@ namespace Swole.Morphing
                     GameObject prefabChild = new GameObject(objectSetup.name);
                     prefabChild.transform.SetParent(outputPrefab.transform, false);
 
-                    characterMesh = prefabChild.AddComponent<CustomizableCharacterMeshV2>();
-                    characterMesh.SetData(outputData);
+                    if (outputData is CustomizableCharacterMeshV2_DATA outputDataV2)
+                    {
+                        characterMesh = characterMeshV2 = prefabChild.AddComponent<CustomizableCharacterMeshV2>();
+                        characterMeshV2.SetData(outputDataV2);
+                    }
+                    else if (outputData is CustomizableCharacterUnitySkinnedMesh_DATA outputDataSkinned)
+                    {
+                        characterMesh = characterMeshSkinned = prefabChild.AddComponent<CustomizableCharacterUnitySkinnedMesh>();
+                        characterMeshSkinned.SetData(outputDataSkinned);
+                    }
+                    
                     characterMesh.SetRigRoot(outputPrefab.transform.FindDeepChildLiberal(objectSetup.rigRootName));
                     characterMesh.SetAvatar(objectSetup.avatar);
                     characterMesh.SetRigBufferID(objectSetup.rigBufferId);
                     characterMesh.SetShapeBufferID(objectSetup.shapeBufferId);
                     characterMesh.SetMorphBufferID(objectSetup.morphBufferId);
-
-                    characterMeshes.Add(characterMesh);
+                    characterMeshes.Add(characterMesh); 
 
                     if (primaryMeshObject == objectIndex)
                     {
@@ -3517,7 +3785,7 @@ namespace Swole.Morphing
                             {
                                 void SetupControlGroupParent()
                                 {
-                                    CustomizableCharacterMeshV2 parentMesh = null;
+                                    CustomizableCharacterMeshBase parentMesh = null;
                                     foreach (var mesh_ in characterMeshes)
                                     {
                                         if (mesh_ == null || mesh_.name != config.parent.meshObject) continue;
@@ -3557,11 +3825,11 @@ namespace Swole.Morphing
                         {
                             void SetAdditionalMeshes()
                             {
-                                List<CustomizableCharacterMeshV2> additionalMeshes = new List<CustomizableCharacterMeshV2>();
+                                List<CustomizableCharacterMeshBase> additionalMeshes = new List<CustomizableCharacterMeshBase>();
 
                                 foreach(var meshName in objectSetup.meshObjectsToShareControlGroups)
                                 {
-                                    CustomizableCharacterMeshV2 mesh = null;
+                                    CustomizableCharacterMeshBase mesh = null;
 
                                     foreach(var mesh_ in characterMeshes)
                                     {
@@ -3699,7 +3967,7 @@ namespace Swole.Morphing
                     AssetDatabase.SaveAssetIfDirty(outputData);
                 }
 
-                outputData.Precache();
+                if (outputData is CustomizableCharacterMeshBase.ICustomizableCharacterMeshBaseData customizableOutputData) customizableOutputData.Precache();
             }
 
             string prefabPath = Extensions.CreateUnityAssetPathString(prefabSavePath, outputPrefab.name, ".prefab");
@@ -3734,10 +4002,10 @@ namespace Swole.Morphing
         {
         }
 
-        protected virtual void PreMeshObjectSetup(int objectIndex, MeshObject objectSetup, CustomizableCharacterMeshV2 meshObject, ref Mesh mainMesh, Mesh[] lodMeshes)
+        protected virtual void PreMeshObjectSetup(int objectIndex, MeshObject objectSetup, CustomizableCharacterMeshBase meshObject, ref Mesh mainMesh, Mesh[] lodMeshes)
         {
         }
-        protected virtual void PostMeshObjectSetup(int objectIndex, MeshObject objectSetup, CustomizableCharacterMeshV2 meshObject)
+        protected virtual void PostMeshObjectSetup(int objectIndex, MeshObject objectSetup, CustomizableCharacterMeshBase meshObject)
         {
         }
 

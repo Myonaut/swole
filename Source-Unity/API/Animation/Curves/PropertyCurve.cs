@@ -8,6 +8,8 @@ using UnityEngine;
 
 using Unity.Mathematics;
 
+using Swole.API.Unity.Animation.Curves;
+
 namespace Swole.API.Unity.Animation
 { 
     [Serializable]

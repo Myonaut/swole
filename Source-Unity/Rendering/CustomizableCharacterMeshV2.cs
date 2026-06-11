@@ -1,4 +1,4 @@
-#if (UNITY_STANDALONE || UNITY_EDITOR)
+#if UNITY_2017_1_OR_NEWER
 
 using System;
 using System.Collections;
@@ -24,482 +24,10 @@ using static Swole.API.Unity.ICustomizableCharacter.Defaults;
 namespace Swole.Morphing
 {
 
-    public class CustomizableCharacterMeshV2 : InstanceableSkinnedMeshBase, ICustomizableCharacter
+    //ICustomizableCharacterMeshBaseData
+
+    public class CustomizableCharacterMeshV2 : CustomizableCharacterMeshBase
     {
-
-        #region Editor
-
-        public void UpdateInEditor()
-        {
-#if UNITY_EDITOR
-            if (Application.isPlaying && isActiveAndEnabled) 
-            {
-                var meshData = SubData;
-                if (meshData != null)
-                {
-
-                    if (prevBustSizeEditor != bustSizeEditor)
-                    {
-                        prevBustSizeEditor = bustSizeEditor;
-                        SetBustSize(bustSizeEditor);
-                    }
-                    if (prevBustShapeEditor != bustShapeEditor)
-                    {
-                        prevBustShapeEditor = bustShapeEditor;
-                        SetBustShape(bustShapeEditor);
-                    }
-                    if (prevShapeWeightsEditor == null || prevShapeWeightsEditor.Length == 0)
-                    {
-                        prevShapeWeightsEditor = new NamedFloat[meshData.StandaloneShapesCount];
-                        for (int a = 0; a < prevShapeWeightsEditor.Length; a++) prevShapeWeightsEditor[a] = new NamedFloat() { name = meshData.GetStandaloneShape(a).name };
-                    }
-                    if (shapeWeightsEditor == null || shapeWeightsEditor.Length == 0)
-                    {
-                        shapeWeightsEditor = new NamedFloat[meshData.StandaloneShapesCount];
-                        for (int a = 0; a < shapeWeightsEditor.Length; a++) shapeWeightsEditor[a] = new NamedFloat() { name = meshData.GetStandaloneShape(a).name };
-                    }
-
-                    if (prevMuscleWeightsEditor == null || prevMuscleWeightsEditor.Length == 0)
-                    {
-                        prevMuscleWeightsEditor = new NamedMuscleData[meshData.MuscleVertexGroupCount];
-                        for (int a = 0; a < prevMuscleWeightsEditor.Length; a++) prevMuscleWeightsEditor[a] = new NamedMuscleData() { name = meshData.GetVertexGroup(a + meshData.muscleGroups.x).name };
-                    }
-                    if (muscleWeightsEditor == null || muscleWeightsEditor.Length == 0)
-                    {
-                        muscleWeightsEditor = new NamedMuscleData[meshData.MuscleVertexGroupCount];
-                        for (int a = 0; a < muscleWeightsEditor.Length; a++) muscleWeightsEditor[a] = new NamedMuscleData() { name = meshData.GetVertexGroup(a + meshData.muscleGroups.x).name };
-                    }
-
-                    if (prevFatWeightsEditor == null || prevFatWeightsEditor.Length == 0)
-                    {
-                        prevFatWeightsEditor = new NamedFloat[meshData.FatVertexGroupCount];
-                        for (int a = 0; a < prevFatWeightsEditor.Length; a++) prevFatWeightsEditor[a] = new NamedFloat() { name = meshData.GetVertexGroup(a + meshData.fatGroups.x).name };
-                    }
-                    if (fatWeightsEditor == null || fatWeightsEditor.Length == 0)
-                    {
-                        fatWeightsEditor = new NamedFloat[meshData.FatVertexGroupCount];
-                        for (int a = 0; a < fatWeightsEditor.Length; a++) fatWeightsEditor[a] = new NamedFloat() { name = meshData.GetVertexGroup(a + meshData.fatGroups.x).name };
-                    }
-
-                    if (prevBodyHairWeightsEditor == null || prevBodyHairWeightsEditor.Length == 0)
-                    {
-                        prevBodyHairWeightsEditor = new NamedFloat2[meshData.FatVertexGroupCount];
-                        for (int a = 0; a < prevBodyHairWeightsEditor.Length; a++) prevBodyHairWeightsEditor[a] = new NamedFloat2() { name = meshData.GetVertexGroup(a + meshData.fatGroups.x).name };
-                    }
-                    if (bodyHairWeightsEditor == null || bodyHairWeightsEditor.Length == 0)
-                    {
-                        bodyHairWeightsEditor = new NamedFloat2[meshData.FatVertexGroupCount];
-                        for (int a = 0; a < bodyHairWeightsEditor.Length; a++) bodyHairWeightsEditor[a] = new NamedFloat2() { name = meshData.GetVertexGroup(a + meshData.fatGroups.x).name };
-                    }
-
-                    if (prevVariationWeightsEditor == null || prevVariationWeightsEditor.Length == 0)
-                    {
-                        prevVariationWeightsEditor = new NamedFloat2[VariationShapesControlDataSize];
-                        for (int a = 0; a < prevVariationWeightsEditor.Length; a++)
-                        {
-                            int groupIndex = a / meshData.VariationShapesCount;
-                            int shapeIndex = a % meshData.VariationShapesCount;
-                            prevVariationWeightsEditor[a] = new NamedFloat2() { name = meshData.GetVariationVertexGroup(groupIndex).name + "_" + meshData.GetVariationShape(shapeIndex).name };
-                        }
-                    }
-                    if (variationWeightsEditor == null || variationWeightsEditor.Length == 0)
-                    {
-                        variationWeightsEditor = new NamedFloat2[VariationShapesControlDataSize];
-                        for (int a = 0; a < variationWeightsEditor.Length; a++)
-                        {
-                            int groupIndex = a / meshData.VariationShapesCount;
-                            int shapeIndex = a % meshData.VariationShapesCount;
-                            variationWeightsEditor[a] = new NamedFloat2() { name = meshData.GetVariationVertexGroup(groupIndex).name + "_" + meshData.GetVariationShape(shapeIndex).name };
-                        }
-                    }
-
-                    for (int a = 0; a < shapeWeightsEditor.Length; a++)
-                    {
-                        if (prevShapeWeightsEditor[a].value != shapeWeightsEditor[a].value)
-                        {
-                            SetStandaloneShapeWeightUnsafe(a, shapeWeightsEditor[a].value);
-                            prevShapeWeightsEditor[a].value = shapeWeightsEditor[a].value;
-                        }
-                    }
-
-                    if (prevGlobalMass != globalMass)
-                    {
-                        prevGlobalMass = globalMass;
-                        for (int a = 0; a < muscleWeightsEditor.Length; a++)
-                        {
-                            var values = muscleWeightsEditor[a].value;
-                            var vl = values.valuesLeft;
-                            var vr = values.valuesRight;
-                            vl.mass = globalMass;
-                            vr.mass = globalMass;
-                            values.valuesLeft = vl;
-                            values.valuesRight = vr;
-
-                            SetMuscleDataUnsafe(a, values);
-
-                            prevMuscleWeightsEditor[a].value = muscleWeightsEditor[a].value = values;
-                        }
-                    }
-                    if (prevGlobalFlex != globalFlex)
-                    {
-                        prevGlobalFlex = globalFlex;
-                        for (int a = 0; a < muscleWeightsEditor.Length; a++)
-                        {
-                            var values = muscleWeightsEditor[a].value;
-                            var vl = values.valuesLeft;
-                            var vr = values.valuesRight;
-                            vl.flex = globalFlex;
-                            vr.flex = globalFlex;
-                            values.valuesLeft = vl;
-                            values.valuesRight = vr;
-
-                            SetMuscleDataUnsafe(a, values);
-
-                            prevMuscleWeightsEditor[a].value = muscleWeightsEditor[a].value = values;
-                        }
-                    }
-                    if (prevGlobalPump != globalPump)
-                    {
-                        prevGlobalPump = globalPump;
-                        for (int a = 0; a < muscleWeightsEditor.Length; a++)
-                        {
-                            var values = muscleWeightsEditor[a].value;
-                            var vl = values.valuesLeft;
-                            var vr = values.valuesRight;
-                            vl.pump = globalPump;
-                            vr.pump = globalPump;
-                            values.valuesLeft = vl;
-                            values.valuesRight = vr;
-
-                            SetMuscleDataUnsafe(a, values);
-
-                            prevMuscleWeightsEditor[a].value = muscleWeightsEditor[a].value = values;
-                        }
-                    }
-                    if (prevGlobalVaricose != globalVaricose)
-                    {
-                        prevGlobalVaricose = globalVaricose;
-                        for (int a = 0; a < muscleWeightsEditor.Length; a++)
-                        {
-                            var values = muscleWeightsEditor[a].value;
-                            var vl = values.valuesLeft;
-                            var vr = values.valuesRight;
-                            vl.varicose = globalVaricose;
-                            vr.varicose = globalVaricose;
-                            values.valuesLeft = vl;
-                            values.valuesRight = vr;
-
-                            SetMuscleDataUnsafe(a, values);
-
-                            prevMuscleWeightsEditor[a].value = muscleWeightsEditor[a].value = values;
-                        }
-                    }
-
-                    if (prevGlobalFat != globalFat)
-                    {
-                        prevGlobalFat = globalFat;
-                        for (int a = 0; a < fatWeightsEditor.Length; a++)
-                        {
-                            SetFatLevelUnsafe(a, globalFat);
-
-                            prevFatWeightsEditor[a].value = fatWeightsEditor[a].value = globalFat;
-                        }
-                    }
-
-                    if (prevGlobalBodyHairLevel != globalBodyHairLevel || prevGlobalBodyHairBlend != globalBodyHairBlend)
-                    {
-                        prevGlobalBodyHairLevel = globalBodyHairLevel;
-                        prevGlobalBodyHairBlend = globalBodyHairBlend;
-                        for (int a = 0; a < bodyHairWeightsEditor.Length; a++)
-                        {
-                            SetBodyHairLevelUnsafe(a, globalBodyHairLevel, globalBodyHairBlend);
-
-                            prevBodyHairWeightsEditor[a].value = bodyHairWeightsEditor[a].value = new float2(globalBodyHairLevel, globalBodyHairBlend);
-                        }
-                    }
-
-                    if (prevGlobalVariationA != globalVariationA && meshData.VariationShapesCount > 0)
-                    {
-                        prevGlobalVariationA = globalVariationA;
-                        for (int a = 0; a < variationWeightsEditor.Length; a += meshData.VariationShapesCount)
-                        {
-                            SetVariationWeightUnsafe(a, globalVariationA);
-
-                            prevVariationWeightsEditor[a].value = variationWeightsEditor[a].value = globalVariationA;
-                        }
-                    }
-                    if (prevGlobalVariationB != globalVariationB && meshData.VariationShapesCount > 1)
-                    {
-                        prevGlobalVariationB = globalVariationB;
-                        for (int a = 1; a < variationWeightsEditor.Length; a += meshData.VariationShapesCount)
-                        {
-                            SetVariationWeightUnsafe(a, globalVariationB);
-
-                            prevVariationWeightsEditor[a].value = variationWeightsEditor[a].value = globalVariationB;
-                        }
-                    }
-                    if (prevGlobalVariationC != globalVariationC && meshData.VariationShapesCount > 2)
-                    {
-                        prevGlobalVariationC = globalVariationC;
-                        for (int a = 2; a < variationWeightsEditor.Length; a += meshData.VariationShapesCount)
-                        {
-                            SetVariationWeightUnsafe(a, globalVariationC);
-
-                            prevVariationWeightsEditor[a].value = variationWeightsEditor[a].value = globalVariationC;
-                        }
-                    }
-
-                    for (int a = 0; a < muscleWeightsEditor.Length; a++)
-                    {
-                        if (prevMuscleWeightsEditor[a].value != muscleWeightsEditor[a].value)
-                        {
-                            SetMuscleDataUnsafe(a, muscleWeightsEditor[a].value);
-                            prevMuscleWeightsEditor[a].value = muscleWeightsEditor[a].value;
-                        }
-                    }
-
-                    for (int a = 0; a < fatWeightsEditor.Length; a++)
-                    {
-                        if (prevFatWeightsEditor[a].value != fatWeightsEditor[a].value)
-                        {
-                            SetFatLevelUnsafe(a, fatWeightsEditor[a].value);
-                            prevFatWeightsEditor[a].value = fatWeightsEditor[a].value;
-                        }
-                    }
-
-                    for (int a = 0; a < bodyHairWeightsEditor.Length; a++)
-                    {
-                        if (math.any(prevBodyHairWeightsEditor[a].value != bodyHairWeightsEditor[a].value))
-                        {
-                            SetBodyHairLevelUnsafe(a, bodyHairWeightsEditor[a].value.x, bodyHairWeightsEditor[a].value.y);
-                            prevBodyHairWeightsEditor[a].value = bodyHairWeightsEditor[a].value;
-                        }
-                    }
-
-                    for (int a = 0; a < variationWeightsEditor.Length; a++)
-                    {
-                        if (math.any(prevVariationWeightsEditor[a].value != variationWeightsEditor[a].value))
-                        {
-                            SetVariationWeightUnsafe(a, variationWeightsEditor[a].value);
-                            prevVariationWeightsEditor[a].value = variationWeightsEditor[a].value;
-                        }
-                    }
-                }
-            }
-#endif
-        }
-
-        public bool debug;
-        public string configSaveDir;
-        public string configAssetName;
-        public bool saveConfig;
-
-        //public EditorCharacterCustomizationConfig editorCustomizationConfig;
-
-        /*public void LoadEditorConfig(EditorCharacterCustomizationConfig config)
-        {
-            if (config != null)
-            {
-                UpdateInEditor();
-                //config.Apply(this);
-            }
-        }*/
-
-#if UNITY_EDITOR
-
-        public void OnValidate()
-        {
-            UpdateInEditor();
-
-            if (saveConfig)
-            {
-                saveConfig = false;
-                SaveNewEditorConfig();
-            }
-        }
-
-        public void SaveNewEditorConfig() => SaveNewEditorConfig(configSaveDir, configAssetName);
-        public void SaveNewEditorConfig(string configSaveDir) => SaveNewEditorConfig(configSaveDir, configAssetName);
-        public void SaveNewEditorConfig(string configSaveDir, string configAssetName)
-        {
-            //editorCustomizationConfig = EditorCharacterCustomizationConfig.CreateAndSave(configSaveDir, configAssetName, this);
-        }
-
-#endif
-
-        [Serializable, NonAnimatable]
-        public struct NamedFloat
-        {
-            public string name;
-            public float value;
-        }
-        [Serializable, NonAnimatable]
-        public struct NamedFloat2
-        {
-            public string name;
-            public float2 value;
-        }
-        [Serializable, NonAnimatable]
-        public struct NamedMuscleData
-        {
-            public string name;
-            public MuscleDataLR value;
-        }
-
-        private float prevGlobalMass;
-#if UNITY_EDITOR
-        [SerializeField]
-#endif
-        [Range(0f, 3f)]
-        private float globalMass;
-
-        private float prevGlobalFlex;
-#if UNITY_EDITOR
-        [SerializeField]
-#endif
-        [Range(0f, 2f)]
-        private float globalFlex;
-
-        private float prevGlobalPump;
-#if UNITY_EDITOR
-        [SerializeField]
-#endif
-        [Range(0f, 2f)]
-        private float globalPump;
-
-        private float prevGlobalVaricose;
-#if UNITY_EDITOR
-        [SerializeField]
-#endif
-        [Range(0f, 2f)]
-        private float globalVaricose;
-
-        private float prevGlobalFat;
-#if UNITY_EDITOR
-        [SerializeField]
-#endif
-        [Range(0f, 1f)]
-        private float globalFat;
-
-        private float prevGlobalBodyHairLevel;
-#if UNITY_EDITOR
-        [SerializeField]
-#endif
-        [Range(0f, 1f)]
-        private float globalBodyHairLevel;
-        private float prevGlobalBodyHairBlend;
-#if UNITY_EDITOR
-        [SerializeField]
-#endif
-        [Range(0f, 1f)]
-        private float globalBodyHairBlend;
-
-        private float prevGlobalVariationA;
-#if UNITY_EDITOR
-        [SerializeField]
-#endif
-        [Range(0f, 1f)]
-        private float globalVariationA;
-
-        private float prevGlobalVariationB;
-#if UNITY_EDITOR
-        [SerializeField]
-#endif
-        [Range(0f, 1f)]
-        private float globalVariationB;
-
-        private float prevGlobalVariationC;
-#if UNITY_EDITOR
-        [SerializeField]
-#endif
-        [Range(0f, 1f)]
-        private float globalVariationC;
-
-        private float prevBustSizeEditor;
-#if !UNITY_EDITOR
-        [NonSerialized]
-#endif
-        [Range(0, 2)]
-        public float bustSizeEditor;
-
-        private float prevBustShapeEditor;
-#if !UNITY_EDITOR
-        [NonSerialized]
-#endif
-        [Range(0, 2)]
-        public float bustShapeEditor;
-
-#if !UNITY_EDITOR
-        [NonSerialized]
-#endif
-        [HideInInspector]
-        public NamedFloat[] prevShapeWeightsEditor;
-#if !UNITY_EDITOR
-        [NonSerialized]
-#endif
-        public NamedFloat[] shapeWeightsEditor;
-
-#if !UNITY_EDITOR
-        [NonSerialized]
-#endif
-        [HideInInspector]
-        public NamedMuscleData[] prevMuscleWeightsEditor;
-#if !UNITY_EDITOR
-        [NonSerialized]
-#endif
-        public NamedMuscleData[] muscleWeightsEditor;
-
-#if !UNITY_EDITOR
-        [NonSerialized]
-#endif
-        [HideInInspector]
-        public NamedFloat[] prevFatWeightsEditor; 
-#if !UNITY_EDITOR
-        [NonSerialized]
-#endif
-        public NamedFloat[] fatWeightsEditor;
-
-#if !UNITY_EDITOR
-        [NonSerialized]
-#endif
-        [HideInInspector]
-        public NamedFloat2[] prevBodyHairWeightsEditor;
-#if !UNITY_EDITOR
-        [NonSerialized]
-#endif
-        public NamedFloat2[] bodyHairWeightsEditor;
-
-#if !UNITY_EDITOR
-        [NonSerialized]
-#endif
-        [HideInInspector]
-        public NamedFloat2[] prevVariationWeightsEditor;
-#if !UNITY_EDITOR
-        [NonSerialized]
-#endif
-        public NamedFloat2[] variationWeightsEditor;
-
-        #endregion
-
-        #region Static Methods
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static float CalculateBustNerfFactor(float bustSize, NativeArray<float> vertexGroups, int bustNerfVertexGroupIndex, int vertexCount, int vertexIndex, float multiplier = 1f)
-        {
-            float bustNerfFactor = math.saturate(bustSize * math.min(1f, math.pow(vertexGroups[(bustNerfVertexGroupIndex * vertexCount) + vertexIndex], 0.5f)));
-            return 1f - (bustNerfFactor * multiplier);
-        }
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static float CalculateFinalFlexFactor(float initialFlexFactor, float muscleMass, float flexEndPointWeight, float flexExp, float flexNerfThreshold, float flexNerfExp)
-        {
-            float flexFactor = (initialFlexFactor / (flexEndPointWeight <= 0f ? 1f : flexEndPointWeight)) * math.pow(math.saturate(muscleMass / (flexNerfThreshold <= 0f ? 0.35f : flexNerfThreshold)), flexNerfExp <= 0f ? 1f : flexNerfExp); // nerf flex for smaller masses
-            flexFactor = math.pow(math.saturate(flexFactor), flexExp <= 0f ? 1f : flexExp);
-
-            return flexFactor;
-        }
-
-        #endregion
 
         #region Singleton Updater
 
@@ -520,6 +48,9 @@ namespace Swole.Morphing
 
                 if (!singleton.meshGroups.TryGetValue(data.GetInstanceID(), out var meshGroup))
                 {
+#if UNITY_EDITOR
+                    data.TryPrecache();
+#endif
                     meshGroup = new MeshGroupV2(data.SerializedData);
                     singleton.meshGroups[data.GetInstanceID()] = meshGroup;
                 }
@@ -2234,65 +1765,6 @@ namespace Swole.Morphing
 
         }
 
-        [Serializable, StructLayout(LayoutKind.Sequential)]
-        public struct ControlWeight
-        {
-            public int index;
-            public float weight;
-        }
-        [Serializable, StructLayout(LayoutKind.Sequential)]
-        public struct ControlWeight2
-        {
-            public int index;
-            public float2 weight;
-        }
-        [Serializable, StructLayout(LayoutKind.Sequential)]
-        public struct ControlWeight4
-        {
-            public int index;
-            public float4 weight;
-        }
-        [Serializable, StructLayout(LayoutKind.Sequential)]
-        public struct GroupControlWeight2
-        {
-            public int groupIndex;
-            public int vertexSequenceStartIndex;
-            public int vertexCount;
-            public float2 weight;
-        }
-        [Serializable, StructLayout(LayoutKind.Sequential)]
-        public struct GroupControlWeight4
-        {
-            public int groupIndex;
-            public int vertexSequenceStartIndex;
-            public int vertexCount;
-            public float4 weight;
-        }
-        [Serializable, StructLayout(LayoutKind.Sequential)]
-        public struct GroupVertexControlWeight
-        {
-            public int groupIndex;
-            public int vertexIndex;
-
-            public float weight;
-        }
-        [Serializable, StructLayout(LayoutKind.Sequential)]
-        public struct GroupVertexControlWeight2
-        {
-            public int groupIndex;
-            public int vertexIndex;
-
-            public float2 weight;
-        }
-        [Serializable, StructLayout(LayoutKind.Sequential)]
-        public struct GroupVertexControlWeight4
-        {
-            public int groupIndex;
-            public int vertexIndex;
-
-            public float4 weight;
-        }
-
         #region Fat Jobs
 
         [BurstCompile]
@@ -2934,26 +2406,29 @@ namespace Swole.Morphing
 
         }
 
-        [Serializable, NonAnimatable]
-        public struct RenderSet
-        {
-            public int materialIndexStart;
-            public int materialCount;
-        }
-
-        [Serializable, NonAnimatable]
-        public class SerializedData : IDisposable
+        public abstract class SerializedDataBase : ICustomizableCharacterMeshBaseData
         {
 
             #region Fields
 
+            public string Name => GetType().Name;
+
             [Header("Rendering")]
             public Material[] materials;
+            public bool HasMaterials => materials != null && materials.Length > 0;
+            public int MaterialCount => materials == null ? 0 : materials.Length;
+            public Material GetMaterial(int index) => index < 0 || index >= MaterialCount ? null : materials[index];
+            public Material[] Materials => materials;
+
             [Tooltip("Render sets render the same mesh instance using different materials (useful for toon outline materials)")]
             public RenderSet[] renderSets;
             public bool HasRenderSets => renderSets != null && renderSets.Length > 1;
+            public int RenderSetCount => renderSets == null ? 0 : renderSets.Length;
+            public RenderSet GetRenderSet(int index) => index < 0 || index >= RenderSetCount ? default : renderSets[index];
+            public RenderSet[] RenderSets => renderSets;
 
             public int vertexCount;
+            public int VertexCount => vertexCount;
 
             public MeshLOD[] meshLODs;
             public Mesh Mesh => meshLODs == null || meshLODs.Length <= 0 ? null : meshLODs[0].mesh;
@@ -3001,14 +2476,14 @@ namespace Swole.Morphing
                 //MeshUtils._tempV3.Clear();
                 //mesh.GetVertices(MeshUtils._tempV3);
                 array = new NativeArray<Vector3>(mesh.vertices, Allocator.Persistent).Reinterpret<float3>();
-                if (meshVertices == null || meshVertices.Length != meshLODs.Length) 
+                if (meshVertices == null || meshVertices.Length != meshLODs.Length)
                 {
                     if (meshVertices != null)
                     {
                         foreach (var array_ in meshVertices) if (array_.IsCreated) array_.Dispose();
                     }
 
-                    meshVertices = new NativeArray<float3>[meshLODs.Length]; 
+                    meshVertices = new NativeArray<float3>[meshLODs.Length];
                 }
 
                 meshVertices[lod] = array;
@@ -3047,7 +2522,7 @@ namespace Swole.Morphing
             public bool TryGetTangents(int lod, out NativeArray<float4> array)
             {
                 array = default;
-                if (meshLODs == null || lod < 0 || lod >= meshLODs.Length) return false; 
+                if (meshLODs == null || lod < 0 || lod >= meshLODs.Length) return false;
 
                 var mesh = GetMeshUnsafe(lod);
                 if (mesh == null) return false;
@@ -3104,7 +2579,7 @@ namespace Swole.Morphing
 
                 return true;
             }
-            public bool TryGetTriangles(int lod, out NativeArray<int> array) 
+            public bool TryGetTriangles(int lod, out NativeArray<int> array)
             {
                 array = default;
                 if (meshLODs == null || lod < 0 || lod >= meshLODs.Length) return false;
@@ -3114,7 +2589,7 @@ namespace Swole.Morphing
 
                 if (meshTriangles != null && meshTriangles.Length >= meshLODs.Length && meshTriangles[lod].IsCreated)
                 {
-                    array = meshTriangles[lod]; 
+                    array = meshTriangles[lod];
                     return true;
                 }
 
@@ -3163,10 +2638,10 @@ namespace Swole.Morphing
                 {
                     if (TryGetUV(lod, nearestVertexUVChannel, out var uvArray))
                     {
-                        for(int i = 0; i < array.Length; i++)
+                        for (int i = 0; i < array.Length; i++)
                         {
                             int nearestIndex = MorphUtils.FetchIndexFromUV(nearestVertexIndexElement, uvArray[i]);
-                            array[i] = baseBoneWeights[nearestIndex]; 
+                            array[i] = baseBoneWeights[nearestIndex];
                         }
                     }
                 }
@@ -3258,7 +2733,7 @@ namespace Swole.Morphing
                 {
                     if (meshUV2s != null)
                     {
-                        foreach (var array_ in meshUV2s) if (array_.IsCreated) array_.Dispose(); 
+                        foreach (var array_ in meshUV2s) if (array_.IsCreated) array_.Dispose();
                     }
 
                     meshUV2s = new NativeArray<float4>[meshLODs.Length];
@@ -3292,10 +2767,10 @@ namespace Swole.Morphing
                         foreach (var array_ in meshUV3s) if (array_.IsCreated) array_.Dispose();
                     }
 
-                    meshUV3s = new NativeArray<float4>[meshLODs.Length]; 
+                    meshUV3s = new NativeArray<float4>[meshLODs.Length];
                 }
 
-                meshUV3s[lod] = array; 
+                meshUV3s[lod] = array;
 
                 return true;
             }
@@ -3303,7 +2778,7 @@ namespace Swole.Morphing
             {
                 array = default;
 
-                switch(channel)
+                switch (channel)
                 {
                     case UVChannelURP.UV0:
                         return TryGetUV0(lod, out array);
@@ -3315,7 +2790,7 @@ namespace Swole.Morphing
                         return TryGetUV2(lod, out array);
 
                     case UVChannelURP.UV3:
-                        return TryGetUV3(lod, out array); 
+                        return TryGetUV3(lod, out array);
                 }
 
                 return false;
@@ -3323,14 +2798,23 @@ namespace Swole.Morphing
 
             [SerializeField]
             public Vector3 boundsCenter;
+            public Vector3 BoundsCenter => boundsCenter;
+
             [SerializeField]
             public Vector3 boundsExtents;
+            public Vector3 BoundsExtents => boundsExtents;
 
             [HideInInspector]
             public bool[] leftRightFlags;
+            public bool HasLeftRightFlags => leftRightFlags != null && leftRightFlags.Length == vertexCount;
+            public bool GetLeftRightFlag(int vertexIndex) => HasLeftRightFlags && vertexIndex >= 0 && vertexIndex < leftRightFlags.Length ? leftRightFlags[vertexIndex] : false;
+            public bool[] LeftRightFlags => leftRightFlags;
 
             [HideInInspector]
             public BoneWeight8[] baseBoneWeights;
+            public bool HasBaseBoneWeights => baseBoneWeights != null && baseBoneWeights.Length == vertexCount;
+            public BoneWeight8 GetBaseBoneWeight(int vertexIndex) => HasBaseBoneWeights && vertexIndex >= 0 && vertexIndex < baseBoneWeights.Length ? baseBoneWeights[vertexIndex] : default;
+            public BoneWeight8[] BaseBoneWeights => baseBoneWeights;
 
             [NonSerialized]
             private NativeArray<BoneWeight8> baseBoneWeightsJob;
@@ -3340,7 +2824,7 @@ namespace Swole.Morphing
                 {
                     if (!baseBoneWeightsJob.IsCreated)
                     {
-                        baseBoneWeightsJob = new NativeArray<BoneWeight8>(baseBoneWeights == null ? new BoneWeight8[0] : baseBoneWeights, Allocator.Persistent); 
+                        baseBoneWeightsJob = new NativeArray<BoneWeight8>(baseBoneWeights == null ? new BoneWeight8[0] : baseBoneWeights, Allocator.Persistent);
                     }
 
                     return baseBoneWeightsJob;
@@ -3349,54 +2833,72 @@ namespace Swole.Morphing
 
             public string[] boneNames;
             public bool HasBonesArray => boneNames != null && boneNames.Length > 0;
+            public string[] BoneNames => boneNames;
 
             [HideInInspector]
             public Matrix4x4[] baseBindPose;
+            public bool HasManagedBindPose => baseBindPose != null && baseBindPose.Length > 0;
+            public Matrix4x4[] ManagedBindPose => baseBindPose;
+
             public int BoneCount => HasBonesArray ? boneNames.Length : (baseBindPose == null ? 0 : baseBindPose.Length);
 
             [Header("Shapes")]
-            public MeshShape[] meshShapes;
-
             public Vector2Int standaloneShapes;
+            public Vector2Int StandaloneShapes => standaloneShapes;
 
             public Vector2Int variationShapes;
+            public Vector2Int VariationShapes => variationShapes;
 
             public int massShape;
+            public int MassShape => massShape;
 
             public int flexShape;
+            public int FlexShape => flexShape;
 
             public int fatShape;
+            public int FatShape => fatShape;
 
             public int fatMuscleBlendShape;
+            public int FatMuscleBlendShape => fatMuscleBlendShape;
             public Vector2 fatMuscleBlendWeightRange;
+            public Vector2 FatMuscleBlendWeightRange => fatMuscleBlendWeightRange;
 
             public int bustSizeShape;
+            public int BustSizeShape => bustSizeShape;
             public int bustShapeShape;
+            public int BustShapeShape => bustShapeShape;
             public int bustSizeMuscleShape;
+            public int BustSizeMuscleShape => bustSizeMuscleShape;
 
             [Header("Vertex Groups")]
-            public VertexGroup[] vertexGroups;
-
             public int midlineVertexGroup;
+            public int MidlineVertexGroup => midlineVertexGroup;
             public int bustVertexGroup;
+            public int BustVertexGroup => bustVertexGroup;
             public int bustNerfVertexGroup;
+            public int BustNerfVertexGroup => bustNerfVertexGroup;
 
             public int nippleMaskVertexGroup;
+            public int NippleMaskVertexGroup => nippleMaskVertexGroup;
             public int genitalMaskVertexGroup;
+            public int GenitalMaskVertexGroup => genitalMaskVertexGroup;
 
             public float defaultMassShapeWeight;
+            public float DefaultMassShapeWeight => defaultMassShapeWeight;
             public float minMassShapeWeight;
+            public float MinMassShapeWeight => minMassShapeWeight;
 
             public Vector2Int standaloneGroups;
+            public Vector2Int StandaloneGroups => standaloneGroups;
 
             public Vector2Int variationGroups;
+            public Vector2Int VariationGroups => variationGroups;
 
-            public Vector2Int muscleGroups;      
+            public Vector2Int muscleGroups;
+            public Vector2Int MuscleGroups => muscleGroups;
 
             public Vector2Int fatGroups;
-
-            [Header("Vertex Color Deltas")]
-            public VertexColorDelta[] vertexColorDeltas; 
+            public Vector2Int FatGroups => fatGroups;
 
             [Header("Material Properties")]
             public string vertexCountPropertyNameOverride;
@@ -3412,6 +2914,7 @@ namespace Swole.Morphing
             public string SkinningMatricesPropertyName => string.IsNullOrWhiteSpace(skinningMatricesPropertyNameOverride) ? _skinningMatricesDefaultPropertyName : skinningMatricesPropertyNameOverride;
 
             public string standaloneVertexGroupsBufferRangePropertyNameOverride;
+            public string StandaloneVertexGroupsBufferRangePropertyName => string.IsNullOrWhiteSpace(standaloneVertexGroupsBufferRangePropertyNameOverride) ? _standaloneVertexGroupsBufferRangeDefaultPropertyName : standaloneVertexGroupsBufferRangePropertyNameOverride;
 
             public string muscleVertexGroupsBufferRangePropertyNameOverride;
             public string fatVertexGroupsBufferRangePropertyNameOverride;
@@ -3421,7 +2924,7 @@ namespace Swole.Morphing
             public string MidlineVertexGroupIndexPropertyName => string.IsNullOrWhiteSpace(midlineVertexGroupIndexPropertyNameOverride) ? _midlineVertexGroupIndexDefaultPropertyName : midlineVertexGroupIndexPropertyNameOverride;
 
             public string bustMixPropertyNameOverride;
-            public string BustMixPropertyName => string.IsNullOrWhiteSpace(bustMixPropertyNameOverride) ? _bustMixDefaultPropertyName : bustMixPropertyNameOverride; 
+            public string BustMixPropertyName => string.IsNullOrWhiteSpace(bustMixPropertyNameOverride) ? _bustMixDefaultPropertyName : bustMixPropertyNameOverride;
 
             public string hideNipplesPropertyNameOverride;
             public string HideNipplesPropertyName => string.IsNullOrWhiteSpace(hideNipplesPropertyNameOverride) ? _hideNipplesDefaultPropertyName : hideNipplesPropertyNameOverride;
@@ -3470,7 +2973,7 @@ namespace Swole.Morphing
             public string variationShapesControlPropertyNameOverride;
             public string VariationShapesControlPropertyName => string.IsNullOrWhiteSpace(variationShapesControlPropertyNameOverride) ? _variationShapesControlDefaultPropertyName : variationShapesControlPropertyNameOverride;
 
-            
+
             public string muscleMassShapeIndexPropertyNameOverride;
             public string MuscleMassShapeIndexPropertyName => string.IsNullOrWhiteSpace(muscleMassShapeIndexPropertyNameOverride) ? _muscleMassShapeIndexDefaultPropertyName : muscleMassShapeIndexPropertyNameOverride;
 
@@ -3541,20 +3044,39 @@ namespace Swole.Morphing
 
             [Header("Other")]
             public float flexEndPointWeight;
+            public float FlexEndPointWeight => flexEndPointWeight;
+
             public float flexExponent;
+            public float FlexExponent => flexExponent;
+
             public float flexNerfThreshold = 0.35f;
+            public float FlexNerfThreshold => flexNerfThreshold;
+
             public float flexNerfExponent = 1f;
+            public float FlexNerfExponent => flexNerfExponent;
+
             public int raycastLod;
+            public int RaycastLOD => raycastLod;
+
             [Tooltip("The uv channel to use for determining the nearest vertex.")]
             public UVChannelURP nearestVertexUVChannel = UVChannelURP.UV3;
+            public UVChannelURP NearestVertexUVChannel => nearestVertexUVChannel;
+
             [Tooltip("The uv element to store the nearest vertex index in.")]
             public RGBAChannel nearestVertexIndexElement = RGBAChannel.R;
+            public RGBAChannel NearestVertexIndexElement => nearestVertexIndexElement;
 
-            public DefaultMuscleGroupConversion[] defaultMuscleGroupConversions;
+            public float2[] fatGroupModifiers;
+
+            #endregion
+
+            #region Interface
+
+            public ICustomizableCharacter.DefaultMuscleGroupConversion[] defaultMuscleGroupConversions;
             private Dictionary<MuscleGroupsDefault, int> defaultMuscleGroupConversionsCache;
             private Dictionary<string, MuscleGroupsDefault> defaultMuscleGroupConversionsReverseCache;
             private Dictionary<MuscleGroup, int> defaultBaseMuscleGroupConversionsCache;
-            private Dictionary<VertexGroup, MuscleGroup> defaultBaseMuscleGroupConversionsReverseCache;
+            private Dictionary<string, MuscleGroup> defaultBaseMuscleGroupConversionsReverseCache;
 
             [NonSerialized]
             private bool initializedDefaultMuscleGroupConversions = false;
@@ -3567,7 +3089,7 @@ namespace Swole.Morphing
                 defaultMuscleGroupConversionsCache = new Dictionary<MuscleGroupsDefault, int>();
                 defaultMuscleGroupConversionsReverseCache = new Dictionary<string, MuscleGroupsDefault>();
                 defaultBaseMuscleGroupConversionsCache = new Dictionary<MuscleGroup, int>();
-                defaultBaseMuscleGroupConversionsReverseCache = new Dictionary<VertexGroup, MuscleGroup>();
+                defaultBaseMuscleGroupConversionsReverseCache = new Dictionary<string, MuscleGroup>();
 
                 if (defaultMuscleGroupConversions != null)
                 {
@@ -3583,10 +3105,10 @@ namespace Swole.Morphing
                             continue;
                         }
 
-                        var vertexGroup = GetMuscleVertexGroup(ind);
+                        var vertexGroup = GetMuscleVertexGroupInfo(ind);
 
                         defaultBaseMuscleGroupConversionsCache[conversion.basicMuscleGroup] = ind;
-                        defaultBaseMuscleGroupConversionsReverseCache[vertexGroup] = conversion.basicMuscleGroup; 
+                        defaultBaseMuscleGroupConversionsReverseCache[vertexGroup.name] = conversion.basicMuscleGroup;
 
                         MuscleGroupsDefault mgSide;
 
@@ -3600,7 +3122,7 @@ namespace Swole.Morphing
                         mgSide = conversion.basicMuscleGroup.GetMuscleGroupSide(Side.Right);
                         if (prevSide == mgSide) ind = (ind - 1) + _dualMuscleGroupIndexOffset;
                         defaultMuscleGroupConversionsCache[mgSide] = ind;
-                        defaultMuscleGroupConversionsReverseCache[vertexGroup.name + Side.Right.AsSuffix()] = mgSide; 
+                        defaultMuscleGroupConversionsReverseCache[vertexGroup.name + Side.Right.AsSuffix()] = mgSide;
                     }
                 }
             }
@@ -3608,7 +3130,7 @@ namespace Swole.Morphing
             public string ConvertDefaultMuscleGroupName(MuscleGroupsDefault defaultGroup)
             {
                 if (!initializedDefaultMuscleGroupConversions) InitializeDefaultMuscleGroupConversions();
-                if (defaultMuscleGroupConversionsCache.TryGetValue(defaultGroup, out int groupIndex)) return GetMuscleVertexGroup(groupIndex).name; 
+                if (defaultMuscleGroupConversionsCache.TryGetValue(defaultGroup, out int groupIndex)) return GetMuscleVertexGroupInfo(groupIndex).name;
                 return defaultGroup.ToString();
             }
             public int ConvertDefaultMuscleGroupToIndex(MuscleGroupsDefault defaultGroup)
@@ -3620,7 +3142,7 @@ namespace Swole.Morphing
             public MuscleGroupsDefault ConvertLocalMuscleGroupToDefault(string muscleGroupName)
             {
                 if (!initializedDefaultMuscleGroupConversions) InitializeDefaultMuscleGroupConversions();
-                if (defaultMuscleGroupConversionsReverseCache.TryGetValue(muscleGroupName, out var defaultGroup)) return defaultGroup; 
+                if (defaultMuscleGroupConversionsReverseCache.TryGetValue(muscleGroupName, out var defaultGroup)) return defaultGroup;
 
                 return default;
             }
@@ -3630,8 +3152,8 @@ namespace Swole.Morphing
 
                 if (!initializedDefaultMuscleGroupConversions) InitializeDefaultMuscleGroupConversions();
 
-                var vg = GetMuscleVertexGroup(muscleGroupIndex);
-                if (vg == null) return default;
+                var vg = GetMuscleVertexGroupInfo(muscleGroupIndex);
+                if (vg.IsInvalid) return default;
 
                 if (defaultMuscleGroupConversionsReverseCache.TryGetValue(vg.name + Side.Left.AsSuffix(), out var defaultGroup)) return defaultGroup;
 
@@ -3640,26 +3162,20 @@ namespace Swole.Morphing
             public MuscleGroupsDefault ConvertMuscleGroupIndexToDefault(int muscleGroupIndex)
             {
                 if (muscleGroupIndex < 0) return default;
-                
-                if (!initializedDefaultMuscleGroupConversions) InitializeDefaultMuscleGroupConversions(); 
+
+                if (!initializedDefaultMuscleGroupConversions) InitializeDefaultMuscleGroupConversions();
 
                 muscleGroupIndex = ConvertDefaultMuscleGroupIndexToLocal(muscleGroupIndex, out int defaultIndex, out bool isBothSides);
 
-                var vg = GetMuscleVertexGroup(muscleGroupIndex);
-                if (vg == null) return default;
+                var vg = GetMuscleVertexGroupInfo(muscleGroupIndex);
+                if (vg.IsInvalid) return default;
 
                 bool isLeft = isBothSides || defaultIndex % 2 == 0;
 
                 if (defaultMuscleGroupConversionsReverseCache.TryGetValue(vg.name + (isLeft ? Side.Left : Side.Right).AsSuffix(), out var defaultGroup)) return defaultGroup;
 
-                return default; 
+                return default;
             }
-
-            public float2[] fatGroupModifiers;
-            
-            #endregion
-
-            #region Interface
 
             public virtual List<BoneWeight8Float> GetConvertedBoneWeightData(List<BoneWeight8Float> outputList = null)
             {
@@ -3668,7 +3184,7 @@ namespace Swole.Morphing
                 if (baseBoneWeights != null)
                 {
                     if (outputList.Capacity < baseBoneWeights.Length) outputList.Capacity = baseBoneWeights.Length;
-                    foreach (var boneWeight in baseBoneWeights) outputList.Add(boneWeight); 
+                    foreach (var boneWeight in baseBoneWeights) outputList.Add(boneWeight);
                 }
 
                 return outputList;
@@ -3676,7 +3192,7 @@ namespace Swole.Morphing
             protected static readonly List<BoneWeight8Float> tempBoneWeights = new List<BoneWeight8Float>();
             [NonSerialized]
             protected ComputeBuffer boneWeightsBuffer;
-            public ComputeBuffer BoneWeightsBuffer
+            public virtual ComputeBuffer BoneWeightsBuffer
             {
                 get
                 {
@@ -3702,246 +3218,54 @@ namespace Swole.Morphing
             protected static int CompareWeight(BoneWeight1 weight1, BoneWeight1 weight2) => (int)Mathf.Sign(weight2.weight - weight1.weight);
             [NonSerialized]
             protected ComputeBuffer muscleGroupInfluencesBuffer;
-            public ComputeBuffer MuscleGroupInfluencesBuffer
+            public virtual ComputeBuffer MuscleGroupInfluencesBuffer
             {
                 get
                 {
-                    if (muscleGroupInfluencesBuffer == null)
-                    {
-                        if (precache_muscleGroupInfluences == null || precache_muscleGroupInfluences.Length <= 0)
-                        {
-                            PrecacheMuscleGroupInfluences();
-                        }
-
-                        muscleGroupInfluencesBuffer = new ComputeBuffer(precache_muscleGroupInfluences.Length, UnsafeUtility.SizeOf(typeof(BoneWeight8Float)), ComputeBufferType.Structured, ComputeBufferMode.Immutable); // we use the bone weight structs because the data is identical (boneIndex = vertex group Index, boneWeight = vertex group weight)
-                        if (precache_muscleGroupInfluences.Length > 0) muscleGroupInfluencesBuffer.SetData(precache_muscleGroupInfluences);
-
-                        TrackDisposables();
-                    }
-
                     return muscleGroupInfluencesBuffer;
                 }
             }
             [NonSerialized]
             protected ComputeBuffer fatGroupInfluencesBuffer;
-            public ComputeBuffer FatGroupInfluencesBuffer
+            public virtual ComputeBuffer FatGroupInfluencesBuffer
             {
                 get
                 {
-                    if (fatGroupInfluencesBuffer == null)
-                    {
-                        if (precache_fatGroupInfluences == null || precache_fatGroupInfluences.Length <= 0)
-                        {
-                            PrecacheFatGroupInfluences();
-                        }
-
-                        fatGroupInfluencesBuffer = new ComputeBuffer(precache_fatGroupInfluences.Length, UnsafeUtility.SizeOf(typeof(BoneWeight8Float)), ComputeBufferType.Structured, ComputeBufferMode.Immutable); // we use the bone weight structs because the data is identical (boneIndex = vertex group Index, boneWeight = vertex group weight)
-                        if (precache_fatGroupInfluences.Length > 0) fatGroupInfluencesBuffer.SetData(precache_fatGroupInfluences);
-
-                        TrackDisposables();
-                    }
-
                     return fatGroupInfluencesBuffer;
                 }
             }
 
-            public Matrix4x4[] ManagedBindPose => baseBindPose;
+            public abstract int MeshShapeCount { get; }
+            public abstract int MeshShapeDeltasCount { get; }
+            public abstract ShapeInfo GetShapeInfo(int index);
+            public abstract ShapeInfo GetShapeInfoUnsafe(int index);
+            public abstract int IndexOfShape(string shapeName, bool caseSensitive = false);
+            public abstract List<ShapeInfo> GetShapeInfos(List<ShapeInfo> outputList = null);
 
-            public int MeshShapeCount => meshShapes == null ? 0 : meshShapes.Length;
-            public int MeshShapeDeltasCount
-            {
-                get
-                {
-                    if (meshShapes == null) return 0;
-
-                    int count = 0;
-
-                    foreach (var shape in meshShapes)
-                    {
-                        if (shape == null || shape.frames == null) continue;
-                        count = count + shape.frames.Length * vertexCount;
-                    }
-
-                    return count;
-                }
-            }
-            public MeshShape GetShape(int index)
-            {
-                if (index < 0 || meshShapes == null || index >= meshShapes.Length) return null;
-                return GetShapeUnsafe(index);
-            }
-            public MeshShape GetShapeUnsafe(int index) => meshShapes[index];
-            public int IndexOfShape(string shapeName, bool caseSensitive = false)
-            {
-                if (meshShapes == null) return -1;
-
-                for (int a = 0; a < meshShapes.Length; a++)
-                {
-                    var morph = meshShapes[a];
-                    if (morph == null) continue;
-
-                    if (morph.name == shapeName) return a;
-                }
-                if (caseSensitive) return -1;
-
-                shapeName = shapeName.ToLower().Trim();
-                for (int a = 0; a < meshShapes.Length; a++)
-                {
-                    var morph = meshShapes[a];
-                    if (morph == null) continue;
-
-                    if (!string.IsNullOrWhiteSpace(morph.name) && morph.name.ToLower().Trim() == shapeName) return a;
-                }
-
-                return -1;
-            }
-            public List<MeshShape> GetShapes(List<MeshShape> outputList = null)
-            {
-                if (outputList == null) outputList = new List<MeshShape>();
-
-                if (meshShapes != null) outputList.AddRange(meshShapes);
-
-                return outputList;
-            }
-
-            public int VertexGroupCount => vertexGroups == null ? 0 : vertexGroups.Length;
-            public VertexGroup GetVertexGroup(int index)
-            {
-                if (index < 0 || vertexGroups == null || index >= vertexGroups.Length) return null;
-                return GetVertexGroupUnsafe(index);
-            }
-            public VertexGroup GetVertexGroupUnsafe(int index) => vertexGroups[index];
-            public int IndexOfVertexGroup(string vertexGroupName, bool caseSensitive = false)
-            {
-                if (vertexGroups == null) return -1;
-
-                for (int a = 0; a < vertexGroups.Length; a++)
-                {
-                    var vg = vertexGroups[a];
-                    if (vg == null) continue;
-
-                    if (vg.name == vertexGroupName) return a;
-                }
-                if (caseSensitive) return -1;
-
-                vertexGroupName = vertexGroupName.ToLower().Trim();
-                for (int a = 0; a < vertexGroups.Length; a++)
-                {
-                    var vg = vertexGroups[a];
-                    if (vg == null) continue;
-
-                    if (!string.IsNullOrWhiteSpace(vg.name) && vg.name.ToLower().Trim() == vertexGroupName) return a;
-                }
-
-                return -1;
-            }
-            public List<VertexGroup> GetVertexGroups(List<VertexGroup> outputList = null)
-            {
-                if (outputList == null) outputList = new List<VertexGroup>();
-
-                if (vertexGroups != null) outputList.AddRange(vertexGroups); 
-
-                return outputList;
-            }
+            public abstract int VertexGroupCount { get; }
+            public abstract VertexGroupInfo GetVertexGroupInfo(int index);
+            public abstract VertexGroupInfo GetVertexGroupInfoUnsafe(int index);
+            public abstract int IndexOfVertexGroup(string vertexGroupName, bool caseSensitive = false);
+            public abstract List<VertexGroupInfo> GetVertexGroupInfos(List<VertexGroupInfo> outputList = null);
 
             public string VertexGroupsBufferRangePropertyName => string.IsNullOrWhiteSpace(standaloneVertexGroupsBufferRangePropertyNameOverride) ? _vertexGroupsBufferRangeDefaultPropertyName : standaloneVertexGroupsBufferRangePropertyNameOverride;
             public int StandaloneGroupsCount => standaloneGroups.y < standaloneGroups.x ? 0 : ((standaloneGroups.y - standaloneGroups.x) + 1);
             public int StandaloneVertexGroupCount => StandaloneGroupsCount;
-            public int IndexOfStandaloneVertexGroup(string name, bool caseSensitive = false)
-            {
-                if (vertexGroups == null) return -1;
-
-                for (int a = 0; a < StandaloneVertexGroupCount; a++)
-                {
-                    var vg = vertexGroups[a + standaloneGroups.x];
-                    if (vg == null) continue;
-
-                    if (vg.name == name) return a;
-                }
-                if (caseSensitive) return -1;
-
-                name = name.ToLower().Trim();
-                for (int a = 0; a < StandaloneVertexGroupCount; a++)
-                {
-                    var vg = vertexGroups[a + standaloneGroups.x];
-                    if (vg == null) continue;
-
-                    if (!string.IsNullOrWhiteSpace(vg.name) && vg.name.ToLower().Trim() == name) return a;
-                }
-
-                return -1;
-            }
-            public VertexGroup GetStandaloneVertexGroup(int index)
-            {
-                if (index < 0 || index >= StandaloneVertexGroupCount) return null;
-                return vertexGroups[standaloneGroups.x + index];
-            }
+            public abstract int IndexOfStandaloneVertexGroup(string name, bool caseSensitive = false);
+            public abstract VertexGroupInfo GetStandaloneVertexGroupInfo(int index);
 
             public string MuscleVertexGroupsBufferRangePropertyName => string.IsNullOrWhiteSpace(muscleVertexGroupsBufferRangePropertyNameOverride) ? _muscleVertexGroupsBufferRangeDefaultPropertyName : muscleVertexGroupsBufferRangePropertyNameOverride;
             public int MuscleGroupsCount => muscleGroups.y < muscleGroups.x ? 0 : ((muscleGroups.y - muscleGroups.x) + 1);
             public int MuscleVertexGroupCount => MuscleGroupsCount;
-            public int IndexOfMuscleGroup(string name, bool caseSensitive = false)
-            {
-                if (vertexGroups == null) return -1;
-
-                for (int a = 0; a < MuscleVertexGroupCount; a++)
-                {
-                    var vg = vertexGroups[a + muscleGroups.x];
-                    if (vg == null) continue;
-
-                    if (vg.name == name) return a;
-                }
-                if (caseSensitive) return -1;
-
-                name = name.ToLower().Trim();
-                for (int a = 0; a < MuscleVertexGroupCount; a++)
-                {
-                    var vg = vertexGroups[a + muscleGroups.x];
-                    if (vg == null) continue;
-
-                    if (!string.IsNullOrWhiteSpace(vg.name) && vg.name.ToLower().Trim() == name) return a;
-                }
-
-                return -1;
-            }
-            public VertexGroup GetMuscleVertexGroup(int index)
-            {
-                if (index < 0 || index >= MuscleVertexGroupCount) return null;
-                return vertexGroups[muscleGroups.x + index];
-            }
+            public abstract int IndexOfMuscleGroup(string name, bool caseSensitive = false);
+            public abstract VertexGroupInfo GetMuscleVertexGroupInfo(int index);
 
             public string FatVertexGroupsBufferRangePropertyName => string.IsNullOrWhiteSpace(fatVertexGroupsBufferRangePropertyNameOverride) ? _fatVertexGroupsBufferRangeDefaultPropertyName : fatVertexGroupsBufferRangePropertyNameOverride;
             public int FatGroupsCount => fatGroups.y < fatGroups.x ? 0 : ((fatGroups.y - fatGroups.x) + 1);
             public int FatVertexGroupCount => FatGroupsCount;
-            public int IndexOfFatGroup(string name, bool caseSensitive = false)
-            {
-                if (vertexGroups == null) return -1;
+            public abstract int IndexOfFatGroup(string name, bool caseSensitive = false);
+            public abstract VertexGroupInfo GetFatVertexGroupInfo(int index);
 
-                for (int a = 0; a < FatVertexGroupCount; a++)
-                {
-                    var vg = vertexGroups[a + fatGroups.x];
-                    if (vg == null) continue;
-
-                    if (vg.name == name) return a;
-                }
-                if (caseSensitive) return -1;
-
-                name = name.ToLower().Trim();
-                for (int a = 0; a < FatVertexGroupCount; a++)
-                {
-                    var vg = vertexGroups[a + fatGroups.x];
-                    if (vg == null) continue;
-
-                    if (!string.IsNullOrWhiteSpace(vg.name) && vg.name.ToLower().Trim() == name) return a;
-                }
-
-                return -1;
-            }
-            public VertexGroup GetFatVertexGroup(int index)
-            {
-                if (index < 0 || index >= FatVertexGroupCount) return null;
-                return vertexGroups[fatGroups.x + index];
-            }
             public static float2 DefaultFatGroupModifier => new float2(1, 0);
             /// <summary>
             /// modifier.x is how much to nerf muscle mass by based on fat level
@@ -3950,40 +3274,15 @@ namespace Swole.Morphing
                 if (index < 0 || fatGroupModifiers == null || index >= fatGroupModifiers.Length) return DefaultFatGroupModifier;
                 return fatGroupModifiers[index];
             }
-            
+            public bool HasFatGroupModifiers => fatGroupModifiers != null && fatGroupModifiers.Length > 0;
+
             public string VariationVertexGroupsBufferRangePropertyName => string.IsNullOrWhiteSpace(variationVertexGroupsBufferRangePropertyNameOverride) ? _variationVertexGroupsBufferRangeDefaultPropertyName : variationVertexGroupsBufferRangePropertyNameOverride;
             public int VariationGroupsCount => variationGroups.y < variationGroups.x ? 0 : ((variationGroups.y - variationGroups.x) + 1);
             public int VariationVertexGroupCount => VariationGroupsCount;
-           
-            public int IndexOfVariationGroup(string name, bool caseSensitive = false)
-            {
-                if (vertexGroups == null) return -1;
 
-                for (int a = 0; a < VariationVertexGroupCount; a++)
-                {
-                    var vg = vertexGroups[a + variationGroups.x];
-                    if (vg == null) continue;
-
-                    if (vg.name == name) return a;
-                }
-                if (caseSensitive) return -1;
-
-                name = name.ToLower().Trim();
-                for (int a = 0; a < VariationVertexGroupCount; a++)
-                {
-                    var vg = vertexGroups[a + variationGroups.x];
-                    if (vg == null) continue;
-
-                    if (!string.IsNullOrWhiteSpace(vg.name) && vg.name.ToLower().Trim() == name) return a;
-                }
-
-                return -1;
-            }
-            public VertexGroup GetVariationVertexGroup(int index)
-            {
-                if (index < 0 || index >= VariationVertexGroupCount) return null;
-                return vertexGroups[index + variationGroups.x];
-            }
+            public abstract int IndexOfVariationGroup(string name, bool caseSensitive = false);
+            public abstract VertexGroupInfo GetVariationVertexGroupInfo(int index);
+            public abstract VertexGroupInfo GetVariationGroupInfo(int index);
 
             public int VariationShapesControlDataSize => VariationShapesCount * VariationVertexGroupCount;
 
@@ -3991,167 +3290,42 @@ namespace Swole.Morphing
             public string standaloneShapesBufferRangePropertyNameOverride;
             public string StandaloneShapesBufferRangePropertyName => string.IsNullOrWhiteSpace(standaloneShapesBufferRangePropertyNameOverride) ? _standaloneShapesBufferRangeDefaultPropertyName : standaloneShapesBufferRangePropertyNameOverride;
             public int StandaloneShapesCount => standaloneShapes.y < standaloneShapes.x ? 0 : ((standaloneShapes.y - standaloneShapes.x) + 1);
-            public int IndexOfStandaloneShape(string name, bool caseSensitive = false)
-            {
-                if (meshShapes == null) return -1;
+            public abstract int IndexOfStandaloneShape(string name, bool caseSensitive = false);
+            public abstract ShapeInfo GetStandaloneShapeInfo(int index);
 
-                for (int a = 0; a < StandaloneShapesCount; a++)
-                {
-                    var shape = meshShapes[a + standaloneShapes.x];
-                    if (shape == null) continue;
+            public abstract ShapeInfo MassShapeInfo { get; }
+            public abstract int MassShapeFrameCount { get; }
 
-                    if (shape.name == name) return a;
-                }
-                if (caseSensitive) return -1;
+            public abstract ShapeInfo FlexShapeInfo { get; }
+            public abstract int FlexShapeFrameCount { get; }
 
-                name = name.ToLower().Trim();
-                for (int a = 0; a < StandaloneShapesCount; a++)
-                {
-                    var shape = meshShapes[a + standaloneShapes.x];
-                    if (shape == null) continue;
+            public abstract ShapeInfo FatShapeInfo { get; }
+            public abstract int FatShapeFrameCount { get; }
 
-                    if (!string.IsNullOrWhiteSpace(shape.name) && shape.name.ToLower().Trim() == name) return a;
-                }
+            public abstract ShapeInfo FatMuscleBlendShapeInfo { get; }
+            public abstract int FatMuscleBlendShapeFrameCount { get; }
 
-                return -1;
-            }
-            public MeshShape GetStandaloneShape(int index)
-            {
-                if (index < 0 || index >= StandaloneShapesCount) return null;
-                return meshShapes[standaloneShapes.x + index];
-            }
+            public abstract ShapeInfo BustSizeShapeInfo { get; }
+            public abstract int BustSizeShapeFrameCount { get; }
 
-            public MeshShape MassShape => massShape >= 0 && meshShapes != null ? meshShapes[massShape] : null;
-            public int MassShapeFrameCount => massShape >= 0 && meshShapes != null ? meshShapes[massShape].FrameCount : 0;
-
-            public MeshShape FlexShape => flexShape >= 0 && meshShapes != null ? meshShapes[flexShape] : null;
-            public int FlexShapeFrameCount => flexShape >= 0 && meshShapes != null ? meshShapes[flexShape].FrameCount : 0;
-
-            public MeshShape FatShape => fatShape >= 0 && meshShapes != null ? meshShapes[fatShape] : null;
-            public int FatShapeFrameCount => fatShape >= 0 && meshShapes != null ? meshShapes[fatShape].FrameCount : 0;
-
-            public MeshShape FatMuscleBlendShape => fatMuscleBlendShape >= 0 && meshShapes != null ? meshShapes[fatMuscleBlendShape] : null;
-            public int FatMuscleBlendShapeFrameCount => fatMuscleBlendShape >= 0 && meshShapes != null ? meshShapes[fatMuscleBlendShape].FrameCount : 0;
-
-            public MeshShape BustSizeShape => bustSizeShape >= 0 && meshShapes != null ? meshShapes[bustSizeShape] : null;
-            public int BustSizeShapeFrameCount => bustSizeShape >= 0 && meshShapes != null ? meshShapes[bustSizeShape].FrameCount : 0;
-
-            public MeshShape BustSizeMuscleShape => bustSizeMuscleShape >= 0 && meshShapes != null ? meshShapes[bustSizeMuscleShape] : null;
-            public int BustSizeMuscleShapeFrameCount => bustSizeMuscleShape >= 0 && meshShapes != null ? meshShapes[bustSizeMuscleShape].FrameCount : 0;
+            public abstract ShapeInfo BustSizeMuscleShapeInfo { get; }
+            public abstract int BustSizeMuscleShapeFrameCount { get; }
 
 
             public string variationShapesBufferRangePropertyNameOverride;
             public string VariationShapesBufferRangePropertyName => string.IsNullOrWhiteSpace(variationShapesBufferRangePropertyNameOverride) ? _variationShapesBufferRangeDefaultPropertyName : variationShapesBufferRangePropertyNameOverride;
             public int VariationShapesCount => variationShapes.y < variationShapes.x ? 0 : ((variationShapes.y - variationShapes.x) + 1);
-            public int IndexOfVariationShape(string name, bool caseSensitive = false)
-            {
-                if (meshShapes == null) return -1;
-
-                for (int a = 0; a < VariationShapesCount; a++)
-                {
-                    var shape = meshShapes[a + variationShapes.x];
-                    if (shape == null) continue;
-
-                    if (shape.name == name) return a;
-                }
-                if (caseSensitive) return -1;
-
-                name = name.ToLower().Trim();
-                for (int a = 0; a < VariationShapesCount; a++)
-                {
-                    var shape = meshShapes[a + variationShapes.x];
-                    if (shape == null) continue;
-
-                    if (!string.IsNullOrWhiteSpace(shape.name) && shape.name.ToLower().Trim() == name) return a;
-                }
-
-                return -1;
-            }
-            public MeshShape GetVariationShape(int index)
-            {
-                if (index < 0 || index >= VariationShapesCount) return null;
-                return meshShapes[variationShapes.x + index];
-            }
-
-
-
-            public int VertexColorDeltaCount => vertexColorDeltas == null ? 0 : vertexColorDeltas.Length;
-            public VertexColorDelta GetVertexColorDelta(int index)
-            {
-                if (index < 0 || vertexColorDeltas == null || index >= vertexColorDeltas.Length) return null;
-                return GetVertexColorDeltaUnsafe(index);
-            }
-            public VertexColorDelta GetVertexColorDeltaUnsafe(int index) => vertexColorDeltas[index];
-            public int IndexOfVertexColorDelta(string deltaName, bool caseSensitive = false)
-            {
-                if (vertexColorDeltas == null) return -1;
-
-                for (int a = 0; a < vertexColorDeltas.Length; a++)
-                {
-                    var delta = vertexColorDeltas[a];
-                    if (delta == null) continue;
-
-                    if (delta.name == deltaName) return a;
-                }
-                if (caseSensitive) return -1;
-
-                deltaName = deltaName.ToLower().Trim();
-                for (int a = 0; a < vertexColorDeltas.Length; a++)
-                {
-                    var delta = vertexColorDeltas[a];
-                    if (delta == null) continue;
-
-                    if (!string.IsNullOrWhiteSpace(delta.name) && delta.name.ToLower().Trim() == deltaName) return a;
-                }
-
-                return -1;
-            }
-            public List<VertexColorDelta> GetVertexColorDeltas(List<VertexColorDelta> outputList = null)
-            {
-                if (outputList == null) outputList = new List<VertexColorDelta>();
-
-                if (vertexColorDeltas != null) outputList.AddRange(vertexColorDeltas);
-
-                return outputList;
-            }
-
+            public abstract int IndexOfVariationShape(string name, bool caseSensitive = false);
+            public abstract ShapeInfo GetVariationShapeInfo(int index);
 
 
             protected static readonly List<float> tempFloats = new List<float>();
             [NonSerialized]
             protected ComputeBuffer vertexGroupsBuffer;
-            public ComputeBuffer VertexGroupsBuffer
+            public virtual ComputeBuffer VertexGroupsBuffer
             {
                 get
                 {
-                    if (vertexGroupsBuffer == null)
-                    {
-                        if (precache_vertexGroups != null && precache_vertexGroups.Length > 0)
-                        {
-                            vertexGroupsBuffer = new ComputeBuffer(precache_vertexGroups.Length, UnsafeUtility.SizeOf(typeof(float)), ComputeBufferType.Structured, ComputeBufferMode.Immutable);
-                            vertexGroupsBuffer.SetData(precache_vertexGroups);
-                        } 
-                        else
-                        {
-                            tempFloats.Clear();
-
-                            foreach (var vertexGroup in vertexGroups)
-                            {
-                                for (int vertexIndex = 0; vertexIndex < vertexCount; vertexIndex++) tempFloats.Add(vertexGroup[vertexIndex]);
-                            }
-
-                            if (tempFloats.Count > 0)
-                            {
-                                vertexGroupsBuffer = new ComputeBuffer(tempFloats.Count, UnsafeUtility.SizeOf(typeof(float)), ComputeBufferType.Structured, ComputeBufferMode.Immutable);
-                                vertexGroupsBuffer.SetData(tempFloats);
-                            }
-
-                            tempFloats.Clear();
-                        }
-
-                        TrackDisposables();
-                    }
-
                     return vertexGroupsBuffer;
                 }
             }
@@ -4159,124 +3333,23 @@ namespace Swole.Morphing
             protected static readonly List<MorphShapeVertex> tempFrameDeltas = new List<MorphShapeVertex>();
             [NonSerialized]
             protected ComputeBuffer meshShapeFrameDeltasBuffer;
-            public ComputeBuffer MeshShapeFrameDeltasBuffer
+            public virtual ComputeBuffer MeshShapeFrameDeltasBuffer
             {
                 get
                 {
-                    if (meshShapeFrameDeltasBuffer == null)
-                    {
-                        if (precache_meshShapeFrameDeltas == null || precache_meshShapeFrameDeltas.Length <= 0)
-                        {
-                            PrecacheMeshShapeFrameDeltas();
-                        }
-
-                        if (precache_meshShapeFrameDeltas.Length > 0)
-                        {
-                            meshShapeFrameDeltasBuffer = new ComputeBuffer(precache_meshShapeFrameDeltas.Length, UnsafeUtility.SizeOf(typeof(MorphShapeVertex)), ComputeBufferType.Structured, ComputeBufferMode.Immutable);
-                            meshShapeFrameDeltasBuffer.SetData(precache_meshShapeFrameDeltas);
-                        }
-
-                        TrackDisposables();
-                    }
-                    
                     return meshShapeFrameDeltasBuffer;
                 }
             }
-            [NonSerialized]
-            protected ComputeBuffer meshShapeFrameWeightsBuffer;
-            public ComputeBuffer MeshShapeFrameWeightsBuffer
+
+            public abstract ComputeBuffer MeshShapeFrameWeightsBuffer { get; }
+
+            public abstract ComputeBuffer MeshShapeIndicesBuffer { get; }
+
+            public virtual ComputeBuffer VertexColorDeltasBuffer
             {
                 get
                 {
-                    if (meshShapeFrameWeightsBuffer == null)
-                    {
-                        tempFloats.Clear();
-
-                        foreach (var meshShape in meshShapes)
-                        {
-                            if (meshShape == null || meshShape.frames == null) continue;
-
-                            for (int frameIndex = 0; frameIndex < meshShape.frames.Length; frameIndex++)
-                            {
-                                var frame = meshShape.frames[frameIndex];
-                                tempFloats.Add(frame.weight);
-                            }
-                        }
-
-                        if (tempFloats.Count > 0)
-                        {
-                            meshShapeFrameWeightsBuffer = new ComputeBuffer(tempFloats.Count, UnsafeUtility.SizeOf(typeof(float)), ComputeBufferType.Structured, ComputeBufferMode.Immutable);
-                            meshShapeFrameWeightsBuffer.SetData(tempFloats);
-                        }
-
-                        tempFloats.Clear();
-
-                        TrackDisposables();
-                    }
-
-                    return meshShapeFrameWeightsBuffer;
-                }
-            }
-            protected static readonly List<int2> tempRanges = new List<int2>();
-            [NonSerialized]
-            protected ComputeBuffer meshShapeIndicesBuffer;
-            public ComputeBuffer MeshShapeIndicesBuffer
-            {
-                get
-                {
-                    if (meshShapeIndicesBuffer == null)
-                    {
-                        tempRanges.Clear();
-
-                        int startIndex = 0;
-                        foreach (var meshShape in meshShapes)
-                        {
-                            if (meshShape == null || meshShape.frames == null) continue;
-
-                            tempRanges.Add(new int2(startIndex, meshShape.frames.Length));
-
-                            startIndex += meshShape.frames.Length;
-                        }
-
-                        if (tempRanges.Count > 0)
-                        {
-                            meshShapeIndicesBuffer = new ComputeBuffer(tempRanges.Count, UnsafeUtility.SizeOf(typeof(int2)), ComputeBufferType.Structured, ComputeBufferMode.Immutable);
-                            meshShapeIndicesBuffer.SetData(tempRanges);
-                        }
-
-                        tempRanges.Clear();
-
-                        TrackDisposables();
-                    }
-
-                    return meshShapeIndicesBuffer;
-                }
-            }
-
-            protected static readonly List<float4> tempColorDeltas = new List<float4>();
-            [NonSerialized]
-            protected ComputeBuffer vertexColorDeltasBuffer;
-            public ComputeBuffer VertexColorDeltasBuffer
-            {
-                get
-                {
-                    if (vertexColorDeltasBuffer == null)
-                    {
-                        if (precache_vertexColorDeltas == null || precache_vertexColorDeltas.Length <= 0)
-                        {
-                            PrecacheVertexColorDeltas();
-                        }
-
-                        if (precache_vertexColorDeltas.Length > 0)
-                        {
-                            vertexColorDeltasBuffer = new ComputeBuffer(precache_vertexColorDeltas.Length, UnsafeUtility.SizeOf(typeof(float4)), ComputeBufferType.Structured, ComputeBufferMode.Immutable);
-                            vertexColorDeltasBuffer.SetData(precache_vertexColorDeltas);
-                        }
-                        
-                        TrackDisposables();
-                    }
-
-                    return vertexColorDeltasBuffer;
+                    return null;
                 }
             }
 
@@ -4285,7 +3358,7 @@ namespace Swole.Morphing
             #region Disposal
 
             [NonSerialized]
-            private bool trackingDisposables;
+            protected bool trackingDisposables;
             public void TrackDisposables()
             {
                 if (trackingDisposables) return;
@@ -4299,7 +3372,7 @@ namespace Swole.Morphing
                 trackingDisposables = true;
             }
 
-            public void Dispose()
+            public virtual void Dispose()
             {
                 if (trackingDisposables)
                 {
@@ -4405,51 +3478,6 @@ namespace Swole.Morphing
 #endif
                 }
 
-                try
-                {
-                    if (vertexColorDeltasBuffer != null && vertexColorDeltasBuffer.IsValid())
-                    {
-                        vertexColorDeltasBuffer.Dispose();
-                        vertexColorDeltasBuffer = null;
-                    }
-                }
-                catch (Exception ex)
-                {
-#if UNITY_EDITOR
-                    Debug.LogException(ex);
-#endif
-                }
-
-                try
-                {
-                    if (meshShapeFrameWeightsBuffer != null && meshShapeFrameWeightsBuffer.IsValid())
-                    {
-                        meshShapeFrameWeightsBuffer.Dispose();
-                        meshShapeFrameWeightsBuffer = null;
-                    }
-                }
-                catch (Exception ex)
-                {
-#if UNITY_EDITOR
-                    Debug.LogException(ex);
-#endif
-                }
-
-                try
-                {
-                    if (meshShapeIndicesBuffer != null && meshShapeIndicesBuffer.IsValid())
-                    {
-                        meshShapeIndicesBuffer.Dispose();
-                        meshShapeIndicesBuffer = null;
-                    }
-                }
-                catch (Exception ex)
-                {
-#if UNITY_EDITOR
-                    Debug.LogException(ex);
-#endif
-                }
-
                 if (meshVertices != null)
                 {
                     foreach (var array in meshVertices)
@@ -4494,7 +3522,7 @@ namespace Swole.Morphing
                 }
                 if (meshTangents != null)
                 {
-                    foreach (var array in meshTangents) 
+                    foreach (var array in meshTangents)
                     {
                         try
                         {
@@ -4528,7 +3556,7 @@ namespace Swole.Morphing
                         catch (Exception ex)
                         {
 #if UNITY_EDITOR
-                            Debug.LogException(ex); 
+                            Debug.LogException(ex);
 #endif
                         }
                     }
@@ -4577,9 +3605,9 @@ namespace Swole.Morphing
                         }
                     }
 
-                    meshBoneWeights = null; 
+                    meshBoneWeights = null;
                 }
-                
+
                 if (meshUV0s != null)
                 {
                     foreach (var array in meshUV0s)
@@ -4599,7 +3627,7 @@ namespace Swole.Morphing
                         }
                     }
 
-                    meshUV0s = null; 
+                    meshUV0s = null;
                 }
                 if (meshUV1s != null)
                 {
@@ -4651,7 +3679,7 @@ namespace Swole.Morphing
                         {
                             if (array.IsCreated)
                             {
-                                array.Dispose(); 
+                                array.Dispose();
                             }
                         }
                         catch (Exception ex)
@@ -4663,6 +3691,741 @@ namespace Swole.Morphing
                     }
 
                     meshUV3s = null;
+                }
+
+            }
+
+            #endregion
+
+            #region Pre-Caching
+
+            public virtual bool IsPrecached => true;
+            public virtual bool Precache() => false;
+
+            public virtual bool TryPrecache()
+            {
+                if (IsPrecached) return false;
+                return Precache();
+            }
+
+            #endregion
+
+        }
+
+        public abstract class SerializedDataGroupsShapes : SerializedDataBase
+        {
+
+            #region Fields
+
+            [Header("Shapes")]
+            public MeshShape[] meshShapes;
+
+            [Header("Vertex Groups")]
+            public VertexGroup[] vertexGroups;
+
+            #endregion
+
+            #region Interface
+
+            public override int MeshShapeCount => meshShapes == null ? 0 : meshShapes.Length;
+            public override int MeshShapeDeltasCount
+            {
+                get
+                {
+                    if (meshShapes == null) return 0;
+
+                    int count = 0;
+
+                    foreach (var shape in meshShapes)
+                    {
+                        if (shape == null || shape.frames == null) continue;
+                        count = count + shape.frames.Length * vertexCount;
+                    }
+
+                    return count;
+                }
+            }
+            public MeshShape GetShape(int index)
+            {
+                if (index < 0 || meshShapes == null || index >= meshShapes.Length) return null;
+                return GetShapeUnsafe(index);
+            }
+            public MeshShape GetShapeUnsafe(int index) => meshShapes[index];
+            public override ShapeInfo GetShapeInfo(int index)
+            {
+                var shape = GetShape(index);
+                if (shape != null) return shape;
+                return default;
+            }
+            public override ShapeInfo GetShapeInfoUnsafe(int index) => GetShapeUnsafe(index);
+            public override int IndexOfShape(string shapeName, bool caseSensitive = false)
+            {
+                if (meshShapes == null) return -1;
+
+                for (int a = 0; a < meshShapes.Length; a++)
+                {
+                    var morph = meshShapes[a];
+                    if (morph == null) continue;
+
+                    if (morph.name == shapeName) return a;
+                }
+                if (caseSensitive) return -1;
+
+                shapeName = shapeName.ToLower().Trim();
+                for (int a = 0; a < meshShapes.Length; a++)
+                {
+                    var morph = meshShapes[a];
+                    if (morph == null) continue;
+
+                    if (!string.IsNullOrWhiteSpace(morph.name) && morph.name.ToLower().Trim() == shapeName) return a;
+                }
+
+                return -1;
+            }
+            public List<MeshShape> GetShapes(List<MeshShape> outputList = null)
+            {
+                if (outputList == null) outputList = new List<MeshShape>();
+
+                if (meshShapes != null) outputList.AddRange(meshShapes);
+
+                return outputList;
+            }
+            public override List<ShapeInfo> GetShapeInfos(List<ShapeInfo> outputList = null)
+            {
+                if (outputList == null) outputList = new List<ShapeInfo>();
+                if (meshShapes != null)
+                {
+                    foreach (var shape in meshShapes)
+                    {
+                        if (shape == null) continue;
+                        outputList.Add(shape);
+                    }
+                }
+                return outputList;
+            }
+
+            public override int VertexGroupCount => vertexGroups == null ? 0 : vertexGroups.Length;
+            public VertexGroup GetVertexGroup(int index)
+            {
+                if (index < 0 || vertexGroups == null || index >= vertexGroups.Length) return null;
+                return GetVertexGroupUnsafe(index);
+            }
+            public VertexGroup GetVertexGroupUnsafe(int index) => vertexGroups[index];
+            public override VertexGroupInfo GetVertexGroupInfo(int index)
+            {
+                var vg = GetVertexGroup(index);
+                if (vg != null) return vg;
+                return default;
+            }
+            public override VertexGroupInfo GetVertexGroupInfoUnsafe(int index) => GetVertexGroupUnsafe(index);
+            public override int IndexOfVertexGroup(string vertexGroupName, bool caseSensitive = false)
+            {
+                if (vertexGroups == null) return -1;
+
+                for (int a = 0; a < vertexGroups.Length; a++)
+                {
+                    var vg = vertexGroups[a];
+                    if (vg == null) continue;
+
+                    if (vg.name == vertexGroupName) return a;
+                }
+                if (caseSensitive) return -1;
+
+                vertexGroupName = vertexGroupName.ToLower().Trim();
+                for (int a = 0; a < vertexGroups.Length; a++)
+                {
+                    var vg = vertexGroups[a];
+                    if (vg == null) continue;
+
+                    if (!string.IsNullOrWhiteSpace(vg.name) && vg.name.ToLower().Trim() == vertexGroupName) return a;
+                }
+
+                return -1;
+            }
+            public List<VertexGroup> GetVertexGroups(List<VertexGroup> outputList = null)
+            {
+                if (outputList == null) outputList = new List<VertexGroup>();
+
+                if (vertexGroups != null) outputList.AddRange(vertexGroups);
+
+                return outputList;
+            }
+            public override List<VertexGroupInfo> GetVertexGroupInfos(List<VertexGroupInfo> outputList = null)
+            {
+                if (outputList == null) outputList = new List<VertexGroupInfo>();
+                if (vertexGroups != null)
+                {
+                    foreach (var vg in vertexGroups)
+                    {
+                        if (vg == null) continue;
+                        outputList.Add(vg);
+                    }
+                }
+                return outputList;
+            }
+
+            public override int IndexOfStandaloneVertexGroup(string name, bool caseSensitive = false)
+            {
+                if (vertexGroups == null) return -1;
+
+                for (int a = 0; a < StandaloneVertexGroupCount; a++)
+                {
+                    var vg = vertexGroups[a + standaloneGroups.x];
+                    if (vg == null) continue;
+
+                    if (vg.name == name) return a;
+                }
+                if (caseSensitive) return -1;
+
+                name = name.ToLower().Trim();
+                for (int a = 0; a < StandaloneVertexGroupCount; a++)
+                {
+                    var vg = vertexGroups[a + standaloneGroups.x];
+                    if (vg == null) continue;
+
+                    if (!string.IsNullOrWhiteSpace(vg.name) && vg.name.ToLower().Trim() == name) return a;
+                }
+
+                return -1;
+            }
+            public VertexGroup GetStandaloneVertexGroup(int index)
+            {
+                if (index < 0 || index >= StandaloneVertexGroupCount) return null;
+                return vertexGroups[standaloneGroups.x + index];
+            }
+            public override VertexGroupInfo GetStandaloneVertexGroupInfo(int index)
+            {
+                var vg = GetStandaloneVertexGroup(index);
+                if (vg != null) return vg;
+                return default;
+            }
+
+            public override int IndexOfMuscleGroup(string name, bool caseSensitive = false)
+            {
+                if (vertexGroups == null) return -1;
+
+                for (int a = 0; a < MuscleVertexGroupCount; a++)
+                {
+                    var vg = vertexGroups[a + muscleGroups.x];
+                    if (vg == null) continue;
+
+                    if (vg.name == name) return a;
+                }
+                if (caseSensitive) return -1;
+
+                name = name.ToLower().Trim();
+                for (int a = 0; a < MuscleVertexGroupCount; a++)
+                {
+                    var vg = vertexGroups[a + muscleGroups.x];
+                    if (vg == null) continue;
+
+                    if (!string.IsNullOrWhiteSpace(vg.name) && vg.name.ToLower().Trim() == name) return a;
+                }
+
+                return -1;
+            }
+            public VertexGroup GetMuscleVertexGroup(int index)
+            {
+                if (index < 0 || index >= MuscleVertexGroupCount) return null;
+                return vertexGroups[muscleGroups.x + index];
+            }
+            public override VertexGroupInfo GetMuscleVertexGroupInfo(int index)
+            {
+                var vg = GetMuscleVertexGroup(index);
+                if (vg != null) return vg;
+                return default;
+            }
+
+            public override int IndexOfFatGroup(string name, bool caseSensitive = false)
+            {
+                if (vertexGroups == null) return -1;
+
+                for (int a = 0; a < FatVertexGroupCount; a++)
+                {
+                    var vg = vertexGroups[a + fatGroups.x];
+                    if (vg == null) continue;
+
+                    if (vg.name == name) return a;
+                }
+                if (caseSensitive) return -1;
+
+                name = name.ToLower().Trim();
+                for (int a = 0; a < FatVertexGroupCount; a++)
+                {
+                    var vg = vertexGroups[a + fatGroups.x];
+                    if (vg == null) continue;
+
+                    if (!string.IsNullOrWhiteSpace(vg.name) && vg.name.ToLower().Trim() == name) return a;
+                }
+
+                return -1;
+            }
+            public VertexGroup GetFatVertexGroup(int index)
+            {
+                if (index < 0 || index >= FatVertexGroupCount) return null;
+                return vertexGroups[fatGroups.x + index];
+            }
+            public override VertexGroupInfo GetFatVertexGroupInfo(int index)
+            {
+                var vg = GetFatVertexGroup(index);
+                if (vg != null) return vg;
+                return default;
+            }
+
+            public override int IndexOfVariationGroup(string name, bool caseSensitive = false)
+            {
+                if (vertexGroups == null) return -1;
+
+                for (int a = 0; a < VariationVertexGroupCount; a++)
+                {
+                    var vg = vertexGroups[a + variationGroups.x];
+                    if (vg == null) continue;
+
+                    if (vg.name == name) return a;
+                }
+                if (caseSensitive) return -1;
+
+                name = name.ToLower().Trim();
+                for (int a = 0; a < VariationVertexGroupCount; a++)
+                {
+                    var vg = vertexGroups[a + variationGroups.x];
+                    if (vg == null) continue;
+
+                    if (!string.IsNullOrWhiteSpace(vg.name) && vg.name.ToLower().Trim() == name) return a;
+                }
+
+                return -1;
+            }
+            public VertexGroup GetVariationVertexGroup(int index)
+            {
+                if (index < 0 || index >= VariationVertexGroupCount) return null;
+                return vertexGroups[index + variationGroups.x];
+            }
+            public override VertexGroupInfo GetVariationVertexGroupInfo(int index)
+            {
+                var vg = GetVariationVertexGroup(index);
+                if (vg != null) return vg;
+                return default;
+            }
+            public VertexGroup GetVariationGroup(int index) => GetVariationVertexGroup(index);
+            public override VertexGroupInfo GetVariationGroupInfo(int index) => GetVariationVertexGroupInfo(index);
+
+            public override int IndexOfStandaloneShape(string name, bool caseSensitive = false)
+            {
+                if (meshShapes == null) return -1;
+
+                for (int a = 0; a < StandaloneShapesCount; a++)
+                {
+                    var shape = meshShapes[a + standaloneShapes.x];
+                    if (shape == null) continue;
+
+                    if (shape.name == name) return a;
+                }
+                if (caseSensitive) return -1;
+
+                name = name.ToLower().Trim();
+                for (int a = 0; a < StandaloneShapesCount; a++)
+                {
+                    var shape = meshShapes[a + standaloneShapes.x];
+                    if (shape == null) continue;
+
+                    if (!string.IsNullOrWhiteSpace(shape.name) && shape.name.ToLower().Trim() == name) return a;
+                }
+
+                return -1;
+            }
+            public MeshShape GetStandaloneShape(int index)
+            {
+                if (index < 0 || index >= StandaloneShapesCount) return null;
+                return meshShapes[standaloneShapes.x + index];
+            }
+            public override ShapeInfo GetStandaloneShapeInfo(int index)
+            {
+                var shape = GetStandaloneShape(index);
+                if (shape != null) return shape;
+                return default;
+            }
+
+            public MeshShape MassShapeInstance => massShape >= 0 && meshShapes != null ? meshShapes[massShape] : null;
+            public override ShapeInfo MassShapeInfo => massShape >= 0 && meshShapes != null ? meshShapes[massShape] : default;
+            public override int MassShapeFrameCount => massShape >= 0 && meshShapes != null ? meshShapes[massShape].FrameCount : 0;
+
+            public MeshShape FlexShapeInstance => flexShape >= 0 && meshShapes != null ? meshShapes[flexShape] : null;
+            public override ShapeInfo FlexShapeInfo => flexShape >= 0 && meshShapes != null ? meshShapes[flexShape] : default;
+            public override int FlexShapeFrameCount => flexShape >= 0 && meshShapes != null ? meshShapes[flexShape].FrameCount : 0;
+
+            public MeshShape FatShapeInstance => fatShape >= 0 && meshShapes != null ? meshShapes[fatShape] : null;
+            public override ShapeInfo FatShapeInfo => fatShape >= 0 && meshShapes != null ? meshShapes[fatShape] : default;
+            public override int FatShapeFrameCount => fatShape >= 0 && meshShapes != null ? meshShapes[fatShape].FrameCount : 0;
+
+            public MeshShape FatMuscleBlendShapeInstance => fatMuscleBlendShape >= 0 && meshShapes != null ? meshShapes[fatMuscleBlendShape] : null;
+            public override ShapeInfo FatMuscleBlendShapeInfo => fatMuscleBlendShape >= 0 && meshShapes != null ? meshShapes[fatMuscleBlendShape] : default;
+            public override int FatMuscleBlendShapeFrameCount => fatMuscleBlendShape >= 0 && meshShapes != null ? meshShapes[fatMuscleBlendShape].FrameCount : 0;
+
+            public MeshShape BustSizeShapeInstance => bustSizeShape >= 0 && meshShapes != null ? meshShapes[bustSizeShape] : null;
+            public override ShapeInfo BustSizeShapeInfo => bustSizeShape >= 0 && meshShapes != null ? meshShapes[bustSizeShape] : default;
+            public override int BustSizeShapeFrameCount => bustSizeShape >= 0 && meshShapes != null ? meshShapes[bustSizeShape].FrameCount : 0;
+
+            public MeshShape BustSizeMuscleShapeInstance => bustSizeMuscleShape >= 0 && meshShapes != null ? meshShapes[bustSizeMuscleShape] : null;
+            public override ShapeInfo BustSizeMuscleShapeInfo => bustSizeMuscleShape >= 0 && meshShapes != null ? meshShapes[bustSizeMuscleShape] : default;
+            public override int BustSizeMuscleShapeFrameCount => bustSizeMuscleShape >= 0 && meshShapes != null ? meshShapes[bustSizeMuscleShape].FrameCount : 0;
+
+
+            public override int IndexOfVariationShape(string name, bool caseSensitive = false)
+            {
+                if (meshShapes == null) return -1;
+
+                for (int a = 0; a < VariationShapesCount; a++)
+                {
+                    var shape = meshShapes[a + variationShapes.x];
+                    if (shape == null) continue;
+
+                    if (shape.name == name) return a;
+                }
+                if (caseSensitive) return -1;
+
+                name = name.ToLower().Trim();
+                for (int a = 0; a < VariationShapesCount; a++)
+                {
+                    var shape = meshShapes[a + variationShapes.x];
+                    if (shape == null) continue;
+
+                    if (!string.IsNullOrWhiteSpace(shape.name) && shape.name.ToLower().Trim() == name) return a;
+                }
+
+                return -1;
+            }
+            public MeshShape GetVariationShape(int index)
+            {
+                if (index < 0 || index >= VariationShapesCount) return null;
+                return meshShapes[variationShapes.x + index];
+            }
+            public override ShapeInfo GetVariationShapeInfo(int index)
+            {
+                var shape = GetVariationShape(index);
+                if (shape != null) return shape;
+                return default;
+            }
+
+            [NonSerialized]
+            protected ComputeBuffer meshShapeFrameWeightsBuffer;
+            public override ComputeBuffer MeshShapeFrameWeightsBuffer
+            {
+                get
+                {
+                    if (meshShapeFrameWeightsBuffer == null)
+                    {
+                        tempFloats.Clear();
+
+                        foreach (var meshShape in meshShapes)
+                        {
+                            if (meshShape == null || meshShape.frames == null) continue;
+
+                            for (int frameIndex = 0; frameIndex < meshShape.frames.Length; frameIndex++)
+                            {
+                                var frame = meshShape.frames[frameIndex];
+                                tempFloats.Add(frame.weight);
+                            }
+                        }
+
+                        if (tempFloats.Count > 0)
+                        {
+                            meshShapeFrameWeightsBuffer = new ComputeBuffer(tempFloats.Count, UnsafeUtility.SizeOf(typeof(float)), ComputeBufferType.Structured, ComputeBufferMode.Immutable);
+                            meshShapeFrameWeightsBuffer.SetData(tempFloats);
+                        }
+
+                        tempFloats.Clear();
+
+                        TrackDisposables();
+                    }
+
+                    return meshShapeFrameWeightsBuffer;
+                }
+            }
+            protected static readonly List<int2> tempRanges = new List<int2>();
+            [NonSerialized]
+            protected ComputeBuffer meshShapeIndicesBuffer;
+            public override ComputeBuffer MeshShapeIndicesBuffer
+            {
+                get
+                {
+                    if (meshShapeIndicesBuffer == null)
+                    {
+                        tempRanges.Clear();
+
+                        int startIndex = 0;
+                        foreach (var meshShape in meshShapes)
+                        {
+                            if (meshShape == null || meshShape.frames == null) continue;
+
+                            tempRanges.Add(new int2(startIndex, meshShape.frames.Length));
+
+                            startIndex += meshShape.frames.Length;
+                        }
+
+                        if (tempRanges.Count > 0)
+                        {
+                            meshShapeIndicesBuffer = new ComputeBuffer(tempRanges.Count, UnsafeUtility.SizeOf(typeof(int2)), ComputeBufferType.Structured, ComputeBufferMode.Immutable);
+                            meshShapeIndicesBuffer.SetData(tempRanges);
+                        }
+
+                        tempRanges.Clear();
+
+                        TrackDisposables();
+                    }
+
+                    return meshShapeIndicesBuffer;
+                }
+            }
+
+            #endregion
+
+            #region Disposal
+
+            public override void Dispose()
+            {
+                base.Dispose();
+
+                try
+                {
+                    if (meshShapeFrameWeightsBuffer != null && meshShapeFrameWeightsBuffer.IsValid())
+                    {
+                        meshShapeFrameWeightsBuffer.Dispose();
+                        meshShapeFrameWeightsBuffer = null;
+                    }
+                }
+                catch (Exception ex)
+                {
+#if UNITY_EDITOR
+                    Debug.LogException(ex);
+#endif
+                }
+
+                try
+                {
+                    if (meshShapeIndicesBuffer != null && meshShapeIndicesBuffer.IsValid())
+                    {
+                        meshShapeIndicesBuffer.Dispose();
+                        meshShapeIndicesBuffer = null;
+                    }
+                }
+                catch (Exception ex)
+                {
+#if UNITY_EDITOR
+                    Debug.LogException(ex);
+#endif
+                }
+
+            }
+
+            #endregion
+
+        }
+
+        [Serializable, NonAnimatable]
+        public class SerializedData : SerializedDataGroupsShapes
+        {
+
+            #region Fields
+
+            [Header("Vertex Color Deltas")]
+            public VertexColorDelta[] vertexColorDeltas;
+
+            #endregion
+
+            #region Interface
+
+            public override ComputeBuffer MuscleGroupInfluencesBuffer
+            {
+                get
+                {
+                    if (muscleGroupInfluencesBuffer == null)
+                    {
+                        if (precache_muscleGroupInfluences == null || precache_muscleGroupInfluences.Length <= 0)
+                        {
+                            PrecacheMuscleGroupInfluences();
+                        }
+
+                        muscleGroupInfluencesBuffer = new ComputeBuffer(precache_muscleGroupInfluences.Length, UnsafeUtility.SizeOf(typeof(BoneWeight8Float)), ComputeBufferType.Structured, ComputeBufferMode.Immutable); // we use the bone weight structs because the data is identical (boneIndex = vertex group Index, boneWeight = vertex group weight)
+                        if (precache_muscleGroupInfluences.Length > 0) muscleGroupInfluencesBuffer.SetData(precache_muscleGroupInfluences);
+
+                        TrackDisposables();
+                    }
+
+                    return muscleGroupInfluencesBuffer;
+                }
+            }
+
+            public override ComputeBuffer FatGroupInfluencesBuffer
+            {
+                get
+                {
+                    if (fatGroupInfluencesBuffer == null)
+                    {
+                        if (precache_fatGroupInfluences == null || precache_fatGroupInfluences.Length <= 0)
+                        {
+                            PrecacheFatGroupInfluences();
+                        }
+
+                        fatGroupInfluencesBuffer = new ComputeBuffer(precache_fatGroupInfluences.Length, UnsafeUtility.SizeOf(typeof(BoneWeight8Float)), ComputeBufferType.Structured, ComputeBufferMode.Immutable); // we use the bone weight structs because the data is identical (boneIndex = vertex group Index, boneWeight = vertex group weight)
+                        if (precache_fatGroupInfluences.Length > 0) fatGroupInfluencesBuffer.SetData(precache_fatGroupInfluences);
+
+                        TrackDisposables();
+                    }
+
+                    return fatGroupInfluencesBuffer;
+                }
+            }
+
+            public override ComputeBuffer VertexGroupsBuffer
+            {
+                get
+                {
+                    if (vertexGroupsBuffer == null)
+                    {
+                        if (precache_vertexGroups != null && precache_vertexGroups.Length > 0)
+                        {
+                            vertexGroupsBuffer = new ComputeBuffer(precache_vertexGroups.Length, UnsafeUtility.SizeOf(typeof(float)), ComputeBufferType.Structured, ComputeBufferMode.Immutable);
+                            vertexGroupsBuffer.SetData(precache_vertexGroups);
+                        }
+                        else
+                        {
+                            tempFloats.Clear();
+
+                            foreach (var vertexGroup in vertexGroups)
+                            {
+                                for (int vertexIndex = 0; vertexIndex < vertexCount; vertexIndex++) tempFloats.Add(vertexGroup[vertexIndex]);
+                            }
+
+                            if (tempFloats.Count > 0)
+                            {
+                                vertexGroupsBuffer = new ComputeBuffer(tempFloats.Count, UnsafeUtility.SizeOf(typeof(float)), ComputeBufferType.Structured, ComputeBufferMode.Immutable);
+                                vertexGroupsBuffer.SetData(tempFloats);
+                            }
+
+                            tempFloats.Clear();
+                        }
+
+                        TrackDisposables();
+                    }
+
+                    return vertexGroupsBuffer;
+                }
+            }
+
+            public override ComputeBuffer MeshShapeFrameDeltasBuffer
+            {
+                get
+                {
+                    if (meshShapeFrameDeltasBuffer == null)
+                    {
+                        if (precache_meshShapeFrameDeltas == null || precache_meshShapeFrameDeltas.Length <= 0)
+                        {
+                            PrecacheMeshShapeFrameDeltas();
+                        }
+
+                        if (precache_meshShapeFrameDeltas.Length > 0)
+                        {
+                            meshShapeFrameDeltasBuffer = new ComputeBuffer(precache_meshShapeFrameDeltas.Length, UnsafeUtility.SizeOf(typeof(MorphShapeVertex)), ComputeBufferType.Structured, ComputeBufferMode.Immutable);
+                            meshShapeFrameDeltasBuffer.SetData(precache_meshShapeFrameDeltas);
+                        }
+
+                        TrackDisposables();
+                    }
+
+                    return meshShapeFrameDeltasBuffer;
+                }
+            }
+
+
+            public int VertexColorDeltaCount => vertexColorDeltas == null ? 0 : vertexColorDeltas.Length;
+            public VertexColorDelta GetVertexColorDelta(int index)
+            {
+                if (index < 0 || vertexColorDeltas == null || index >= vertexColorDeltas.Length) return null;
+                return GetVertexColorDeltaUnsafe(index);
+            }
+            public VertexColorDelta GetVertexColorDeltaUnsafe(int index) => vertexColorDeltas[index];
+            public int IndexOfVertexColorDelta(string deltaName, bool caseSensitive = false)
+            {
+                if (vertexColorDeltas == null) return -1;
+
+                for (int a = 0; a < vertexColorDeltas.Length; a++)
+                {
+                    var delta = vertexColorDeltas[a];
+                    if (delta == null) continue;
+
+                    if (delta.name == deltaName) return a;
+                }
+                if (caseSensitive) return -1;
+
+                deltaName = deltaName.ToLower().Trim();
+                for (int a = 0; a < vertexColorDeltas.Length; a++)
+                {
+                    var delta = vertexColorDeltas[a];
+                    if (delta == null) continue;
+
+                    if (!string.IsNullOrWhiteSpace(delta.name) && delta.name.ToLower().Trim() == deltaName) return a;
+                }
+
+                return -1;
+            }
+            public List<VertexColorDelta> GetVertexColorDeltas(List<VertexColorDelta> outputList = null)
+            {
+                if (outputList == null) outputList = new List<VertexColorDelta>();
+
+                if (vertexColorDeltas != null) outputList.AddRange(vertexColorDeltas);
+
+                return outputList;
+            }
+
+            protected static readonly List<float4> tempColorDeltas = new List<float4>();
+            [NonSerialized]
+            protected ComputeBuffer vertexColorDeltasBuffer;
+            public override ComputeBuffer VertexColorDeltasBuffer
+            {
+                get
+                {
+                    if (vertexColorDeltasBuffer == null)
+                    {
+                        if (precache_vertexColorDeltas == null || precache_vertexColorDeltas.Length <= 0)
+                        {
+                            PrecacheVertexColorDeltas();
+                        }
+
+                        if (precache_vertexColorDeltas.Length > 0)
+                        {
+                            vertexColorDeltasBuffer = new ComputeBuffer(precache_vertexColorDeltas.Length, UnsafeUtility.SizeOf(typeof(float4)), ComputeBufferType.Structured, ComputeBufferMode.Immutable);
+                            vertexColorDeltasBuffer.SetData(precache_vertexColorDeltas);
+                        }
+
+                        TrackDisposables();
+                    }
+
+                    return vertexColorDeltasBuffer;
+                }
+            }
+
+            #endregion
+
+            #region Disposal
+
+            public override void Dispose()
+            {
+                base.Dispose();
+
+                try
+                {
+                    if (vertexColorDeltasBuffer != null && vertexColorDeltasBuffer.IsValid())
+                    {
+                        vertexColorDeltasBuffer.Dispose();
+                        vertexColorDeltasBuffer = null;
+                    }
+                }
+                catch (Exception ex)
+                {
+#if UNITY_EDITOR
+                    Debug.LogException(ex);
+#endif
                 }
 
             }
@@ -4705,9 +4468,9 @@ namespace Swole.Morphing
             [SerializeField, HideInInspector]
             public BoneWeight8Float[] precache_fatGroupInfluences;
 
-            public void PrecacheMuscleGroupInfluences()
+            public bool PrecacheMuscleGroupInfluences()
             {
-                if (precache_muscleGroupInfluences != null && precache_muscleGroupInfluences.Length > 0) return;
+                if (precache_muscleGroupInfluences != null && precache_muscleGroupInfluences.Length > 0) return false;
 
                 Debug.Log("Pre-caching muscle group influences...");
 
@@ -4759,11 +4522,13 @@ namespace Swole.Morphing
 
                 tempBoneWeights.Clear();
                 tempWeights.Clear();
+
+                return true;
             }
 
-            public void PrecacheFatGroupInfluences()
+            public bool PrecacheFatGroupInfluences()
             {
-                if (precache_fatGroupInfluences != null && precache_fatGroupInfluences.Length > 0) return;
+                if (precache_fatGroupInfluences != null && precache_fatGroupInfluences.Length > 0) return false;
 
                 Debug.Log("Pre-caching fat group influences...");
 
@@ -4810,14 +4575,16 @@ namespace Swole.Morphing
 
                 tempBoneWeights.Clear();
                 tempWeights.Clear();
+
+                return true;
             }
 
             [SerializeField, HideInInspector]
             public MorphShapeVertex[] precache_meshShapeFrameDeltas;
 
-            public void PrecacheMeshShapeFrameDeltas()
+            public bool PrecacheMeshShapeFrameDeltas()
             {
-                if (precache_meshShapeFrameDeltas != null && precache_meshShapeFrameDeltas.Length > 0) return;
+                if (precache_meshShapeFrameDeltas != null && precache_meshShapeFrameDeltas.Length > 0) return false;
 
                 Debug.Log("Pre-caching mesh shape frame deltas..."); 
 
@@ -4837,14 +4604,16 @@ namespace Swole.Morphing
                 precache_meshShapeFrameDeltas = tempFrameDeltas.ToArray();
 
                 tempFrameDeltas.Clear();
+
+                return true;
             }
 
             [SerializeField, HideInInspector]
             public float4[] precache_vertexColorDeltas;
 
-            public void PrecacheVertexColorDeltas()
+            public bool PrecacheVertexColorDeltas()
             {
-                if (precache_vertexColorDeltas != null && precache_vertexColorDeltas.Length > 0) return;
+                if (precache_vertexColorDeltas != null && precache_vertexColorDeltas.Length > 0) return false;
 
                 Debug.Log("Pre-caching vertex color deltas...");
 
@@ -4863,9 +4632,11 @@ namespace Swole.Morphing
                 precache_vertexColorDeltas = tempColorDeltas.ToArray();
 
                 tempColorDeltas.Clear();
+
+                return false;
             }
 
-            public bool IsPrecached => (precache_meshShapeDeltas != null && precache_meshShapeDeltas.Length != 0)
+            public override bool IsPrecached => (precache_meshShapeDeltas != null && precache_meshShapeDeltas.Length != 0)
                 && (precache_meshShapeFrameWeights != null && precache_meshShapeFrameWeights.Length != 0)
                 && (precache_meshShapeInfos != null && precache_meshShapeInfos.Length != 0)
                 && (precache_vertexGroups != null && precache_vertexGroups.Length != 0)
@@ -4876,15 +4647,11 @@ namespace Swole.Morphing
                 && (precache_blankVariationGroupControlWeights != null && precache_blankVariationGroupControlWeights.Length != 0)
                 && (precache_variationGroupVertexWeights != null && precache_variationGroupVertexWeights.Length != 0);
 
-            public void TryPrecache()
-            {
-                if (IsPrecached) return;
-                Precache();
-            }
             private static readonly List<GroupControlWeight2> tempGroupControlWeights = new List<GroupControlWeight2>();
             private static readonly List<GroupVertexControlWeight> tempGroupVertexWeights = new List<GroupVertexControlWeight>();
-            public void Precache()
+            public override bool Precache()
             {
+                bool didPrecache = false;
                 if (precache_meshShapeDeltas == null || precache_meshShapeDeltas.Length == 0 || precache_meshShapeInfos == null || precache_meshShapeInfos.Length == 0 || precache_meshShapeFrameWeights == null || precache_meshShapeFrameWeights.Length == 0)
                 {
                     Debug.Log("Pre-caching mesh shape data...");
@@ -4934,6 +4701,8 @@ namespace Swole.Morphing
 
                     precache_meshShapeFrameWeights = tempFloats.ToArray();
                     tempFloats.Clear();
+
+                    didPrecache = true;
                 }
 
                 if (precache_vertexGroups == null || precache_vertexGroups.Length != VertexGroupCount * vertexCount)
@@ -4951,6 +4720,8 @@ namespace Swole.Morphing
                             group.InsertIntoArray(precache_vertexGroups, i * vertexCount);
                         }
                     }
+
+                    didPrecache = true;
                 }
 
                 #region Muscle Groups
@@ -4998,6 +4769,7 @@ namespace Swole.Morphing
                     tempGroupControlWeights.Clear();
                     tempGroupVertexWeights.Clear();
 
+                    didPrecache = true;
                 }
 
                 #endregion
@@ -5042,6 +4814,7 @@ namespace Swole.Morphing
                     precache_blankFatGroupControlWeights = tempGroupControlWeights.ToArray();
                     precache_fatGroupVertexWeights = tempGroupVertexWeights.ToArray();
 
+                    didPrecache = true;
                 }
 
                 #endregion
@@ -5095,25 +4868,27 @@ namespace Swole.Morphing
                     precache_variationGroupVertexWeights = tempGroupVertexWeights.ToArray();
                     tempGroupControlWeights.Clear();
                     tempGroupVertexWeights.Clear();
+
+                    didPrecache = true;
                 }
 
                 #endregion
 
                 #region Muscle Group Influences
 
-                PrecacheMuscleGroupInfluences();
+                if (PrecacheMuscleGroupInfluences()) didPrecache = true;
 
                 #endregion
 
                 #region Fat Group Influences
 
-                PrecacheFatGroupInfluences();
+                if (PrecacheFatGroupInfluences()) didPrecache = true;
 
                 #endregion
 
-                PrecacheMeshShapeFrameDeltas();
+                if (PrecacheMeshShapeFrameDeltas()) didPrecache = true;
 
-                PrecacheVertexColorDeltas();
+                if (PrecacheVertexColorDeltas()) didPrecache = true;
 
 #if !UNITY_EDITOR
                 if (meshShapes != null)
@@ -5150,6 +4925,8 @@ namespace Swole.Morphing
                 }
 #endif
 
+
+                return didPrecache;
             }
 
             #endregion
@@ -5158,303 +4935,16 @@ namespace Swole.Morphing
 
 #endregion
 
-        #region Skinned Mesh Sync
-
-        protected List<BlendShapeSync>[] standaloneShapeSyncs;
-        protected List<BlendShapeSyncLR>[] muscleMassShapeSyncs;
-        protected List<BlendShapeSyncLR>[] muscleFlexShapeSyncs;
-        protected List<BlendShapeSync>[] fatShapeSyncs;
-        protected List<BlendShapeSyncLR>[] variationShapeSyncs;
-
-        protected override void SetupSkinnedMeshSyncs()
-        {
-            if (Data == null || syncedSkinnedMeshes == null) return;
-
-            if (standaloneShapeSyncs == null || standaloneShapeSyncs.Length != Data.StandaloneShapesCount) standaloneShapeSyncs = new List<BlendShapeSync>[Data.StandaloneShapesCount];
-            if (muscleMassShapeSyncs == null || muscleMassShapeSyncs.Length != Data.MassShapeFrameCount * Data.MuscleVertexGroupCount) muscleMassShapeSyncs = new List<BlendShapeSyncLR>[Data.MassShapeFrameCount * Data.MuscleVertexGroupCount];
-            if (muscleFlexShapeSyncs == null || muscleFlexShapeSyncs.Length != Data.FlexShapeFrameCount * Data.MuscleVertexGroupCount) muscleFlexShapeSyncs = new List<BlendShapeSyncLR>[Data.FlexShapeFrameCount * Data.MuscleVertexGroupCount];
-            if (fatShapeSyncs == null || fatShapeSyncs.Length != Data.FatShapeFrameCount * Data.FatVertexGroupCount) fatShapeSyncs = new List<BlendShapeSync>[Data.FatShapeFrameCount * Data.FatVertexGroupCount];
-            if (variationShapeSyncs == null || variationShapeSyncs.Length != VariationShapesControlDataSize) variationShapeSyncs = new List<BlendShapeSyncLR>[VariationShapesControlDataSize];
-
-            for (int a = 0; a < standaloneShapeSyncs.Length; a++)
-            {
-                var list = standaloneShapeSyncs[a];
-                if (list == null) list = new List<BlendShapeSync>();
-
-                list.Clear();
-                standaloneShapeSyncs[a] = list;
-            }
-            for (int a = 0; a < muscleMassShapeSyncs.Length; a++)
-            {
-                var list = muscleMassShapeSyncs[a];
-                if (list == null) list = new List<BlendShapeSyncLR>();
-
-                list.Clear();
-                muscleMassShapeSyncs[a] = list;
-            }
-            for (int a = 0; a < muscleFlexShapeSyncs.Length; a++)
-            {
-                var list = muscleFlexShapeSyncs[a];
-                if (list == null) list = new List<BlendShapeSyncLR>();
-
-                list.Clear();
-                muscleFlexShapeSyncs[a] = list;
-            }
-            for (int a = 0; a < fatShapeSyncs.Length; a++)
-            {
-                var list = fatShapeSyncs[a];
-                if (list == null) list = new List<BlendShapeSync>();
-
-                list.Clear();
-                fatShapeSyncs[a] = list;
-            }
-            for (int a = 0; a < variationShapeSyncs.Length; a++)
-            {
-                var list = variationShapeSyncs[a];
-                if (list == null) list = new List<BlendShapeSyncLR>();
-
-                list.Clear();
-                variationShapeSyncs[a] = list;
-            }
-
-            syncedSkinnedMeshes.RemoveAll(i => i == null || i.sharedMesh == null);
-
-            var charData = SubData;
-            for (int a = 0; a < syncedSkinnedMeshes.Count; a++)
-            {
-                var mesh = syncedSkinnedMeshes[a];
-                if (mesh == null) continue;
-
-                for (int b = 0; b < charData.StandaloneShapesCount; b++)
-                {
-                    var shape = charData.GetStandaloneShape(b);
-
-                    int shapeIndex = mesh.sharedMesh.GetBlendShapeIndex(shape.name);
-                    if (shapeIndex >= 0) standaloneShapeSyncs[b].Add(new BlendShapeSync() { listenerIndex = a, listenerShapeIndex = shapeIndex });
-                }
-
-                for (int b = 0; b < charData.MuscleVertexGroupCount; b++)
-                {
-                    for (int c = 0; c < charData.MassShapeFrameCount; c++)
-                    {
-                        int shapeIndexL = mesh.sharedMesh.GetBlendShapeIndex(GetMuscleMassShapeSyncNameLeft(b, c));
-                        int shapeIndexR = mesh.sharedMesh.GetBlendShapeIndex(GetMuscleMassShapeSyncNameRight(b, c));
-
-                        if (shapeIndexL >= 0 || shapeIndexR >= 0) muscleMassShapeSyncs[(b * charData.MassShapeFrameCount) + c].Add(new BlendShapeSyncLR() { listenerIndex = a, listenerShapeIndexLeft = shapeIndexL, listenerShapeIndexRight = shapeIndexR });
-                    }
-
-                    for (int c = 0; c < charData.FlexShapeFrameCount; c++)
-                    {
-                        int shapeIndexL = mesh.sharedMesh.GetBlendShapeIndex(GetMuscleFlexShapeSyncNameLeft(b, c));
-                        int shapeIndexR = mesh.sharedMesh.GetBlendShapeIndex(GetMuscleFlexShapeSyncNameRight(b, c));
-
-                        if (shapeIndexL >= 0 || shapeIndexR >= 0) muscleFlexShapeSyncs[(b * charData.FlexShapeFrameCount) + c].Add(new BlendShapeSyncLR() { listenerIndex = a, listenerShapeIndexLeft = shapeIndexL, listenerShapeIndexRight = shapeIndexR });
-                    }
-                }
-
-                for (int b = 0; b < charData.FatVertexGroupCount; b++)
-                {
-                    for (int c = 0; c < charData.FatShapeFrameCount; c++)
-                    {
-                        int shapeIndex = mesh.sharedMesh.GetBlendShapeIndex(GetFatShapeSyncName(b, c));
-
-                        if (shapeIndex >= 0) fatShapeSyncs[(b * charData.FatShapeFrameCount) + c].Add(new BlendShapeSync() { listenerIndex = a, listenerShapeIndex = shapeIndex });
-                    }
-                }
-
-                for (int b = 0; b < charData.VariationVertexGroupCount; b++)
-                {
-                    for (int c = 0; c < charData.VariationShapesCount; c++)
-                    {
-                        int shapeIndexL = mesh.sharedMesh.GetBlendShapeIndex(GetVariationShapeSyncNameLeft(b, c));
-                        int shapeIndexR = mesh.sharedMesh.GetBlendShapeIndex(GetVariationShapeSyncNameRight(b, c));
-
-                        if (shapeIndexL >= 0 || shapeIndexR >= 0) variationShapeSyncs[(b * charData.VariationShapesCount) + c].Add(new BlendShapeSyncLR() { listenerIndex = a, listenerShapeIndexLeft = shapeIndexL, listenerShapeIndexRight = shapeIndexR });
-                    }
-                }
-            }
-        }
-
-        protected void SyncMuscleMassData(int groupIndex, float massL, float massR)
-        {
-            var frameWeights = SubData.MassShape.FrameWeights;
-
-            SyncPartialShapeData(muscleMassShapeSyncs, groupIndex, massL, massR, frameWeights.Length, frameWeights);
-        }
-        protected void SyncMuscleFlexData(int groupIndex, float flexL, float flexR)
-        {
-            var frameWeights = SubData.FlexShape.FrameWeights;
-
-            SyncPartialShapeData(muscleFlexShapeSyncs, groupIndex, flexL, flexR, frameWeights.Length, frameWeights);
-        }
-        protected void SyncFatLevel(int groupIndex, float weight)
-        {
-            var frameWeights = SubData.FatShape.FrameWeights;
-
-            SyncPartialShapeData(fatShapeSyncs, groupIndex, weight, frameWeights.Length, frameWeights);
-        }
-        protected void SyncVariationData(int groupIndex, int shapeIndex, float weightL, float weightR)
-        {
-            var list = variationShapeSyncs[GetPartialVariationShapeIndexUnsafe(groupIndex, shapeIndex)];
-            if (list != null && list.Count > 0)
-            {
-                foreach (var sync in list)
-                {
-                    var mesh = syncedSkinnedMeshes[sync.listenerIndex];
-                    if (mesh != null)
-                    {
-                        if (sync.listenerShapeIndexLeft >= 0) mesh.SetBlendShapeWeight(sync.listenerShapeIndexLeft, weightL);
-                        if (sync.listenerShapeIndexRight >= 0) mesh.SetBlendShapeWeight(sync.listenerShapeIndexRight, weightR);
-                    }
-                }
-            }
-        }
-
-        #endregion
-
         #region Disposal
 
         public override void Dispose()
         {
             base.Dispose();
-
-            StopRendering();
-
-            try
-            {
-                if (skinningMatricesBuffer != null)
-                {
-                    var materialInstances = MaterialInstances;
-                    if (materialInstances != null)
-                    {
-                        foreach (var mat in materialInstances)
-                        {
-                            if (mat == null) continue;
-                            skinningMatricesBuffer.UnbindMaterialProperty(mat, SubData.SkinningMatricesPropertyName);
-                        }
-                    }
-                }
-            }
-            catch (Exception ex)
-            {
-#if UNITY_EDITOR
-                Debug.LogException(ex);
-#endif
-            }
-
-            try
-            {
-                if (standaloneShapeControlBuffer != null)
-                {
-                    var materialInstances = MaterialInstances;
-                    if (materialInstances != null)
-                    {
-                        foreach (var mat in materialInstances)
-                        {
-                            if (mat == null) continue;
-                            standaloneShapeControlBuffer.UnbindMaterialProperty(mat, SubData.StandaloneShapesControlPropertyName);
-                        }
-                    }
-                }
-            }
-            catch (Exception ex)
-            {
-#if UNITY_EDITOR
-                Debug.LogException(ex);
-#endif
-            }
-
-            try
-            {
-                if (muscleGroupsControlBuffer != null)
-                {
-                    var materialInstances = MaterialInstances;
-                    if (materialInstances != null)
-                    {
-                        foreach (var mat in materialInstances)
-                        {
-                            if (mat == null) continue;
-                            muscleGroupsControlBuffer.UnbindMaterialProperty(mat, SubData.MuscleGroupsControlPropertyName);
-                        }
-                    }
-                }
-            }
-            catch (Exception ex)
-            {
-#if UNITY_EDITOR
-                Debug.LogException(ex);
-#endif
-            }
-
-            try
-            {
-                if (fatGroupsControlBuffer != null)
-                {
-                    var materialInstances = MaterialInstances;
-                    if (materialInstances != null)
-                    {
-                        foreach (var mat in materialInstances)
-                        {
-                            if (mat == null) continue;
-                            fatGroupsControlBuffer.UnbindMaterialProperty(mat, SubData.FatGroupsControlPropertyName);
-                        }
-                    }
-                }
-            }
-            catch (Exception ex)
-            {
-#if UNITY_EDITOR
-                Debug.LogException(ex);
-#endif
-            }
-
-            try
-            {
-                if (variationShapesControlBuffer != null)
-                {
-                    var materialInstances = MaterialInstances;
-                    if (materialInstances != null)
-                    {
-                        foreach (var mat in materialInstances)
-                        {
-                            if (mat == null) continue;
-                            variationShapesControlBuffer.UnbindMaterialProperty(mat, SubData.VariationShapesControlPropertyName);
-                        }
-                    }
-                }
-            }
-            catch (Exception ex)
-            {
-#if UNITY_EDITOR
-                Debug.LogException(ex);
-#endif
-            }
         }
 
         protected override void OnDestroyed()
         {
             base.OnDestroyed();
-
-            if (characterInstanceReference != null)
-            {
-                characterInstanceReference.RemoveChild(this);
-            }
-
-            if (children != null)
-            {
-                children.Clear();
-                children = null;
-            }
-
-            if (animatablePropertiesController != null)
-            {
-                string id = GetInstanceID().ToString();
-                for (int a = 0; a < animatablePropertiesController.PropertyCount; a++)
-                {
-                    var prop = animatablePropertiesController.GetPropertyUnsafe(a);
-                    prop.ClearListeners(id);
-                }
-            }
         }
 
         #endregion
@@ -5465,9 +4955,10 @@ namespace Swole.Morphing
         new protected InstanceV2 instance;
         public InstanceV2 Instance2 => instance;
         public MeshGroupV2 MeshGroup2 => instance == null ? null : instance.OwnerGroup;
-        public int InstanceID => instance == null ? 0 : instance.localID;
+        public override int InstanceID => instance == null ? 0 : instance.localID;
         public override int InstanceSlot => InstanceID;
-        public override bool IsInitialized => instance != null && instance.IsValid;
+        public override bool IsInitialized => HasValidInstance;
+        public override bool HasValidInstance => instance != null && instance.IsValid;
 
         public UnityEvent<InstanceV2> OnClaimInstance = new UnityEvent<InstanceV2>();
 
@@ -5480,39 +4971,18 @@ namespace Swole.Morphing
 
             OnClaimInstance?.Invoke(instance);
         }
-        protected override void CreateInstance(List<InstancedRendering.MaterialPropertyInstanceOverride<float>> floatOverrides, List<InstancedRendering.MaterialPropertyInstanceOverride<Color>> colorOverrides, List<InstancedRendering.MaterialPropertyInstanceOverride<Vector4>> vectorOverrides)
-        {
-            CreateInstance(); 
-        }
-
-        public string Name => name;
-
-        public GameObject GameObject => gameObject;
 
         protected override void OnAwake()
         {
 
-            autoCreateInstance = false;  
+            autoCreateInstance = false;
 
-            base.OnAwake();
-
-            if (data != null) 
-            { 
+            if (data != null)
+            {
                 SetData(data);
-
-                bones = Bones; // force init bones
-                skinnedBones = SkinnedBones; // force init skinned bones
             }
 
-            if (animatablePropertiesController == null) animatablePropertiesController = gameObject.GetComponent<DynamicAnimationProperties>();
-            if (animatablePropertiesController == null && transform.parent != null) animatablePropertiesController = transform.parent.GetComponent<DynamicAnimationProperties>(); 
-            SetAnimatablePropertiesController(animatablePropertiesController);
-
-            Animator = animator; // force subscribe listeners
-
-            if (characterInstanceReference != null) CharacterInstanceReference = characterInstanceReference; 
-            if (rigInstanceReference != null) RigInstanceReference = rigInstanceReference;
-            if (shapesInstanceReference != null) ShapesInstanceReference = shapesInstanceReference;  
+            base.OnAwake();
 
         }
 
@@ -5527,35 +4997,26 @@ namespace Swole.Morphing
 
         [SerializeField]
         protected CustomizableCharacterMeshV2_DATA data;
-        public void SetData(CustomizableCharacterMeshV2_DATA data) 
+        protected override bool TrySetData(ICustomizableCharacterMeshBaseData data) 
         { 
-            var prevData = this.data;
-            this.data = data;
-
-            if (Application.isPlaying)
+            if (data is not CustomizableCharacterMeshV2_DATA meshData)
             {
-                SetupSkinnedMeshSyncs();
-                if (enabled) StartRendering();
+                Debug.LogError($"Invalid data type assigned to {name}: {data.GetType().Name} (expected {typeof(CustomizableCharacterMeshV2_DATA).Name})");
+                return false;
             }
+
+            var prevData = this.data;
+            this.data = meshData;
+
+            return true;
         }
         public CustomizableCharacterMeshV2_DATA Data => data;
         public SerializedData SubData => data == null ? null : data.SerializedData;
+        public override ICustomizableCharacterMeshBaseData CustomizationData => SubData;
 
+        public override int DeltasStartIndex => SubData.vertexCount * instance.localID;
 
-        public bool TryGetVertices(int lod, out NativeArray<float3> array) => data.TryGetVertices(lod, out array);
-        public bool TryGetColors(int lod, out NativeArray<float4> array) => data.TryGetColors(lod, out array);
-        public bool TryGetTriangles(int lod, out NativeArray<int> array) => data.TryGetTriangles(lod, out array);
-        public bool TryGetBoneWeights(int lod, out NativeArray<BoneWeight8> array) => data.TryGetBoneWeights(lod, out array);
-
-        public bool TryGetUV0(int lod, out NativeArray<float4> array) => data.TryGetUV0(lod, out array);
-        public bool TryGetUV1(int lod, out NativeArray<float4> array) => data.TryGetUV1(lod, out array);
-        public bool TryGetUV2(int lod, out NativeArray<float4> array) => data.TryGetUV2(lod, out array);
-        public bool TryGetUV3(int lod, out NativeArray<float4> array) => data.TryGetUV3(lod, out array);
-        public bool TryGetUV(int lod, UVChannelURP channel, out NativeArray<float4> array) => data.TryGetUV(lod, channel, out array);
-
-        public int DeltasStartIndex => SubData.vertexCount * instance.localID;
-
-        private bool PrepInWorldDataFetch(int lod, int vertexIndex, out int topVertexIndex, out MuscleData muscleData, out float flexFactor, out MeshVertexDelta delta, out MeshShape flexShape, out float4x4 skinningMatrix) 
+        protected override bool PrepInWorldDataFetch(int lod, int vertexIndex, out int topVertexIndex, out MuscleData muscleData, out float flexFactor, out MeshVertexDelta delta, out MeshShape flexShape, out float4x4 skinningMatrix) 
         {
             delta = default;
             flexShape = null;
@@ -5603,7 +5064,7 @@ namespace Swole.Morphing
             return true;
         }
 
-        public float4x4 GetVertexLocalToWorld(int lod, int vertexIndex)
+        public override float4x4 GetVertexLocalToWorld(int lod, int vertexIndex)
         {
             var subData = SubData;
             if (!subData.TryGetBoneWeights(lod, out var boneWeightsArray)) return float4x4.identity;
@@ -5625,8 +5086,7 @@ namespace Swole.Morphing
             return float4x4.identity;
         }
 
-        public float3 GetVertexInWorld(int lod, int vertexIndex) => GetVertexInWorld(lod, vertexIndex, out _, out _);
-        public float3 GetVertexInWorld(int lod, int vertexIndex, out float4x4 skinningMatrix, out float3 localDelta)
+        public override float3 GetVertexInWorld(int lod, int vertexIndex, out float4x4 skinningMatrix, out float3 localDelta)
         {
             skinningMatrix = float4x4.identity;
             localDelta = default;
@@ -5642,8 +5102,8 @@ namespace Swole.Morphing
 
             return math.transform(skinningMatrix, vertexArray[vertexIndex] + localDelta);
         }
-        public float3 GetNormalInWorld(int lod, int vertexIndex) => GetNormalInWorld(lod, vertexIndex, out _, out _);
-        public float3 GetNormalInWorld(int lod, int vertexIndex, out float4x4 skinningMatrix, out float3 localDelta)
+
+        public override float3 GetNormalInWorld(int lod, int vertexIndex, out float4x4 skinningMatrix, out float3 localDelta)
         {
             skinningMatrix = float4x4.identity;
             localDelta = default;
@@ -5659,8 +5119,8 @@ namespace Swole.Morphing
 
             return math.normalize(math.rotate(skinningMatrix, normalsArray[vertexIndex] + localDelta)); 
         }
-        public float4 GetTangentInWorld(int lod, int vertexIndex) => GetTangentInWorld(lod, vertexIndex, out _, out _);
-        public float4 GetTangentInWorld(int lod, int vertexIndex, out float4x4 skinningMatrix, out float3 localDelta)
+
+        public override float4 GetTangentInWorld(int lod, int vertexIndex, out float4x4 skinningMatrix, out float3 localDelta)
         {
             skinningMatrix = float4x4.identity;
             localDelta = default;
@@ -5678,8 +5138,8 @@ namespace Swole.Morphing
             tangent.xyz = math.normalize(math.rotate(skinningMatrix, tangent.xyz + localDelta)); 
             return tangent;
         }
-        public void GetVertexInWorld(int lod, int vertexIndex, out float3 pos, out float3 normal, out float4 tangent) => GetVertexInWorld(lod, vertexIndex, out pos, out normal, out tangent, out _, out _, out _, out _);
-        public void GetVertexInWorld(int lod, int vertexIndex, out float3 pos, out float3 normal, out float4 tangent, out float4x4 skinningMatrix, out float3 localDeltaPos, out float3 localDeltaNorm, out float3 localDeltaTan)
+
+        public override void GetVertexInWorld(int lod, int vertexIndex, out float3 pos, out float3 normal, out float4 tangent, out float4x4 skinningMatrix, out float3 localDeltaPos, out float3 localDeltaNorm, out float3 localDeltaTan)
         {
             skinningMatrix = float4x4.identity;
             localDeltaPos = default;
@@ -5713,7 +5173,7 @@ namespace Swole.Morphing
             tangent.xyz = math.normalize(math.rotate(skinningMatrix, tangent.xyz + localDeltaTan));
         }
 
-        public List<float3> GetMuscleGroupsAffecting(int lod, int vertexIndex, List<float3> list = null)
+        public override List<float3> GetMuscleGroupsAffecting(int lod, int vertexIndex, List<float3> list = null)
         {
             if (list == null) list = new List<float3>();
 
@@ -5740,7 +5200,7 @@ namespace Swole.Morphing
 
             return list;
         }
-        public List<float3> GetFatGroupsAffecting(int lod, int vertexIndex, List<float3> list = null)
+        public override List<float3> GetFatGroupsAffecting(int lod, int vertexIndex, List<float3> list = null)
         {
             if (list == null) list = new List<float3>();
 
@@ -5767,7 +5227,7 @@ namespace Swole.Morphing
 
             return list;
         }
-        public List<float3> GetVariationGroupsAffecting(int lod, int vertexIndex, List<float3> list = null)
+        public override List<float3> GetVariationGroupsAffecting(int lod, int vertexIndex, List<float3> list = null)
         {
             if (list == null) list = new List<float3>();
 
@@ -5795,47 +5255,6 @@ namespace Swole.Morphing
             return list;
         }
 
-
-        public override InstanceableMeshDataBase MeshData => null;
-        public override InstancedMeshGroup MeshGroup => null;
-
-        public int IndexOfStandaloneShape(string name, bool caseSensitive = false)
-        {
-            if (SubData == null) return -1;
-            return data.SerializedData.IndexOfStandaloneShape(name, caseSensitive);
-        }
-
-        public int IndexOfVertexGroup(string name, bool caseSensitive = false)
-        {
-            if (SubData == null) return -1;
-            return data.SerializedData.IndexOfVertexGroup(name, caseSensitive);
-        }
-        public int IndexOfStandaloneVertexGroup(string name, bool caseSensitive = false)
-        {
-            if (SubData == null) return -1;
-            return data.SerializedData.IndexOfStandaloneVertexGroup(name, caseSensitive);
-        }
-        public int IndexOfMuscleGroup(string name, bool caseSensitive = false)
-        {
-            if (SubData == null) return -1;
-            return data.SerializedData.IndexOfMuscleGroup(name, caseSensitive);
-        }
-        public int IndexOfFatGroup(string name, bool caseSensitive = false)
-        {
-            if (SubData == null) return -1;
-            return data.SerializedData.IndexOfFatGroup(name, caseSensitive);
-        }
-        public int IndexOfVariationGroup(string name, bool caseSensitive = false)
-        {
-            if (SubData == null) return -1;
-            return data.SerializedData.IndexOfVariationGroup(name, caseSensitive);
-        }
-        public int IndexOfVariationShape(string name, bool caseSensitive = false)
-        {
-            if (SubData == null) return -1;
-            return data.SerializedData.IndexOfVariationShape(name, caseSensitive);
-        }
-
         public VertexGroup GetVertexGroup(int index)
         {
             if (SubData == null) return null;
@@ -5850,84 +5269,9 @@ namespace Swole.Morphing
 
         #endregion
 
-        #region Children
-
-        [Serializable, Flags]
-        public enum ChildType
-        {
-            None = 0, Mesh = 1, Shapes = 2, Rig = 4
-        }
-
-        public struct Child
-        {
-            public ChildType type;
-            public CustomizableCharacterMeshV2 instance;
-
-            public bool IsValid => instance != null;
-        }
-
-        protected List<Child> children;
-        public bool IsParentOf(CustomizableCharacterMeshV2 child) => IsParentOf(child, out _);
-        public bool IsParentOf(CustomizableCharacterMeshV2 child, out int index)
-        {
-            index = -1;
-            if (children == null) return false;
-
-            for(int a = 0; a < children.Count; a++)
-            {
-                var child_ = children[a];
-                if (ReferenceEquals(child_.instance, child)) 
-                { 
-                    index = a;
-                    return true; 
-                }
-            }
-
-            return false;
-        }
-        public void AddChild(CustomizableCharacterMeshV2 child, ChildType type)
-        {
-            if (child == null) return;
-
-            if (children == null) children = new List<Child>();
-            if (IsParentOf(child, out var childIndex))
-            {
-                var c = children[childIndex];
-                c.type |= type;
-                children[childIndex] = c;
-            } 
-            else
-            {
-                children.Add(new Child() { instance = child, type = type });
-            }
-        }
-        public void RemoveChild(CustomizableCharacterMeshV2 child, ChildType type)
-        {
-            if (children == null) return;
-
-            if (IsParentOf(child, out var childIndex))
-            {
-                var c = children[childIndex];
-                c.type &= ~type;
-                children[childIndex] = c;
-                if (c.type == ChildType.None) children.RemoveAt(childIndex);
-            }
-        }
-        public void RemoveChild(CustomizableCharacterMeshV2 child)
-        {
-            if (children == null) return;
-
-            if (IsParentOf(child, out var childIndex))
-            {
-                children.RemoveAt(childIndex);
-            }
-        }
-
-        #endregion
-
         #region Material Handling
 
-        public Material[] MaterialInstances
+        public override Material[] MaterialInstances
         {
             get
             {
@@ -5937,369 +5281,79 @@ namespace Swole.Morphing
             }
         }
 
-        protected Dictionary<string, float> floatOverrides = new Dictionary<string, float>();
-        protected Dictionary<string, int> intOverrides = new Dictionary<string, int>();
-        protected Dictionary<string, Vector4> vectorOverrides = new Dictionary<string, Vector4>();
-        protected Dictionary<string, Color> colorOverrides = new Dictionary<string, Color>();
-
-        protected void ApplyCachedMaterialPropertyOverrides()
-        {
-            var materialInstances = MaterialInstances;
-            if (materialInstances == null) return;
-
-            if (floatOverrides != null)
-            {
-                foreach(var entry in floatOverrides)
-                {
-                    foreach (var mat in materialInstances)
-                    {
-                        if (mat != null) mat.SetFloat(entry.Key, entry.Value);
-                    }
-                }
-            }
-            if (intOverrides != null)
-            {
-                foreach (var entry in intOverrides)
-                {
-                    foreach (var mat in materialInstances)
-                    {
-                        if (mat != null) mat.SetInteger(entry.Key, entry.Value);
-                    }
-                }
-            }
-            if (vectorOverrides != null)
-            {
-                foreach (var entry in vectorOverrides)
-                {
-                    foreach (var mat in materialInstances)
-                    {
-                        if (mat != null) mat.SetVector(entry.Key, entry.Value);
-                    }
-                }
-            }
-            if (colorOverrides != null)
-            {
-                foreach (var entry in colorOverrides)
-                {
-                    foreach (var mat in materialInstances)
-                    {
-                        if (mat != null) mat.SetColor(entry.Key, entry.Value);
-                    }
-                }
-            }
-        }
-
-        public virtual void SetFloatOverride(string property, float value, bool updateMaterials = true)
-        {
-            floatOverrides[property] = value;
-
-            var materialInstances = MaterialInstances;
-            if (materialInstances == null) return;
-            
-            foreach(var mat in materialInstances)
-            {
-                if (mat != null) mat.SetFloat(property, value);
-            }
-        }
-        public virtual void SetFloatOverrideWithCheck(string property, float value, bool updateMaterials = true)
-        {
-            floatOverrides[property] = value;
-
-            var materialInstances = MaterialInstances;
-            if (materialInstances == null) return;
-
-            foreach (var mat in materialInstances)
-            {
-                if (mat != null && mat.HasProperty(property)) mat.SetFloat(property, value);
-            }
-        }
-
-        public virtual void SetIntegerOverride(string property, int value, bool updateMaterials = true)
-        {
-            intOverrides[property] = value;
-
-            var materialInstances = MaterialInstances;
-            if (materialInstances == null) return;
-
-            foreach (var mat in materialInstances)
-            {
-                if (mat != null) mat.SetInteger(property, value);
-            }
-        }
-        public virtual void SetIntegerOverrideWithCheck(string property, int value, bool updateMaterials = true)
-        {
-            intOverrides[property] = value;
-
-            var materialInstances = MaterialInstances;
-            if (materialInstances == null) return;
-
-            foreach (var mat in materialInstances)
-            {
-                if (mat != null && mat.HasProperty(property)) mat.SetInteger(property, value);
-            }
-        }
-
-        public void SetVectorOverride(string propertyName, Vector4 vector, bool updateMaterials = true)
-        {
-            vectorOverrides[propertyName] = vector;
-
-            var materialInstances = MaterialInstances;
-            if (materialInstances == null) return;
-
-            foreach (var mat in materialInstances)
-            {
-                if (mat != null) mat.SetVector(propertyName, vector);
-            }
-        }
-        public void SetVectorOverrideWithCheck(string propertyName, Vector4 vector, bool updateMaterials = true)
-        {
-            vectorOverrides[propertyName] = vector;
-
-            var materialInstances = MaterialInstances;
-            if (materialInstances == null) return;
-
-            foreach (var mat in materialInstances)
-            {
-                if (mat != null && mat.HasProperty(propertyName)) mat.SetVector(propertyName, vector);
-            }
-        }
-
-        public void SetColorOverride(string propertyName, Color color, bool updateMaterials = true)
-        {
-            colorOverrides[propertyName] = color;
-
-            var materialInstances = MaterialInstances;
-            if (materialInstances == null) return;
-
-            foreach (var mat in materialInstances)
-            {
-                if (mat != null) mat.SetColor(propertyName, color);
-            }
-        }
-        public void SetColorOverrideWithCheck(string propertyName, Color color, bool updateMaterials = true)
-        {
-            colorOverrides[propertyName] = color;
-
-            var materialInstances = MaterialInstances;
-            if (materialInstances == null) return;
-
-            foreach (var mat in materialInstances)
-            {
-                if (mat != null && mat.HasProperty(propertyName)) mat.SetColor(propertyName, color);
-            }
-        }
-
         #endregion
 
         #region Rendering
 
-        protected struct DefaultRenderedMesh
-        {
-            public MeshFilter meshFilter;
-            public MeshRenderer meshRenderer;
+        public override bool CanRender => instance != null && instance.IsValid;
 
-            public MeshFilter[] additionalFilters;
-            public MeshRenderer[] additionalRenderers;
-        }
-
-        protected LODGroup lodGroup;
-
-        protected DefaultRenderedMesh[] defaultRenderedMeshes;
-
-        public bool RenderingIsInitialized() => lodGroup != null && defaultRenderedMeshes != null;
-        public bool IsRendering() => RenderingIsInitialized() && CanRender;
-        public override bool IsRendering(int index) => IsRendering();
-        public bool CanRender => instance != null && instance.IsValid;
-
-        public void InitializeRendering()
-        {
-
-            if (RenderingIsInitialized() || !CanRender) return;
-
+        protected override Renderer[] CreateRenderersForLOD(int lod, MeshLOD meshLOD, Transform renderersRoot, DefaultRenderedMesh defaultRenderedMesh)
+        {          
             var meshData = SubData;
             var bounds = new Bounds(meshData.boundsCenter, meshData.boundsExtents * 2f);
 
-            GameObject lodObj = new GameObject("renderers");
-            lodObj.layer = gameObject.layer;
-
-
-            var lodRootTransform = lodObj.transform;
-            lodRootTransform.SetParent(transform, false);
-            lodRootTransform.SetLocalPositionAndRotation(Vector3.zero, Quaternion.identity);
-            lodRootTransform.localScale = Vector3.one;
-
-            lodGroup = lodObj.AddComponent<LODGroup>();
-            defaultRenderedMeshes = new DefaultRenderedMesh[meshData.LevelsOfDetail];
-            var lods = new LOD[meshData.LevelsOfDetail];
-            for (int a = 0; a < meshData.LevelsOfDetail; a++)
+            Renderer[] renderers = null;
+            if (meshData.renderSets == null || meshData.renderSets.Length <= 1)
             {
-                var meshLOD = meshData.GetLODUnsafe(a);
-                var defaultRenderedMesh = new DefaultRenderedMesh();
+                defaultRenderedMesh.meshFilter = renderersRoot.gameObject.AddComponent<MeshFilter>();
+                defaultRenderedMesh.meshFilter.sharedMesh = meshLOD.mesh;
+                defaultRenderedMesh.meshRenderer = renderersRoot.gameObject.AddComponent<MeshRenderer>();
+                defaultRenderedMesh.meshRenderer.sharedMaterials = MaterialInstances;
+                defaultRenderedMesh.meshRenderer.localBounds = bounds;
 
-                GameObject rendererObj = new GameObject($"LOD_{a}");
-                rendererObj.layer = gameObject.layer;
-                rendererObj.transform.SetParent(lodRootTransform, false);
+                renderers = new Renderer[] { defaultRenderedMesh.meshRenderer };
+            }
+            else // render sets render the same mesh instance using different materials (useful for toon outline materials)
+            {
+                var materials = MaterialInstances;
 
-                Renderer[] renderers = null;
-                if (meshData.renderSets == null || meshData.renderSets.Length <= 1)
+                renderers = new Renderer[meshData.renderSets.Length];
+
+                MeshFilter[] additionalFilters = new MeshFilter[meshData.renderSets.Length - 1];
+                MeshRenderer[] additionalRenderers = new MeshRenderer[additionalFilters.Length];
+                for (int b = 0; b < meshData.renderSets.Length; b++)
                 {
-                    defaultRenderedMesh.meshFilter = rendererObj.AddComponent<MeshFilter>();
-                    defaultRenderedMesh.meshFilter.sharedMesh = meshLOD.mesh;
-                    defaultRenderedMesh.meshRenderer = rendererObj.AddComponent<MeshRenderer>();
-                    defaultRenderedMesh.meshRenderer.sharedMaterials = MaterialInstances;
-                    defaultRenderedMesh.meshRenderer.localBounds = bounds;
+                    var renderSet = meshData.renderSets[b];
 
-                    renderers = new Renderer[] { defaultRenderedMesh.meshRenderer };
-                }
-                else // render sets render the same mesh instance using different materials (useful for toon outline materials)
-                {
-                    var materials = MaterialInstances;
+                    var renderSetObj = new GameObject($"set_{b}");
+                    renderSetObj.layer = gameObject.layer;
+                    renderSetObj.transform.SetParent(renderersRoot.transform, false);
 
-                    renderers = new Renderer[meshData.renderSets.Length];
-
-                    MeshFilter[] additionalFilters = new MeshFilter[meshData.renderSets.Length - 1];
-                    MeshRenderer[] additionalRenderers = new MeshRenderer[additionalFilters.Length];
-                    for (int b = 0; b < meshData.renderSets.Length; b++)
+                    MeshFilter meshFilter;
+                    MeshRenderer meshRenderer;
+                    if (b == 0)
                     {
-                        var renderSet = meshData.renderSets[b];
+                        defaultRenderedMesh.meshFilter = meshFilter = renderSetObj.AddComponent<MeshFilter>();
+                        defaultRenderedMesh.meshRenderer = meshRenderer = renderSetObj.AddComponent<MeshRenderer>();
+                    }
+                    else
+                    {
+                        int ind = b - 1;
 
-                        var renderSetObj = new GameObject($"set_{b}");
-                        renderSetObj.layer = gameObject.layer;
-                        renderSetObj.transform.SetParent(rendererObj.transform, false);
-
-                        MeshFilter meshFilter;
-                        MeshRenderer meshRenderer;
-                        if (b == 0)
-                        {
-                            defaultRenderedMesh.meshFilter = meshFilter = renderSetObj.AddComponent<MeshFilter>();
-                            defaultRenderedMesh.meshRenderer = meshRenderer = renderSetObj.AddComponent<MeshRenderer>();
-                        } 
-                        else
-                        {
-                            int ind = b - 1;
-
-                            additionalFilters[ind] = meshFilter = renderSetObj.AddComponent<MeshFilter>();
-                            additionalRenderers[ind] = meshRenderer = renderSetObj.AddComponent<MeshRenderer>();
-                        }
-
-                        meshFilter.sharedMesh = meshLOD.mesh;
-                        var mats = new Material[renderSet.materialCount];
-                        for (int c = 0; c < renderSet.materialCount; c++) mats[c] = materials[renderSet.materialIndexStart + c];
-                        meshRenderer.sharedMaterials = mats;
-                        meshRenderer.localBounds = bounds; 
-
-                        renderers[b] = meshRenderer;
+                        additionalFilters[ind] = meshFilter = renderSetObj.AddComponent<MeshFilter>();
+                        additionalRenderers[ind] = meshRenderer = renderSetObj.AddComponent<MeshRenderer>();
                     }
 
-                    defaultRenderedMesh.additionalFilters = additionalFilters;
-                    defaultRenderedMesh.additionalRenderers = additionalRenderers;
+                    meshFilter.sharedMesh = meshLOD.mesh;
+                    var mats = new Material[renderSet.materialCount];
+                    for (int c = 0; c < renderSet.materialCount; c++) mats[c] = materials[renderSet.materialIndexStart + c];
+                    meshRenderer.sharedMaterials = mats;
+                    meshRenderer.localBounds = bounds;
+
+                    renderers[b] = meshRenderer;
                 }
 
-                var lod = new LOD()
-                {
-                    screenRelativeTransitionHeight = meshLOD.screenRelativeTransitionHeight,
-                    renderers = renderers
-                };
-
-                defaultRenderedMeshes[a] = defaultRenderedMesh; 
-                lods[a] = lod;
+                defaultRenderedMesh.additionalFilters = additionalFilters;
+                defaultRenderedMesh.additionalRenderers = additionalRenderers;
             }
 
-            lodGroup.SetLODs(lods);
-            lodGroup.RecalculateBounds();
-
-            InitBuffers();
+            return renderers;
         }
-        protected virtual void StartRendering()
+
+        protected override void StopRendering()
         {
-            if (Data == null) return;
-
-            if (lodGroup != null) lodGroup.gameObject.SetActive(true);
-
-            CreateInstance();
-            InitializeRendering();
-
-            var materialInstances = MaterialInstances;
-            BindSkinningMatricesBufferToMaterials(materialInstances);
-            BindStandaloneShapesControlBufferToMaterials(materialInstances);
-            BindMuscleGroupsControlBufferToMaterials(materialInstances);
-            BindFatGroupsControlBufferToMaterials(materialInstances);
-            BindVariationGroupsControlBufferToMaterials(materialInstances);
-
-            ApplyCachedMaterialPropertyOverrides();
-            ApplyIDsToMaterials();
-
-            if (defaultRenderedMeshes != null)
-            {
-                var renderSets = SubData.renderSets;
-                if (renderSets == null || renderSets.Length <= 1)
-                {
-                    foreach (var renderedMesh in defaultRenderedMeshes)
-                    {
-                        if (renderedMesh.meshRenderer != null) renderedMesh.meshRenderer.sharedMaterials = materialInstances;
-                    }
-                } 
-                else
-                {
-                    foreach (var renderedMesh in defaultRenderedMeshes)
-                    {
-                        for (int i = 0; i < renderSets.Length; i++)
-                        {
-                            var renderSet = renderSets[i];
-
-                            MeshRenderer renderer = null;
-                            if (i == 0)
-                            {
-                                renderer = renderedMesh.meshRenderer;
-                            } 
-                            else
-                            {
-                                renderer = renderedMesh.additionalRenderers[i - 1];
-                            }
-
-                            if (renderer != null)
-                            {
-                                var mats = renderer.sharedMaterials;
-                                if (mats == null || mats.Length != renderSet.materialCount)
-                                {
-                                    mats = new Material[renderSet.materialCount];
-                                }
-                                for (int j = 0; j < renderSet.materialCount; j++) mats[j] = materialInstances[renderSet.materialIndexStart + j]; 
-
-                                renderer.sharedMaterials = mats;
-                            }
-                        }
-                    }
-                }
-            }
-        }
-        protected virtual void StopRendering()
-        {
-            var materialInstances = MaterialInstances;
-            UnbindSkinningMatricesBufferFromMaterials(materialInstances);
-            UnbindStandaloneShapesControlBufferFromMaterials(materialInstances);
-            UnbindMuscleGroupsControlBufferFromMaterials(materialInstances);
-            UnbindFatGroupsControlBufferFromMaterials(materialInstances);
-            UnbindVariationGroupsControlBufferFromMaterials(materialInstances);
-
-            if (lodGroup != null) lodGroup.gameObject.SetActive(false); 
+            base.StopRendering();
             if (instance != null) Updater.Unregister(ref instance);
-        }
-
-        public void ApplyIDsToMaterials()
-        {
-            var meshData = SubData;
-            var materialInstances = MaterialInstances;
-            if (meshData != null && materialInstances != null)
-            {
-                SetFloatOverride(meshData.LocalInstanceIDPropertyName, InstanceID);
-
-                SetFloatOverride(meshData.RigInstanceIDPropertyName, RigInstanceID);
-
-                SetFloatOverride(meshData.ShapesInstanceIDPropertyName, ShapesInstanceID);
-
-                SetFloatOverride(meshData.CharacterInstanceIDPropertyName, CharacterInstanceID);
-            }
         }
 
         public override void SetVisible(bool visible)
@@ -6319,184 +5373,33 @@ namespace Swole.Morphing
 
         protected override void OnEnable()
         {
-            StartRendering(); 
+            base.OnEnable();
         }
         protected override void OnDisable()
         {
-            StopRendering();
-        }
-
-        #endregion
-
-        #region Body Settings
-
-        [NonSerialized]
-        protected float bustSize;
-        public float BustSize
-        {
-            get => bustSize;
-            set => SetBustSize(value);
-        }
-        [NonSerialized]
-        protected float bustShape;
-        public float BustShape
-        {
-            get => bustShape;
-            set => SetBustSize(value);
-        }
-        //[NonSerialized]
-        //protected bool hasBustSizeProperty;
-        public void SetBustSize(float value)
-        {
-            float prevValue = bustSize;
-            bustSize = value;
-
-            //if (SubData.bustSizeShape >= 0) SetStandaloneShapeWeightUnsafe(SubData.bustSizeShape, value);
-
-            if (instance != null && instance.IsValid && prevValue != bustSize)
-            {
-                instance.SetBustSizeUnsafe(new float2(bustSize, bustShape));
-                instance.MarkForPhysiqueUpdateUnsafe();
-            }
-
-            //if (hasBustSizeProperty)
-            //{
-                SetFloatOverrideWithCheck(SubData.BustMixPropertyName, Mathf.Clamp01(value), true);
-            //}
-
-            if (children != null)
-            {
-                foreach (var child in children) if (child.IsValid && child.type.HasFlag(ChildType.Mesh)) child.instance.SetBustSize(value);
-            }
-        }
-        public void SetBustShape(float value)
-        {
-            float prevValue = bustShape;
-            bustShape = value;
-
-            if (instance != null && instance.IsValid && prevValue != bustShape)
-            {
-                instance.SetBustSizeUnsafe(new float2(bustSize, bustShape));
-                instance.MarkForPhysiqueUpdateUnsafe();
-            }
-
-            if (children != null)
-            {
-                foreach (var child in children) if (child.IsValid && child.type.HasFlag(ChildType.Mesh)) child.instance.SetBustShape(value);
-            }
-        }
-        [NonSerialized]
-        protected bool hideNipples;
-        public bool HideNipples
-        {
-            get => hideNipples;
-            set => SetHideNipples(value);
-        }
-        [NonSerialized]
-        protected bool hasHideNipplesProperty;
-        public void SetHideNipples(bool value)
-        {
-            hideNipples = value;
-
-            if (hasHideNipplesProperty)
-            {
-                SetFloatOverride(SubData.HideNipplesPropertyName, hideNipples ? 1 : 0, true);
-
-                if (children != null)
-                {
-                    foreach (var child in children) if (child.IsValid && child.type.HasFlag(ChildType.Mesh)) child.instance.SetHideNipples(value);
-                }
-            }
-        }
-        [NonSerialized]
-        protected bool hideGenitals;
-        public bool HideGenitals
-        {
-            get => hideGenitals;
-            set => SetHideGenitals(value);
-        }
-        [NonSerialized]
-        protected bool hasHideGenitalsProperty;
-        public void SetHideGenitals(bool value)
-        {
-            hideGenitals = value;
-
-            if (hasHideGenitalsProperty)
-            {
-                SetFloatOverride(SubData.HideGenitalsPropertyName, hideGenitals ? 1 : 0, true);
-
-                if (children != null)
-                {
-                    foreach (var child in children) if (child.IsValid && child.type.HasFlag(ChildType.Mesh)) child.instance.SetHideGenitals(value);
-                }
-            }
+            base.OnDisable();
         }
 
         #endregion
 
         #region Customization Shapes & Groups
 
-        public void MarkForPhysiqueUpdate()
+        public override void MarkForPhysiqueUpdate()
         {
             if (instance == null || !instance.IsValid) return;
             instance.MarkForPhysiqueUpdateUnsafe();
         }
 
-        public void MarkForVariationUpdate()
+        public override void MarkForVariationUpdate()
         {
             if (instance == null || !instance.IsValid) return;
             instance.MarkForVariationUpdateUnsafe();
         }
 
-        public int FirstStandaloneShapesControlIndex => CharacterInstanceID * SubData.StandaloneShapesCount;
-        public float GetStandaloneShapeWeightUnsafe(int shapeIndex) => StandaloneShapeControlBuffer[FirstStandaloneShapesControlIndex + shapeIndex];//StandaloneShapesControl[shapeIndex];
-        public float GetStandaloneShapeWeight(int shapeIndex)
+        public override JobHandle MeshUpdateJobHandle => instance == null ? default : instance.OwnerGroup.ActiveJob;
+
+        protected override void OnSetMuscleData(int groupIndex, MuscleDataLR data)
         {
-            if (instance == null || shapeIndex < 0 || shapeIndex >= SubData.StandaloneShapesCount) return 0;
-            return GetStandaloneShapeWeightUnsafe(shapeIndex);
-        }
-        public void SetStandaloneShapeWeightUnsafe(int shapeIndex, float weight)
-        {
-            if (shapesInstanceReference != null) return;
-            StandaloneShapeControlBuffer[FirstStandaloneShapesControlIndex + shapeIndex] = weight;
-
-            SyncStandaloneShape(standaloneShapeSyncs, shapeIndex, weight);
-        }
-        public void SetStandaloneShapeWeight(int shapeIndex, float weight)
-        {
-            if (instance == null || shapeIndex < 0 || shapeIndex >= SubData.StandaloneShapesCount) return;
-            SetStandaloneShapeWeightUnsafe(shapeIndex, weight);
-        }
-
-        public int FirstMuscleGroupsControlIndex => CharacterInstanceID * SubData.MuscleVertexGroupCount;
-        public MuscleDataLR GetMuscleDataUnsafe(int groupIndex) => MuscleGroupsControlBuffer[FirstMuscleGroupsControlIndex + groupIndex];//MuscleGroupsControl[groupIndex];
-        public MuscleDataLR GetMuscleData(int groupIndex)
-        {
-            if (instance == null || groupIndex < 0 || groupIndex >= SubData.MuscleVertexGroupCount) return default;
-            return GetMuscleDataUnsafe(groupIndex);
-        }
-        public UnityEvent<int> OnMuscleDataChanged;
-        public void SetMuscleDataUnsafe(int groupIndex, MuscleDataLR data)
-        {
-            //var array = MuscleGroupsControl;
-            //array[groupIndex] = data;
-
-            if (!IsInitialized) return;
-            data.valuesLeft.flex = math.max(data.valuesLeft.flex, -0.15f);
-            data.valuesRight.flex = math.max(data.valuesRight.flex, -0.15f);
-
-            if (characterInstanceReference == null)
-            {
-                int controlIndex = FirstMuscleGroupsControlIndex + groupIndex;
-                var prevData = MuscleGroupsControlBuffer[controlIndex];
-                MuscleGroupsControlBuffer[controlIndex] = data;
-            }
-
-            SyncMuscleMassData(groupIndex, data.valuesLeft.mass, data.valuesRight.mass);
-            SyncMuscleFlexData(groupIndex, data.valuesLeft.flex, data.valuesRight.flex);
-
-            //dirtyFlag_muscleGroupsControl = true;
-
             if (instance != null && instance.IsValid)
             {
                 var prevData = instance.GetMuscleGroupWeightUnsafe(groupIndex);
@@ -6507,72 +5410,12 @@ namespace Swole.Morphing
                 }
 
                 if (prevData.x != data.valuesLeft.mass) NotifyDefaultMuscleGroupListeners(groupIndex * 2);
-                if (prevData.y != data.valuesLeft.mass) NotifyDefaultMuscleGroupListeners((groupIndex * 2) + 1); 
-            }
-
-            OnMuscleDataChanged?.Invoke(groupIndex);
-
-            if (children != null)
-            {
-                foreach (var child in children) if (child.IsValid && child.type.HasFlag(ChildType.Mesh))
-                    {
-                        child.instance.SetMuscleDataUnsafe(groupIndex, data);
-                    }
+                if (prevData.y != data.valuesLeft.mass) NotifyDefaultMuscleGroupListeners((groupIndex * 2) + 1);
             }
         }
-        public void SetMuscleData(int groupIndex, MuscleDataLR data)
+
+        protected override void OnSetFatLevel(int groupIndex, float level)
         {
-            if (instance == null || groupIndex < 0 || groupIndex >= SubData.MuscleVertexGroupCount) return;
-            SetMuscleDataUnsafe(groupIndex, data);
-        }
-        public int IndexOfMuscleGroup(string groupName) => Data == null ? -1 : SubData.IndexOfMuscleGroup(groupName);
-
-
-        public MuscleData GetMuscleDataForVertex(int vertexIndex)
-        {
-            MuscleData data = default;
-
-            var subData = SubData;
-            if (subData.muscleGroups.y >= subData.muscleGroups.x) 
-            {
-                float midlineWeight = subData.precache_vertexGroups[(subData.midlineVertexGroup * subData.vertexCount) + vertexIndex];
-                float2 weightLeftRight = math.lerp(math.select(new float2(1f, 0f), new float2(0f, 1f), subData.leftRightFlags[vertexIndex]), new float2(0.5f, 0.5f), midlineWeight);
-                for (int i = subData.muscleGroups.x; i <= subData.muscleGroups.y; i++)
-                {
-                    int muscleGroupIndex = i - subData.muscleGroups.x;
-                    int controlIndex = FirstMuscleGroupsControlIndex + muscleGroupIndex;
-                    var dataLR = MuscleGroupsControlBuffer[controlIndex];
-
-                    data = data + (dataLR.valuesLeft * weightLeftRight.x) + (dataLR.valuesRight * weightLeftRight.y); 
-                }
-            }
-
-            return data;
-        }
-
-
-        public int FirstFatGroupsControlIndex => CharacterInstanceID * SubData.FatVertexGroupCount;
-        public float GetFatLevelUnsafe(int groupIndex) => FatGroupsControlBuffer[FirstFatGroupsControlIndex + groupIndex].x;
-        public float GetFatLevel(int groupIndex)
-        {
-            if (instance == null || groupIndex < 0 || groupIndex >= SubData.FatVertexGroupCount) return 0f;  
-            return GetFatLevelUnsafe(groupIndex);
-        }
-        public UnityEvent<int> OnFatDataChanged;
-        public void SetFatLevelUnsafe(int groupIndex, float level)
-        {
-            if (!IsInitialized) return;
-
-            if (characterInstanceReference == null)
-            {
-                int controlIndex = FirstFatGroupsControlIndex + groupIndex;
-                var val = FatGroupsControlBuffer[controlIndex];
-                val.x = level;
-                FatGroupsControlBuffer[controlIndex] = val;
-            }
-
-            SyncFatLevel(groupIndex, level);
-
             if (instance != null && instance.IsValid)
             {
                 var prevData = instance.GetFatGroupWeightUnsafe(groupIndex);
@@ -6582,120 +5425,24 @@ namespace Swole.Morphing
                     instance.MarkForPhysiqueUpdateUnsafe();
                 }
             }
-
-            OnFatDataChanged?.Invoke(groupIndex);
-
-            if (children != null)
-            {
-                foreach (var child in children) if (child.IsValid && child.type.HasFlag(ChildType.Mesh)) child.instance.SetFatLevelUnsafe(groupIndex, level);
-            }
-        }
-        public void SetFatLevel(int groupIndex, float level)
-        {
-            if (instance == null || groupIndex < 0 || groupIndex >= SubData.FatVertexGroupCount) return;
-            SetFatLevelUnsafe(groupIndex, level);
-        }
-        public float2 GetBodyHairLevelUnsafe(int groupIndex) => FatGroupsControlBuffer[FirstFatGroupsControlIndex + groupIndex].zw;
-        public float2 GetBodyHairLevel(int groupIndex)
-        {
-            if (instance == null || groupIndex < 0 || groupIndex >= SubData.FatVertexGroupCount) return 0f;
-            return GetBodyHairLevelUnsafe(groupIndex);
-        }
-        public void SetBodyHairLevelUnsafe(int groupIndex, float level, float blend = 1f)
-        {
-            if (!IsInitialized) return;
-
-            if (characterInstanceReference == null)
-            {
-                int controlIndex = FirstFatGroupsControlIndex + groupIndex;
-                var val = FatGroupsControlBuffer[controlIndex];
-                val.z = level;
-                val.w = blend;
-                FatGroupsControlBuffer[controlIndex] = val;
-            }
-
-            OnFatDataChanged?.Invoke(groupIndex);
-
-            if (children != null)
-            {
-                foreach (var child in children) if (child.IsValid && child.type.HasFlag(ChildType.Mesh)) child.instance.SetBodyHairLevelUnsafe(groupIndex, level, blend);
-            }
-        }
-        public void SetBodyHairLevel(int groupIndex, float level, float blend = 1f)
-        {
-            if (instance == null || groupIndex < 0 || groupIndex >= SubData.FatVertexGroupCount) return;
-            SetBodyHairLevelUnsafe(groupIndex, level, blend);
-        }
-        public int IndexOfFatGroup(string groupName) => Data == null ? -1 : SubData.IndexOfFatGroup(groupName);
-
-
-        public int VariationShapesControlDataSize => Data.VariationShapesControlDataSize;
-        public int FirstVariationShapesControlIndex => CharacterInstanceID * VariationShapesControlDataSize;
-        public int GetPartialVariationShapeIndex(int variationGroupIndex, int shapeIndex)
-        {
-            if (variationGroupIndex < 0 || variationGroupIndex >= Data.VariationVertexGroupCount || shapeIndex < 0 || shapeIndex >= Data.VariationShapesCount) return -1;
-            return GetPartialVariationShapeIndexUnsafe(variationGroupIndex, shapeIndex);
-        }
-        public int GetPartialVariationShapeIndexUnsafe(int variationGroupIndex, int shapeIndex)
-        {
-            return (variationGroupIndex * Data.VariationShapesCount) + shapeIndex;
         }
 
-        public float2 GetVariationWeightUnsafe(int variationShapeIndex, int groupIndex) => VariationShapesControlBuffer[FirstVariationShapesControlIndex + (groupIndex * Data.VariationShapesCount) + variationShapeIndex];//VariationShapesControl[(groupIndex * CharacterMeshData.VariationShapesCount) + variationShapeIndex];
-        public float2 GetVariationWeight(int variationShapeIndex, int groupIndex)
+        protected override void OnSetVariationWeight(int variationShapeIndex, int groupIndex, float2 weight)
         {
-            if (instance == null || groupIndex < 0 || groupIndex >= Data.VariationVertexGroupCount || variationShapeIndex < 0 || variationShapeIndex >= Data.VariationShapesCount) return 0;
-            return GetVariationWeightUnsafe(variationShapeIndex, groupIndex);
-        }
-        public void SetVariationWeightUnsafe(int variationShapeIndex, int groupIndex, float2 weight)
-        {
-            //var array = VariationShapesControl;
-            //array[(groupIndex * CharacterMeshData.VariationShapesCount) + variationShapeIndex] = weight;
-
-            if (!IsInitialized) return;
-            if (characterInstanceReference == null)
-            {
-                int variationIndex = GetPartialVariationShapeIndexUnsafe(groupIndex, variationShapeIndex);
-                VariationShapesControlBuffer[FirstVariationShapesControlIndex + variationIndex] = weight;
-            }
-
-            SyncVariationData(groupIndex, variationShapeIndex, weight.x, weight.y);
-
-            //dirtyFlag_variationShapesControl = true;
-
             if (instance != null && instance.IsValid)
             {
                 var prevData = instance.GetVariationGroupWeightUnsafe(variationShapeIndex, groupIndex);
                 if (prevData.x != weight.x || prevData.y != weight.y)
                 {
                     instance.SetVariationGroupWeightUnsafe(variationShapeIndex, groupIndex, weight);
-                    instance.MarkForVariationUpdateUnsafe();
-                }
-            }
-
-            if (children != null)
-            {
-                foreach (var child in children) if (child.IsValid && child.type.HasFlag(ChildType.Mesh)) child.instance.SetVariationWeightUnsafe(variationShapeIndex, groupIndex, weight);
+                    instance.MarkForVariationUpdateUnsafe(); 
+                } 
             }
         }
-        public void SetVariationWeight(int variationShapeIndex, int groupIndex, float2 weight)
-        {
-            if (instance == null || groupIndex < 0 || groupIndex >= Data.VariationVertexGroupCount || variationShapeIndex < 0 || variationShapeIndex >= Data.VariationShapesCount) return;
-            SetVariationWeightUnsafe(variationShapeIndex, groupIndex, weight);
-        }
 
-        public float2 GetVariationWeightUnsafe(int indexInArray) => VariationShapesControlBuffer[FirstVariationShapesControlIndex + indexInArray]; //VariationShapesControl[indexInArray];
-        public float2 GetVariationWeight(int indexInArray)
-        {
-            if (indexInArray < 0 || instance == null || indexInArray >= VariationShapesControlDataSize) return 0;
-            return GetVariationWeightUnsafe(indexInArray);
-        }
-        public void SetVariationWeightUnsafe(int indexInArray, float2 weight) => SetVariationWeightUnsafe(indexInArray % Data.VariationShapesCount, indexInArray / Data.VariationShapesCount, weight);
-        public void SetVariationWeight(int indexInArray, float2 weight)
-        {
-            if (indexInArray < 0 || instance == null || indexInArray >= VariationShapesControlDataSize) return;
-            SetVariationWeightUnsafe(indexInArray, weight);
-        }
+        #endregion
+
+        #region IDs
 
         #endregion
 
@@ -6711,928 +5458,38 @@ namespace Swole.Morphing
             }
         }
 
-        #region Animation
-
-        [SerializeField]
-        protected CustomAvatar avatar;
-        public void SetAvatar(CustomAvatar av) => avatar = av;
-        public CustomAvatar Avatar => avatar;
-        [SerializeField]
-        protected Transform rigRoot;
-        public void SetRigRoot(Transform root) => rigRoot = root;
-        public Transform RigRoot
-        {
-            get
-            {
-                if (rigRoot == null)
-                {
-                    if (avatar != null && !string.IsNullOrWhiteSpace(avatar.rigContainer)) 
-                    {
-                        rigRoot = (transform.parent == null ? transform : transform.parent).FindDeepChildLiberal(avatar.rigContainer); 
-                    }
-
-                    if (rigRoot == null) rigRoot = transform.parent == null ? transform : transform.parent;
-                }
-
-                return rigRoot;
-            }
-        }
-        public override Transform BoundsRootTransform => RigRoot;
-
-        [SerializeField]
-        protected DynamicAnimationProperties animatablePropertiesController;
-        [NonSerialized]
-        protected List<DynamicAnimationProperties.Property> dynamicAnimationProperties;
-        public void SetAnimatablePropertiesController(DynamicAnimationProperties controller)
-        {
-            if (dynamicAnimationProperties != null)
-            {
-                if (animatablePropertiesController != null)
-                {
-                    foreach (var prop in dynamicAnimationProperties) animatablePropertiesController.RemoveProperty(prop);
-                }
-                dynamicAnimationProperties.Clear();
-            }
-
-            animatablePropertiesController = controller;
-            if (animatablePropertiesController == null) return;
-
-#if UNITY_EDITOR
-            if (!Application.isPlaying) return;
-#endif
-
-            if (!animatablePropertiesController.IsInitialized) animatablePropertiesController.Initialize();
-
-            if (dynamicAnimationProperties == null) dynamicAnimationProperties = new List<DynamicAnimationProperties.Property>(); ;
-
-            string id = GetInstanceID().ToString();
-            for (int a = 0; a < Data.StandaloneShapesCount; a++)
-            {
-                var shape = Data.GetStandaloneShape(a);
-                if (shape == null || !shape.animatable) continue;
-
-                int shapeIndex = a;
-
-                string name = $"SHAPE:{shape.name}";
-                int index = animatablePropertiesController.IndexOf(name);
-                if (index >= 0)
-                {
-                    var prop = animatablePropertiesController.GetPropertyUnsafe(index);
-                    prop.Listen(id, (float value) => SetStandaloneShapeWeightUnsafe(shapeIndex, value));
-                    continue;
-                }
-
-                var prop_ = animatablePropertiesController.CreateProperty(name, () => GetStandaloneShapeWeightUnsafe(shapeIndex), (float value) => SetStandaloneShapeWeightUnsafe(shapeIndex, value));
-                dynamicAnimationProperties.Add(prop_);
-            }
-
-            var meshData = SubData;
-            for (int a = 0; a < meshData.MuscleVertexGroupCount; a++)
-            {
-                var group = meshData.GetMuscleVertexGroup(a);
-                if (group == null /*|| !group.flag*/) continue; // animatable permission is stored in vertex group flag field // TODO: uncomment group.flag check
-
-                int shapeIndex = a;
-
-                string name = $"FLEX_LEFT:{group.name}";
-                int index = animatablePropertiesController.IndexOf(name);
-                if (index >= 0)
-                {
-                    var prop = animatablePropertiesController.GetPropertyUnsafe(index);
-                    prop.Listen(id, (float value) =>
-                    {
-                        var values = GetMuscleDataUnsafe(shapeIndex);
-                        var valuesLeft = values.valuesLeft;
-                        valuesLeft.flex = value;
-                        values.valuesLeft = valuesLeft;
-                        SetMuscleDataUnsafe(shapeIndex, values);
-                    });
-                }
-                else
-                {
-                    var prop = animatablePropertiesController.CreateProperty(name, () => GetMuscleDataUnsafe(shapeIndex).valuesLeft.flex, (float value) =>
-                    {
-                        var values = GetMuscleDataUnsafe(shapeIndex);
-                        var valuesLeft = values.valuesLeft;
-                        valuesLeft.flex = value;
-                        values.valuesLeft = valuesLeft;
-                        SetMuscleDataUnsafe(shapeIndex, values);
-                    });
-                    dynamicAnimationProperties.Add(prop);
-                }
-
-                name = $"FLEX_RIGHT:{group.name}";
-                index = animatablePropertiesController.IndexOf(name);
-                if (index >= 0)
-                {
-                    var prop = animatablePropertiesController.GetPropertyUnsafe(index);
-                    prop.Listen(id, (float value) =>
-                    {
-                        var values = GetMuscleDataUnsafe(shapeIndex);
-                        var valuesRight = values.valuesRight;
-                        valuesRight.flex = value;
-                        values.valuesRight = valuesRight;
-                        SetMuscleDataUnsafe(shapeIndex, values);
-                    });
-                }
-                else
-                {
-                    var prop = animatablePropertiesController.CreateProperty(name, () => GetMuscleDataUnsafe(shapeIndex).valuesLeft.flex, (float value) =>
-                    {
-                        var values = GetMuscleDataUnsafe(shapeIndex);
-                        var valuesRight = values.valuesRight;
-                        valuesRight.flex = value;
-                        values.valuesRight = valuesRight;
-                        SetMuscleDataUnsafe(shapeIndex, values);
-                    });
-                    dynamicAnimationProperties.Add(prop);
-                }
-            }
-        }
-
-        public override CustomAnimator Animator
-        {
-            get => animator;
-            set
-            {
-                if (animator != null)
-                {
-                    animator.RemoveListener(CustomAnimator.BehaviourEvent.OnResetPose, OnAnimatorResetPose);
-                }
-
-                animator = value;
-                if (animator != null)
-                {
-                    animator.AddListener(CustomAnimator.BehaviourEvent.OnResetPose, OnAnimatorResetPose);
-                }
-            }
-        }
-
-        protected void OnAnimatorResetPose()
-        {
-            if (!IsInitialized || characterInstanceReference != null) return;
-
-            for (int a = 0; a < SubData.MuscleVertexGroupCount; a++)
-            {
-                var data = GetMuscleDataUnsafe(a);
-                data.valuesLeft.flex = 0f;
-                data.valuesRight.flex = 0f;
-                SetMuscleDataUnsafe(a, data);
-            }
-        }
-
-        [NonSerialized]
-        protected Transform[] bones;
-        public override Transform[] Bones
-        {
-            get
-            {
-                if (bones == null)
-                {
-                    var rig_root = RigRoot;
-
-                    if (avatar == null)
-                    {
-                        bones = new Transform[] { rig_root };
-                    }
-                    else
-                    {
-                        bones = new Transform[avatar.bones.Length];
-                        for (int a = 0; a < bones.Length; a++) bones[a] = rig_root.FindDeepChildLiberal(avatar.bones[a]); 
-                    }
-                }
-
-                return bones;
-            }
-        }
-        [NonSerialized]
-        protected Transform[] skinnedBones;
-        public override Transform[] SkinnedBones
-        {
-            get
-            {
-                if (skinnedBones == null)
-                {
-                    var rig_root = RigRoot;
-
-                    if (SubData.HasBonesArray)
-                    {
-                        var boneNames = SubData.boneNames;
-                        skinnedBones = new Transform[boneNames.Length];
-                        for (int a = 0; a < skinnedBones.Length; a++) skinnedBones[a] = rig_root.FindDeepChildLiberal(boneNames[a]); 
-                    }
-                    else
-                    {
-                        if (avatar == null)
-                        {
-                            skinnedBones = new Transform[] { rig_root };
-                        }
-                        else
-                        {
-                            skinnedBones = new Transform[avatar.SkinnedBonesCount];
-                            for (int a = 0; a < skinnedBones.Length; a++)
-                            {
-                                skinnedBones[a] = rig_root.FindDeepChildLiberal(avatar.bones[a]);
-                            }
-                        }
-                    }
-                }
-
-                return skinnedBones;
-            }
-        }
-
-
-        public override int BoneCount => avatar == null ? 1 : avatar.bones.Length;
-
-        public override Matrix4x4[] BindPose => SubData.ManagedBindPose;
-
-        #endregion
-
-        #region IDs
-
-        [NonSerialized]
-        protected string rigID;
-        public override string RigID // => rigRoot.GetInstanceID().ToString(); // some renderers do not have the same bone/bindpose array as others, so this causes problems. Instead we'll generate a new rig id unless a rig instance reference is given.
-        {
-            get
-            {
-                if (RigInstanceReferenceIsValid) return rigInstanceReference.RigID;
-
-                if (string.IsNullOrWhiteSpace(rigID))
-                {
-                    rigID = System.Guid.NewGuid().ToString();
-                    while (Rigs.TryGetStandaloneSampler(RigID, out _))
-                    {
-                        rigID = System.Guid.NewGuid().ToString();
-                    }
-                }
-
-                return rigID;
-            }
-        }
-
-        [SerializeField]
-        protected string shapeBufferId;
-        public void SetShapeBufferID(string id) => shapeBufferId = id;
-        public string LocalShapeBufferID => shapeBufferId;
-        public override string ShapeBufferID => shapesInstanceReference != null ? shapesInstanceReference.ShapeBufferID : shapeBufferId;
-
-        [SerializeField]
-        protected string morphBufferId;
-        public void SetMorphBufferID(string id) => morphBufferId = id;
-        public string LocalMorphBufferID => morphBufferId;
-        public virtual string MorphBufferID => characterInstanceReference != null ? characterInstanceReference.MorphBufferID : morphBufferId;
-
-        public CustomizableCharacterMeshV2 shapesInstanceReference;
-        public ICustomizableCharacter ShapesInstanceReference
-        {
-            get => shapesInstanceReference;
-            set
-            {
-                if (shapesInstanceReference != null)
-                {
-                    shapesInstanceReference.RemoveChild(this, ChildType.Shapes);
-                }
-
-                if (value is CustomizableCharacterMeshV2 meshV2_)
-                {
-                    meshV2_.AddChild(this, ChildType.Shapes);
-                    shapesInstanceReference = meshV2_; 
-                } 
-                else
-                {
-                    shapesInstanceReference = null;
-                }
-            }
-        }
-        public int ShapesInstanceID => shapesInstanceReference == null ? InstanceSlot : shapesInstanceReference.ShapesInstanceID;
-
-        public InstanceableSkinnedMeshBase rigInstanceReference;
-        public InstanceableSkinnedMeshBase RigInstanceReference
-        {
-            get => rigInstanceReference;
-            set
-            {
-                if (rigInstanceReference is CustomizableCharacterMeshV2 meshV2)
-                {
-                    meshV2.RemoveChild(this, ChildType.Rig);
-                }
-
-                rigInstanceReference = value;
-
-                if (RigInstanceReferenceIsValid)
-                {
-                    if (rigInstanceReference is CustomizableCharacterMeshV2 meshV2_)
-                    {
-                        meshV2_.AddChild(this, ChildType.Rig); 
-                    }
-                } 
-                else
-                {
-                    rigInstanceReference = null;
-                }
-            }
-        }
-        public bool RigInstanceReferenceIsValid => rigInstanceReference != null && rigInstanceReference.SkinningBoneCount == SkinningBoneCount;
-        public override int RigInstanceID => rigInstanceReference == null ? InstanceSlot : rigInstanceReference.RigInstanceID;
-        public void SetRigBufferID(string id) { }
-        public string LocalRigBufferID => string.Empty;
-        public override string RigBufferID => RigInstanceReferenceIsValid ? rigInstanceReference.RigBufferID : LocalRigBufferID; 
-
-        public override Rigs.StandaloneSampler RigSampler
-        {
-            get
-            {
-                if (!RigInstanceReferenceIsValid) return base.RigSampler;
-                return rigInstanceReference.RigSampler;
-            }
-        }
-
-        public CustomizableCharacterMeshV2 characterInstanceReference;
-        public ICustomizableCharacter CharacterInstanceReference
-        {
-            get => characterInstanceReference;
-            set
-            {
-                if (characterInstanceReference != null) characterInstanceReference.RemoveChild(this, ChildType.Mesh);
-
-                if (value is CustomizableCharacterMeshV2 meshV2)
-                {
-                    characterInstanceReference = meshV2;
-                    characterInstanceReference.AddChild(this, ChildType.Mesh); 
-                }
-                else
-                {
-                    characterInstanceReference = null;
-                }
-            }
-        }
-        public int CharacterInstanceID => characterInstanceReference == null ? InstanceID : characterInstanceReference.CharacterInstanceID;
-
-        public void SetShapesInstanceID(int id)
-        {
-            if (id < 0)
-            {
-                SetFloatOverride(SubData.ShapesInstanceIDPropertyName, InstanceID);
-            }
-            else
-            {
-                SetFloatOverride(SubData.ShapesInstanceIDPropertyName, id);
-            }
-
-        }
-        public void SetRigInstanceID(int id)
-        {
-            if (id < 0)
-            {
-                SetFloatOverride(SubData.RigInstanceIDPropertyName, InstanceID);
-            }
-            else
-            {
-                SetFloatOverride(SubData.RigInstanceIDPropertyName, id);
-            }
-        }
-        public void SetCharacterInstanceID(int id)
-        {
-            if (id < 0)
-            {
-                SetFloatOverride(SubData.CharacterInstanceIDPropertyName, InstanceID);
-            }
-            else
-            {
-                SetFloatOverride(SubData.CharacterInstanceIDPropertyName, id);
-            }
-        }
-
-        [Obsolete]
-        protected virtual void InitInstanceIDs()
-        {
-            if (shapesInstanceReference != null)
-            {
-                SetShapesInstanceID(shapesInstanceReference.InstanceSlot);
-                shapesInstanceReference.OnCreateInstanceID += SetShapesInstanceID;
-            }
-
-            if (RigInstanceReferenceIsValid)
-            {
-                SetRigInstanceID(rigInstanceReference.InstanceSlot);
-                rigInstanceReference.OnCreateInstanceID += SetRigInstanceID;
-            }
-            else if (rigInstanceReference != null)
-            {
-#if UNITY_EDITOR
-                Debug.LogWarning($"rigInstanceReference '{rigInstanceReference.name}' for '{name}' does not have identical skinning bone count ({rigInstanceReference.SkinningBoneCount}:{SkinningBoneCount}) and will be ignored");
-#endif
-            }
-
-            if (characterInstanceReference != null)
-            {
-                SetCharacterInstanceID(characterInstanceReference.InstanceSlot);
-                characterInstanceReference.OnCreateInstanceID += SetCharacterInstanceID;
-
-                characterInstanceReference.AddChild(this, ChildType.Mesh);
-            }
-        }
-
-        #endregion
-
         #region Buffers
 
-        protected void InitBuffers()
+        public override bool TryGetInstanceBuffer<T>(string matPropName, out InstanceBuffer<T> buffer)
         {
-            standaloneShapeControlBuffer = StandaloneShapeControlBuffer;
-            muscleGroupsControlBuffer = MuscleGroupsControlBuffer;
-            fatGroupsControlBuffer = FatGroupsControlBuffer;
-            variationShapesControlBuffer = VariationShapesControlBuffer;
-
-            if (instance != null)
+            if (instance == null || !instance.IsValid)
             {
-                var meshData = SubData;
-
-                if (shapesInstanceReference == null)
-                {
-                    if (meshData.StandaloneShapesCount > 0) SetStandaloneShapeWeightUnsafe(0, 0);
-                }
-
-                if (characterInstanceReference == null)
-                {
-
-                    if (meshData.MuscleVertexGroupCount > 0) SetMuscleDataUnsafe(0, new MuscleDataLR());
-                    if (meshData.FatVertexGroupCount > 0) // Apply fat group modifiers (.y controls how much mass is nerfed by fat)
-                    {
-                        int indexStart = FirstFatGroupsControlIndex;
-                        if (meshData.fatGroupModifiers == null)
-                        {
-                            for (int a = 0; a < meshData.FatVertexGroupCount; a++) fatGroupsControlBuffer.WriteToBufferFast(indexStart + a, new float4(0f, _defaultFatGroupModifier.x, 0f, 0f));
-                        }
-                        else
-                        {
-                            for (int a = 0; a < meshData.FatVertexGroupCount; a++)
-                            {
-                                var modifier = meshData.GetFatGroupModifier(a);
-                                fatGroupsControlBuffer.WriteToBufferFast(indexStart + a, new float4(0f, modifier.x, 0f, 0f));
-                            }
-                        }
-
-                        fatGroupsControlBuffer.TrySetWriteIndices(indexStart, Data.FatVertexGroupCount);
-                        fatGroupsControlBuffer.RequestUpload();
-                    }
-                    if (data.VariationVertexGroupCount > 0) SetVariationWeightUnsafe(0, 0);
-                }
+                buffer = null;
+                return false;
             }
+
+            return instance.OwnerGroup.TryGetInstanceBuffer(matPropName, out buffer); 
         }
-        
-        public override InstanceBuffer<float4x4> SkinningMatricesBuffer
+
+        public override int CreateInstanceMaterialBuffer<T>(string propertyName, ICollection<int> materialSlots, int elementsPerInstance, int bufferPoolSize, bool autoApplyToMaterials, out InstanceBuffer<T> buffer)
         {
-            get
+            if (instance == null || !instance.IsValid)
             {
-                if ((skinningMatricesBuffer == null || !skinningMatricesBuffer.IsValid()) && !IsDestroyed)
-                {
-                    if (rigInstanceReference != null)
-                    {
-                        skinningMatricesBuffer = rigInstanceReference.SkinningMatricesBuffer;
-                    }
-                    else
-                    {
-                        if (instance != null && instance.IsValid)
-                        {
-                            string matricesProperty = SubData.SkinningMatricesPropertyName;
-                            if (!instance.OwnerGroup.TryGetInstanceBuffer<float4x4>(matricesProperty, out skinningMatricesBuffer))
-                            {
-                                instance.OwnerGroup.CreateInstanceMaterialBuffer<float4x4>(matricesProperty, SkinningBoneCount, 3, false, out skinningMatricesBuffer);
-                            }
-
-                            if (skinningMatricesBuffer != null)
-                            {
-                                if (children != null)
-                                {
-                                    foreach (var child in children) if (child.IsValid && child.type.HasFlag(ChildType.Rig) && child.instance.IsRendering()) child.instance.BindSkinningMatricesBufferToMaterials();
-                                }
-                            }
-                        }
-                    }
-                }
-
-                return skinningMatricesBuffer;
+                buffer = null;
+                return -1;
             }
-        }
-        public void BindSkinningMatricesBufferToMaterials()
-        {
-            BindSkinningMatricesBufferToMaterials(MaterialInstances);
-        }
-        public void BindSkinningMatricesBufferToMaterials(Material[] materialInstances)
-        {
-            var matricesBuffer = SkinningMatricesBuffer;
-            if (matricesBuffer != null)
-            {
-                var meshData = SubData;
 
-                int boneCount = SkinningBoneCount;
-
-                if (!RigInstanceReferenceIsValid)
-                {
-                    int writeStartIndex = RigInstanceID * boneCount;
-                    var rigSampler = RigSampler;
-                    if (rigSampler != null && !rigSampler.IsWritingToBufferAt(matricesBuffer, writeStartIndex)) rigSampler.AddWritableInstanceBuffer(matricesBuffer, writeStartIndex); 
-                }
-
-                if (materialInstances != null)
-                {
-                    foreach (var mat in materialInstances)
-                    {
-                        if (mat == null) continue;
-
-#if UNITY_EDITOR
-                        Debug.Log($"{name}: Binding {meshData.SkinningMatricesPropertyName} to {mat.name}");
-#endif
-                        matricesBuffer.BindMaterialProperty(mat, meshData.SkinningMatricesPropertyName);
-                        mat.SetInteger(meshData.BoneCountPropertyName, boneCount);
-                    }
-                }
-            }
-        }
-        public void UnbindSkinningMatricesBufferFromMaterials()
-        {
-            UnbindSkinningMatricesBufferFromMaterials(MaterialInstances);
-        }
-        public void UnbindSkinningMatricesBufferFromMaterials(Material[] materialInstances)
-        {
-            if (skinningMatricesBuffer != null && materialInstances != null)
-            {
-                var meshData = SubData;
-
-                if (!RigInstanceReferenceIsValid)
-                {
-                    if (rigSampler != null) rigSampler.RemoveWritableInstanceBuffer(skinningMatricesBuffer, RigInstanceID * SkinningBoneCount); 
-                }
-
-                if (materialInstances != null)
-                {
-                    foreach (var mat in materialInstances)
-                    {
-                        if (mat == null) continue;
-
-                        skinningMatricesBuffer.UnbindMaterialProperty(mat, meshData.SkinningMatricesPropertyName);
-                    }
-                }
-            }
-        }
-
-        protected InstanceBuffer<float> standaloneShapeControlBuffer;
-        public InstanceBuffer<float> StandaloneShapeControlBuffer
-        {
-            get
-            {
-                if ((standaloneShapeControlBuffer == null || !standaloneShapeControlBuffer.IsValid()) && !IsDestroyed)
-                {
-                    if (shapesInstanceReference != null)
-                    {
-                        standaloneShapeControlBuffer = shapesInstanceReference.StandaloneShapeControlBuffer;
-                    }
-                    else
-                    {
-                        if (instance != null && instance.IsValid)
-                        {
-                            string matProperty = SubData.StandaloneShapesControlPropertyName;
-                            if (!instance.OwnerGroup.TryGetInstanceBuffer<float>(matProperty, out standaloneShapeControlBuffer))
-                            {
-                                instance.OwnerGroup.CreateInstanceMaterialBuffer<float>(matProperty, SubData.StandaloneShapesCount, 2, false, out standaloneShapeControlBuffer);
-                            }
-
-                            if (standaloneShapeControlBuffer != null)
-                            {
-                                if (children != null)
-                                {
-                                    foreach (var child in children) if (child.IsValid && child.type.HasFlag(ChildType.Shapes)) child.instance.BindStandaloneShapesControlBufferToMaterials();
-                                }
-                            }
-                        }
-                    }
-                }
-
-                return standaloneShapeControlBuffer;
-            }
-        }
-        public void BindStandaloneShapesControlBufferToMaterials()
-        {
-            BindStandaloneShapesControlBufferToMaterials(MaterialInstances);
-        }
-        public void BindStandaloneShapesControlBufferToMaterials(Material[] materialInstances)
-        {
-            var shapeBuffer = StandaloneShapeControlBuffer;
-            if (shapeBuffer != null && materialInstances != null)
-            {
-                var meshData = SubData;
-                foreach (var mat in materialInstances)
-                {
-                    if (mat == null) continue;
-
-#if UNITY_EDITOR
-                    Debug.Log($"{name}: Binding {meshData.StandaloneShapesControlPropertyName} to {mat.name}");
-#endif
-                    shapeBuffer.BindMaterialProperty(mat, meshData.StandaloneShapesControlPropertyName);
-                }
-            }
-        }
-        public void UnbindStandaloneShapesControlBufferFromMaterials()
-        {
-            UnbindStandaloneShapesControlBufferFromMaterials(MaterialInstances);
-        }
-        public void UnbindStandaloneShapesControlBufferFromMaterials(Material[] materialInstances)
-        {
-            if (standaloneShapeControlBuffer != null && materialInstances != null)
-            {
-                var meshData = SubData;
-                foreach (var mat in materialInstances)
-                {
-                    if (mat == null) continue;
-
-                    standaloneShapeControlBuffer.UnbindMaterialProperty(mat, meshData.StandaloneShapesControlPropertyName);
-                }
-            }
-        }
-
-        protected InstanceBuffer<MuscleDataLR> muscleGroupsControlBuffer;
-        public InstanceBuffer<MuscleDataLR> MuscleGroupsControlBuffer
-        {
-            get
-            {
-                if ((muscleGroupsControlBuffer == null || !muscleGroupsControlBuffer.IsValid()) && !IsDestroyed)
-                {
-                    if (characterInstanceReference != null)
-                    {
-                        muscleGroupsControlBuffer = characterInstanceReference.MuscleGroupsControlBuffer;
-                    }
-                    else
-                    {
-                        if (instance != null && instance.IsValid)
-                        {
-                            string matProperty = SubData.MuscleGroupsControlPropertyName;
-                            if (!instance.OwnerGroup.TryGetInstanceBuffer<MuscleDataLR>(matProperty, out muscleGroupsControlBuffer))
-                            {
-                                instance.OwnerGroup.CreateInstanceMaterialBuffer<MuscleDataLR>(matProperty, SubData.MuscleVertexGroupCount, 2, false, out muscleGroupsControlBuffer);
-                            }
-
-                            if (muscleGroupsControlBuffer != null)
-                            {
-                                if (children != null)
-                                {
-                                    foreach (var child in children) if (child.IsValid && child.type.HasFlag(ChildType.Mesh)) child.instance.BindMuscleGroupsControlBufferToMaterials();
-                                }
-                            }
-                        }
-                    }
-                }
-
-                return muscleGroupsControlBuffer;
-            }
-        }
-        public void BindMuscleGroupsControlBufferToMaterials()
-        {
-            BindMuscleGroupsControlBufferToMaterials(MaterialInstances);
-        }
-        public void BindMuscleGroupsControlBufferToMaterials(Material[] materialInstances)
-        {
-            var muscleBuffer = MuscleGroupsControlBuffer;
-            if (muscleBuffer != null && materialInstances != null)
-            {
-                var meshData = SubData;
-                foreach (var mat in materialInstances)
-                {
-                    if (mat == null) continue;
-
-#if UNITY_EDITOR
-                    Debug.Log($"{name}: Binding {meshData.MuscleGroupsControlPropertyName} to {mat.name}");
-#endif
-                    muscleBuffer.BindMaterialProperty(mat, meshData.MuscleGroupsControlPropertyName);
-                }
-            }
-        }
-        public void UnbindMuscleGroupsControlBufferFromMaterials()
-        {
-            UnbindMuscleGroupsControlBufferFromMaterials(MaterialInstances);
-        }
-        public void UnbindMuscleGroupsControlBufferFromMaterials(Material[] materialInstances)
-        {
-            if (muscleGroupsControlBuffer != null && materialInstances != null)
-            {
-                var meshData = SubData;
-                foreach (var mat in materialInstances)
-                {
-                    if (mat == null) continue;
-
-                    muscleGroupsControlBuffer.UnbindMaterialProperty(mat, meshData.MuscleGroupsControlPropertyName);
-                }
-            }
-        }
-
-        protected InstanceBuffer<float4> fatGroupsControlBuffer;
-        public InstanceBuffer<float4> FatGroupsControlBuffer
-        {
-            get
-            {
-                if ((fatGroupsControlBuffer == null || !fatGroupsControlBuffer.IsValid()) && !IsDestroyed)
-                {
-                    if (characterInstanceReference != null)
-                    {
-                        fatGroupsControlBuffer = characterInstanceReference.FatGroupsControlBuffer;
-                    }
-                    else
-                    {
-                        if (instance != null && instance.IsValid)
-                        {
-                            string matProperty = SubData.FatGroupsControlPropertyName;
-                            if (!instance.OwnerGroup.TryGetInstanceBuffer<float4>(matProperty, out fatGroupsControlBuffer))
-                            {
-                                instance.OwnerGroup.CreateInstanceMaterialBuffer<float4>(matProperty, SubData.FatVertexGroupCount, 2, false, out fatGroupsControlBuffer);
-                            }
-
-                            if (fatGroupsControlBuffer != null)
-                            {
-                                if (children != null)
-                                {
-                                    foreach (var child in children) if (child.IsValid && child.type.HasFlag(ChildType.Mesh)) child.instance.BindFatGroupsControlBufferToMaterials();
-                                }
-                            }
-                        }
-                    }
-                }
-
-                return fatGroupsControlBuffer;
-            }
-        }
-        public void BindFatGroupsControlBufferToMaterials()
-        {
-            BindFatGroupsControlBufferToMaterials(MaterialInstances);
-        }
-        public void BindFatGroupsControlBufferToMaterials(Material[] materialInstances)
-        {
-            var fatBuffer = FatGroupsControlBuffer;
-            if (fatBuffer != null && materialInstances != null)
-            {
-                var meshData = SubData;
-                foreach (var mat in materialInstances)
-                {
-                    if (mat == null) continue;
-
-#if UNITY_EDITOR
-                    Debug.Log($"{name}: Binding {meshData.FatGroupsControlPropertyName} to {mat.name}");
-#endif
-                    fatBuffer.BindMaterialProperty(mat, meshData.FatGroupsControlPropertyName);
-                }
-            }
-        }
-        public void UnbindFatGroupsControlBufferFromMaterials()
-        {
-            UnbindFatGroupsControlBufferFromMaterials(MaterialInstances);
-        }
-        public void UnbindFatGroupsControlBufferFromMaterials(Material[] materialInstances)
-        {
-            if (fatGroupsControlBuffer != null && materialInstances != null)
-            {
-                var meshData = SubData;
-                foreach (var mat in materialInstances)
-                {
-                    if (mat == null) continue;
-
-                    fatGroupsControlBuffer.UnbindMaterialProperty(mat, meshData.FatGroupsControlPropertyName);
-                }
-            }
-        }
-
-        protected InstanceBuffer<float2> variationShapesControlBuffer;
-        public InstanceBuffer<float2> VariationShapesControlBuffer
-        {
-            get
-            {
-                if ((variationShapesControlBuffer == null || !variationShapesControlBuffer.IsValid()) && !IsDestroyed)
-                {
-                    if (characterInstanceReference != null)
-                    {
-                        variationShapesControlBuffer = characterInstanceReference.VariationShapesControlBuffer;
-                    }
-                    else
-                    {
-                        if (instance != null && instance.IsValid)
-                        {
-                            string matProperty = SubData.VariationShapesControlPropertyName;
-                            if (!instance.OwnerGroup.TryGetInstanceBuffer<float2>(matProperty, out variationShapesControlBuffer))
-                            {
-                                instance.OwnerGroup.CreateInstanceMaterialBuffer<float2>(matProperty, SubData.VariationShapesCount * SubData.VariationVertexGroupCount, 2, false, out variationShapesControlBuffer);
-                            }
-
-                            if (variationShapesControlBuffer != null)
-                            {
-                                if (children != null)
-                                {
-                                    foreach (var child in children) if (child.IsValid && child.type.HasFlag(ChildType.Mesh)) child.instance.BindVariationGroupsControlBufferToMaterials();
-                                }
-                            }
-                        }
-                    }
-                }
-
-                return variationShapesControlBuffer;
-            }
-        }
-        public void BindVariationGroupsControlBufferToMaterials()
-        {
-            BindVariationGroupsControlBufferToMaterials(MaterialInstances);
-        }
-        public void BindVariationGroupsControlBufferToMaterials(Material[] materialInstances)
-        {
-            var variationBuffer = VariationShapesControlBuffer;
-            if (variationBuffer != null && materialInstances != null)
-            {
-                var meshData = SubData;
-                foreach (var mat in materialInstances)
-                {
-                    if (mat == null) continue;
-
-#if UNITY_EDITOR
-                    Debug.Log($"{name}: Binding {meshData.VariationShapesControlPropertyName} to {mat.name}");
-#endif
-                    variationBuffer.BindMaterialProperty(mat, meshData.VariationShapesControlPropertyName);
-                }
-            }
-        }
-        public void UnbindVariationGroupsControlBufferFromMaterials()
-        {
-            UnbindVariationGroupsControlBufferFromMaterials(MaterialInstances);
-        }
-        public void UnbindVariationGroupsControlBufferFromMaterials(Material[] materialInstances)
-        {
-            if (variationShapesControlBuffer != null && materialInstances != null)
-            {
-                var meshData = SubData;
-                foreach (var mat in materialInstances)
-                {
-                    if (mat == null) continue;
-
-                    variationShapesControlBuffer.UnbindMaterialProperty(mat, meshData.VariationShapesControlPropertyName); 
-                }
-            }
-        }
-
-        #endregion
-
-        #region Events
-
-        public void AddListener(ICustomizableCharacter.ListenableEvent event_, UnityAction<int> listener)
-        {
-            switch (event_)
-            {
-                case ICustomizableCharacter.ListenableEvent.OnMuscleDataChanged:
-                    if (OnMuscleDataChanged == null) OnMuscleDataChanged = new UnityEvent<int>();
-                    OnMuscleDataChanged.AddListener(listener);
-                    break;
-                case ICustomizableCharacter.ListenableEvent.OnFatDataChanged:
-                    if (OnFatDataChanged == null) OnFatDataChanged = new UnityEvent<int>(); 
-                    OnFatDataChanged.AddListener(listener);
-                    break;
-            }
-        }
-        public void RemoveListener(ICustomizableCharacter.ListenableEvent event_, UnityAction<int> listener)
-        {
-            switch (event_)
-            {
-                case ICustomizableCharacter.ListenableEvent.OnMuscleDataChanged:
-                    if (OnMuscleDataChanged != null) OnMuscleDataChanged.RemoveListener(listener);
-                    break;
-                case ICustomizableCharacter.ListenableEvent.OnFatDataChanged:
-                    if (OnFatDataChanged != null) OnFatDataChanged.RemoveListener(listener);
-                    break;
-            }
-        }
-        public void ClearListeners()
-        {
-            if (OnMuscleDataChanged != null) OnMuscleDataChanged.RemoveAllListeners();
-            if (OnFatDataChanged != null) OnFatDataChanged.RemoveAllListeners();
+            return instance.OwnerGroup.CreateInstanceMaterialBuffer(propertyName, materialSlots, elementsPerInstance, bufferPoolSize, autoApplyToMaterials, out buffer);
         }
 
         #endregion
 
         #region Sampling
 
-        protected struct RaycastResult
-        {
-            public bool didHit;
-            public Maths.RaycastHitResult hitInfo;
-        }
-
-        public int DefaultRaycastLOD
-        {
-            get => data.SerializedData.raycastLod;
-            set
-            {
-            }
-        }
-
-        public bool RaycastAgainst(int lod, float3 origin, float3 offset, out Maths.RaycastHitResult result, float errorMargin = 0.01f)
+        protected override bool PreRaycastAgainst(ref int lod, ref float3 origin, ref float3 offset) => true;
+        protected override bool RaycastAgainstMesh(int lod, float3 origin, float3 offset, out Maths.RaycastHitResult result, float errorMargin = 0.01f)
         {
             result = default;
-            if (!IsInitialized) return false;
 
             if (!Data.SerializedData.TryGetVertices(lod, out var vertices)) return false;
             if (!Data.SerializedData.TryGetTriangles(lod, out var triangles)) return false;
@@ -7728,602 +5585,6 @@ namespace Swole.Morphing
 
             result = finalResult.hitInfo;
             return finalResult.didHit;
-        }
-
-        [BurstCompile]
-        protected struct RaycastMeshJob : IJobParallelFor
-        {
-            public int deltasStartIndex;
-
-            public RGBAChannel indexChannel;
-
-            public float errorMargin;
-
-            public float3 origin;
-            public float3 offset;
-
-            [ReadOnly]
-            public NativeArray<float3> vertices;
-            [ReadOnly]
-            public NativeArray<int> triangles;
-            [ReadOnly]
-            public NativeArray<BoneWeight8> boneWeights;
-            [ReadOnly]
-            public NativeArray<MeshVertexDelta> deltas;
-            [ReadOnly]
-            public NativeArray<float4x4> skinningMatrices;
-
-            public NativeQueue<RaycastResult>.ParallelWriter results; 
-
-            public void Execute(int index)
-            {
-                int triIndex = index * 3;
-
-                int i0 = triangles[triIndex];
-                int i1 = triangles[triIndex + 1];
-                int i2 = triangles[triIndex + 2];
-
-                var boneWeights0 = boneWeights[i0];
-                var boneWeights1 = boneWeights[i1];
-                var boneWeights2 = boneWeights[i2]; 
-
-                var skinning0 = 
-                    (skinningMatrices[boneWeights0.boneIndex0] * boneWeights0.boneWeight0) +
-                    (skinningMatrices[boneWeights0.boneIndex1] * boneWeights0.boneWeight1) +
-                    (skinningMatrices[boneWeights0.boneIndex2] * boneWeights0.boneWeight2) +
-                    (skinningMatrices[boneWeights0.boneIndex3] * boneWeights0.boneWeight3) +
-                    (skinningMatrices[boneWeights0.boneIndex4] * boneWeights0.boneWeight4) +
-                    (skinningMatrices[boneWeights0.boneIndex5] * boneWeights0.boneWeight5) +
-                    (skinningMatrices[boneWeights0.boneIndex6] * boneWeights0.boneWeight6) +
-                    (skinningMatrices[boneWeights0.boneIndex7] * boneWeights0.boneWeight7);
-
-                var skinning1 =
-                    (skinningMatrices[boneWeights1.boneIndex0] * boneWeights1.boneWeight0) +
-                    (skinningMatrices[boneWeights1.boneIndex1] * boneWeights1.boneWeight1) +
-                    (skinningMatrices[boneWeights1.boneIndex2] * boneWeights1.boneWeight2) +
-                    (skinningMatrices[boneWeights1.boneIndex3] * boneWeights1.boneWeight3) +
-                    (skinningMatrices[boneWeights1.boneIndex4] * boneWeights1.boneWeight4) +
-                    (skinningMatrices[boneWeights1.boneIndex5] * boneWeights1.boneWeight5) +
-                    (skinningMatrices[boneWeights1.boneIndex6] * boneWeights1.boneWeight6) +
-                    (skinningMatrices[boneWeights1.boneIndex7] * boneWeights1.boneWeight7);
-
-                var skinning2 =
-                    (skinningMatrices[boneWeights2.boneIndex0] * boneWeights2.boneWeight0) +
-                    (skinningMatrices[boneWeights2.boneIndex1] * boneWeights2.boneWeight1) +
-                    (skinningMatrices[boneWeights2.boneIndex2] * boneWeights2.boneWeight2) +
-                    (skinningMatrices[boneWeights2.boneIndex3] * boneWeights2.boneWeight3) +
-                    (skinningMatrices[boneWeights2.boneIndex4] * boneWeights2.boneWeight4) +
-                    (skinningMatrices[boneWeights2.boneIndex5] * boneWeights2.boneWeight5) +
-                    (skinningMatrices[boneWeights2.boneIndex6] * boneWeights2.boneWeight6) +
-                    (skinningMatrices[boneWeights2.boneIndex7] * boneWeights2.boneWeight7); 
-
-                var v0 = math.transform(skinning0, vertices[i0] + deltas[deltasStartIndex + i0].positionDelta);
-                var v1 = math.transform(skinning1, vertices[i1] + deltas[deltasStartIndex + i1].positionDelta);
-                var v2 = math.transform(skinning2, vertices[i2] + deltas[deltasStartIndex + i2].positionDelta);
-
-                var output = new RaycastResult();
-                output.didHit = Maths.seg_intersect_triangle_include_dist(origin, offset, v0, v1, v2, out Maths.RaycastHitResult result, errorMargin);
-                result.triangleIndex = index;
-                output.hitInfo = result;
-
-                if (output.didHit) results.Enqueue(output); 
-            }
-
-        }
-
-        [BurstCompile]
-        protected struct RaycastMeshWithIndexUVJob : IJobParallelFor
-        {
-            public int deltasStartIndex;
-
-            public RGBAChannel indexChannel;
-
-            public float errorMargin;
-
-            public float3 origin;
-            public float3 offset;
-
-            [ReadOnly]
-            public NativeArray<float3> vertices;
-            [ReadOnly]
-            public NativeArray<float4> indexUVs;
-            [ReadOnly]
-            public NativeArray<int> triangles;
-            [ReadOnly]
-            public NativeArray<BoneWeight8> boneWeights;
-            [ReadOnly]
-            public NativeArray<MeshVertexDelta> deltas;
-            [ReadOnly]
-            public NativeArray<float4x4> skinningMatrices;
-
-            public NativeQueue<RaycastResult>.ParallelWriter results;
-
-            public void Execute(int index)
-            {
-                int triIndex = index * 3;
-
-                int i0 = triangles[triIndex];
-                int i1 = triangles[triIndex + 1];
-                int i2 = triangles[triIndex + 2];
-
-                int baseI0 = MorphUtils.FetchIndexFromUV(indexChannel, indexUVs[i0]);
-                int baseI1 = MorphUtils.FetchIndexFromUV(indexChannel, indexUVs[i1]);
-                int baseI2 = MorphUtils.FetchIndexFromUV(indexChannel, indexUVs[i2]);
-
-                var boneWeights0 = boneWeights[baseI0];
-                var boneWeights1 = boneWeights[baseI1];
-                var boneWeights2 = boneWeights[baseI2];
-
-                var skinning0 =
-                    (skinningMatrices[boneWeights0.boneIndex0] * boneWeights0.boneWeight0) +
-                    (skinningMatrices[boneWeights0.boneIndex1] * boneWeights0.boneWeight1) +
-                    (skinningMatrices[boneWeights0.boneIndex2] * boneWeights0.boneWeight2) +
-                    (skinningMatrices[boneWeights0.boneIndex3] * boneWeights0.boneWeight3) +
-                    (skinningMatrices[boneWeights0.boneIndex4] * boneWeights0.boneWeight4) +
-                    (skinningMatrices[boneWeights0.boneIndex5] * boneWeights0.boneWeight5) +
-                    (skinningMatrices[boneWeights0.boneIndex6] * boneWeights0.boneWeight6) +
-                    (skinningMatrices[boneWeights0.boneIndex7] * boneWeights0.boneWeight7);
-
-                var skinning1 =
-                    (skinningMatrices[boneWeights1.boneIndex0] * boneWeights1.boneWeight0) +
-                    (skinningMatrices[boneWeights1.boneIndex1] * boneWeights1.boneWeight1) +
-                    (skinningMatrices[boneWeights1.boneIndex2] * boneWeights1.boneWeight2) +
-                    (skinningMatrices[boneWeights1.boneIndex3] * boneWeights1.boneWeight3) +
-                    (skinningMatrices[boneWeights1.boneIndex4] * boneWeights1.boneWeight4) +
-                    (skinningMatrices[boneWeights1.boneIndex5] * boneWeights1.boneWeight5) +
-                    (skinningMatrices[boneWeights1.boneIndex6] * boneWeights1.boneWeight6) +
-                    (skinningMatrices[boneWeights1.boneIndex7] * boneWeights1.boneWeight7);
-
-                var skinning2 =
-                    (skinningMatrices[boneWeights2.boneIndex0] * boneWeights2.boneWeight0) +
-                    (skinningMatrices[boneWeights2.boneIndex1] * boneWeights2.boneWeight1) +
-                    (skinningMatrices[boneWeights2.boneIndex2] * boneWeights2.boneWeight2) +
-                    (skinningMatrices[boneWeights2.boneIndex3] * boneWeights2.boneWeight3) +
-                    (skinningMatrices[boneWeights2.boneIndex4] * boneWeights2.boneWeight4) +
-                    (skinningMatrices[boneWeights2.boneIndex5] * boneWeights2.boneWeight5) +
-                    (skinningMatrices[boneWeights2.boneIndex6] * boneWeights2.boneWeight6) +
-                    (skinningMatrices[boneWeights2.boneIndex7] * boneWeights2.boneWeight7);
-
-                var v0 = math.transform(skinning0, vertices[i0] + deltas[deltasStartIndex + baseI0].positionDelta);
-                var v1 = math.transform(skinning1, vertices[i1] + deltas[deltasStartIndex + baseI1].positionDelta);
-                var v2 = math.transform(skinning2, vertices[i2] + deltas[deltasStartIndex + baseI2].positionDelta);
-
-                var output = new RaycastResult();
-                output.didHit = Maths.seg_intersect_triangle_include_dist(origin, offset, v0, v1, v2, out Maths.RaycastHitResult result, errorMargin);
-                result.triangleIndex = index;
-                output.hitInfo = result;
-
-                if (output.didHit) results.Enqueue(output);
-            }
-
-        }
-
-        [BurstCompile]
-        private struct ClosestRaycastHitFinalJob : IJob
-        {
-
-            public NativeQueue<RaycastResult> outputs;
-
-            public NativeArray<RaycastResult> finalOutput;
-
-            public void Execute()
-            {
-                RaycastResult min = new RaycastResult() { hitInfo = new Maths.RaycastHitResult() { distance = float.MaxValue } };
-
-                while (outputs.TryDequeue(out var f))
-                {
-                    if (f.didHit & f.hitInfo.distance < min.hitInfo.distance)
-                    {
-                        min = f;
-                    }
-                }
-
-                finalOutput[0] = min;
-            }
-        }
-
-        #endregion
-
-        #region IMuscularBasic
-
-        public const int _dualMuscleGroupIndexOffset = 10000;
-
-        public static int ConvertDefaultIndexForArray(int defaultIndex)
-        {
-            int convertedDefaultIndex = defaultIndex;
-            if (convertedDefaultIndex >= _dualMuscleGroupIndexOffset)
-            {
-                convertedDefaultIndex = convertedDefaultIndex - _dualMuscleGroupIndexOffset;
-            }
-
-            return convertedDefaultIndex;
-        }
-        public static int ConvertDefaultMuscleGroupIndexToLocal(int defaultIndex, out int convertedDefaultIndex, out bool isBothSides) 
-        {
-            isBothSides = false;
-
-            convertedDefaultIndex = defaultIndex;
-            if (convertedDefaultIndex >= _dualMuscleGroupIndexOffset)
-            {
-                isBothSides = true;
-                convertedDefaultIndex = convertedDefaultIndex - _dualMuscleGroupIndexOffset;
-            }
-
-            return convertedDefaultIndex / 2; 
-        }
-        public static int ConvertDefaultMuscleGroupIndexToLocal(int defaultIndex, out bool isBothSides) => ConvertDefaultMuscleGroupIndexToLocal(defaultIndex, out _, out isBothSides);
-        public static int ConvertDefaultMuscleGroupIndexToLocal(int defaultIndex, out int convertedDefaultIndex) => ConvertDefaultMuscleGroupIndexToLocal(defaultIndex, out convertedDefaultIndex, out _);
-        public static int ConvertDefaultMuscleGroupIndexToLocal(int defaultIndex) => ConvertDefaultMuscleGroupIndexToLocal(defaultIndex, out _, out _);
-
-        [Serializable]
-        public class DefaultMuscleGroupConversion
-        {
-            public MuscleGroup basicMuscleGroup;
-            public string muscleGroupName;
-
-            [NonSerialized]
-            public int cachedIndex;
-        }
-
-        public string GetMuscleGroupName(int index) => GetMuscleGroupNameUnsafe(index);
-        public string GetMuscleGroupNameUnsafe(int index)
-        {
-            var defaultGroup = SubData.ConvertMuscleGroupIndexToDefault(index); 
-            return defaultGroup.ToString();  
-        }
-        public int GetMuscleGroupIndex(string muscleGroupName) 
-        {
-            if (Enum.TryParse(muscleGroupName, true, out MuscleGroupsDefault defaultGroup)) return SubData.ConvertDefaultMuscleGroupToIndex(defaultGroup);
-
-            var baseGroup = MuscleGroupsDefaultExtensions.GetMuscleGroupBase(muscleGroupName);
-            if (baseGroup != MuscleGroup.Null)
-            {
-                if (Enum.TryParse(baseGroup.ToString(), true, out defaultGroup)) return SubData.ConvertDefaultMuscleGroupToIndex(defaultGroup); 
-            }
-            
-            return SubData.IndexOfMuscleGroup(muscleGroupName) * 2;
-        }
-        public int GetMuscleGroupIndex(MuscleGroupIdentifier identifier) => GetMuscleGroupIndex(identifier.ToString());
-
-        public int GetMuscleGroupIndexForArray(string muscleGroupName)
-        {
-            int ind = GetMuscleGroupIndex(muscleGroupName);
-            return ConvertDefaultIndexForArray(ind);
-        }
-        public int GetMuscleGroupIndexForArray(MuscleGroupIdentifier identifier) => GetMuscleGroupIndexForArray(identifier.ToString()); 
-
-        public int FindMuscleGroup(string muscleGroupName) => GetMuscleGroupIndexForArray(muscleGroupName);
-        public int FindMuscleGroup(MuscleGroupIdentifier identifier) => FindMuscleGroup(identifier.ToString());
-
-        public int MuscleGroupCount => SubData.MuscleGroupsCount * 2;
-
-        public float BreastPresence
-        {
-            get => BustSize;
-            set => BustSize = value;
-        }
-
-        public bool SetMuscleGroupValues(int muscleGroupIndex, float3 values, bool updateDependencies = true)
-        {
-            int localGroupIndex = ConvertDefaultMuscleGroupIndexToLocal(muscleGroupIndex, out bool bothSides);
-
-            var defaultGroup = SubData.ConvertLocalMuscleGroupToDefault(localGroupIndex);
-            bool isSymmetrical = bothSides || defaultGroup.IsSymmetrical();
-
-            var data = GetMuscleData(localGroupIndex);
-            if (isSymmetrical)
-            {
-                data.valuesLeft.mass = values.x;
-                data.valuesLeft.flex = values.y;
-                data.valuesLeft.pump = values.z;
-
-                data.valuesRight.mass = values.x;
-                data.valuesRight.flex = values.y;
-                data.valuesRight.pump = values.z;
-            }
-            else
-            {
-                bool isLeft = muscleGroupIndex % 2 == 0;
-                if (isLeft)
-                {
-                    data.valuesLeft.mass = values.x;
-                    data.valuesLeft.flex = values.y;
-                    data.valuesLeft.pump = values.z;
-                }
-                else
-                {
-                    data.valuesRight.mass = values.x;
-                    data.valuesRight.flex = values.y;
-                    data.valuesRight.pump = values.z;
-                }
-            }
-
-            SetMuscleData(localGroupIndex, data);
-            return true;
-        }
-        public bool SetMuscleGroupMass(int muscleGroupIndex, float mass, bool updateDependencies = true, bool hasUpdated = false)
-        {
-            int localGroupIndex = ConvertDefaultMuscleGroupIndexToLocal(muscleGroupIndex, out bool bothSides);
-
-            var defaultGroup = SubData.ConvertLocalMuscleGroupToDefault(localGroupIndex);
-            bool isSymmetrical = bothSides || defaultGroup.IsSymmetrical();
-
-            var data = GetMuscleData(localGroupIndex); 
-            if (isSymmetrical)
-            {
-                data.valuesLeft.mass = mass;
-                data.valuesRight.mass = mass;
-            }
-            else
-            {
-                bool isLeft = muscleGroupIndex % 2 == 0;
-                if (isLeft)
-                {
-                    data.valuesLeft.mass = mass;
-                }
-                else
-                {
-                    data.valuesRight.mass = mass;
-                }
-            }
-
-            SetMuscleData(localGroupIndex, data);
-            return true;
-        }
-        public bool SetMuscleGroupFlex(int muscleGroupIndex, float flex, bool updateDependencies = true, bool hasUpdated = false)
-        {
-            int localGroupIndex = ConvertDefaultMuscleGroupIndexToLocal(muscleGroupIndex, out bool bothSides);
-
-            var defaultGroup = SubData.ConvertLocalMuscleGroupToDefault(localGroupIndex);
-            bool isSymmetrical = bothSides || defaultGroup.IsSymmetrical();
-
-            var data = GetMuscleData(localGroupIndex);
-            if (isSymmetrical)
-            {
-                data.valuesLeft.flex = flex;
-                data.valuesRight.flex = flex;
-            }
-            else
-            {
-                bool isLeft = muscleGroupIndex % 2 == 0;
-                if (isLeft)
-                {
-                    data.valuesLeft.flex = flex;
-                }
-                else
-                {
-                    data.valuesRight.flex = flex;
-                }
-            }
-
-            SetMuscleData(localGroupIndex, data);
-            return true;
-        }
-        public bool SetMuscleGroupPump(int muscleGroupIndex, float pump, bool updateDependencies = true, bool hasUpdated = false)
-        {
-            int localGroupIndex = ConvertDefaultMuscleGroupIndexToLocal(muscleGroupIndex, out bool bothSides);
-
-            var defaultGroup = SubData.ConvertLocalMuscleGroupToDefault(localGroupIndex);
-            bool isSymmetrical = bothSides || defaultGroup.IsSymmetrical();
-
-            var data = GetMuscleData(localGroupIndex);
-            if (isSymmetrical)
-            {
-                data.valuesLeft.pump = pump;
-                data.valuesRight.pump = pump;
-            }
-            else
-            {
-                bool isLeft = muscleGroupIndex % 2 == 0;
-                if (isLeft)
-                {
-                    data.valuesLeft.pump = pump;
-                }
-                else
-                {
-                    data.valuesRight.pump = pump;
-                }
-            }
-
-            SetMuscleData(localGroupIndex, data);
-            return true;
-        }
-
-        public bool SetMuscleGroupValuesUnsafe(int muscleGroupIndex, float3 values, bool updateDependencies = true) => SetMuscleGroupValues(muscleGroupIndex, values, updateDependencies);
-        public bool SetMuscleGroupMassUnsafe(int muscleGroupIndex, float mass, bool updateDependencies = true, bool hasUpdated = false) => SetMuscleGroupMass(muscleGroupIndex, mass, updateDependencies, hasUpdated);
-        public bool SetMuscleGroupFlexUnsafe(int muscleGroupIndex, float flex, bool updateDependencies = true, bool hasUpdated = false) => SetMuscleGroupFlex(muscleGroupIndex, flex, updateDependencies, hasUpdated);
-        public bool SetMuscleGroupPumpUnsafe(int muscleGroupIndex, float pump, bool updateDependencies = true, bool hasUpdated = false) => SetMuscleGroupPump(muscleGroupIndex, pump, updateDependencies, hasUpdated);
-
-        public float3 GetMuscleGroupValues(int muscleGroupIndex)
-        {
-            int localGroupIndex = ConvertDefaultMuscleGroupIndexToLocal(muscleGroupIndex, out int defaultIndex, out bool bothSides);
-
-            var defaultGroup = SubData.ConvertLocalMuscleGroupToDefault(localGroupIndex);
-            bool isSymmetrical = bothSides || defaultGroup.IsSymmetrical();
-            bool isLeft = isSymmetrical || muscleGroupIndex % 2 == 0; 
-
-            var data = GetMuscleData(localGroupIndex);
-            return isLeft ? new float3(data.valuesLeft.mass, data.valuesLeft.flex, data.valuesLeft.pump) : new float3(data.valuesRight.mass, data.valuesRight.flex, data.valuesRight.pump);
-        }
-        public float3 GetMuscleGroupValuesUnsafe(int muscleGroupIndex) => GetMuscleGroupValues(muscleGroupIndex);
-
-        public float GetMuscleGroupMass(int muscleGroupIndex) => GetMuscleGroupValues(muscleGroupIndex).x;
-        public float GetMuscleGroupMassUnsafe(int muscleGroupIndex) => GetMuscleGroupMass(muscleGroupIndex);
-
-        public float GetMuscleGroupFlex(int muscleGroupIndex) => GetMuscleGroupValues(muscleGroupIndex).y;
-        public float GetMuscleGroupFlexUnsafe(int muscleGroupIndex) => GetMuscleGroupFlex(muscleGroupIndex);
-
-        public float GetMuscleGroupPump(int muscleGroupIndex) => GetMuscleGroupValues(muscleGroupIndex).z;
-        public float GetMuscleGroupPumpUnsafe(int muscleGroupIndex) => GetMuscleGroupPump(muscleGroupIndex);
-
-        public void SetGlobalMuscleValues(float3 values)
-        {
-            for(int a = 0; a < MuscleGroupCount; a++)
-            {
-                SetMuscleGroupValuesUnsafe(a, values);
-            }
-        }
-        public void SetGlobalMass(float mass)
-        {
-            for (int a = 0; a < MuscleGroupCount; a++)
-            {
-                SetMuscleGroupMassUnsafe(a, mass);
-            }
-        }
-        public void SetGlobalFlex(float flex)
-        {
-            for (int a = 0; a < MuscleGroupCount; a++)
-            {
-                SetMuscleGroupFlexUnsafe(a, flex);
-            }
-        }
-        public void SetGlobalPump(float pump)
-        {
-            for (int a = 0; a < MuscleGroupCount; a++)
-            {
-                SetMuscleGroupPumpUnsafe(a, pump);
-            }
-        }
-
-        public float3 GetAverageMuscleValues()
-        {
-            float3 values = float3.zero;
-            for (int a = 0; a < MuscleGroupCount; a++)
-            {
-                values = values + GetMuscleGroupValues(a);
-            }
-
-            return values;
-        }
-        public float GetAverageMass()
-        {
-            float mass = 0f;
-            for (int a = 0; a < MuscleGroupCount; a++)
-            {
-                mass = mass + GetMuscleGroupMass(a);
-            }
-
-            return mass;
-        }
-        public float GetAverageFlex()
-        {
-            float flex = 0f;
-            for (int a = 0; a < MuscleGroupCount; a++)
-            {
-                flex = flex + GetMuscleGroupMass(a);
-            }
-
-            return flex;
-        }
-        public float GetAveragePump()
-        {
-            float pump = 0f;
-            for (int a = 0; a < MuscleGroupCount; a++)
-            {
-                pump = pump + GetMuscleGroupMass(a);
-            }
-
-            return pump;
-        }
-
-        public void ClearEventListeners()
-        {
-            ClearListeners();
-        }
-
-        private List<MuscleValueListener>[] muscleValueListeners;
-
-        public bool Listen(int muscleGroupIndex, EngineInternal.IEngineObject listeningObject, MuscleValueListenerDelegate callback, out MuscleValueListener listener)
-        {
-            muscleGroupIndex = ConvertDefaultMuscleGroupIndexToLocal(muscleGroupIndex, out int defaultIndex, out bool bothSides);
-
-            listener = null;
-            if (listeningObject == null || callback == null || muscleGroupIndex < 0 || muscleGroupIndex >= SubData.MuscleGroupsCount) return false;
-
-            if (muscleValueListeners == null) muscleValueListeners = new List<MuscleValueListener>[MuscleGroupCount];
-
-            if (bothSides) defaultIndex = muscleGroupIndex * 2;
-
-            List<MuscleValueListener> listeners = muscleValueListeners[defaultIndex];
-            if (listeners == null)
-            {
-                listeners = new List<MuscleValueListener>();
-                muscleValueListeners[defaultIndex] = listeners;
-            }
-
-            listener = new MuscleValueListener() { listeningObject = listeningObject, callback = callback };
-            listeners.Add(listener);
-
-            return true;
-
-        }
-
-        public bool StopListening(int muscleGroupIndex, EngineInternal.IEngineObject listeningObject)
-        {
-
-            if (listeningObject == null || muscleValueListeners == null || muscleGroupIndex < 0 || muscleGroupIndex >= MuscleGroupCount) return false;
-
-            List<MuscleValueListener> listeners = muscleValueListeners[muscleGroupIndex];
-            if (listeners != null)
-            {
-
-                return listeners.RemoveAll(i => i.listeningObject == listeningObject) > 0;
-
-            }
-
-            return false;
-
-        }
-
-        public int StopListening(EngineInternal.IEngineObject listeningObject)
-        {
-
-            if (listeningObject == null || muscleValueListeners == null) return 0;
-
-            int removed = 0;
-
-            for (int a = 0; a < muscleValueListeners.Length; a++)
-            {
-
-                List<MuscleValueListener> listeners = muscleValueListeners[a];
-                if (listeners != null) removed += listeners.RemoveAll(i => i.listeningObject == listeningObject); 
-
-            }
-
-            return removed;
-
-        }
-
-        private void NotifyDefaultMuscleGroupListeners(int muscleGroupIndex)
-        {
-            muscleGroupIndex = ConvertDefaultMuscleGroupIndexToLocal(muscleGroupIndex, out int defaultIndex);
-
-            if (muscleValueListeners != null && muscleGroupIndex >= 0 && muscleGroupIndex < SubData.MuscleGroupsCount)
-            {
-                List<MuscleValueListener> listeners = muscleValueListeners[defaultIndex];
-                if (listeners != null)
-                {
-                    bool isLeft = defaultIndex % 2 == 0;
-                    int mirrorMuscleGroupIndex = isLeft ? defaultIndex + 1 : defaultIndex - 1; 
-                    var data = GetMuscleData(muscleGroupIndex);
-
-                    foreach (var listener in listeners)
-                    {
-                        if (listener.listeningObject != null && listener.callback != null)
-                        {
-                            MuscleGroupInfo info = new MuscleGroupInfo()
-                            {
-                                mirroredIndex = mirrorMuscleGroupIndex,
-                                mass = isLeft ? data.valuesLeft.mass : data.valuesRight.mass,
-                                flex = isLeft ? data.valuesLeft.flex : data.valuesRight.flex,
-                                pump = isLeft ? data.valuesLeft.pump : data.valuesRight.pump
-                            };
-
-                            listener.callback.Invoke(info);
-                        }
-                    }
-                }
-            }
         }
 
         #endregion

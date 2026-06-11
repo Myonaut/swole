@@ -12,6 +12,7 @@ using TMPro;
 
 using Swole.UI;
 using Swole.API.Unity.Animation;
+using Swole.API.Unity.Animation.Curves;
 
 namespace Swole.API.Unity
 {

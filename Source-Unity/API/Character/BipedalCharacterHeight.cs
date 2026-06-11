@@ -651,13 +651,13 @@ namespace Swole.API.Unity
         }
 
         [SerializeField]
-        protected CustomizableCharacterMeshV2 characterMeshV2;
-        public CustomizableCharacterMeshV2 CharacterMeshV2
+        protected CustomizableCharacterMeshBase characterMeshV2;
+        public CustomizableCharacterMeshBase CharacterMeshV2
         {
             set => characterMeshV2 = value;
             get
             {
-                if (characterMeshV2 == null) characterMeshV2 = gameObject.GetComponent<CustomizableCharacterMeshV2>();
+                if (characterMeshV2 == null) characterMeshV2 = gameObject.GetComponent<CustomizableCharacterMeshBase>();
                 return characterMeshV2;
             }
         }

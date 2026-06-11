@@ -21,6 +21,7 @@ namespace Swole.API.Unity
     {
 
         public bool IsInitialized { get; }
+        public bool HasValidInstance { get; }
 
         public string Name
         {
@@ -32,12 +33,33 @@ namespace Swole.API.Unity
             get;
         }
 
+        [Serializable, Flags]
+        public enum ChildType
+        {
+            None = 0, Mesh = 1, Shapes = 2, Rig = 4
+        }
+
+        public struct Child
+        {
+            public ChildType type;
+            public ICustomizableCharacter instance;
+
+            public bool IsValid => instance != null;
+        }
+
+        public bool IsParentOf(ICustomizableCharacter child) => IsParentOf(child, out _);
+        public bool IsParentOf(ICustomizableCharacter child, out int index);
+        public void AddChild(ICustomizableCharacter child, ChildType type);
+        public void RemoveChild(ICustomizableCharacter child, ChildType type);
+        public void RemoveChild(ICustomizableCharacter child);
+
         public float BustSize
         {
             get;
             set;
         }
         public void SetBustSize(float value);
+        public void SetBustShape(float value);
 
         public bool HideNipples
         {
@@ -122,6 +144,18 @@ namespace Swole.API.Unity
 
         public Matrix4x4[] BindPose { get; }
 
+        #region Rendering
+
+        public bool RenderingIsInitialized();
+        public bool IsRendering();
+        public bool IsRendering(int index);
+        public bool CanRender { get; }
+
+        public void InitializeRendering();
+        public void ApplyIDsToMaterials();
+        public void SetVisible(bool visible);
+
+        #endregion
 
         public bool TryGetVertices(int lod, out NativeArray<float3> array);
         public bool TryGetColors(int lod, out NativeArray<float4> array);
@@ -149,9 +183,7 @@ namespace Swole.API.Unity
         public List<float3> GetVariationGroupsAffecting(int lod, int vertexIndex, List<float3> list = null);
 
         public int IndexOfVertexGroup(string groupName, bool caseSensitive = false);
-        public VertexGroup GetVertexGroup(int index);
         public int IndexOfStandaloneVertexGroup(string groupName, bool caseSensitive = false);
-        public VertexGroup GetStandaloneVertexGroup(int index);
 
 
         public int FirstStandaloneShapesControlIndex { get; }
@@ -233,6 +265,16 @@ namespace Swole.API.Unity
 
         #region Defaults
 
+        [Serializable]
+        public class DefaultMuscleGroupConversion
+        {
+            public MuscleGroup basicMuscleGroup;
+            public string muscleGroupName;
+
+            [NonSerialized]
+            public int cachedIndex;
+        }
+
         public static class Defaults
         {
 
@@ -264,6 +306,8 @@ namespace Swole.API.Unity
 
 
             public const string _vertexGroupsBufferRangeDefaultPropertyName = "_RangeVertexGroups";
+
+            public const string _standaloneVertexGroupsBufferRangeDefaultPropertyName = "_RangeStandaloneGroups";
 
             public const string _muscleVertexGroupsBufferRangeDefaultPropertyName = "_RangeMuscleGroups";
 

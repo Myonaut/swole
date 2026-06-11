@@ -30,7 +30,7 @@ Standalone dependencies:
 - UILightweightGridRenderer
 
 */
-namespace Swole.API.Unity.Animation
+namespace Swole.API.Unity.Animation.Curves
 { 
     public static class AnimationCurveEditorUtils
     { 

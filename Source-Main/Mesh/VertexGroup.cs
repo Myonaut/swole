@@ -196,6 +196,9 @@ namespace Swole
         /// </summary>
         public bool flag;
 
+        public VertexGroupInfo Info => new VertexGroupInfo() { name = this.name, animatable = flag };
+        public static implicit operator VertexGroupInfo(VertexGroup group) => group.Info;
+
         [Serializable]
         public enum SampleSource
         {
@@ -686,6 +689,16 @@ namespace Swole
         }
 #endif
 
+    }
+
+    [Serializable, NonAnimatable]
+    public struct VertexGroupInfo
+    {
+        public string name;
+        public bool animatable;
+
+        public bool IsValid => !string.IsNullOrWhiteSpace(name);
+        public bool IsInvalid => !IsValid;
     }
 
 }

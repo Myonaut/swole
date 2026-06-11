@@ -13,6 +13,8 @@ using Unity.Mathematics;
 
 using Swole.UI;
 
+using Swole.API.Unity.Animation.Curves;
+
 namespace Swole.API.Unity.Animation
 {
     [Serializable]

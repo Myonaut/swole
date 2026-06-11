@@ -1503,7 +1503,7 @@ namespace Swole.API.Unity.Animation
 
             }
 
-            public static float GetValue(PropertyMemberInfo[] info, object instance, int index)
+            public static float GetValue(PropertyMemberInfo[] info, object instance, int index = -1)
             {
                 if (info == null || info.Length <= 0)
                 {
@@ -1544,7 +1544,7 @@ namespace Swole.API.Unity.Animation
 
                 return GetValue(finalMemInfo, finalInstance, index);
             }
-            public static float GetValue(MemberInfo info, object instance, int index)
+            public static float GetValue(MemberInfo info, object instance, int index = -1)
             {
 
                 if (instance is DynamicAnimationProperties dap)
@@ -1610,7 +1610,7 @@ namespace Swole.API.Unity.Animation
                 return null;
             }
 
-            public static float GetDefaultValue(PropertyMemberInfo[] info, object instance, int index)
+            public static float GetDefaultValue(PropertyMemberInfo[] info, object instance, int index = -1)
             {
                 if (info == null || info.Length <= 0)
                 {
@@ -1643,7 +1643,11 @@ namespace Swole.API.Unity.Animation
                 }
 
                 var finalInfo = info[lengthM1];
-                if (finalInfo.hasDefaultFloatValue) return finalInfo.defaultFloatValue;
+                if (finalInfo.hasDefaultFloatValue)
+                {
+                    //Debug.Log($"{finalInfo.info.Name} has default value {finalInfo.defaultFloatValue}"); 
+                    return finalInfo.defaultFloatValue;
+                }
 
                 var finalMemInfo = finalInfo.info;
                 if (finalInfo.IsElement)
@@ -1653,7 +1657,7 @@ namespace Swole.API.Unity.Animation
 
                 return GetDefaultValue(finalMemInfo, finalInstance, index);
             }
-            public static float GetDefaultValue(MemberInfo info, object instance, int index)
+            public static float GetDefaultValue(MemberInfo info, object instance, int index = -1)
             {
 
                 if (instance is DynamicAnimationProperties dap)
@@ -1674,7 +1678,7 @@ namespace Swole.API.Unity.Animation
                 return 0f;
             }
 
-            public static void SetValue(PropertyMemberInfo[] info, object instance, float value, int index)
+            public static void SetValue(PropertyMemberInfo[] info, object instance, float value, int index = -1)
             {
                 if (info == null || info.Length <= 0)
                 {
@@ -1716,7 +1720,7 @@ namespace Swole.API.Unity.Animation
 
                 SetValue(info[lengthM1].info, finalInstance, value, index);  
             }
-            public static void SetValue(MemberInfo info, object instance, float value, int index)
+            public static void SetValue(MemberInfo info, object instance, float value, int index = -1)
             {
                 if (instance is DynamicAnimationProperties dap)
                 {
@@ -1737,6 +1741,15 @@ namespace Swole.API.Unity.Animation
                 {
                     prop.SetValue(instance, GetTypedValue(prop.PropertyType, value), indices);
                 }
+            }
+
+            protected bool isModified;
+            public bool IsModified => isModified;
+            public bool ConsumeIsModified()
+            {
+                bool wasModified = isModified;
+                isModified = false;
+                return wasModified;
             }
 
             public void Unmodify(object instance)
@@ -1766,6 +1779,18 @@ namespace Swole.API.Unity.Animation
 
             }
 
+            /// <summary>
+            /// If there are multiple states affecting the same property, this will prevent overriding when one of the states wasn't modified.
+            /// </summary>
+            public void ModifyIfChanged(object instance)
+            {
+
+                if (instance == null || !ConsumeIsModified()) return;
+
+                SetValue(info, instance, modifiedValue, index);
+
+            }
+
             public void Reset(object instance)
             {
 
@@ -1778,6 +1803,7 @@ namespace Swole.API.Unity.Animation
             public void ResetModifiedData()
             {
 
+                isModified = false;
                 modifiedValue = unmodifiedValue;
 
             }
@@ -1817,19 +1843,26 @@ namespace Swole.API.Unity.Animation
 
             public void Apply(float data)
             {
+                isModified = isModified || modifiedValue != data;
                 modifiedValue = data;
             }
             public void ApplyMix(float data, float mix)
             {
-                modifiedValue = math.lerp(unmodifiedValue, data, mix);
+                float newValue = math.lerp(unmodifiedValue, data, mix);
+                isModified = isModified || modifiedValue != newValue;
+                modifiedValue = newValue;
             }
             public void ApplyAdditive(float data)
             {
-                modifiedValue = modifiedValue + data;
+                float newValue = modifiedValue + data;
+                isModified = isModified || modifiedValue != newValue;
+                modifiedValue = newValue;
             }
             public void ApplyAdditiveMix(float data, float mix)
             {
-                modifiedValue = modifiedValue + data * mix;
+                float newValue = modifiedValue + data * mix;
+                isModified = isModified || modifiedValue != newValue; 
+                modifiedValue = newValue;
             }
 
         }
@@ -2187,7 +2220,7 @@ namespace Swole.API.Unity.Animation
                     m_normalPropertyStates.Add(propertyId);
                 }
 
-                if (m_propertyStateBehaviours != null && m_propertyStateBehaviours.TryGetValue(propertyId, out var instance)) state.Reset(instance); 
+                if (m_propertyStateBehaviours != null && m_propertyStateBehaviours.TryGetValue(propertyId, out var instance)) state.Reset(instance);
 
             }
 
@@ -2232,6 +2265,10 @@ namespace Swole.API.Unity.Animation
 
         }
 
+        /// <summary>
+        /// Paths are like this -> transformName.componentName.fieldOrPropertyName, with the option to start with * to indicate the animator's transform, like this -> *.componentName.fieldOrPropertyName. 
+        /// There is no hierarchical support for transforms in the path, so if you have multiple transforms with the same name, it will bind to the first one it finds.
+        /// </summary>
         public Component FindAndBindComponent(string propertyId, out string remainingId)
         {
             remainingId = string.Empty;
@@ -2620,7 +2657,7 @@ namespace Swole.API.Unity.Animation
 
                     var state = pair.Value;
 
-                    state.Modify(behaviour);
+                    state.ModifyIfChanged(behaviour);
 
                 }
 
@@ -2634,7 +2671,7 @@ namespace Swole.API.Unity.Animation
 
                     var state = m_propertyStates[key];
 
-                    state.Modify(behaviour);
+                    state.ModifyIfChanged(behaviour);
 
                 }
 
@@ -2647,7 +2684,7 @@ namespace Swole.API.Unity.Animation
 
                     var state = m_propertyStates[key];
 
-                    state.Modify(behaviour);
+                    state.ModifyIfChanged(behaviour); 
 
                 } 
 
@@ -2848,6 +2885,12 @@ namespace Swole.API.Unity.Animation
         {
             return FindParameter(name, out _);
         }
+        public bool TryGetParameter(string name, out IAnimationParameter parameter)
+        {
+            parameter = FindParameter(name);
+            return parameter != null;
+        }
+
         public Dictionary<int, int> RecalculateParameterIndices()
         {
 

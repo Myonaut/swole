@@ -18,6 +18,7 @@ using TMPro;
 
 using Swole.UI;
 using Swole.Animation;
+using Swole.API.Unity.Animation.Curves;
 
 #if BULKOUT_ENV
 using RLD; // Paid Asset Integration https://assetstore.unity.com/packages/tools/modeling/runtime-level-design-52325
@@ -6016,9 +6017,10 @@ namespace Swole.API.Unity.Animation
                 for (int a = 0; a < animatable.AnimatablePropertyCount; a++)  
                 {
                     var prop = animatable.GetAnimatableProperty(a);
-                    if (string.IsNullOrEmpty(prop.id) || string.IsNullOrEmpty(prop.displayName)) continue;  
+                    if (string.IsNullOrWhiteSpace(prop.id)) continue;
 
-                    propertyDropdownList.AddNewMember(prop.displayName, () => SetSelectedComponentPropertyUI(prop.displayName, prop.id));   
+                    string displayName = string.IsNullOrWhiteSpace(prop.displayName) ? prop.id : prop.displayName;
+                    propertyDropdownList.AddNewMember(displayName, () => SetSelectedComponentPropertyUI(displayName, prop.id));
                 }
             }
             
@@ -13328,6 +13330,282 @@ namespace Swole.API.Unity.Animation
             }
 
             source.MarkAsDirty();
+        }
+
+        #endregion
+
+        #region Rebuild Base Curves
+
+        public void RebuildBaseTransformCurvesSelected() => RebuildBaseTransformCurvesSelected(true, null);
+        public virtual void RebuildBaseTransformCurvesSelected(bool record, UndoableEditAnimationSourceData editRecord = null)
+        {
+            var source = CurrentSource;
+            if (source == null || source.rawAnimation == null) return;
+
+            var animatable = ActiveAnimatable;
+            if (animatable == null) return;
+
+            var restPose = animatable.RestPose;
+            if (restPose == null) return;
+
+            _tempTransforms2.Clear();
+            GetSelectedAnimatingBones(_tempTransforms2);
+
+            editRecord = record && editRecord == null ? BeginNewAnimationEditRecord() : editRecord;
+
+            bool changed = false;
+            if (source.rawAnimation.transformAnimationCurves != null)
+            {
+                for (int i = 0; i < source.rawAnimation.transformAnimationCurves.Length; i++)
+                {
+                    var curveInfo = source.rawAnimation.transformAnimationCurves[i];
+                    if (curveInfo.infoBase.curveIndex < 0 || (!curveInfo.infoBase.isLinear && source.rawAnimation.transformCurves == null) || (curveInfo.infoBase.isLinear && source.rawAnimation.transformLinearCurves == null)) continue;
+
+                    ITransformCurve curve = curveInfo.infoBase.isLinear ? source.rawAnimation.transformLinearCurves[curveInfo.infoBase.curveIndex] : source.rawAnimation.transformCurves[curveInfo.infoBase.curveIndex];
+                    if (curve == null) continue;
+
+                    ITransformCurve mainCurve = curveInfo.infoMain.curveIndex >= 0 ? (curveInfo.infoMain.isLinear ? source.rawAnimation.transformLinearCurves[curveInfo.infoMain.curveIndex] : source.rawAnimation.transformCurves[curveInfo.infoMain.curveIndex]) : null;
+
+                    string tName = curve.TransformName.AsID(); 
+
+                    bool flag = true;
+                    foreach (var t in _tempTransforms2)
+                    {
+                        if (t.name.AsID() == tName)
+                        {
+                            flag = false;
+                            break;
+                        }
+                    }
+                    if (flag) continue;
+
+                    if (curveInfo.infoBase.isLinear)
+                    {
+                        var baseCurve = (TransformLinearCurve)curve;
+                        if (baseCurve == null) continue;
+
+                        if (ReferenceEquals(curve, mainCurve))  // make sure base curve is its own curve
+                        {
+                            baseCurve = baseCurve.Duplicate();
+                            source.rawAnimation.transformLinearCurves = (TransformLinearCurve[])source.rawAnimation.transformLinearCurves.Add(baseCurve);
+                            curveInfo.infoBase.curveIndex = source.rawAnimation.transformLinearCurves.Length - 1;
+                        }
+
+                        if (record) editRecord.SetOriginalRawTransformLinearCurveState(baseCurve);
+                        var newBaseCurve = AnimationUtils.GetNewBaseTransformLinearCurve(baseCurve.TransformName, restPose);
+                        baseCurve.frames = newBaseCurve.frames;
+                        if (record) editRecord.RecordRawTransformLinearCurveEdit(baseCurve);
+                        changed = true;
+                    }
+                    else
+                    {
+                        var baseCurve = (TransformCurve)curve;
+                        if (baseCurve == null) continue;
+
+                        if (ReferenceEquals(curve, mainCurve))  // make sure base curve is its own curve
+                        {
+                            baseCurve = baseCurve.Duplicate();
+                            source.rawAnimation.transformCurves = (TransformCurve[])source.rawAnimation.transformCurves.Add(baseCurve);
+                            curveInfo.infoBase.curveIndex = source.rawAnimation.transformCurves.Length - 1;
+                        }
+
+                        if (record) editRecord.SetOriginalRawTransformCurveState(baseCurve);
+                        var newBaseCurve = AnimationUtils.GetNewBaseTransformCurve(baseCurve.TransformName, restPose);
+                        baseCurve.preWrapMode = newBaseCurve.preWrapMode;
+                        baseCurve.postWrapMode = newBaseCurve.postWrapMode;
+                        baseCurve.localPositionCurveX = newBaseCurve.localPositionCurveX;
+                        baseCurve.localPositionCurveY = newBaseCurve.localPositionCurveY;
+                        baseCurve.localPositionCurveZ = newBaseCurve.localPositionCurveZ;
+                        baseCurve.localRotationCurveX = newBaseCurve.localRotationCurveX;
+                        baseCurve.localRotationCurveY = newBaseCurve.localRotationCurveY;
+                        baseCurve.localRotationCurveZ = newBaseCurve.localRotationCurveZ;
+                        baseCurve.localRotationCurveW = newBaseCurve.localRotationCurveW;
+                        baseCurve.localScaleCurveX = newBaseCurve.localScaleCurveX;
+                        baseCurve.localScaleCurveY = newBaseCurve.localScaleCurveY;
+                        baseCurve.localScaleCurveZ = newBaseCurve.localScaleCurveZ;
+                        if (record) editRecord.RecordRawTransformCurveEdit(baseCurve);
+                        changed = true;
+                    }
+
+                    source.rawAnimation.transformAnimationCurves[i] = curveInfo;
+                }
+            }
+
+            if (changed)
+            {
+                source.MarkAsDirty();
+                RedrawAllCurves();
+            }
+
+            if (record) CommitAnimationEditRecord();
+        }
+
+        public void RebuildBaseTransformCurvesGlobal() => RebuildBaseTransformCurvesGlobal(true, null);
+        public virtual void RebuildBaseTransformCurvesGlobal(bool record, UndoableEditAnimationSourceData editRecord = null)
+        {
+            var source = CurrentSource;
+            if (source == null || source.rawAnimation == null) return;
+
+            var animatable = ActiveAnimatable;
+            if (animatable == null) return;
+
+            var restPose = animatable.RestPose;
+            if (restPose == null) return;
+
+            editRecord = record && editRecord == null ? BeginNewAnimationEditRecord() : editRecord;
+
+            bool changed = false;
+            if (source.rawAnimation.transformAnimationCurves != null)
+            {
+                for (int i = 0; i < source.rawAnimation.transformAnimationCurves.Length; i++)
+                {
+                    var curveInfo = source.rawAnimation.transformAnimationCurves[i];
+                    if (curveInfo.infoBase.curveIndex < 0 || (!curveInfo.infoBase.isLinear && source.rawAnimation.transformCurves == null) || (curveInfo.infoBase.isLinear && source.rawAnimation.transformLinearCurves == null)) continue;
+
+                    if (curveInfo.infoBase.isLinear)
+                    {
+                        var baseCurve = source.rawAnimation.transformLinearCurves[curveInfo.infoBase.curveIndex];
+                        if (baseCurve == null) continue;
+
+                        if (curveInfo.infoBase.isLinear == curveInfo.infoMain.isLinear && curveInfo.infoBase.curveIndex == curveInfo.infoMain.curveIndex) // make sure base curve is its own curve
+                        {
+                            baseCurve = baseCurve.Duplicate();
+                            source.rawAnimation.transformLinearCurves = (TransformLinearCurve[])source.rawAnimation.transformLinearCurves.Add(baseCurve);
+                            curveInfo.infoBase.curveIndex = source.rawAnimation.transformLinearCurves.Length - 1;
+                        }
+
+                        if (record) editRecord.SetOriginalRawTransformLinearCurveState(baseCurve);
+                        var newBaseCurve = AnimationUtils.GetNewBaseTransformLinearCurve(baseCurve.TransformName, restPose);
+                        baseCurve.frames = newBaseCurve.frames;
+                        if (record) editRecord.RecordRawTransformLinearCurveEdit(baseCurve);
+                        changed = true;
+                    }
+                    else
+                    {
+                        var baseCurve = source.rawAnimation.transformCurves[curveInfo.infoBase.curveIndex];
+                        if (baseCurve == null) continue;
+
+                        if (curveInfo.infoBase.isLinear == curveInfo.infoMain.isLinear && curveInfo.infoBase.curveIndex == curveInfo.infoMain.curveIndex) // make sure base curve is its own curve
+                        {
+                            baseCurve = baseCurve.Duplicate();
+                            source.rawAnimation.transformCurves = (TransformCurve[])source.rawAnimation.transformCurves.Add(baseCurve);
+                            curveInfo.infoBase.curveIndex = source.rawAnimation.transformCurves.Length - 1;
+                        }
+
+                        if (record) editRecord.SetOriginalRawTransformCurveState(baseCurve);
+                        var newBaseCurve = AnimationUtils.GetNewBaseTransformCurve(baseCurve.TransformName, restPose);
+                        baseCurve.preWrapMode = newBaseCurve.preWrapMode;
+                        baseCurve.postWrapMode = newBaseCurve.postWrapMode;
+                        baseCurve.localPositionCurveX = newBaseCurve.localPositionCurveX;
+                        baseCurve.localPositionCurveY = newBaseCurve.localPositionCurveY;
+                        baseCurve.localPositionCurveZ = newBaseCurve.localPositionCurveZ;
+                        baseCurve.localRotationCurveX = newBaseCurve.localRotationCurveX;
+                        baseCurve.localRotationCurveY = newBaseCurve.localRotationCurveY;
+                        baseCurve.localRotationCurveZ = newBaseCurve.localRotationCurveZ;
+                        baseCurve.localRotationCurveW = newBaseCurve.localRotationCurveW;
+                        baseCurve.localScaleCurveX = newBaseCurve.localScaleCurveX;
+                        baseCurve.localScaleCurveY = newBaseCurve.localScaleCurveY;
+                        baseCurve.localScaleCurveZ = newBaseCurve.localScaleCurveZ;
+                        if (record) editRecord.RecordRawTransformCurveEdit(baseCurve);
+                        changed = true;
+                    }
+
+                    source.rawAnimation.transformAnimationCurves[i] = curveInfo;
+                }
+            }
+
+            if (changed)
+            {
+                source.MarkAsDirty();
+                RedrawAllCurves();
+            }
+
+            if (record) CommitAnimationEditRecord(); 
+        }
+
+        public void RebuildBasePropertyCurves() => RebuildBasePropertyCurves(true, null);
+        public virtual void RebuildBasePropertyCurves(bool record, UndoableEditAnimationSourceData editRecord = null)
+        {
+            var source = CurrentSource;
+            if (source == null || source.rawAnimation == null) return;
+
+            var animatable = ActiveAnimatable;
+            if (animatable == null) return;
+
+            var restPose = animatable.RestPose;
+            if (restPose == null) return;
+
+            editRecord = record && editRecord == null ? BeginNewAnimationEditRecord() : editRecord;
+
+            bool changed = false;
+            if (source.rawAnimation.propertyAnimationCurves != null)
+            {
+                for (int i = 0; i < source.rawAnimation.propertyAnimationCurves.Length; i++)
+                {
+                    var curveInfo = source.rawAnimation.propertyAnimationCurves[i];
+                    if (curveInfo.infoBase.curveIndex < 0 || (!curveInfo.infoBase.isLinear && source.rawAnimation.propertyCurves == null) || (curveInfo.infoBase.isLinear && source.rawAnimation.propertyLinearCurves == null)) continue;
+
+                    if (curveInfo.infoBase.isLinear)
+                    {
+                        var baseCurve = source.rawAnimation.propertyLinearCurves[curveInfo.infoBase.curveIndex];
+                        if (baseCurve == null) continue;
+
+                        if (curveInfo.infoBase.isLinear == curveInfo.infoMain.isLinear && curveInfo.infoBase.curveIndex == curveInfo.infoMain.curveIndex) // make sure base curve is its own curve
+                        {
+                            baseCurve = baseCurve.Duplicate();
+                            source.rawAnimation.propertyLinearCurves = (PropertyLinearCurve[])source.rawAnimation.propertyLinearCurves.Add(baseCurve);
+                            curveInfo.infoBase.curveIndex = source.rawAnimation.propertyLinearCurves.Length - 1;
+                        }
+
+                        if (record) editRecord.SetOriginalRawPropertyLinearCurveState(baseCurve);
+                        var newBaseCurve = AnimationUtils.GetNewBasePropertyLinearCurve(baseCurve.PropertyString, restPose);
+                        baseCurve.frames = newBaseCurve.frames;
+                        if (record) editRecord.RecordRawPropertyLinearCurveEdit(baseCurve);
+                        changed = true;
+                    }
+                    else
+                    {
+                        var baseCurve = source.rawAnimation.propertyCurves[curveInfo.infoBase.curveIndex];
+                        if (baseCurve == null) continue;
+
+                        if (curveInfo.infoBase.isLinear == curveInfo.infoMain.isLinear && curveInfo.infoBase.curveIndex == curveInfo.infoMain.curveIndex) // make sure base curve is its own curve
+                        {
+                            baseCurve = baseCurve.Duplicate();
+                            source.rawAnimation.propertyCurves = (PropertyCurve[])source.rawAnimation.propertyCurves.Add(baseCurve);
+                            curveInfo.infoBase.curveIndex = source.rawAnimation.propertyCurves.Length - 1; 
+                        }
+
+                        if (record) editRecord.SetOriginalRawPropertyCurveState(baseCurve);
+                        var newBaseCurve = AnimationUtils.GetNewBasePropertyCurve(baseCurve.PropertyString, restPose);
+                        baseCurve.preWrapMode = newBaseCurve.preWrapMode;
+                        baseCurve.postWrapMode = newBaseCurve.postWrapMode;
+                        baseCurve.propertyValueCurve = newBaseCurve.propertyValueCurve;
+                        if (record) editRecord.RecordRawPropertyCurveEdit(baseCurve);
+                        changed = true;
+                    }
+
+                    source.rawAnimation.propertyAnimationCurves[i] = curveInfo;
+                }
+            }
+
+            if (changed)
+            {
+                source.MarkAsDirty();
+                RedrawAllCurves();
+            }
+
+            if (record) CommitAnimationEditRecord();
+        }
+
+        public void RebuildAllBaseCurves() => RebuildAllBaseCurves(true, null);
+        public virtual void RebuildAllBaseCurves(bool record, UndoableEditAnimationSourceData editRecord = null)
+        {
+            editRecord = record && editRecord == null ? BeginNewAnimationEditRecord() : editRecord;
+
+            RebuildBaseTransformCurvesGlobal(record, editRecord); 
+            RebuildBasePropertyCurves(record, editRecord);
+
+            if (record) CommitAnimationEditRecord();
         }
 
         #endregion

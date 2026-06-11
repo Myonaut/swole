@@ -31,13 +31,13 @@ namespace Swole.Morphing
         }
 
         [SerializeField]
-        protected CustomizableCharacterMeshV2 mesh;
-        public CustomizableCharacterMeshV2 Mesh => mesh;
+        protected CustomizableCharacterMeshBase mesh;
+        public CustomizableCharacterMeshBase Mesh => mesh;
 
         [SerializeField]
-        protected CustomizableCharacterMeshV2[] additionalMeshes;
+        protected CustomizableCharacterMeshBase[] additionalMeshes;
 
-        public void SetAdditionalMeshes(CustomizableCharacterMeshV2[] additionalMeshes)
+        public void SetAdditionalMeshes(CustomizableCharacterMeshBase[] additionalMeshes)
         {
             this.additionalMeshes = additionalMeshes;
         }
@@ -190,7 +190,7 @@ namespace Swole.Morphing
             CustomizableCharacterMeshVertexControlGroupsUpdater.Register(this);
         }
 
-        public virtual void InitializeAdditionalMesh(CustomizableCharacterMeshVertexControlGroup group, CustomizableCharacterMeshV2 mesh)
+        public virtual void InitializeAdditionalMesh(CustomizableCharacterMeshVertexControlGroup group, CustomizableCharacterMeshBase mesh)
         {
             var materials = mesh.MaterialInstances;
             if (materials != null)
@@ -220,6 +220,11 @@ namespace Swole.Morphing
                 }
             }
         }
+        protected IEnumerator WaitToInitAdditionalMesh(CustomizableCharacterMeshVertexControlGroup group, CustomizableCharacterMeshBase mesh)
+        {
+            while(this != null && mesh != null && group.IsInitialized && !mesh.CanRender) yield return null;  
+            if (this != null && mesh != null && group.IsInitialized) InitializeAdditionalMesh(group, mesh); 
+        }
         public virtual void InitializeAdditionalMeshes(CustomizableCharacterMeshVertexControlGroup group)
         {
             if (additionalMeshes != null && additionalMeshes.Length > 0 && group.HasInstanceBuffer())
@@ -229,10 +234,10 @@ namespace Swole.Morphing
                     var mesh_ = mesh;
                     if (mesh_ != null)
                     {
-                        if (mesh_.OnClaimInstance == null) mesh_.OnClaimInstance = new UnityEngine.Events.UnityEvent<CustomizableCharacterMeshV2.InstanceV2>();
-                        mesh_.OnClaimInstance.AddListener((CustomizableCharacterMeshV2.InstanceV2 inst) => InitializeAdditionalMesh(group, mesh_)); 
+                        //if (mesh_.OnClaimInstance == null) mesh_.OnClaimInstance = new UnityEngine.Events.UnityEvent<CustomizableCharacterMeshV2.InstanceV2>();
+                        //mesh_.OnClaimInstance.AddListener((CustomizableCharacterMeshV2.InstanceV2 inst) => InitializeAdditionalMesh(group, mesh_)); // dont do this as there's no way to remove it
 
-                        if (mesh_.CanRender) InitializeAdditionalMesh(group, mesh_);
+                        if (mesh_.CanRender) InitializeAdditionalMesh(group, mesh_); else CoroutineProxy.Start(WaitToInitAdditionalMesh(group, mesh_)); // use coroutine instead
                     }
                 }
             }
@@ -297,7 +302,7 @@ namespace Swole.Morphing
         {
             if (mesh == null) return;
 
-            int vertexCount = mesh.SubData.vertexCount;
+            int vertexCount = mesh.CustomizationData.VertexCount;
             int indexOffset = mesh.InstanceID * vertexCount;
             foreach (var group in updatedGroups)
             {
@@ -305,7 +310,6 @@ namespace Swole.Morphing
                 if (group.HasInstanceBuffer(out var instanceBuffer))
                 {
                     var outputBuffer = group.GetOutputBufferWithoutJobWait(); 
-
                     instanceBuffer.WriteToBuffer(outputBuffer.AsArray(), indexOffset, indexOffset, vertexCount);
                 }
             }
@@ -345,9 +349,9 @@ namespace Swole.Morphing
 
             if (!outputInstanceBuffers.TryGetValue(ID, out var instanceBuffer) || !instanceBuffer.IsValid())
             {
-                if (!mesh.MeshGroup2.TryGetInstanceBuffer(materialPropertyName, out var iInstanceBuffer) || iInstanceBuffer is not InstanceBuffer<float>)
+                if (!mesh.TryGetInstanceBuffer<float>(materialPropertyName, out var iInstanceBuffer) || iInstanceBuffer is not InstanceBuffer<float>)
                 {
-                    mesh.MeshGroup2.CreateInstanceMaterialBuffer(materialPropertyName, materialSlots == null || materialSlots.Length <= 0 ? null : materialSlots, mesh.SubData.vertexCount, 2, true, out instanceBuffer);
+                    mesh.CreateInstanceMaterialBuffer(materialPropertyName, materialSlots == null || materialSlots.Length <= 0 ? null : materialSlots, mesh.CustomizationData.VertexCount, 2, true, out instanceBuffer);
                 }
                 else
                 {
@@ -550,7 +554,7 @@ namespace Swole.Morphing
         [SerializeField]
         private string id;
         public string BaseID => id;
-        public string ID => $"{(mesh == null ? "null" : mesh.Data.name)}.{id}";
+        public string ID => $"{(mesh == null ? "null" : (mesh is CustomizableCharacterMeshV2 meshV2 ? meshV2.Data.Name : (mesh is CustomizableCharacterUnitySkinnedMesh skinnedMesh ? skinnedMesh.Data.Name : mesh.name)))}.{id}"; 
 
         [SerializeField]
         private SubGroup[] subGroups;
@@ -597,8 +601,8 @@ namespace Swole.Morphing
         }
 
         [NonSerialized]
-        private CustomizableCharacterMeshV2 mesh;
-        public CustomizableCharacterMeshV2 Mesh => mesh;
+        private CustomizableCharacterMeshBase mesh;
+        public CustomizableCharacterMeshBase Mesh => mesh;
 
         [SerializeField]
         public float resetWeight;
@@ -618,8 +622,10 @@ namespace Swole.Morphing
         private int groupIndex;
         public int GroupIndex => groupIndex;
 
+        public bool IsInitialized => controlWeights.IsCreated;
+
         public delegate void InitializeByControlGroupDelegate(CustomizableCharacterMeshVertexControlGroup group);
-        public void Init(CustomizableCharacterMeshV2 mesh, int groupindex, InitializeByControlGroupDelegate postInstanceBufferInit = null)
+        public void Init(CustomizableCharacterMeshBase mesh, int groupindex, InitializeByControlGroupDelegate postInstanceBufferInit = null)
         {
             this.mesh = mesh;
             this.groupIndex = groupindex;
@@ -631,12 +637,13 @@ namespace Swole.Morphing
                 var group = subGroups[i];
                 group.Init(this, i);
             }
-            
-            if (!subGroupVertexWeights.TryGetValue(id, out SubGroupVertexWeights vertexWeights))
+
+            var meshData = mesh.CustomizationData;
+            if (!subGroupVertexWeights.TryGetValue(id, out SubGroupVertexWeights vertexWeights) && meshData is CustomizableCharacterMeshV2.SerializedDataGroupsShapes meshDataV2)
             {
-                var leftRightFlags = mesh.SubData.leftRightFlags;
+                var leftRightFlags = meshDataV2.LeftRightFlags;
                 bool allowOneSided = leftRightFlags != null && leftRightFlags.Length > 0;
-                VertexGroup midlineVertexGroup = mesh.SubData.midlineVertexGroup >= 0 ? mesh.GetVertexGroup(mesh.SubData.midlineVertexGroup) : null;
+                VertexGroup midlineVertexGroup = meshDataV2.MidlineVertexGroup >= 0 ? meshDataV2.GetVertexGroup(meshData.MidlineVertexGroup) : null;
 
                 vertexWeights = new SubGroupVertexWeights();
 
@@ -654,7 +661,7 @@ namespace Swole.Morphing
                     }
 
                     bool isRightSided = subGroup.side == Side.Right;
-                    var vg = mesh.GetVertexGroup(subGroup.vertexGroupIndex);
+                    var vg = meshDataV2.GetVertexGroup(subGroup.vertexGroupIndex);
                     if (allowOneSided && subGroup.side != Side.Both)
                     {
                         for (int j = 0; j < vg.EntryCount; j++)
@@ -723,9 +730,13 @@ namespace Swole.Morphing
         }
         private IEnumerator InitInstanceBuffer(InitializeByControlGroupDelegate postInstanceBufferInit)
         {
-            while (mesh != null && mesh.MeshGroup2 == null) yield return null;  
-            GetOrCreateInstanceBuffer();
-            postInstanceBufferInit?.Invoke(this);
+            while (mesh != null && !mesh.HasValidInstance) yield return null;
+
+            if (mesh != null)
+            {
+                GetOrCreateInstanceBuffer();
+                postInstanceBufferInit?.Invoke(this);
+            }
         }
 
         public JobHandle JobDependency
@@ -752,9 +763,10 @@ namespace Swole.Morphing
         {
             if (mesh == null) return default;
 
+            var meshData = mesh.CustomizationData;
             if (!outputBuffers.TryGetValue(ID, out var buffer))
             {
-                buffer = new NativeList<float>(mesh.SubData.vertexCount * Mathf.Max(1, mesh.InstanceID + 1), Allocator.Persistent);
+                buffer = new NativeList<float>(meshData.VertexCount * Mathf.Max(1, mesh.InstanceID + 1), Allocator.Persistent);
                 buffer.AddReplicated(0f, buffer.Capacity);
 
                 PersistentJobDataTracker.Track(buffer);
@@ -762,9 +774,9 @@ namespace Swole.Morphing
                 outputBuffers[ID] = buffer;
             }
 
-            if (buffer.Length < mesh.SubData.vertexCount * (mesh.InstanceID + 1))
+            if (buffer.Length < meshData.VertexCount * (mesh.InstanceID + 1))
             {
-                buffer.AddReplicated(0f, (mesh.SubData.vertexCount * (mesh.InstanceID + 1)) - buffer.Length);
+                buffer.AddReplicated(0f, (meshData.VertexCount * (mesh.InstanceID + 1)) - buffer.Length);
             }
 
             return buffer;
@@ -785,7 +797,7 @@ namespace Swole.Morphing
 
                     jobHandles.TryGetValue(id, out var jobHandle);
 
-                    int vertexCount = mesh.SubData.vertexCount;
+                    int vertexCount = mesh.CustomizationData.VertexCount;
                     int indexOffset = vertexCount * mesh.InstanceID;
                     jobHandle = new ResetOutputWeights()
                     {
@@ -799,6 +811,13 @@ namespace Swole.Morphing
                         var subGroup = subGroups[i];
                         if (subGroup.vertexGroupHeaderIndex < 0) continue;
 
+#if UNITY_EDITOR
+                        if (subGroup.vertexGroupHeaderIndex >= vertexWeights.startIndicesCounts.Length)
+                        {
+                            Debug.LogError($"{nameof(subGroup.vertexGroupHeaderIndex)} for sub group {i} was out of range of {nameof(vertexWeights.startIndicesCounts)} array ({subGroup.vertexGroupHeaderIndex}>={vertexWeights.startIndicesCounts.Length})"); 
+                            continue;
+                        }
+#endif
                         var startIndexCount = vertexWeights.startIndicesCounts[subGroup.vertexGroupHeaderIndex];
                         var mixOp = subGroup.overrideMixOperation ? subGroup.mixOperation : mixOperation;
                         switch(mixOp)

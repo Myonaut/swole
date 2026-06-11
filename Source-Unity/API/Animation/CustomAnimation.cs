@@ -2329,6 +2329,7 @@ namespace Swole.API.Unity.Animation
 
                             //state.ApplyAdditiveMix(mainCurve.Evaluate(t) - baseCurve.Evaluate(t), mix);
                             state.ApplyAdditiveMix(mainCurve.Evaluate(tM) - baseCurve.Evaluate(tB), dynamicMix * weight);
+                            //Debug.Log($"ApplyAdditiveMix (AdditiveBlend) {state.Path}:: ({tM}){mainCurve.Evaluate(tM)} - ({tB}){baseCurve.Evaluate(tB)} = {(mainCurve.Evaluate(tM) - baseCurve.Evaluate(tB))} * {dynamicMix} * {weight}");
                         }
                     }
 
@@ -2385,7 +2386,7 @@ namespace Swole.API.Unity.Animation
 
                             //state.ApplyAdditive(mainCurve.Evaluate(t) - baseCurve.Evaluate(t), mix);
                             state.ApplyAdditiveMix(mainCurve.Evaluate(tM) - baseCurve.Evaluate(tB), weight);
-
+                            Debug.Log($"ApplyAdditiveMix (Additive) {state.Path}:: ({tM}){mainCurve.Evaluate(tM)} - ({tB}){baseCurve.Evaluate(tB)} = {(mainCurve.Evaluate(tM) - baseCurve.Evaluate(tB))} * {weight}");
                         }
                     }
 
@@ -2435,7 +2436,7 @@ namespace Swole.API.Unity.Animation
                             float weight = propertyMaskWeights[a];
 
                             state.ApplyMix(mainCurve.Evaluate(t) * mix, layerMix * weight);
-
+                            //Debug.Log($"ApplyMix (Blend) {state.Path}:: ({t}){mainCurve.Evaluate(t)} * {mix}");
                         }
                     }
 
@@ -2475,7 +2476,7 @@ namespace Swole.API.Unity.Animation
                             float weight = propertyMaskWeights[a];
 
                             state.ApplyMix(mainCurve.Evaluate(t), weight);
-                            
+                            //Debug.Log($"ApplyMix (Masked) {state.Path}:: ({t}){mainCurve.Evaluate(t)} * {weight}"); 
                         }
                     }
                 }

@@ -371,7 +371,7 @@ namespace Swole.API.Unity
 #endif
 
         public CustomizableCharacterMesh characterMesh;
-        public CustomizableCharacterMeshV2 characterMeshV2;
+        public CustomizableCharacterMeshBase characterMeshV2;
         public ICustomizableCharacter CharacterMesh => characterMeshV2 == null ? characterMesh : characterMeshV2;
         public CustomAnimator animator;
 
@@ -393,7 +393,7 @@ namespace Swole.API.Unity
         protected void Awake()
         {
             if (characterMesh == null) characterMesh = gameObject.GetComponentInChildren<CustomizableCharacterMesh>(true);
-            if (characterMeshV2 == null) characterMeshV2 = gameObject.GetComponentInChildren<CustomizableCharacterMeshV2>(true);
+            if (characterMeshV2 == null) characterMeshV2 = gameObject.GetComponentInChildren<CustomizableCharacterMeshBase>(true);
             if (animator == null) animator = gameObject.GetComponentInChildren<CustomAnimator>(true); 
 
             if (autoFlexers != null)

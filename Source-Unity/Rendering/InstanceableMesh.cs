@@ -701,8 +701,10 @@ namespace Swole
         {
             get
             {
-                if (skinningMatricesBuffer == null && !IsDestroyed)
+                if ((skinningMatricesBuffer == null || !skinningMatricesBuffer.IsValid()) && !IsDestroyed)
                 {
+                    skinningMatricesBuffer = null; 
+
                     var meshGroup = MeshGroup; 
                     string bufferID = RigBufferID;  
                     string matricesProperty = SkinnedMeshData.SkinningMatricesPropertyName; 
@@ -1699,6 +1701,8 @@ namespace Swole
         /// </summary>
         public void BindMaterialProperty(Material material, string propertyName)
         {
+            //if (bufferPool == null) Debug.LogError("Buffer pool null");
+            //if (bufferPool.ActiveBuffer == null) Debug.LogError("Buffer pool active buffer null");
             material.SetBuffer(propertyName, bufferPool.ActiveBuffer);
             foreach (var binding in boundMaterialProperties) if (binding.material == material && binding.propertyName == propertyName) return;
 

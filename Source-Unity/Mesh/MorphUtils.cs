@@ -2664,6 +2664,20 @@ namespace Swole.Morphing
     }
 
     [Serializable, NonAnimatable]
+    public struct ShapeInfo
+    {
+        public string name;
+        public bool animatable;
+        public int frameCount;
+        public int FrameCount => frameCount;
+
+        public float[] frameWeights;
+
+        public bool IsValid => !string.IsNullOrWhiteSpace(name);
+        public bool IsInvalid => !IsValid;
+    }
+
+    [Serializable, NonAnimatable]
     public class MeshShape
     {
         public string name;
@@ -2692,6 +2706,17 @@ namespace Swole.Morphing
                 return frameWeights;
             }
         }
+
+        public static implicit operator ShapeInfo(MeshShape shape) => shape.Info;
+        
+
+        public ShapeInfo Info => new ShapeInfo()
+        {
+            name = name,
+            animatable = animatable,
+            frameCount = FrameCount,
+            frameWeights = FrameWeights
+        };
 
         public static MeshShape CreateFromBlendShape(BlendShape shape)
         {

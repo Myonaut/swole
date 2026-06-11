@@ -23,6 +23,7 @@ using RLD; // Paid Asset Integration https://assetstore.unity.com/packages/tools
 
 using Swole.API.Unity;
 using Swole.API.Unity.Animation;
+using Swole.API.Unity.Animation.Curves;
 using Swole.UI;
 using Swole.Morphing;
 using Swole.Animation;

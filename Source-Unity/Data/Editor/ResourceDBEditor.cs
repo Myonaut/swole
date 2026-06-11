@@ -13,9 +13,37 @@ namespace Swole
 
     // Edited By Nox
 
-    [CustomEditor(typeof(ResourceDB))]
+    [CustomEditor(typeof(ResourceDB)), InitializeOnLoad]
     public class ResourceDBEditor : Editor
     {
+
+        static ResourceDBEditor()
+        {
+            EditorApplication.playModeStateChanged += OnPlayModeStateChanged;
+        }
+
+        private static void OnPlayModeStateChanged(PlayModeStateChange state)
+        {
+            // ExitingEditMode triggers right before entering Play Mode
+            if (state == PlayModeStateChange.ExitingEditMode)
+            {              
+                var dbInstance = ResourceDB.FindInstance();
+                if (dbInstance != null)
+                {
+                    Debug.Log($"[{nameof(ResourceDB)}] Checking if database needs to be updated before starting..."); 
+
+                    if (dbInstance.IsOutdated)
+                    {
+                        dbInstance.UpdateDB(true);
+                    }
+                    else
+                    {
+                        Debug.Log($"[{nameof(ResourceDB)}] Database is up to date, no update needed.");
+                    }
+                }
+            }
+        }
+
         ResourceDB m_Target;
         void OnEnable()
         {
@@ -33,14 +61,14 @@ namespace Swole
                 m_Target.UpdateDB(true);
             }
             m_Target.UpdateAutomatically = GUILayout.Toggle(m_Target.UpdateAutomatically, "AutoUpdate", "Button");
+            GUILayout.EndHorizontal();
+            m_Target.notifyWhenOutdated = GUILayout.Toggle(m_Target.notifyWhenOutdated, "Notify When Outdated");
+            m_Target.notificationType = (ResourceDB.NotificationType)EditorGUILayout.EnumPopup("Notify Log Type", m_Target.notificationType);
             if (GUI.changed)
             {
                 EditorUtility.SetDirty(m_Target);
                 AssetDatabase.SaveAssets();
             }
-            GUILayout.EndHorizontal();
-            m_Target.notifyWhenOutdated = GUILayout.Toggle(m_Target.notifyWhenOutdated, "Notify When Outdated");
-            m_Target.notificationType = (ResourceDB.NotificationType)EditorGUILayout.EnumPopup("Notify Log Type", m_Target.notificationType); 
             EditorGUILayout.LabelField("Folders:", m_Target.FolderCount.ToString());
             EditorGUILayout.LabelField("Files:", m_Target.FileCount.ToString());
         }
