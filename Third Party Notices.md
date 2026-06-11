@@ -23,3 +23,15 @@ Component Name: Controller Input Icons
 License Type: "CC0 1.0"
 
 [Controller Input Icons Homepage](https://opengameart.org/content/controller-input-icons)
+
+Component Name: SimpleJSON
+
+License Type: "MIT"
+
+[SimpleJSON License](https://github.com/Bunny83/SimpleJSON/blob/master/LICENSE)
+
+Component Name: Path Creator
+
+License Type: "MIT"
+
+[PathCreator License](https://github.com/SebLague/Path-Creator/blob/master/LICENSE)
