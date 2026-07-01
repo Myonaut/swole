@@ -19,14 +19,14 @@ namespace Swole.API.Unity
 
         [SerializeField]
         protected Transform containerTransform;
-        public void SetContainerTransform(Transform container, bool forceParentPooled = true, bool forceParentClaimed = false, bool worldPositionStays = true)
+        public void SetContainerTransform(Transform container, bool forceParentPooled = true, bool forceParentClaimed = false, bool worldPositionStays = true, bool parentPrototype = true)
         {
             containerTransform = container;
             worldPositionStaysWhenParented = worldPositionStays;
 
             if (!IsValid) return;
 
-            if (pool.Prototype != null) pool.Prototype.transform.SetParent(containerTransform, worldPositionStays);
+            if (pool.Prototype != null && parentPrototype) pool.Prototype.transform.SetParent(containerTransform, worldPositionStays);
 
             if (forceParentPooled)
             {

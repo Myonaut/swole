@@ -476,6 +476,50 @@ namespace Swole
             return total;
         }
 
+        public static void TransferMaterialProperties(Material referenceMaterial, Material targetMaterial, IEnumerable<MaterialPropertyTransfer> materialPropertyTransfers)
+        {
+            foreach (var transfer in materialPropertyTransfers) TransferMaterialProperties(referenceMaterial, targetMaterial, transfer);
+        }
+        public static void TransferMaterialProperties(Material referenceMaterial, Material targetMaterial, MaterialPropertyTransfer materialPropertyTransfer)
+        {
+            if (referenceMaterial == null || targetMaterial == null) return;
+            switch(materialPropertyTransfer.propertyType)
+            {
+                case MaterialPropertyType.Texture:
+                    targetMaterial.SetTexture(materialPropertyTransfer.targetPropertyName, referenceMaterial.GetTexture(materialPropertyTransfer.referencePropertyName)); 
+                    break;
+
+                case MaterialPropertyType.Float:
+                    targetMaterial.SetFloat(materialPropertyTransfer.targetPropertyName, referenceMaterial.GetFloat(materialPropertyTransfer.referencePropertyName));
+                    break;
+
+                case MaterialPropertyType.Int:
+                    targetMaterial.SetInt(materialPropertyTransfer.targetPropertyName, referenceMaterial.GetInt(materialPropertyTransfer.referencePropertyName));
+                    break;
+
+                case MaterialPropertyType.Color:
+                    targetMaterial.SetColor(materialPropertyTransfer.targetPropertyName, referenceMaterial.GetColor(materialPropertyTransfer.referencePropertyName));
+                    break;
+
+                case MaterialPropertyType.Vector4:
+                    targetMaterial.SetVector(materialPropertyTransfer.targetPropertyName, referenceMaterial.GetVector(materialPropertyTransfer.referencePropertyName));
+                    break;
+            }
+        }
+
+    }
+
+    [Serializable]
+    public enum MaterialPropertyType
+    {
+        Texture, Float, Int, Color, Vector4
+    }
+    [Serializable]
+    public struct MaterialPropertyTransfer
+    {
+        public MaterialPropertyType propertyType;
+        public string referencePropertyName;
+        public string targetPropertyName;
     }
 
 }

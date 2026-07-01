@@ -347,6 +347,17 @@ namespace Swole
         IEnumerator<IContent> IEnumerable<IContent>.GetEnumerator() => GetEnumerator();
         IEnumerator IEnumerable.GetEnumerator() => GetEnumerator();
 
+        public IEnumerable<T> FindAll<T>() where T : IContent
+        {
+            if (content == null) yield break;
+
+            for(int i = 0; i < content.Length; i++)
+            {
+                var c = content[i];
+                if (c is T ct) yield return ct;
+            }
+        }
+
     }
 
     public class ContentPackageEnumerator : IEnumerator<IContent>

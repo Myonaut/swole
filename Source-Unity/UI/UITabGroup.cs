@@ -58,6 +58,8 @@ namespace Swole.UI
             if (!buttons.Contains(button)) buttons.Add(button);
             if (button.group != null) button.group.Remove(button);
             button.group = this;
+
+            if (buttons.Count <= 1 && !allowNullActive) ToggleButtons(button);
         }
         public void Remove(GameObject button)
         {
@@ -91,7 +93,7 @@ namespace Swole.UI
                 button.ToggleOff();
             }
              
-        }
+        } 
 
         protected virtual void Awake()
         {

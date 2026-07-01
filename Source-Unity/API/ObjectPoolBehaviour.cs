@@ -18,6 +18,7 @@ namespace Swole.API.Unity
     {
 
         public bool TryGetNewInstance(out UnityEngine.Object instance);
+        public bool TryGetNewInstance(out UnityEngine.Object instance, out bool isNewlyCreated);
 
         public void Claim(UnityEngine.Object instance);
         public void Claim(PooledObject pooledObject);
@@ -68,6 +69,19 @@ namespace Swole.API.Unity
 
         public bool IsInPool(T inst) => pool.IsInPool(inst);
 
+        public IEnumerable<T> PooledObjects()
+        {
+            foreach (var obj in pool.PooledObjects()) yield return obj;
+        }
+        public IEnumerable<T> ClaimedObjects()
+        {
+            foreach (var obj in pool.ClaimedObjects()) yield return obj;
+        }
+        public IEnumerable<T> AllObjects()
+        {
+            foreach (var obj in pool.AllObjects()) yield return obj;
+        }
+
         public int Size => pool.Size;
         public int Pooled => pool.Pooled;
 
@@ -113,8 +127,11 @@ namespace Swole.API.Unity
 
         //private bool Grow() => pool.Grow();
 
-        public bool TryGetNewInstance(out UnityEngine.Object instance)  => pool.TryGetNewInstance(out instance);
+        public bool TryGetNewInstance(out UnityEngine.Object instance) => pool.TryGetNewInstance(out instance);
+        public bool TryGetNewInstance(out UnityEngine.Object instance, out bool isNewlyCreated)  => pool.TryGetNewInstance(out instance, out isNewlyCreated);
+
         public bool TryGetNewInstance(out T instance) => pool.TryGetNewInstance(out instance);
+        public bool TryGetNewInstance(out T instance, out bool isNewlyCreated) => pool.TryGetNewInstance(out instance, out isNewlyCreated);
 
         /// <summary>
         /// Tries to get 'count' number of instances and adds them to the 'instancesList'. Returns number of instances added.
@@ -211,6 +228,22 @@ namespace Swole.API.Unity
 
         internal List<T> pooledObjects;
         internal List<T> claimedObjects;
+
+        public IEnumerable<T> PooledObjects()
+        {
+            if (pooledObjects == null) yield break;
+            foreach(var obj in pooledObjects) yield return obj;
+        }
+        public IEnumerable<T> ClaimedObjects()
+        {
+            if (claimedObjects == null) yield break;
+            foreach (var obj in claimedObjects) yield return obj;
+        }
+        public IEnumerable<T> AllObjects()
+        {
+            foreach (var obj in PooledObjects()) yield return obj;
+            foreach (var obj in ClaimedObjects()) yield return obj;
+        }
 
         public bool IsValid => pooledObjects != null && claimedObjects != null;
 
@@ -312,18 +345,21 @@ namespace Swole.API.Unity
             return prevSize != size;
         }
 
-        public bool TryGetNewInstance(out UnityEngine.Object instance)
+        public bool TryGetNewInstance(out UnityEngine.Object instance) => TryGetNewInstance(out instance, out _);
+        public bool TryGetNewInstance(out UnityEngine.Object instance, out bool isNewlyCreated)
         {
             instance = null;
-            if (TryGetNewInstance(out T instance_))
+            if (TryGetNewInstance(out T instance_, out isNewlyCreated))
             {
                 instance = instance_;
                 return true;
             }
             return false;
         }
-        public bool TryGetNewInstance(out T instance)
+        public bool TryGetNewInstance(out T instance) => TryGetNewInstance(out instance, out _);
+        public bool TryGetNewInstance(out T instance, out bool isNewlyCreated)
         {
+            isNewlyCreated = false;
             instance = null;
             if (!IsValid || (maxSize > 0 && claimedObjects.Count >= maxSize)) return false;
 
@@ -335,6 +371,7 @@ namespace Swole.API.Unity
             }
             if (inst == null)
             {
+                isNewlyCreated = true;
                 Grow();
                 while (inst == null && pooledObjects.Count > 0)
                 {
@@ -349,6 +386,7 @@ namespace Swole.API.Unity
             instance = inst;
             return true;
         }
+        
 
         /// <summary>
         /// Tries to get 'count' number of instances and adds them to the 'instancesList'. Returns number of instances added.

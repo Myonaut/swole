@@ -1415,6 +1415,44 @@ namespace Swole
             }
         }
 
+        public static IEnumerable<LocalPackage> AllLocalPackages()
+        {
+            var instance = Instance;
+            if (instance == null) yield break;
+
+            if (instance.localPackages != null)
+            {
+                foreach (var pkg in instance.localPackages) yield return pkg;
+            }
+        }
+
+        public static IEnumerable<ExternalPackage> AllExternalPackages()
+        {
+            var instance = Instance;
+            if (instance == null) yield break;
+
+            if (instance.externalPackages != null)
+            {
+                foreach (var pkg in instance.externalPackages) yield return pkg;
+            }
+        }
+
+        public static IEnumerable<ContentPackage> AllContentPackages()
+        {
+            var instance = Instance;
+            if (instance == null) yield break;
+
+            if (instance.localPackages != null)
+            {
+                foreach (var pkg in instance.localPackages) yield return pkg.Content;
+            }
+
+            if (instance.externalPackages != null)
+            {
+                foreach (var pkg in instance.externalPackages) yield return pkg.Content;
+            }
+        }
+
         protected static bool AddLocalPackage(LocalPackage package)
         {
             var instance = Instance;
