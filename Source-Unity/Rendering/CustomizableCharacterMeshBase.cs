@@ -1946,6 +1946,7 @@ namespace Swole.Morphing
             return GetMuscleDataUnsafe(groupIndex);
         }
         public UnityEvent<int> OnMuscleDataChanged;
+        public UnityEvent OnMuscleDataChangedNoArg;
         protected virtual void SetMuscleDataInternal(int groupIndex, ref MuscleDataLR data)
         {
             if (characterInstanceReference == null)
@@ -1974,6 +1975,7 @@ namespace Swole.Morphing
             OnSetMuscleData(groupIndex, data);
 
             OnMuscleDataChanged?.Invoke(groupIndex);
+            OnMuscleDataChangedNoArg?.Invoke();
 
             if (children != null)
             {
@@ -2005,6 +2007,7 @@ namespace Swole.Morphing
             return GetFatLevelUnsafe(groupIndex);
         }
         public UnityEvent<int> OnFatDataChanged;
+        public UnityEvent OnFatDataChangedNoArg;
         protected virtual void SetFatLevelInternal(int groupIndex, ref float level)
         {
             if (characterInstanceReference == null)
@@ -2026,6 +2029,7 @@ namespace Swole.Morphing
             OnSetFatLevel(groupIndex, level);
 
             OnFatDataChanged?.Invoke(groupIndex);
+            OnFatDataChangedNoArg?.Invoke();
 
             if (children != null)
             {
@@ -2064,6 +2068,7 @@ namespace Swole.Morphing
             SetBodyHairLevelInternal(groupIndex, ref level, ref blend);
 
             OnFatDataChanged?.Invoke(groupIndex);
+            OnFatDataChangedNoArg?.Invoke();
 
             if (children != null)
             {
@@ -2096,6 +2101,9 @@ namespace Swole.Morphing
             if (!IsInitialized || groupIndex < 0 || groupIndex >= CustomizationData.VariationVertexGroupCount || variationShapeIndex < 0 || variationShapeIndex >= CustomizationData.VariationShapesCount) return 0;
             return GetVariationWeightUnsafe(variationShapeIndex, groupIndex);
         }
+
+        public UnityEvent<int> OnVariationDataChanged;
+        public UnityEvent OnVariationDataChangedNoArg;
         protected virtual void SetVariationWeightInternal(int variationShapeIndex, int groupIndex, ref float2 weight)
         {
             if (characterInstanceReference == null)
@@ -2117,6 +2125,9 @@ namespace Swole.Morphing
             //dirtyFlag_variationShapesControl = true;
 
             OnSetVariationWeight(variationShapeIndex, groupIndex, weight);
+
+            OnVariationDataChanged?.Invoke(GetPartialVariationShapeIndexUnsafe(groupIndex, variationShapeIndex));
+            OnVariationDataChangedNoArg?.Invoke();
 
             if (children != null)
             {
@@ -2678,7 +2689,7 @@ namespace Swole.Morphing
         {
             BindSkinningMatricesBufferToMaterials(MaterialInstances);
         }
-        public void BindSkinningMatricesBufferToMaterials(Material[] materialInstances)
+        public void BindSkinningMatricesBufferToMaterials(IEnumerable<Material> materialInstances)
         {
             var matricesBuffer = SkinningMatricesBuffer;
             if (matricesBuffer != null)
@@ -2713,7 +2724,7 @@ namespace Swole.Morphing
         {
             UnbindSkinningMatricesBufferFromMaterials(MaterialInstances);
         }
-        public void UnbindSkinningMatricesBufferFromMaterials(Material[] materialInstances)
+        public void UnbindSkinningMatricesBufferFromMaterials(IEnumerable<Material> materialInstances)
         {
             if (skinningMatricesBuffer != null && materialInstances != null)
             {
@@ -2779,7 +2790,7 @@ namespace Swole.Morphing
         {
             BindStandaloneShapesControlBufferToMaterials(MaterialInstances);
         }
-        public void BindStandaloneShapesControlBufferToMaterials(Material[] materialInstances)
+        public void BindStandaloneShapesControlBufferToMaterials(IEnumerable<Material> materialInstances)
         {
             var shapeBuffer = StandaloneShapeControlBuffer;
             if (shapeBuffer != null && materialInstances != null)
@@ -2800,7 +2811,7 @@ namespace Swole.Morphing
         {
             UnbindStandaloneShapesControlBufferFromMaterials(MaterialInstances);
         }
-        public void UnbindStandaloneShapesControlBufferFromMaterials(Material[] materialInstances)
+        public void UnbindStandaloneShapesControlBufferFromMaterials(IEnumerable<Material> materialInstances)
         {
             if (standaloneShapeControlBuffer != null && materialInstances != null)
             {
@@ -2858,7 +2869,7 @@ namespace Swole.Morphing
         {
             BindMuscleGroupsControlBufferToMaterials(MaterialInstances);
         }
-        public void BindMuscleGroupsControlBufferToMaterials(Material[] materialInstances)
+        public void BindMuscleGroupsControlBufferToMaterials(IEnumerable<Material> materialInstances)
         {
             var muscleBuffer = MuscleGroupsControlBuffer;
             if (muscleBuffer != null && materialInstances != null)
@@ -2879,7 +2890,7 @@ namespace Swole.Morphing
         {
             UnbindMuscleGroupsControlBufferFromMaterials(MaterialInstances);
         }
-        public void UnbindMuscleGroupsControlBufferFromMaterials(Material[] materialInstances)
+        public void UnbindMuscleGroupsControlBufferFromMaterials(IEnumerable<Material> materialInstances)
         {
             if (muscleGroupsControlBuffer != null && materialInstances != null)
             {
@@ -2937,7 +2948,7 @@ namespace Swole.Morphing
         {
             BindFatGroupsControlBufferToMaterials(MaterialInstances);
         }
-        public void BindFatGroupsControlBufferToMaterials(Material[] materialInstances)
+        public void BindFatGroupsControlBufferToMaterials(IEnumerable<Material> materialInstances)
         {
             var fatBuffer = FatGroupsControlBuffer;
             if (fatBuffer != null && materialInstances != null)
@@ -2958,7 +2969,7 @@ namespace Swole.Morphing
         {
             UnbindFatGroupsControlBufferFromMaterials(MaterialInstances);
         }
-        public void UnbindFatGroupsControlBufferFromMaterials(Material[] materialInstances)
+        public void UnbindFatGroupsControlBufferFromMaterials(IEnumerable<Material> materialInstances)
         {
             if (fatGroupsControlBuffer != null && materialInstances != null)
             {
@@ -3016,7 +3027,7 @@ namespace Swole.Morphing
         {
             BindVariationGroupsControlBufferToMaterials(MaterialInstances);
         }
-        public void BindVariationGroupsControlBufferToMaterials(Material[] materialInstances)
+        public void BindVariationGroupsControlBufferToMaterials(IEnumerable<Material> materialInstances)
         {
             var variationBuffer = VariationShapesControlBuffer;
             if (variationBuffer != null && materialInstances != null)
@@ -3037,7 +3048,7 @@ namespace Swole.Morphing
         {
             UnbindVariationGroupsControlBufferFromMaterials(MaterialInstances);
         }
-        public void UnbindVariationGroupsControlBufferFromMaterials(Material[] materialInstances)
+        public void UnbindVariationGroupsControlBufferFromMaterials(IEnumerable<Material> materialInstances)
         {
             if (variationShapesControlBuffer != null && materialInstances != null)
             {
@@ -3055,7 +3066,7 @@ namespace Swole.Morphing
 
         #region Events
 
-        public void AddListener(ICustomizableCharacter.ListenableEvent event_, UnityAction<int> listener)
+        public virtual void AddListener(ICustomizableCharacter.ListenableEvent event_, UnityAction<int> listener)
         {
             switch (event_)
             {
@@ -3067,9 +3078,19 @@ namespace Swole.Morphing
                     if (OnFatDataChanged == null) OnFatDataChanged = new UnityEvent<int>();
                     OnFatDataChanged.AddListener(listener);
                     break;
+                case ICustomizableCharacter.ListenableEvent.OnVariationDataChanged:
+                    if (OnVariationDataChanged == null) OnVariationDataChanged = new UnityEvent<int>();
+                    OnVariationDataChanged.AddListener(listener);
+                    break;
+
+                case ICustomizableCharacter.ListenableEvent.OnAnyDataChanged:
+                    AddListener(ICustomizableCharacter.ListenableEvent.OnMuscleDataChanged, listener);
+                    AddListener(ICustomizableCharacter.ListenableEvent.OnFatDataChanged, listener);
+                    AddListener(ICustomizableCharacter.ListenableEvent.OnVariationDataChanged, listener);
+                    break;
             }
         }
-        public void RemoveListener(ICustomizableCharacter.ListenableEvent event_, UnityAction<int> listener)
+        public virtual void RemoveListener(ICustomizableCharacter.ListenableEvent event_, UnityAction<int> listener)
         {
             switch (event_)
             {
@@ -3079,12 +3100,74 @@ namespace Swole.Morphing
                 case ICustomizableCharacter.ListenableEvent.OnFatDataChanged:
                     if (OnFatDataChanged != null) OnFatDataChanged.RemoveListener(listener);
                     break;
+                case ICustomizableCharacter.ListenableEvent.OnVariationDataChanged:
+                    if (OnVariationDataChanged != null) OnVariationDataChanged.RemoveListener(listener);
+                    break;
+
+                case ICustomizableCharacter.ListenableEvent.OnAnyDataChanged:
+                    RemoveListener(ICustomizableCharacter.ListenableEvent.OnMuscleDataChanged, listener);
+                    RemoveListener(ICustomizableCharacter.ListenableEvent.OnFatDataChanged, listener);
+                    RemoveListener(ICustomizableCharacter.ListenableEvent.OnVariationDataChanged, listener);
+                    break;
             }
         }
-        public void ClearListeners()
+
+        public virtual void AddListener(ICustomizableCharacter.ListenableEvent event_, UnityAction listener)
+        {
+            switch (event_)
+            {
+                case ICustomizableCharacter.ListenableEvent.OnMuscleDataChanged:
+                    if (OnMuscleDataChangedNoArg == null) OnMuscleDataChangedNoArg = new UnityEvent();
+                    OnMuscleDataChangedNoArg.AddListener(listener);
+                    break;
+                case ICustomizableCharacter.ListenableEvent.OnFatDataChanged:
+                    if (OnFatDataChangedNoArg == null) OnFatDataChangedNoArg = new UnityEvent();
+                    OnFatDataChangedNoArg.AddListener(listener);
+                    break;
+                case ICustomizableCharacter.ListenableEvent.OnVariationDataChanged:
+                    if (OnVariationDataChangedNoArg == null) OnVariationDataChangedNoArg = new UnityEvent();
+                    OnVariationDataChangedNoArg.AddListener(listener);
+                    break;
+
+                case ICustomizableCharacter.ListenableEvent.OnAnyDataChanged:
+                    AddListener(ICustomizableCharacter.ListenableEvent.OnMuscleDataChanged, listener);
+                    AddListener(ICustomizableCharacter.ListenableEvent.OnFatDataChanged, listener);
+                    AddListener(ICustomizableCharacter.ListenableEvent.OnVariationDataChanged, listener); 
+                    break;
+            }
+        }
+        public virtual void RemoveListener(ICustomizableCharacter.ListenableEvent event_, UnityAction listener)
+        {
+            switch (event_)
+            {
+                case ICustomizableCharacter.ListenableEvent.OnMuscleDataChanged:
+                    if (OnMuscleDataChangedNoArg != null) OnMuscleDataChangedNoArg.RemoveListener(listener);
+                    break;
+                case ICustomizableCharacter.ListenableEvent.OnFatDataChanged:
+                    if (OnFatDataChangedNoArg != null) OnFatDataChangedNoArg.RemoveListener(listener);
+                    break;
+                case ICustomizableCharacter.ListenableEvent.OnVariationDataChanged:
+                    if (OnVariationDataChangedNoArg != null) OnVariationDataChangedNoArg.RemoveListener(listener);
+                    break;
+
+                case ICustomizableCharacter.ListenableEvent.OnAnyDataChanged:
+                    RemoveListener(ICustomizableCharacter.ListenableEvent.OnMuscleDataChanged, listener);
+                    RemoveListener(ICustomizableCharacter.ListenableEvent.OnFatDataChanged, listener);
+                    RemoveListener(ICustomizableCharacter.ListenableEvent.OnVariationDataChanged, listener);
+                    break;
+            }
+        }
+
+        public virtual void ClearListeners()
         {
             if (OnMuscleDataChanged != null) OnMuscleDataChanged.RemoveAllListeners();
+            if (OnMuscleDataChangedNoArg != null) OnMuscleDataChangedNoArg.RemoveAllListeners();
+
             if (OnFatDataChanged != null) OnFatDataChanged.RemoveAllListeners();
+            if (OnFatDataChangedNoArg != null) OnFatDataChangedNoArg.RemoveAllListeners();
+
+            if (OnVariationDataChanged != null) OnVariationDataChanged.RemoveAllListeners();
+            if (OnVariationDataChangedNoArg != null) OnVariationDataChangedNoArg.RemoveAllListeners();         
         }
 
         #endregion

@@ -179,6 +179,20 @@ namespace Swole.Morphing
 
                 return -1;
             }
+            public override int IndexOfShapeInBuffer(string shapeName, bool caseSensitive = false)
+            {
+                var shapeIndex = IndexOfShape(shapeName, caseSensitive);
+                if (shapeIndex < 0) return -1;
+
+                int indexInBuffer = 0;
+                for (int i = 0; i < shapeIndex; i++)
+                {
+                    var info = GetShapeInfo(i);
+                    indexInBuffer += info.frameCount;
+                }
+
+                return indexInBuffer;
+            }
             public override List<ShapeInfo> GetShapeInfos(List<ShapeInfo> outputList = null)
             {
                 if (outputList == null) outputList = new List<ShapeInfo>();

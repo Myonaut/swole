@@ -2810,9 +2810,9 @@ namespace Swole.Modding
                 editedShapeDeltas.deltaTangent = editedShapeDeltas.deltaTangent + finalShapeDeltas.deltaTangent * totalWeight;
 
                 float mix = factor * maskWeight;
-                finalShapeDeltas.deltaPosition = math.lerp(finalShapeDeltas.deltaPosition, editedShapeDeltas.deltaPosition, factor * mix);
-                finalShapeDeltas.deltaNormal = math.lerp(finalShapeDeltas.deltaNormal, editedShapeDeltas.deltaNormal, factor * mix);
-                finalShapeDeltas.deltaTangent = math.lerp(finalShapeDeltas.deltaTangent, editedShapeDeltas.deltaTangent, factor * mix); 
+                finalShapeDeltas.deltaPosition = math.lerp(finalShapeDeltas.deltaPosition, editedShapeDeltas.deltaPosition, mix);
+                finalShapeDeltas.deltaNormal = math.lerp(finalShapeDeltas.deltaNormal, editedShapeDeltas.deltaNormal, mix);
+                finalShapeDeltas.deltaTangent = math.lerp(finalShapeDeltas.deltaTangent, editedShapeDeltas.deltaTangent, mix); 
 
                 editedLocalBlendShapeData[shapeRelativeIndex] = finalShapeDeltas;
             }

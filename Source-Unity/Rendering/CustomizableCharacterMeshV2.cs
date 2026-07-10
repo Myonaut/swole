@@ -149,6 +149,12 @@ namespace Swole.Morphing
                 }
 
                 localID = -1;
+
+                if (OnMeshUpdate != null)
+                {
+                    OnMeshUpdate.RemoveAllListeners();
+                    OnMeshUpdate = null;
+                }              
             }
 
             private MeshGroupV2 ownerGroup;
@@ -260,6 +266,26 @@ namespace Swole.Morphing
             public float2 GetVariationGroupWeightUnsafe(int variationIndex)
             {
                 return ownerGroup.GetVariationGroupWeightUnsafe(localID, variationIndex);
+            }
+
+            protected UnityEvent OnMeshUpdate;
+
+            public void ListenForMeshUpdate(UnityAction listener)
+            {
+                if (OnMeshUpdate == null) OnMeshUpdate = new UnityEvent();
+                OnMeshUpdate.AddListener(listener);
+            }
+
+            public void EndListenForMeshUpdate(UnityAction listener)
+            {
+                if (OnMeshUpdate == null) return;
+                OnMeshUpdate.RemoveListener(listener);
+            }
+
+            public void NotifyMeshUpdate()
+            {
+                if (OnMeshUpdate == null) return;
+                OnMeshUpdate.Invoke();
             }
 
         }
@@ -821,7 +847,7 @@ namespace Swole.Morphing
 
             #region Material Handling
 
-            protected Material ApplyMainMaterialOverrides(Material material)
+            public Material ApplyMainMaterialOverrides(Material material)
             {
                 if (material != null)
                 {
@@ -829,7 +855,7 @@ namespace Swole.Morphing
                     {
                         material.SetFloat(data.VertexCountPropertyName, data.vertexCount);
 
-                        material.SetFloat(data.MinMassShapeWeightPropertyName, data.minMassShapeWeight);                        
+                        material.SetFloat(data.MinMassShapeWeightPropertyName, data.minMassShapeWeight);                
 
                         material.SetBuffer(data.SkinningDataPropertyName, data.BoneWeightsBuffer);
                         material.SetInteger(data.BoneCountPropertyName, data.BoneCount);
@@ -1074,6 +1100,7 @@ namespace Swole.Morphing
             private List<int> indicesToVariationUpdateNext = new List<int>();
             private List<int> activeIndices = new List<int>();
             private List<int> openIndices = new List<int>();
+            private Dictionary<int, InstanceV2> activeInstances = new Dictionary<int, InstanceV2>();
 
             public int InstanceCount => activeIndices == null ? 0 : activeIndices.Count;
 
@@ -1202,6 +1229,11 @@ namespace Swole.Morphing
                             finalDeltasBuffer_.WriteToBuffer(finalVertexDeltas.AsArray(), 0, 0, finalVertexDeltas.Length);
                         }
                     }
+
+                    foreach(var index in indicesToUpdate)
+                    {
+                        if (activeInstances.TryGetValue(index, out var inst)) inst.NotifyMeshUpdate();
+                    }
                 }
 
                 indicesToPhysiqueUpdate.Clear();
@@ -1215,7 +1247,7 @@ namespace Swole.Morphing
             {
                 hasActiveJob = false;
                 activeJob.Complete();
-                activeJob = default;
+                //activeJob = default;
 
                 insertionFlags.Clear();
                 insertionFlags.AddReplicated(false, MaxInstanceCount);
@@ -1372,6 +1404,15 @@ namespace Swole.Morphing
                 {
                     //Debug.Log($"Updating {indicesToUpdate.Length} meshes");
 
+                    if (finalVertexPreviousDeltasBufferIndex >= 0)
+                    {
+                        var finalPreviousDeltasBuffer = instanceBuffers[finalVertexPreviousDeltasBufferIndex];
+                        if (finalPreviousDeltasBuffer.buffer is InstanceBuffer<MeshVertexDelta> finalPreviousDeltasBuffer_)
+                        {
+                            finalPreviousDeltasBuffer_.WriteToBuffer(finalVertexDeltas.AsArray(), 0, 0, finalVertexDeltas.Length);
+                        }
+                    }
+
                     JobHandle resetHandle = default;
                     if (indicesToVariationUpdate.Length > 0)
                     {
@@ -1512,6 +1553,7 @@ namespace Swole.Morphing
             }
 
             private int finalVertexDeltasBufferIndex = -1;
+            private int finalVertexPreviousDeltasBufferIndex = -1;
 #if UNITY_EDITOR
             private string debugName;
             public void Initialize(string debug)
@@ -1677,11 +1719,13 @@ namespace Swole.Morphing
                 variationVertexDeltas.AddReplicated(MeshVertexDelta.Default, initialDeltasCount); 
 
                 finalVertexDeltasBufferIndex = CreateInstanceMaterialBuffer<MeshVertexDelta>(data.PerVertexDeltaDataPropertyName, data.vertexCount, 3, true, out var finalVertexDeltasBuffer);
+                finalVertexPreviousDeltasBufferIndex = CreateInstanceMaterialBuffer<MeshVertexDelta>(data.PerVertexPreviousDeltaDataPropertyName, data.vertexCount, 3, true, out var finalVertexPreviousDeltasBuffer);
                 EnsureInstanceBufferSize(finalVertexDeltasBuffer);
+                EnsureInstanceBufferSize(finalVertexPreviousDeltasBuffer);
 #if UNITY_EDITOR
                 Debug.Log($"{MaxInstanceCount} -- {finalVertexDeltasBuffer.InstanceCount}");
 #endif
-                finalVertexDeltasBuffer.WriteToBuffer(finalVertexDeltas.AsArray(), 0, 0, finalVertexDeltas.Length); 
+                finalVertexDeltasBuffer.WriteToBuffer(finalVertexDeltas.AsArray(), 0, 0, finalVertexDeltas.Length);
 
                 initialized = true;
 
@@ -1744,6 +1788,8 @@ namespace Swole.Morphing
                 var instance = new InstanceV2(this);
                 instance.localID = index;
 
+                activeInstances[index] = instance;
+
                 return instance;
             }
 
@@ -1753,6 +1799,7 @@ namespace Swole.Morphing
 
                 if (instance.localID >= 0)
                 {
+                    if (activeInstances.ContainsKey(instance.localID)) activeInstances.Remove(instance.localID);
                     int listIndex = activeIndices.IndexOf(instance.localID);
                     if (listIndex >= 0) activeIndices.RemoveAtSwapBack(listIndex);
                     openIndices.Add(instance.localID);
@@ -2490,6 +2537,23 @@ namespace Swole.Morphing
 
                 return true;
             }
+            protected ComputeBuffer verticesBuffer;
+            public virtual ComputeBuffer VerticesBuffer
+            {
+                get
+                {
+                    if (verticesBuffer == null && TryGetVertices(0, out var vertexArray))
+                    {
+                        verticesBuffer = new ComputeBuffer(vertexArray.Length, UnsafeUtility.SizeOf(typeof(float3)), ComputeBufferType.Structured, ComputeBufferMode.Immutable);
+                        verticesBuffer.SetData(vertexArray);
+
+                        TrackDisposables();
+                    }
+
+                    return verticesBuffer;
+                }
+            }
+
             public bool TryGetNormals(int lod, out NativeArray<float3> array)
             {
                 array = default;
@@ -2519,6 +2583,23 @@ namespace Swole.Morphing
 
                 return true;
             }
+            protected ComputeBuffer normalsBuffer;
+            public virtual ComputeBuffer NormalsBuffer
+            {
+                get
+                {
+                    if (normalsBuffer == null && TryGetNormals(0, out var normalsArray))
+                    {
+                        normalsBuffer = new ComputeBuffer(normalsArray.Length, UnsafeUtility.SizeOf(typeof(float3)), ComputeBufferType.Structured, ComputeBufferMode.Immutable);
+                        normalsBuffer.SetData(normalsArray);
+
+                        TrackDisposables();
+                    }
+
+                    return normalsBuffer;
+                }
+            }
+
             public bool TryGetTangents(int lod, out NativeArray<float4> array)
             {
                 array = default;
@@ -2607,6 +2688,22 @@ namespace Swole.Morphing
                 meshTriangles[lod] = array;
 
                 return true;
+            } 
+            protected ComputeBuffer trianglesBuffer;
+            public virtual ComputeBuffer TrianglesBuffer
+            {
+                get
+                {
+                    if (trianglesBuffer == null && TryGetTriangles(0, out var trianglesArray))
+                    {
+                        trianglesBuffer = new ComputeBuffer(trianglesArray.Length, UnsafeUtility.SizeOf(typeof(int)), ComputeBufferType.Structured, ComputeBufferMode.Immutable);
+                        trianglesBuffer.SetData(trianglesArray); 
+
+                        TrackDisposables();
+                    }
+
+                    return trianglesBuffer;
+                }
             }
 
             public bool TryGetBoneWeights(int lod, out NativeArray<BoneWeight8> array)
@@ -3005,6 +3102,8 @@ namespace Swole.Morphing
 
             public string perVertexDeltaDataPropertyNameOverride;
             public string PerVertexDeltaDataPropertyName => string.IsNullOrWhiteSpace(perVertexDeltaDataPropertyNameOverride) ? _perVertexDeltaDataDefaultPropertyName : perVertexDeltaDataPropertyNameOverride;
+            public string perVertexPreviousDeltaDataPropertyNameOverride;
+            public string PerVertexPreviousDeltaDataPropertyName => string.IsNullOrWhiteSpace(perVertexPreviousDeltaDataPropertyNameOverride) ? _perVertexPreviousDeltaDataDefaultPropertyName : perVertexPreviousDeltaDataPropertyNameOverride;
 
 
             public string localInstanceIDPropertyNameOverride;
@@ -3240,6 +3339,7 @@ namespace Swole.Morphing
             public abstract ShapeInfo GetShapeInfo(int index);
             public abstract ShapeInfo GetShapeInfoUnsafe(int index);
             public abstract int IndexOfShape(string shapeName, bool caseSensitive = false);
+            public abstract int IndexOfShapeInBuffer(string shapeName, bool caseSensitive = false);
             public abstract List<ShapeInfo> GetShapeInfos(List<ShapeInfo> outputList = null);
 
             public abstract int VertexGroupCount { get; }
@@ -3409,6 +3509,51 @@ namespace Swole.Morphing
                     {
                         boneWeightsBuffer.Dispose();
                         boneWeightsBuffer = null;
+                    }
+                }
+                catch (Exception ex)
+                {
+#if UNITY_EDITOR
+                    Debug.LogException(ex);
+#endif
+                }
+
+                try
+                {
+                    if (verticesBuffer != null && verticesBuffer.IsValid())
+                    {
+                        verticesBuffer.Dispose();
+                        verticesBuffer = null;
+                    }
+                }
+                catch (Exception ex)
+                {
+#if UNITY_EDITOR
+                    Debug.LogException(ex);
+#endif
+                }
+
+                try
+                {
+                    if (normalsBuffer != null && normalsBuffer.IsValid()) 
+                    {
+                        normalsBuffer.Dispose();
+                        normalsBuffer = null;
+                    }
+                }
+                catch (Exception ex)
+                {
+#if UNITY_EDITOR
+                    Debug.LogException(ex);
+#endif
+                }
+
+                try
+                {
+                    if (trianglesBuffer != null && trianglesBuffer.IsValid())
+                    {
+                        trianglesBuffer.Dispose();
+                        trianglesBuffer = null; 
                     }
                 }
                 catch (Exception ex)
@@ -3781,6 +3926,20 @@ namespace Swole.Morphing
                 }
 
                 return -1;
+            }
+            public override int IndexOfShapeInBuffer(string shapeName, bool caseSensitive = false)
+            {
+                var shapeIndex = IndexOfShape(shapeName, caseSensitive);
+                if (shapeIndex < 0) return -1;
+
+                int indexInBuffer = 0;
+                for(int i = 0; i < shapeIndex; i++)
+                {
+                    var info = GetShapeInfo(i);
+                    indexInBuffer += info.frameCount;
+                }
+
+                return indexInBuffer;
             }
             public List<MeshShape> GetShapes(List<MeshShape> outputList = null)
             {
@@ -4962,12 +5121,20 @@ namespace Swole.Morphing
 
         public UnityEvent<InstanceV2> OnClaimInstance = new UnityEvent<InstanceV2>();
 
+        protected UnityEvent<int> OnInstanceUpdate;
+        protected UnityEvent OnInstanceUpdateNoArg;
+        protected virtual void NotifyInstanceUpdate()
+        {
+            OnInstanceUpdate?.Invoke(instance.localID);
+            OnInstanceUpdateNoArg?.Invoke();
+        }
         protected override void CreateInstance()
         {
             if (instance != null && instance.IsValid) return;
 
             instance = Updater.Register(Data);
             instance.updateManually = updateMeshManually;
+            instance.ListenForMeshUpdate(NotifyInstanceUpdate);
 
             OnClaimInstance?.Invoke(instance);
         }
@@ -5480,6 +5647,66 @@ namespace Swole.Morphing
             }
 
             return instance.OwnerGroup.CreateInstanceMaterialBuffer(propertyName, materialSlots, elementsPerInstance, bufferPoolSize, autoApplyToMaterials, out buffer);
+        }
+
+        #endregion
+
+        #region Events
+
+        public override void AddListener(ICustomizableCharacter.ListenableEvent event_, UnityAction<int> listener)
+        {
+            if (event_ == ICustomizableCharacter.ListenableEvent.OnAnyDataChanged)
+            {
+                if (OnInstanceUpdate == null) OnInstanceUpdate = new UnityEvent<int>();
+                OnInstanceUpdate.AddListener(listener);
+            } 
+            else
+            {
+                base.AddListener(event_, listener);
+            }       
+        }
+        public override void RemoveListener(ICustomizableCharacter.ListenableEvent event_, UnityAction<int> listener)
+        {
+            if (event_ == ICustomizableCharacter.ListenableEvent.OnAnyDataChanged)
+            {
+                if (OnInstanceUpdate != null) OnInstanceUpdate.RemoveListener(listener);
+            }
+            else
+            {
+                base.RemoveListener(event_, listener);
+            }
+        }
+
+        public override void AddListener(ICustomizableCharacter.ListenableEvent event_, UnityAction listener)
+        {
+            if (event_ == ICustomizableCharacter.ListenableEvent.OnAnyDataChanged)
+            {
+                if (OnInstanceUpdateNoArg == null) OnInstanceUpdateNoArg = new UnityEvent();
+                OnInstanceUpdateNoArg.AddListener(listener);
+            }
+            else
+            {
+                base.AddListener(event_, listener);
+            }
+        }
+        public override void RemoveListener(ICustomizableCharacter.ListenableEvent event_, UnityAction listener)
+        {
+            if (event_ == ICustomizableCharacter.ListenableEvent.OnAnyDataChanged)
+            {
+                if (OnInstanceUpdateNoArg != null) OnInstanceUpdateNoArg.RemoveListener(listener);
+            }
+            else
+            {
+                base.RemoveListener(event_, listener);
+            }
+        }
+
+        public override void ClearListeners()
+        {
+            if (OnInstanceUpdate != null) OnInstanceUpdate.RemoveAllListeners();
+            if (OnInstanceUpdateNoArg != null) OnInstanceUpdateNoArg.RemoveAllListeners();
+
+            base.ClearListeners();
         }
 
         #endregion

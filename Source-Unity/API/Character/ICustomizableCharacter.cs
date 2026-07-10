@@ -254,12 +254,16 @@ namespace Swole.API.Unity
         public enum ListenableEvent
         {
             OnMuscleDataChanged,
-            OnFatDataChanged
+            OnFatDataChanged,
+            OnVariationDataChanged,
+            OnAnyDataChanged
         }
 
         public void AddListener(ListenableEvent event_, UnityAction<int> listener);
-
         public void RemoveListener(ListenableEvent event_, UnityAction<int> listener);
+
+        public void AddListener(ListenableEvent event_, UnityAction listener);
+        public void RemoveListener(ListenableEvent event_, UnityAction listener);
 
         public void ClearListeners();
 
@@ -375,6 +379,7 @@ namespace Swole.API.Unity
             public const string _muscleGroupInfluencesDefaultPropertyName = "_MuscleGroupInfluences";
             public const string _fatGroupInfluencesDefaultPropertyName = "_FatGroupInfluences";
             public const string _perVertexDeltaDataDefaultPropertyName = "_PerVertexDeltaData";
+            public const string _perVertexPreviousDeltaDataDefaultPropertyName = "_PerVertexPreviousDeltaData";
 
             public const string _muscleMassShapeIndexDefaultPropertyName = "_MuscleMassShapeIndex";
             public const string _flexShapeIndexDefaultPropertyName = "_FlexShapeIndex";

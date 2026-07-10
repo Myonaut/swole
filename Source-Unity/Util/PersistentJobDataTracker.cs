@@ -6,10 +6,34 @@ using System.Collections.Generic;
 
 using UnityEngine;
 
+using Unity.Collections.LowLevel.Unsafe;
+
 namespace Swole
 {
     public class PersistentJobDataTracker : SingletonBehaviour<PersistentJobDataTracker>, IDisposable
     {
+        protected readonly Dictionary<int, ComputeBuffer> emptyBuffers = new Dictionary<int, ComputeBuffer>();
+        public static ComputeBuffer GetEmptyBuffer(int stride)
+        {
+            var instance = Instance;
+            if (instance == null) return null;
+
+            if (!instance.emptyBuffers.TryGetValue(stride, out var buffer) || buffer == null || !buffer.IsValid())
+            {
+                buffer = new ComputeBuffer(1, stride);
+                instance.emptyBuffers[stride] = buffer;
+            }
+
+            return buffer;
+        }
+        public static ComputeBuffer GetEmptyBuffer<T>() where T : struct
+        {
+            return GetEmptyBuffer(UnsafeUtility.SizeOf<T>());
+        }
+        public static ComputeBuffer GetEmptyBuffer(Type type)
+        {
+            return GetEmptyBuffer(UnsafeUtility.SizeOf(type));
+        }
 
         // Refrain from update calls
         public override bool ExecuteInStack => false;
@@ -26,26 +50,40 @@ namespace Swole
         public void Dispose()
         {
 
-            if (disposables == null) return;
-
-            disposing = true;
-            foreach (IDisposable disposable in disposables) 
+            if (emptyBuffers != null)
             {
-                try
+                foreach(var entry in emptyBuffers)
                 {
-                    disposable.Dispose();
-                }
-                catch(Exception ex) 
-                {
-                    swole.LogError($"Encountered an exception while disposing persistent job data!");
-                    swole.LogError(ex);
-                }
+                    if (entry.Value != null && entry.Value.IsValid())
+                    {
+                        entry.Value.Release();
+                    }
+                } 
+                emptyBuffers.Clear();
             }
-            disposing = false;
 
-            disposables.Clear();
-            disposables = null;
+            if (disposables != null)
+            {
 
+                disposing = true;
+                foreach (IDisposable disposable in disposables)
+                {
+                    try
+                    {
+                        disposable.Dispose();
+                    }
+                    catch (Exception ex)
+                    {
+                        swole.LogError($"Encountered an exception while disposing persistent job data!");
+                        swole.LogError(ex);
+                    }
+                }
+                disposing = false;
+
+                disposables.Clear();
+                disposables = null;
+
+            }
         }
 
         public static bool Track(IDisposable disposer) 

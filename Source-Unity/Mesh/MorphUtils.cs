@@ -2331,6 +2331,82 @@ namespace Swole.Morphing
     }
 
     [Serializable, StructLayout(LayoutKind.Sequential)]
+    public struct MeshVertexData
+    {
+        public float3 position;
+        public float3 normal;
+        public float4 tangent;
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static MeshVertexData operator +(MeshVertexData v1, MeshVertexData v2)
+        {
+            var result = new MeshVertexData();
+
+            result.position = v1.position + v2.position;
+            result.normal = v1.normal + v2.normal;
+            result.tangent.xyz = v1.tangent.xyz + v2.tangent.xyz;
+            result.tangent.w = v1.tangent.w;
+
+            return result;
+        }
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static MeshVertexData operator +(MeshVertexData v1, MeshVertexDelta v2)
+        {
+            var result = new MeshVertexData();
+
+            result.position = v1.position + v2.positionDelta;
+            result.normal = v1.normal + v2.normalDelta;
+            result.tangent.xyz = v1.tangent.xyz + v2.tangentDelta;
+            result.tangent.w = v1.tangent.w;
+
+            return result;
+        }
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static MeshVertexData operator -(MeshVertexData v1, MeshVertexData v2)
+        {
+            var result = new MeshVertexData();
+
+            result.position = v1.position - v2.position;
+            result.normal = v1.normal - v2.normal;
+            result.tangent.xyz = v1.tangent.xyz - v2.tangent.xyz;
+            result.tangent.w = v1.tangent.w;
+
+            return result;
+        }
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static MeshVertexData operator -(MeshVertexData v1, MeshVertexDelta v2)
+        {
+            var result = new MeshVertexData();
+
+            result.position = v1.position - v2.positionDelta;
+            result.normal = v1.normal - v2.normalDelta;
+            result.tangent.xyz = v1.tangent.xyz - v2.tangentDelta;
+            result.tangent.w = v1.tangent.w;
+
+            return result;
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static MeshVertexData operator *(MeshVertexData v1, float v)
+        {
+            var result = new MeshVertexData();
+
+            result.position = v1.position * v;
+            result.normal = v1.normal * v;
+            result.tangent.xyz = v1.tangent.xyz * v;
+            result.tangent.w = v1.tangent.w;
+
+            return result;
+        }
+
+        public static MeshVertexData Default => new MeshVertexData()
+        {
+            position = float3.zero,
+            normal = float3.zero,
+            tangent = float4.zero
+        };
+    }
+    [Serializable, StructLayout(LayoutKind.Sequential)]
     public struct MeshVertexDelta
     {
         public float3 positionDelta;

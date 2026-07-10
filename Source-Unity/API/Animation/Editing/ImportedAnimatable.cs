@@ -790,10 +790,17 @@ namespace Swole.API.Unity.Animation
             }
 
             animatableProperties.Clear();
-            foreach (var animProp in AnimationUtils.GetAllAnimatableProperties(rootTransform.gameObject))
+            if (rootTransform != null)
             {
-                AddAnimatableProperty(animProp); 
+                foreach (var animProp in AnimationUtils.GetAllAnimatableProperties(rootTransform.gameObject))
+                {
+                    AddAnimatableProperty(animProp); 
+                }
             } 
+            else
+            {
+                swole.LogError($"ImportedAnimatable {displayName} has no root transform to fetch animatable properties from."); 
+            }
 
             CoroutineProxy.Start(LoadAnimatableProperties(false));
 

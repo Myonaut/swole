@@ -1751,6 +1751,14 @@ namespace Swole.Morphing
                     break;
             }
         }
+
+        public void AddListener(ICustomizableCharacter.ListenableEvent event_, UnityAction listener)
+        {
+        }
+        public void RemoveListener(ICustomizableCharacter.ListenableEvent event_, UnityAction listener)
+        {
+        }
+
         public void ClearListeners()
         {
             if (OnMuscleDataChanged != null) OnMuscleDataChanged.RemoveAllListeners();

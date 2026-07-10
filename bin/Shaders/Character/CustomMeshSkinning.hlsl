@@ -1,6 +1,26 @@
 #ifndef CUSTOM_SKINNING
 #define CUSTOM_SKINNING
 
+struct SkinInfluence
+{
+	
+    float4 indicesA;
+    float4 indicesB;
+
+    float4 weightsA;
+    float4 weightsB;
+
+};
+
+struct BlendShapeDelta
+{
+
+    float3 deltaVertex;
+    float3 deltaNormal;
+    float3 deltaTangent;
+
+};
+
 #ifdef SHADERGRAPH_PREVIEW
 
 void SkinNoShapes_float(int instanceID, int vertexIndex, float3 inPosition, float3 inNormal, float3 inTangent, out float3 outPosition, out float3 outNormal, out float3 outTangent) 
@@ -34,6 +54,18 @@ void ApplySingleFrameShapeWithMultiplier_float(int shapeBaseIndex, float weight,
 	outTangent = inTangent;
 }
 
+void ApplyShapeDeltaRaw_float(float3 positionDelta, float3 normalDelta, float3 tangentDelta, float weight, float3 inPosition, float3 inNormal, float3 inTangent, out float3 outPosition, out float3 outNormal, out float3 outTangent)
+{
+	outPosition = inPosition;
+	outNormal = inNormal;
+	outTangent = inTangent;
+}
+void ApplyShapeDeltaProvided_float(BlendShapeDelta delta, float weight, float3 inPosition, float3 inNormal, float3 inTangent, out float3 outPosition, out float3 outNormal, out float3 outTangent)
+{
+	outPosition = inPosition;
+	outNormal = inNormal;
+	outTangent = inTangent;
+}
 void ApplyShapeDelta_float(int indexInBuffer, float weight, float3 inPosition, float3 inNormal, float3 inTangent, out float3 outPosition, out float3 outNormal, out float3 outTangent) 
 {
 	outPosition = inPosition;
@@ -51,26 +83,6 @@ void ApplyMultiShape_float(int shapeBaseIndex, float weight, float multiplier, i
 #endif
 
 #ifndef SHADERGRAPH_PREVIEW
-
-struct SkinInfluence
-{
-	
-	float4 indicesA;
-	float4 indicesB;
-
-	float4 weightsA;
-	float4 weightsB;
-
-};
-
-struct BlendShapeDelta
-{
-
-	float3 deltaVertex;
-	float3 deltaNormal;
-	float3 deltaTangent;
-
-};
 
 uniform int _BoneCount;
 
@@ -95,18 +107,18 @@ void SkinNoShapesOutMatrix_float(int instanceID, int vertexIndex, float3 inPosit
 	
 	const int boneIndexOffset = instanceID * _BoneCount;
 	blendedMatrix = 
-	_SkinningMatrices[boneIndexOffset + int(si.indicesA.x)] * si.weightsA.x 
-	+ _SkinningMatrices[boneIndexOffset + int(si.indicesA.y)] * si.weightsA.y 
-	+ _SkinningMatrices[boneIndexOffset + int(si.indicesA.z)] * si.weightsA.z  
-	+ _SkinningMatrices[boneIndexOffset + int(si.indicesA.w)] * si.weightsA.w 
-	+ _SkinningMatrices[boneIndexOffset + int(si.indicesB.x)] * si.weightsB.x 
-	+ _SkinningMatrices[boneIndexOffset + int(si.indicesB.y)] * si.weightsB.y 
-	+ _SkinningMatrices[boneIndexOffset + int(si.indicesB.z)] * si.weightsB.z 
-	+ _SkinningMatrices[boneIndexOffset + int(si.indicesB.w)] * si.weightsB.w;
+	mul(_SkinningMatrices[boneIndexOffset + int(si.indicesA.x)], si.weightsA.x)
+	+ mul(_SkinningMatrices[boneIndexOffset + int(si.indicesA.y)], si.weightsA.y)
+	+ mul(_SkinningMatrices[boneIndexOffset + int(si.indicesA.z)], si.weightsA.z)
+	+ mul(_SkinningMatrices[boneIndexOffset + int(si.indicesA.w)], si.weightsA.w)
+	+ mul(_SkinningMatrices[boneIndexOffset + int(si.indicesB.x)], si.weightsB.x)
+	+ mul(_SkinningMatrices[boneIndexOffset + int(si.indicesB.y)], si.weightsB.y)
+	+ mul(_SkinningMatrices[boneIndexOffset + int(si.indicesB.z)], si.weightsB.z)
+    + mul(_SkinningMatrices[boneIndexOffset + int(si.indicesB.w)], si.weightsB.w);
 
-	outPosition = mul(blendedMatrix, float4(inPosition, 1)).xyz; 
-	outNormal = mul(blendedMatrix, float4(inNormal, 0)).xyz;
-	outTangent = mul(blendedMatrix, float4(inTangent, 0)).xyz;
+	outPosition = mul(blendedMatrix, float4(inPosition, 1)).xyz;
+    outNormal = mul(blendedMatrix, float4(inNormal, 0));
+    outTangent = mul(blendedMatrix, float4(inTangent, 0));
 
 	// DEBUG
 	//outPosition = inPosition;
@@ -120,15 +132,22 @@ void SkinNoShapes_float(int instanceID, int vertexIndex, float3 inPosition, floa
 	SkinNoShapesOutMatrix_float(instanceID, vertexIndex, inPosition, inNormal, inTangent, outPosition, outNormal, outTangent, _discard);
 }
 
+void ApplyShapeDeltaRaw_float(float3 positionDelta, float3 normalDelta, float3 tangentDelta, float weight, float3 inPosition, float3 inNormal, float3 inTangent, out float3 outPosition, out float3 outNormal, out float3 outTangent)
+{
+    float weight_clamped = saturate(weight);
+
+    outPosition = inPosition + positionDelta * weight;
+    outNormal = inNormal + normalDelta * weight_clamped;
+    outTangent = inTangent + tangentDelta * weight_clamped;
+}
+void ApplyShapeDeltaProvided_float(BlendShapeDelta delta, float weight, float3 inPosition, float3 inNormal, float3 inTangent, out float3 outPosition, out float3 outNormal, out float3 outTangent)
+{
+    ApplyShapeDeltaRaw_float(delta.deltaVertex, delta.deltaNormal, delta.deltaTangent, weight, inPosition, inNormal, inTangent, outPosition, outNormal, outTangent);
+}
 void ApplyShapeDelta_float(int indexInBuffer, float weight, float3 inPosition, float3 inNormal, float3 inTangent, out float3 outPosition, out float3 outNormal, out float3 outTangent) 
 {
 	const BlendShapeDelta delta = _MeshShapeFrameDeltas[indexInBuffer];
-
-	float weight_clamped = saturate(weight);
-
-	outPosition = inPosition + delta.deltaVertex.xyz * weight;
-	outNormal = inNormal + delta.deltaNormal.xyz * weight_clamped;
-	outTangent = inTangent + delta.deltaTangent.xyz * weight_clamped;
+    ApplyShapeDeltaProvided_float(delta, weight, inPosition, inNormal, inTangent, outPosition, outNormal, outTangent);
 }
 
 void ApplyMultiShape_float(int shapeBaseIndex, float weight, float multiplier, int vertexIndex, int vertexCount, float3 inPosition, float3 inNormal, float3 inTangent, out float3 outPosition, out float3 outNormal, out float3 outTangent) 

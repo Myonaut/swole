@@ -1,0 +1,635 @@
+#pragma kernel Generate
+#pragma kernel GenerateWithDeltas
+#pragma kernel InitializeGrid
+#pragma kernel RasterizeTriangles
+#pragma kernel RasterizeTrianglesWithDeltas
+#pragma kernel FinalizeSDF
+
+struct VertexData
+{
+    float3 position;
+    float3 normal;
+    float4 tangent;
+};
+
+// MeshVertexDelta layout must match the C# struct in MorphUtils.cs
+struct MeshVertexDelta
+{
+    float3 positionDelta;
+    float3 normalDelta;
+    float3 tangentDelta;
+};
+
+// Pass 1 Output / Pass 2 Input: Shared atomic integer texture
+RWTexture3D<uint> _InterlockingGrid;
+
+// Output 3D Texture
+RWTexture3D<float> _Result;
+
+// Input Mesh Buffers
+StructuredBuffer<float3> _Vertices;
+StructuredBuffer<int> _Triangles;
+StructuredBuffer<MeshVertexDelta> _Deltas;
+
+int _VertexCount;
+int _TriangleCount;
+int _Resolution;
+
+float3 _BoundsMin;
+float3 _BoundsMax;
+float _MaxDistance;
+
+// Helper: Calculate the shortest squared distance from a Point to a Triangle
+float ShortestDistanceToTriangleSq(float3 p, float3 a, float3 b, float3 c, out bool isInside)
+{
+    float3 ab = b - a;
+    float3 bc = c - b;
+    float3 ca = a - c;
+
+    float3 ap = p - a;
+    float3 bp = p - b;
+    float3 cp = p - c;
+
+    float3 n = cross(ab, ca);
+
+    // Determine if the projection falls inside the triangle regions
+    bool insideAB = dot(cross(ab, n), ap) >= 0.0;
+    bool insideBC = dot(cross(bc, n), bp) >= 0.0;
+    bool insideCA = dot(cross(ca, n), cp) >= 0.0;
+
+    // Figure out whether the voxel point is on the positive/negative side of the triangle plane
+    isInside = dot(n, ap) < 0.0;
+
+    if (insideAB && insideBC && insideCA)
+    {
+        // Closest point is on the triangle face
+        float num = dot(ap, n);
+        float den = dot(n, n);
+        return (num * num) / den;
+    }
+
+    // Closest point falls on one of the 3 edges/vertices
+    // Fallback to checking the distance to the segments
+    float3 closestPoints[3];
+    
+    // Segment AB
+    float t0 = saturate(dot(ap, ab) / dot(ab, ab));
+    closestPoints[0] = a + ab * t0;
+    
+    // Segment BC
+    float t1 = saturate(dot(bp, bc) / dot(bc, bc));
+    closestPoints[1] = b + bc * t1;
+    
+    // Segment CA
+    float t2 = saturate(dot(cp, ca) / dot(ca, ca));
+    closestPoints[2] = c + ca * t2;
+
+    float d0 = distance(p, closestPoints[0]);
+    float d1 = distance(p, closestPoints[1]);
+    float d2 = distance(p, closestPoints[2]);
+
+    float minDist = min(d0, min(d1, d2));
+    return minDist * minDist;
+}
+
+[numthreads(8, 8, 8)]
+void Generate(uint3 id : SV_DispatchThreadID)
+{
+    // Protect against out-of-bounds mapping if texture resolution isn't a multiple of 8
+    if (id.x >= (uint) _Resolution || id.y >= (uint) _Resolution || id.z >= (uint) _Resolution)
+        return;
+
+    // 1. Convert Voxel ID (0 to Resolution) to a Local 3D Position
+    float3 voxelUV = float3(id) / ((float) _Resolution - 1.0);
+    float3 voxelPos = lerp(_BoundsMin, _BoundsMax, voxelUV);
+
+    float minDistanceSq = 1e10; // Start with a massive initial distance
+    uint insideCount = 0;
+
+    // 2. Loop through every triangle to find the closest surface intersection
+    for (int i = 0; i < _TriangleCount; i += 3)
+    {
+        float3 a = _Vertices[_Triangles[i]];
+        float3 b = _Vertices[_Triangles[i + 1]];
+        float3 c = _Vertices[_Triangles[i + 2]];
+
+        bool isInsideTrianglePlane = false;
+        float distSq = ShortestDistanceToTriangleSq(voxelPos, a, b, c, isInsideTrianglePlane);
+
+        if (distSq < minDistanceSq)
+        {
+            minDistanceSq = distSq;
+            // Raycast proxy evaluation: Track normal orientation to sign inside/outside
+            insideCount = isInsideTrianglePlane ? insideCount + 1 : insideCount;
+        }
+    }
+
+    float finalDistance = sqrt(minDistanceSq);
+
+    // 3. Apply Sign: If insideCount is odd, the point is inside the closed mesh
+    if (insideCount % 2 != 0)
+    {
+        finalDistance = -finalDistance;
+    }
+
+    // debug sphere
+    //float3 center = lerp(_BoundsMin, _BoundsMax, 0.5);
+    //float radius = distance(_BoundsMin, _BoundsMax) * 0.25;
+    //finalDistance = distance(voxelPos, center) - radius;
+    
+    // 4. Store distance inside the 3D texture voxel
+    _Result[id] = finalDistance;
+}
+
+[numthreads(8, 8, 8)]
+void GenerateWithDeltas(uint3 id : SV_DispatchThreadID)
+{
+    if (id.x >= (uint) _Resolution || id.y >= (uint) _Resolution || id.z >= (uint) _Resolution)
+        return;
+
+    float3 voxelUV = float3(id) / ((float) _Resolution - 1.0);
+    float3 voxelPos = lerp(_BoundsMin, _BoundsMax, voxelUV); 
+
+    float minDistanceSq = 1e10;
+    
+    // We will keep track of the closest triangle's features to determine the true sign
+    float3 closestA = float3(0, 0, 0);
+    float3 closestB = float3(0, 0, 0);
+    float3 closestC = float3(0, 0, 0);
+
+    // 2. Safely use int loops matching the buffer format
+    for (int i = 0; i < _TriangleCount; i += 3)
+    {
+        int ia = _Triangles[i];
+        int ib = _Triangles[i + 1];
+        int ic = _Triangles[i + 2];
+        
+        float3 a = _Vertices[ia] + _Deltas[ia].positionDelta;
+        float3 b = _Vertices[ib] + _Deltas[ib].positionDelta;
+        float3 c = _Vertices[ic] + _Deltas[ic].positionDelta;
+
+        bool dummyInside = false;
+        float distSq = ShortestDistanceToTriangleSq(voxelPos, a, b, c, dummyInside);
+
+        if (distSq < minDistanceSq)
+        {
+            minDistanceSq = distSq;
+            // Record the absolute closest triangle
+            closestA = a;
+            closestB = b;
+            closestC = c;
+        }
+    }
+
+    float finalDistance = sqrt(minDistanceSq);
+
+    // 3. Robust Sign Determination: 
+    // Calculate the mathematical normal vector of the absolute closest triangle face
+    float3 edge1 = closestB - closestA;
+    float3 edge2 = closestC - closestA;
+    float3 triangleNormal = normalize(cross(edge1, edge2));
+
+    // Vector from the closest vertex to our current voxel point
+    float3 voxelDirection = voxelPos - closestA;
+
+    // If the voxel point is pointing against the surface normal, it is inside the body!
+    if (dot(voxelDirection, triangleNormal) < 0.0)
+    {
+        finalDistance = -finalDistance; 
+    }
+
+    _Result[id] = finalDistance;
+}
+
+
+[numthreads(8, 8, 8)]
+void InitializeGrid(uint3 id : SV_DispatchThreadID)
+{
+    if (id.x >= (uint) _Resolution || id.y >= (uint) _Resolution || id.z >= (uint) _Resolution)
+        return;
+    
+    // Seed with a large integer representing our maximum background distance
+    _InterlockingGrid[id] = 1000000u;
+}
+
+void WriteTriToVoxels(float3 a, float3 b, float3 c)
+{
+    float3 triMin = min(a, min(b, c));
+    float3 triMax = max(a, max(b, c));
+
+    float3 invBoundsSize = 1.0 / (_BoundsMax - _BoundsMin);
+    int3 voxelMin = clamp((int3) (((triMin - _BoundsMin) * invBoundsSize) * (_Resolution - 1)), int3(0, 0, 0), int3(_Resolution - 1, _Resolution - 1, _Resolution - 1));
+    int3 voxelMax = clamp((int3) (((triMax - _BoundsMin) * invBoundsSize) * (_Resolution - 1)), int3(0, 0, 0), int3(_Resolution - 1, _Resolution - 1, _Resolution - 1));
+
+    //voxelMin = max(voxelMin - 1, 0);
+    //voxelMax = min(voxelMax + 1, _Resolution - 1);
+    
+    // NEW CODE: Pad by a wider margin (e.g., 3 to 5 voxels depending on your mesh size)
+    // This forces triangles to calculate smooth gradients further out into the surrounding empty voxels.
+    int borderExpansion = 8;
+    voxelMin = max(voxelMin - borderExpansion, 0);
+    voxelMax = min(voxelMax + borderExpansion, _Resolution - 1); 
+
+    for (int z = voxelMin.z; z <= voxelMax.z; z++)
+    {
+        for (int y = voxelMin.y; y <= voxelMax.y; y++)
+        {
+            for (int x = voxelMin.x; x <= voxelMax.x; x++)
+            {
+                int3 voxelCoords = int3(x, y, z);
+                
+                float3 voxelUV = float3(voxelCoords) / ((float) _Resolution - 1.0);
+                float3 voxelPos = lerp(_BoundsMin, _BoundsMax, voxelUV);
+
+                bool dummyInside = false;
+                float dist = sqrt(ShortestDistanceToTriangleSq(voxelPos, a, b, c, dummyInside));
+
+                // --- FIXED-POINT QUANTIZATION FIX ---
+                // Convert the float distance into a perfectly linear 0 to 1,000,000 uint scale
+                float normalizedDist = saturate(dist / _MaxDistance);
+                uint quantizedDist = (uint) (normalizedDist * 1000000.0);
+
+                // This integer comparison will now sort 100% perfectly on the GPU core
+                InterlockedMin(_InterlockingGrid[voxelCoords], quantizedDist);
+            }
+        }
+    }
+}
+
+[numthreads(64, 1, 1)]
+void RasterizeTriangles(uint3 id : SV_DispatchThreadID)
+{
+    // Make sure each thread maps exactly to a triangle index (3 indices per triangle)
+    uint triIndex = id.x * 3;
+    if (triIndex >= (uint) _TriangleCount)
+        return;
+
+    // 1. Fetch deformed triangle coordinates
+    int ia = _Triangles[triIndex];
+    int ib = _Triangles[triIndex + 1];
+    int ic = _Triangles[triIndex + 2];
+    
+    float3 a = _Vertices[ia];
+    float3 b = _Vertices[ib];
+    float3 c = _Vertices[ic];
+
+    WriteTriToVoxels(a, b, c);
+}
+
+[numthreads(64, 1, 1)]
+void RasterizeTrianglesWithDeltas(uint3 id : SV_DispatchThreadID)
+{
+    // Make sure each thread maps exactly to a triangle index (3 indices per triangle)
+    uint triIndex = id.x * 3;
+    if (triIndex >= (uint) _TriangleCount)
+        return;
+
+    // 1. Fetch deformed triangle coordinates
+    int ia = _Triangles[triIndex];
+    int ib = _Triangles[triIndex + 1];
+    int ic = _Triangles[triIndex + 2];
+    
+    float3 a = _Vertices[ia] + _Deltas[ia].positionDelta;
+    float3 b = _Vertices[ib] + _Deltas[ib].positionDelta;
+    float3 c = _Vertices[ic] + _Deltas[ic].positionDelta; 
+
+    WriteTriToVoxels(a, b, c);
+}
+
+
+[numthreads(8, 8, 8)]
+void FinalizeSDF(uint3 id : SV_DispatchThreadID)
+{
+    if (id.x >= (uint) _Resolution || id.y >= (uint) _Resolution || id.z >= (uint) _Resolution)
+        return;
+
+    // 1. Decode the integer back into our smooth real-world float distance
+    uint quantizedDist = _InterlockingGrid[id];
+    float finalDistance = ((float) quantizedDist / 1000000.0) * _MaxDistance;
+
+    _Result[id] = finalDistance;
+}
+
+
+#pragma kernel CS_ClearGrid
+#pragma kernel CS_CountTriangles
+#pragma kernel CS_CountTrianglesWithDeltas
+#pragma kernel CS_PopulateGrid
+#pragma kernel CS_PopulateGridWithDeltas
+#pragma kernel CS_BuildHighDetailSDF
+#pragma kernel CS_BuildHighDetailSDFWithDeltas
+
+// Structural Configuration
+#define GRID_RES 16 // A coarse 16x16x16 bucket grid is perfect for partitioning a character
+
+// Grid Buffers
+RWStructuredBuffer<uint> _CellTriangleCount; // Size: 16*16*16 (4096)
+RWStructuredBuffer<uint> _CellStartIndices; // Size: 16*16*16 (4096)
+RWStructuredBuffer<uint> _CellPopulateOffsets; // Size: 4096 <--- NEW: Dedicated thread counter
+RWStructuredBuffer<uint> _GridTriangleList; // Size: Max expected intersections (e.g., TriangleCount * 4)
+RWStructuredBuffer<uint> _GlobalCounter; // Size: 1 (Tracks current index allocation)
+
+// Helper: Convert a 3D position to a coarse grid 3D integer index
+int3 GetGridCellCoords(float3 pos)
+{
+    float3 uvw = saturate((pos - _BoundsMin) / (_BoundsMax - _BoundsMin));
+    return clamp((int3) (uvw * (GRID_RES - 1)), int3(0, 0, 0), int3(GRID_RES - 1, GRID_RES - 1, GRID_RES - 1));
+}
+
+int GetFlattenedCellIndex(int3 cell)
+{
+    return cell.x + (cell.y * GRID_RES) + (cell.z * GRID_RES * GRID_RES);
+}
+
+// -------------------------------------------------------------
+// PASS 1: Clear Counters
+// -------------------------------------------------------------
+[numthreads(64, 1, 1)]
+void CS_ClearGrid(uint3 id : SV_DispatchThreadID)
+{
+    if (id.x >= (GRID_RES * GRID_RES * GRID_RES))
+        return;
+    _CellTriangleCount[id.x] = 0;
+    _CellPopulateOffsets[id.x] = 0; // Clear the separate tracker
+    if (id.x == 0)
+        _GlobalCounter[0] = 0; 
+}
+
+// -------------------------------------------------------------
+// PASS 2: Count how many triangles cross into each bucket cell
+// -------------------------------------------------------------
+[numthreads(64, 1, 1)]
+void CS_CountTriangles(uint3 id : SV_DispatchThreadID)
+{
+    uint triIndex = id.x * 3;
+    if (triIndex >= (uint) _TriangleCount)
+        return;
+
+    float3 a = _Vertices[_Triangles[triIndex]];
+    float3 b = _Vertices[_Triangles[triIndex + 1]];
+    float3 c = _Vertices[_Triangles[triIndex + 2]];
+
+    int3 cellMin = min(GetGridCellCoords(a), min(GetGridCellCoords(b), GetGridCellCoords(c)));
+    int3 cellMax = max(GetGridCellCoords(a), max(GetGridCellCoords(b), GetGridCellCoords(c)));
+
+    for (int z = cellMin.z; z <= cellMax.z; z++)
+    {
+        for (int y = cellMin.y; y <= cellMax.y; y++)
+        {
+            for (int x = cellMin.x; x <= cellMax.x; x++)
+            {
+                int flatIndex = GetFlattenedCellIndex(int3(x, y, z));
+                InterlockedAdd(_CellTriangleCount[flatIndex], 1u);
+            }
+        }
+    }
+}
+[numthreads(64, 1, 1)]
+void CS_CountTrianglesWithDeltas(uint3 id : SV_DispatchThreadID)
+{
+    uint triIndex = id.x * 3;
+    if (triIndex >= (uint) _TriangleCount)
+        return;
+
+    float3 a = _Vertices[_Triangles[triIndex]] + _Deltas[_Triangles[triIndex]].positionDelta;
+    float3 b = _Vertices[_Triangles[triIndex + 1]] + _Deltas[_Triangles[triIndex + 1]].positionDelta;
+    float3 c = _Vertices[_Triangles[triIndex + 2]] + _Deltas[_Triangles[triIndex + 2]].positionDelta;
+
+    int3 cellMin = min(GetGridCellCoords(a), min(GetGridCellCoords(b), GetGridCellCoords(c)));
+    int3 cellMax = max(GetGridCellCoords(a), max(GetGridCellCoords(b), GetGridCellCoords(c)));
+
+    for (int z = cellMin.z; z <= cellMax.z; z++)
+    {
+        for (int y = cellMin.y; y <= cellMax.y; y++)
+        {
+            for (int x = cellMin.x; x <= cellMax.x; x++)
+            {
+                int flatIndex = GetFlattenedCellIndex(int3(x, y, z));
+                InterlockedAdd(_CellTriangleCount[flatIndex], 1u);
+            }
+        }
+    }
+}
+
+// -------------------------------------------------------------
+// PASS 3: Populate the Global Flattened List with Triangle IDs
+// -------------------------------------------------------------
+[numthreads(64, 1, 1)]
+void CS_PopulateGrid(uint3 id : SV_DispatchThreadID)
+{
+    uint triIndex = id.x * 3;
+    if (triIndex >= (uint) _TriangleCount)
+        return;
+
+    float3 a = _Vertices[_Triangles[triIndex]];
+    float3 b = _Vertices[_Triangles[triIndex + 1]];
+    float3 c = _Vertices[_Triangles[triIndex + 2]];
+
+    int3 cellMin = min(GetGridCellCoords(a), min(GetGridCellCoords(b), GetGridCellCoords(c)));
+    int3 cellMax = max(GetGridCellCoords(a), max(GetGridCellCoords(b), GetGridCellCoords(c)));
+
+    for (int z = cellMin.z; z <= cellMax.z; z++)
+    {
+        for (int y = cellMin.y; y <= cellMax.y; y++)
+        {
+            for (int x = cellMin.x; x <= cellMax.x; x++)
+            {
+                int flatCell = GetFlattenedCellIndex(int3(x, y, z));
+                
+                // --- FIX: Read the static base offset, but increment the separate populate tracker ---
+                uint baseStartOffset = _CellStartIndices[flatCell];
+                uint localItemOffset;
+                InterlockedAdd(_CellPopulateOffsets[flatCell], 1u, localItemOffset);
+
+                // Store securely inside the list without corruption
+                _GridTriangleList[baseStartOffset + localItemOffset] = triIndex;
+            }
+        }
+    }
+}
+[numthreads(64, 1, 1)]
+void CS_PopulateGridWithDeltas(uint3 id : SV_DispatchThreadID)
+{
+    uint triIndex = id.x * 3;
+    if (triIndex >= (uint) _TriangleCount)
+        return;
+
+    float3 a = _Vertices[_Triangles[triIndex]] + _Deltas[_Triangles[triIndex]].positionDelta;
+    float3 b = _Vertices[_Triangles[triIndex + 1]] + _Deltas[_Triangles[triIndex + 1]].positionDelta;
+    float3 c = _Vertices[_Triangles[triIndex + 2]] + _Deltas[_Triangles[triIndex + 2]].positionDelta;
+
+    int3 cellMin = min(GetGridCellCoords(a), min(GetGridCellCoords(b), GetGridCellCoords(c)));
+    int3 cellMax = max(GetGridCellCoords(a), max(GetGridCellCoords(b), GetGridCellCoords(c)));
+
+    for (int z = cellMin.z; z <= cellMax.z; z++)
+    {
+        for (int y = cellMin.y; y <= cellMax.y; y++)
+        {
+            for (int x = cellMin.x; x <= cellMax.x; x++)
+            {
+                int flatCell = GetFlattenedCellIndex(int3(x, y, z));
+                
+                // --- FIX: Read the static base offset, but increment the separate populate tracker ---
+                uint baseStartOffset = _CellStartIndices[flatCell];
+                uint localItemOffset;
+                InterlockedAdd(_CellPopulateOffsets[flatCell], 1u, localItemOffset);
+
+                // Store securely inside the list without corruption
+                _GridTriangleList[baseStartOffset + localItemOffset] = triIndex;
+            }
+        }
+    }
+}
+
+// -------------------------------------------------------------
+// PASS 4: Voxel-Centric SDF Calculation
+// -------------------------------------------------------------
+// Include your existing ShortestDistanceToTriangleSq helper function here
+[numthreads(8, 8, 8)]
+void CS_BuildHighDetailSDF(uint3 id : SV_DispatchThreadID)
+{
+    if (id.x >= (uint) _Resolution || id.y >= (uint) _Resolution || id.z >= (uint) _Resolution)
+        return;
+
+    float3 voxelUV = float3(id) / ((float) _Resolution - 1.0);
+    float3 voxelPos = lerp(_BoundsMin, _BoundsMax, voxelUV);
+
+    int3 centerCell = GetGridCellCoords(voxelPos);
+
+    float minDistanceSq = 1e10;
+    float3 closestA = float3(0, 0, 0);
+    float3 closestB = float3(0, 0, 0);
+    float3 closestC = float3(0, 0, 0);
+
+    int3 searchMin = max(centerCell - 1, 0);
+    int3 searchMax = min(centerCell + 1, GRID_RES - 1);
+
+    for (int cz = searchMin.z; cz <= searchMax.z; cz++)
+    {
+        for (int cy = searchMin.y; cy <= searchMax.y; cy++)
+        {
+            for (int cx = searchMin.x; cx <= searchMax.x; cx++)
+            {
+                
+                int flatCell = GetFlattenedCellIndex(int3(cx, cy, cz));
+                uint count = _CellTriangleCount[flatCell];
+                
+                // --- FIX: _CellStartIndices remains perfectly pristine from the prefix pass ---
+                uint startOffset = _CellStartIndices[flatCell];
+
+                for (uint t = 0; t < count; t++)
+                {
+                    uint triIndex = _GridTriangleList[startOffset + t];
+
+                    float3 a = _Vertices[_Triangles[triIndex]];
+                    float3 b = _Vertices[_Triangles[triIndex + 1]];
+                    float3 c = _Vertices[_Triangles[triIndex + 2]];
+
+                    bool dummy;
+                    float distSq = ShortestDistanceToTriangleSq(voxelPos, a, b, c, dummy);
+                    if (distSq < minDistanceSq)
+                    {
+                        minDistanceSq = distSq;
+                        closestA = a;
+                        closestB = b;
+                        closestC = c;
+                    }
+                }
+            }
+        }
+    }
+
+    float finalDistance = sqrt(minDistanceSq);
+    
+    // Clear Out the Background: If a voxel didn't find any triangles nearby 
+    // and retains its massive default distance, clamp it to a safe value.
+    //if (finalDistance > 1e5)
+    //{
+    //    finalDistance = _MaxDistance; // Or force it to a soft background baseline value like 1.0
+    //}
+    
+    // --- ACCURATE SIGN EVALUATION ---
+    float3 edge1 = closestB - closestA;
+    float3 edge2 = closestC - closestA;
+    float3 triangleNormal = normalize(cross(edge1, edge2));
+    float3 voxelDirection = voxelPos - closestA;
+
+    if (dot(voxelDirection, triangleNormal) < 0.0) 
+        finalDistance = -finalDistance;
+    
+    _Result[id] = finalDistance;
+}
+[numthreads(8, 8, 8)]
+void CS_BuildHighDetailSDFWithDeltas(uint3 id : SV_DispatchThreadID)
+{
+    if (id.x >= (uint) _Resolution || id.y >= (uint) _Resolution || id.z >= (uint) _Resolution)
+        return;
+
+    float3 voxelUV = float3(id) / ((float) _Resolution - 1.0);
+    float3 voxelPos = lerp(_BoundsMin, _BoundsMax, voxelUV);
+
+    int3 centerCell = GetGridCellCoords(voxelPos);
+
+    float minDistanceSq = 1e10;
+    float3 closestA = float3(0, 0, 0);
+    float3 closestB = float3(0, 0, 0);
+    float3 closestC = float3(0, 0, 0);
+
+    int3 searchMin = max(centerCell - 1, 0);
+    int3 searchMax = min(centerCell + 1, GRID_RES - 1);
+
+    for (int cz = searchMin.z; cz <= searchMax.z; cz++)
+    {
+        for (int cy = searchMin.y; cy <= searchMax.y; cy++)
+        {
+            for (int cx = searchMin.x; cx <= searchMax.x; cx++)
+            {
+                
+                int flatCell = GetFlattenedCellIndex(int3(cx, cy, cz));
+                uint count = _CellTriangleCount[flatCell];
+                
+                // --- FIX: _CellStartIndices remains perfectly pristine from the prefix pass ---
+                uint startOffset = _CellStartIndices[flatCell];
+
+                for (uint t = 0; t < count; t++)
+                {
+                    uint triIndex = _GridTriangleList[startOffset + t];
+
+                    float3 a = _Vertices[_Triangles[triIndex]] + _Deltas[_Triangles[triIndex]].positionDelta;
+                    float3 b = _Vertices[_Triangles[triIndex + 1]] + _Deltas[_Triangles[triIndex + 1]].positionDelta;
+                    float3 c = _Vertices[_Triangles[triIndex + 2]] + _Deltas[_Triangles[triIndex + 2]].positionDelta;
+
+                    bool dummy;
+                    float distSq = ShortestDistanceToTriangleSq(voxelPos, a, b, c, dummy);
+                    if (distSq < minDistanceSq)
+                    {
+                        minDistanceSq = distSq;
+                        closestA = a;
+                        closestB = b;
+                        closestC = c;
+                    }
+                }
+            }
+        }
+    }
+
+    float finalDistance = sqrt(minDistanceSq);
+    
+    // Clear Out the Background: If a voxel didn't find any triangles nearby 
+    // and retains its massive default distance, clamp it to a safe value.
+    //if (finalDistance > 1e5)
+    //{
+    //    finalDistance = _MaxDistance; // Or force it to a soft background baseline value like 1.0
+    //}
+    
+    // --- ACCURATE SIGN EVALUATION ---
+    float3 edge1 = closestB - closestA;
+    float3 edge2 = closestC - closestA;
+    float3 triangleNormal = normalize(cross(edge1, edge2));
+    float3 voxelDirection = voxelPos - closestA;
+
+    if (dot(voxelDirection, triangleNormal) < 0.0) 
+        finalDistance = -finalDistance;
+    
+    _Result[id] = finalDistance;
+}

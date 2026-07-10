@@ -1,7 +1,62 @@
+#ifndef CUSTOMIZABLE_CHARACTER
+#define CUSTOMIZABLE_CHARACTER
+
 #include "CustomMeshSkinning.hlsl"
+
+struct MuscleData
+{
+
+    float4 valuesLeft;
+    float4 valuesRight;
+
+};
+
+struct VertexGroupInfluence
+{
+	
+    float4 indicesA;
+    float4 indicesB;
+
+    float4 weightsA;
+    float4 weightsB;
+
+};
+
+struct DeltaData
+{
+
+    float3 positionDelta;
+    float3 normalDelta;
+    float3 tangentDelta;
+
+};
 
 #ifdef CUSTOM_SKINNING
 #ifdef SHADERGRAPH_PREVIEW
+
+void BuildPhysiqueData_float(int characterID, int vertexIndex, int vertexCount, float2 mainUV, float3 inPosition, out float4 muscleData, out float4 fatData, out float midlineWeight, out float2 maskingLR)
+{
+
+	muscleData = float4(0,0,0,0);
+	fatData = float4(0,0,0,0);
+	midlineWeight = 0;
+	maskingLR = float2(1,1);
+
+}
+
+void BuildPhysique_float(int shapesID, int characterID, int vertexIndex, int vertexCount, float2 mainUV, float bustFactor, float bustNerfFactor, float3 inPosition, float3 inNormal, float3 inTangent, out float3 outPosition, out float3 outNormal, out float3 outTangent, out float4 muscleData, out float4 fatData, out float alpha, out float midlineWeight)
+{
+
+	outPosition = inPosition;
+	outNormal = inNormal;
+	outTangent = inTangent;
+
+	muscleData = float4(0,0,0,0);
+	fatData = float4(0,0,0,0);
+	alpha = 1;
+	midlineWeight = 0;
+
+}
 
 void SkinOutMatrix_float(int shapesID, int rigID, int characterID, int vertexIndex, int vertexCount, float2 mainUV, float bustFactor, float bustNerfFactor, float3 inPosition, float3 inNormal, float3 inTangent, out float3 outPosition, out float3 outNormal, out float3 outTangent, out float4x4 skinningMatrix, out float4 muscleData, out float4 fatData, out float alpha, out float midlineWeight)
 {
@@ -39,6 +94,12 @@ void SkinWithBreastShapesOutMatrix_float(int shapesID, int rigID, int characterI
 	alpha = 1;
 	midlineWeight = 0;
 
+}
+
+void CalculateBustFactors_float(int vertexIndex, int vertexCount, float bustMix, out float bustFactor, out float bustNerfFactor)
+{
+    bustFactor = 1.0;
+	bustNerfFactor = 1.0;
 }
 
 void SkinBreastsOutMatrix_float(int shapesID, int rigID, int characterID, int vertexIndex, int vertexCount, float2 mainUV, float bustMix, bool hideNipples, float3 inPosition, float3 inNormal, float3 inTangent, out float3 outPosition, out float3 outNormal, out float3 outTangent, out float4x4 skinningMatrix, out float4 muscleData, out float4 fatData, out float bustFactor, out float bustNerfFactor, out float alpha, out float midlineWeight)
@@ -191,6 +252,11 @@ void SkinPreCalculatedVeins_float(int shrinkShapeIndex, int growShapeIndex, int 
 
 }
 
+void CalculateLeftRightMaskingFromFlag_float(bool isRightSide, float midlineWeight, out float2 maskingLR)
+{
+	maskingLR = float2(0,0);
+}
+
 void SampleVertexGroup_float(int groupIndex, int vertexIndex, int vertexCount, out float weight)
 {
 	weight = 0;
@@ -248,34 +314,6 @@ void SampleCustomizationGroups_float(int vertexIndex, int vertexCount, float2 ma
 #endif
 
 #ifndef SHADERGRAPH_PREVIEW
-
-struct MuscleData
-{
-
-	float4 valuesLeft;
-	float4 valuesRight;
-
-};
-
-struct VertexGroupInfluence
-{
-	
-	float4 indicesA;
-	float4 indicesB;
-
-	float4 weightsA;
-	float4 weightsB;
-
-};
-
-struct DeltaData
-{
-
-	float3 positionDelta;
-	float3 normalDelta;
-	float3 tangentDelta;
-
-};
 
 uniform int _MidlineVertexGroupIndex;
 uniform int _BustVertexGroupIndex;
@@ -555,6 +593,14 @@ void CalculateMuscleDataPreCalculated_float(int instanceID, int vertexIndex, int
 
 	muscleData.y = muscleData.y * saturate(muscleData.x / 0.35); // nerf flex for smaller masses
 }
+
+void CalculateMuscleShapeAffectors(float4 muscleData, float4 fatData, float bustFactor, out float nerf, out float fatClamped)
+{
+    fatClamped = saturate(fatData.x);
+    float bustNerf = 1 - saturate(bustFactor) * 0.45;
+    float fatNerf = lerp(1, 0.65 * fatData.y, fatClamped);
+    nerf = bustNerf * fatNerf;
+}
 void ApplyMuscleShapes_float(float4 muscleData, float4 fatData, float bustFactor, int vertexIndex, int vertexCount, float3 inPosition, float3 inNormal, float3 inTangent, out float3 outPosition, out float3 outNormal, out float3 outTangent)
 {
 	
@@ -562,10 +608,9 @@ void ApplyMuscleShapes_float(float4 muscleData, float4 fatData, float bustFactor
 	outNormal = inNormal;
 	outTangent = inTangent;
 
-	float fatSat = saturate(fatData.x);
-	float bustNerf = 1 - saturate(bustFactor) * 0.45;
-	float fatNerf = lerp(1, fatData.y, fatSat);
-	float nerf = bustNerf * fatNerf;
+    float nerf;
+    float fatSat;
+    CalculateMuscleShapeAffectors(muscleData, fatData, bustFactor, nerf, fatSat);
 	float massWeight = max(muscleData.x, _DefaultShapeMuscleWeight * fatSat);
 	massWeight = max(_MinMassShapeWeight, massWeight);
 
@@ -580,10 +625,9 @@ void ApplyFlexShapes_float(float4 muscleData, float4 fatData, float bustFactor, 
 	outNormal = inNormal;
 	outTangent = inTangent;
 
-	float fatSat = saturate(fatData.x);
-	float bustNerf = 1 - saturate(bustFactor) * 0.45;
-	float fatNerf = lerp(1, 0.65 * fatData.y, fatSat);
-	float nerf = bustNerf * fatNerf; 
+    float nerf;
+    float fatSat;
+    CalculateMuscleShapeAffectors(muscleData, fatData, bustFactor, nerf, fatSat);
 	ApplyMultiShape_float(_FlexShapeIndex, muscleData.y, nerf, vertexIndex, vertexCount, outPosition, outNormal, outTangent, outPosition, outNormal, outTangent);
 
 }
@@ -675,34 +719,59 @@ void ApplyVariationShapes_float(int instanceID, int vertexIndex, int vertexCount
 
 }
 
+void BuildPhysiqueData_float(int characterID, int vertexIndex, int vertexCount, float2 mainUV, float3 inPosition, out float4 muscleData, out float4 fatData, out float midlineWeight, out float2 maskingLR)
+{
 
-void BuildPhysique_float(int shapesID, int rigID, int characterID, int vertexIndex, int vertexCount, float2 mainUV, float bustFactor, float bustNerfFactor, float3 inPosition, float3 inNormal, float3 inTangent, out float3 outPosition, out float3 outNormal, out float3 outTangent, out float4 muscleData, out float4 fatData, out float alpha, out float midlineWeight)
+    midlineWeight = 0;
+    SampleMidlineVertexGroup_float(vertexIndex, vertexCount, midlineWeight);
+    maskingLR = float2(1, 1);
+#ifdef USE_LEFTRIGHT_BUFFER
+	CalculateLeftRightMasking_float(vertexIndex, midlineWeight, maskingLR);
+#elif USE_LEFTRIGHT_UV
+	CalculateLeftRightMasking_float(mainUV, midlineWeight, maskingLR);
+#else
+    CalculateLeftRightMasking_float(inPosition, midlineWeight, maskingLR);
+#endif
+
+    CalculateMuscleData_float(characterID, vertexIndex, vertexCount, maskingLR.x, maskingLR.y, muscleData);
+
+    CalculateFatData_float(characterID, vertexIndex, vertexCount, fatData);
+
+}
+
+void BuildPhysiqueDataPreCalculated_float(int characterID, int vertexIndex, int vertexCount, float2 mainUV, float3 inPosition, out float4 muscleData, out float4 fatData, out float midlineWeight, out float2 maskingLR)
+{
+
+    midlineWeight = 0;
+    SampleMidlineVertexGroup_float(vertexIndex, vertexCount, midlineWeight);
+    maskingLR = float2(1, 1);
+#ifdef USE_LEFTRIGHT_BUFFER
+	CalculateLeftRightMasking_float(vertexIndex, midlineWeight, maskingLR);
+#elif USE_LEFTRIGHT_UV
+	CalculateLeftRightMasking_float(mainUV, midlineWeight, maskingLR);
+#else
+    CalculateLeftRightMasking_float(inPosition, midlineWeight, maskingLR);
+#endif
+
+    CalculateMuscleDataPreCalculated_float(characterID, vertexIndex, vertexCount, maskingLR.x, maskingLR.y, muscleData);
+
+    CalculateFatDataPreCalculated_float(characterID, vertexIndex, vertexCount, fatData);
+
+}
+
+void BuildPhysique_float(int shapesID, int characterID, int vertexIndex, int vertexCount, float2 mainUV, float bustFactor, float bustNerfFactor, float3 inPosition, float3 inNormal, float3 inTangent, out float3 outPosition, out float3 outNormal, out float3 outTangent, out float4 muscleData, out float4 fatData, out float alpha, out float midlineWeight)
 {
 
 	alpha = 1;
 
-	midlineWeight = 0;
-	SampleMidlineVertexGroup_float(vertexIndex, vertexCount, midlineWeight);
-	float2 maskingLR = float2(1,1);
-	#ifdef USE_LEFTRIGHT_BUFFER
-	CalculateLeftRightMasking_float(vertexIndex, midlineWeight, maskingLR);
-	#elif USE_LEFTRIGHT_UV
-	CalculateLeftRightMasking_float(uv, midlineWeight, maskingLR);
-	#else
-	CalculateLeftRightMasking_float(inPosition, midlineWeight, maskingLR);
-	#endif
-	float maskLeft = maskingLR.x;
-	float maskRight = maskingLR.y;
-
-	CalculateMuscleData_float(characterID, vertexIndex, vertexCount, maskLeft, maskRight, muscleData);
-
-	CalculateFatData_float(characterID, vertexIndex, vertexCount, fatData);
+    float2 maskingLR;
+    BuildPhysiqueData_float(characterID, vertexIndex, vertexCount, mainUV, inPosition, muscleData, fatData, midlineWeight, maskingLR);
 
 	outPosition = inPosition;
 	outNormal = inNormal;
 	outTangent = inTangent;
 
-	ApplyVariationShapes_float(characterID, vertexIndex, vertexCount, maskLeft, maskRight, outPosition, outNormal, outTangent, outPosition, outNormal, outTangent);
+	ApplyVariationShapes_float(characterID, vertexIndex, vertexCount, maskingLR.x, maskingLR.y, outPosition, outNormal, outTangent, outPosition, outNormal, outTangent);
 
 	ApplyStandaloneShapes_float(shapesID, vertexIndex, vertexCount, outPosition, outNormal, outTangent, outPosition, outNormal, outTangent);
 
@@ -719,7 +788,7 @@ void BuildPhysique_float(int shapesID, int rigID, int characterID, int vertexInd
 void SkinOutMatrix_float(int shapesID, int rigID, int characterID, int vertexIndex, int vertexCount, float2 mainUV, float bustFactor, float bustNerfFactor, float3 inPosition, float3 inNormal, float3 inTangent, out float3 outPosition, out float3 outNormal, out float3 outTangent, out float4x4 skinningMatrix, out float4 muscleData, out float4 fatData, out float alpha, out float midlineWeight)
 {
 
-	BuildPhysique_float(shapesID, rigID, characterID, vertexIndex, vertexCount, mainUV, bustFactor, bustNerfFactor, inPosition, inNormal, inTangent, outPosition, outNormal, outTangent, muscleData, fatData, alpha, midlineWeight);
+	BuildPhysique_float(shapesID, characterID, vertexIndex, vertexCount, mainUV, bustFactor, bustNerfFactor, inPosition, inNormal, inTangent, outPosition, outNormal, outTangent, muscleData, fatData, alpha, midlineWeight);
 
 	SkinNoShapesOutMatrix_float(rigID, vertexIndex, outPosition, outNormal, outTangent, outPosition, outNormal, outTangent, skinningMatrix);
 
@@ -728,7 +797,7 @@ void SkinOutMatrix_float(int shapesID, int rigID, int characterID, int vertexInd
 void SkinWithBreastShapesOutMatrix_float(int shapesID, int rigID, int characterID, int vertexIndex, int vertexCount, float2 mainUV, float baseBustFactor, float bustFactor, float bustNerfFactor, float bustMaxMass, float3 inPosition, float3 inNormal, float3 inTangent, out float3 outPosition, out float3 outNormal, out float3 outTangent, out float4x4 skinningMatrix, out float4 muscleData, out float4 fatData, out float alpha, out float midlineWeight)
 {
 
-	BuildPhysique_float(shapesID, rigID, characterID, vertexIndex, vertexCount, mainUV, bustFactor, bustNerfFactor, inPosition, inNormal, inTangent, outPosition, outNormal, outTangent, muscleData, fatData, alpha, midlineWeight);
+	BuildPhysique_float(shapesID, characterID, vertexIndex, vertexCount, mainUV, bustFactor, bustNerfFactor, inPosition, inNormal, inTangent, outPosition, outNormal, outTangent, muscleData, fatData, alpha, midlineWeight);
 
 	float bustMass = saturate(max(_MinMassShapeWeight, muscleData.x) / bustMaxMass); 
 	ApplyMultiShape_float(_BustSizeShapeIndex, baseBustFactor, 1 - bustMass, vertexIndex, vertexCount, outPosition, outNormal, outTangent, outPosition, outNormal, outTangent);
@@ -738,12 +807,24 @@ void SkinWithBreastShapesOutMatrix_float(int shapesID, int rigID, int characterI
 
 }
 
+void CalculateBustFactorsFromWeights(float bustVertexGroupWeight, float bustNerfVertexGroupWeight, int vertexIndex, int vertexCount, float bustMix, out float bustFactor, out float bustNerfFactor)
+{
+    bustFactor = bustMix * min(1, pow(bustVertexGroupWeight, 0.2));
+    bustNerfFactor = bustMix * min(1, pow(bustNerfVertexGroupWeight, 0.5));
+}
+void CalculateBustFactorsFromWeight(float bustVertexGroupWeight, int vertexIndex, int vertexCount, float bustMix, out float bustFactor, out float bustNerfFactor)
+{
+    CalculateBustFactorsFromWeights(bustVertexGroupWeight, _VertexGroups[(_BustNerfVertexGroupIndex * vertexCount) + vertexIndex], vertexIndex, vertexCount, bustMix, bustFactor, bustNerfFactor);
+}
+void CalculateBustFactors_float(int vertexIndex, int vertexCount, float bustMix, out float bustFactor, out float bustNerfFactor)
+{
+    CalculateBustFactorsFromWeight(_VertexGroups[(_BustVertexGroupIndex * vertexCount) + vertexIndex], vertexIndex, vertexCount, bustMix, bustFactor, bustNerfFactor);
+}
 
 void SkinBreastsOutMatrix_float(int shapesID, int rigID, int characterID, int vertexIndex, int vertexCount, float2 mainUV, float bustMix, bool hideNipples, float3 inPosition, float3 inNormal, float3 inTangent, out float3 outPosition, out float3 outNormal, out float3 outTangent, out float4x4 skinningMatrix, out float4 muscleData, out float4 fatData, out float bustFactor, out float bustNerfFactor, out float alpha, out float midlineWeight)
 {
 
-	bustFactor = bustMix * min(1, pow(_VertexGroups[(_BustVertexGroupIndex * vertexCount) + vertexIndex], 0.2)); 
-	bustNerfFactor = bustMix * min(1, pow(_VertexGroups[(_BustNerfVertexGroupIndex * vertexCount) + vertexIndex], 0.5));
+    CalculateBustFactors_float(vertexIndex, vertexCount, bustMix, bustFactor, bustNerfFactor);
 
 	SkinOutMatrix_float(shapesID, rigID, characterID, vertexIndex, vertexCount, mainUV, bustFactor, bustNerfFactor, inPosition, inNormal, inTangent, outPosition, outNormal, outTangent, skinningMatrix, muscleData, fatData, alpha, midlineWeight);
 
@@ -759,8 +840,7 @@ void SkinBreastsWithBreastShapesOutMatrix_float(int shapesID, int rigID, int cha
 
 	float bustGroupWeight = _VertexGroups[(_BustVertexGroupIndex * vertexCount) + vertexIndex];
 	float baseBustFactor = bustMix * bustGroupWeight;
-	bustFactor = bustMix * min(1, pow(bustGroupWeight, 0.2)); 
-	bustNerfFactor = bustMix * min(1, pow(_VertexGroups[(_BustNerfVertexGroupIndex * vertexCount) + vertexIndex], 0.5));
+	CalculateBustFactorsFromWeights(bustGroupWeight, _VertexGroups[(_BustNerfVertexGroupIndex * vertexCount) + vertexIndex], vertexIndex, vertexCount, bustMix, bustFactor, bustNerfFactor);
 
 	SkinWithBreastShapesOutMatrix_float(shapesID, rigID, characterID, vertexIndex, vertexCount, mainUV, baseBustFactor, bustFactor, bustNerfFactor, bustMaxMass, inPosition, inNormal, inTangent, outPosition, outNormal, outTangent, skinningMatrix, muscleData, fatData, alpha, midlineWeight);
 
@@ -798,22 +878,8 @@ void SkinPreCalculated_float(int localID, int shapesID, int rigID, int character
 
 	alpha = 1;
 
-	midlineWeight = 0;
-	SampleMidlineVertexGroup_float(vertexIndex, vertexCount, midlineWeight);
-	float2 maskingLR = float2(1,1);
-	#ifdef USE_LEFTRIGHT_BUFFER
-	CalculateLeftRightMasking_float(vertexIndex, midlineWeight, maskingLR);
-	#elif USE_LEFTRIGHT_UV
-	CalculateLeftRightMasking_float(uv, midlineWeight, maskingLR);
-	#else
-	CalculateLeftRightMasking_float(inPosition, midlineWeight, maskingLR);
-	#endif
-	float maskLeft = maskingLR.x;
-	float maskRight = maskingLR.y;
-
-	CalculateMuscleDataPreCalculated_float(characterID, vertexIndex, vertexCount, maskLeft, maskRight, muscleData);
-
-	CalculateFatDataPreCalculated_float(characterID, vertexIndex, vertexCount, fatData);
+    float2 maskingLR;
+    BuildPhysiqueDataPreCalculated_float(characterID, vertexIndex, vertexCount, mainUV, inPosition, muscleData, fatData, midlineWeight, maskingLR);
 
 	int vertexIndexOffset = localID * vertexCount;
 	int globalVertexIndex = vertexIndexOffset + vertexIndex;
@@ -838,8 +904,7 @@ void SkinPreCalculated_float(int localID, int shapesID, int rigID, int character
 void SkinPreCalculatedBreasts_float(int localID, int shapesID, int rigID, int characterID, int vertexIndex, int vertexCount, float2 mainUV, float bustMix, bool hideNipples, float3 inPosition, float3 inNormal, float3 inTangent, out float3 outPosition, out float3 outNormal, out float3 outTangent, out float4 muscleData, out float4 fatData, out float bustFactor, out float bustNerfFactor, out float alpha, out float midlineWeight)
 {
 
-	bustFactor = bustMix * min(1, pow(_VertexGroups[(_BustVertexGroupIndex * vertexCount) + vertexIndex], 0.2)); 
-	bustNerfFactor = bustMix * min(1, pow(_VertexGroups[(_BustNerfVertexGroupIndex * vertexCount) + vertexIndex], 0.5));
+    CalculateBustFactors_float(vertexIndex, vertexCount, bustMix, bustFactor, bustNerfFactor);
 
 	SkinPreCalculated_float(localID, shapesID, rigID, characterID, vertexIndex, vertexCount, mainUV, bustFactor, bustNerfFactor, inPosition, inNormal, inTangent, outPosition, outNormal, outTangent, muscleData, fatData, alpha, midlineWeight);
 
@@ -866,25 +931,10 @@ void SkinPreCalculatedVeins_float(int shrinkShapeIndex, int growShapeIndex, int 
 
 	alpha = 1;
 
-	bustFactor = bustMix * min(1, pow(_VertexGroups[(_BustVertexGroupIndex * vertexCount) + vertexIndex], 0.2)); 
-	bustNerfFactor = bustMix * min(1, pow(_VertexGroups[(_BustNerfVertexGroupIndex * vertexCount) + vertexIndex], 0.5));
+    CalculateBustFactors_float(vertexIndex, vertexCount, bustMix, bustFactor, bustNerfFactor);
 
-	midlineWeight = 0;
-	SampleMidlineVertexGroup_float(vertexIndex, vertexCount, midlineWeight);
-	float2 maskingLR = float2(1,1);
-	#ifdef USE_LEFTRIGHT_BUFFER
-	CalculateLeftRightMasking_float(vertexIndex, midlineWeight, maskingLR);
-	#elif USE_LEFTRIGHT_UV
-	CalculateLeftRightMasking_float(uv, midlineWeight, maskingLR);
-	#else
-	CalculateLeftRightMasking_float(inPosition, midlineWeight, maskingLR);
-	#endif
-	float maskLeft = maskingLR.x;
-	float maskRight = maskingLR.y;
-
-	CalculateMuscleDataPreCalculated_float(characterID, vertexIndex, vertexCount, maskLeft, maskRight, muscleData);
-
-	CalculateFatDataPreCalculated_float(characterID, vertexIndex, vertexCount, fatData);
+    float2 maskingLR;
+    BuildPhysiqueDataPreCalculated_float(characterID, vertexIndex, vertexCount, mainUV, inPosition, muscleData, fatData, midlineWeight, maskingLR);
 
 	int vertexIndexOffset = localID * vertexCount;
 	int globalVertexIndex = vertexIndexOffset + vertexIndex;
@@ -959,4 +1009,5 @@ void SkinTorsoWithBreastShapes_float(int shapesID, int rigID, int characterID, i
 	SkinTorsoWithBreastShapesOutMatrix_float(shapesID, rigID, characterID, vertexIndex, vertexCount, mainUV, bustMix, bustMaxMass, hideNipples, hideGenitals, inPosition, inNormal, inTangent, outPosition, outNormal, outTangent, _discard, muscleData, fatData, bustFactor, bustNerfFactor, alpha, midlineWeight);
 }
 
+#endif
 #endif

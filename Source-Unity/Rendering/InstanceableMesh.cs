@@ -1652,10 +1652,19 @@ namespace Swole
     }
 
     [Serializable]
-    public struct BoundMaterialProperty
+    public class BoundMaterialProperty
     {
         public string propertyName;
         public Material material;
+        public int kernelIndex;
+        public ComputeShader computeShader;
+
+        public void SetBuffer(ComputeBuffer buffer) => SetBuffer(propertyName, buffer);
+        public void SetBuffer(string propertyName, ComputeBuffer buffer)
+        {
+            if (material != null) material.SetBuffer(propertyName, buffer);
+            if (computeShader != null) computeShader.SetBuffer(kernelIndex, propertyName, buffer);
+        }
     }
     public interface IInstanceBuffer : IDisposable
     {
@@ -1679,7 +1688,7 @@ namespace Swole
         public int Size { get; }
         public int InstanceCount { get; }
         public int Stride { get; }
-        public int ElementsPerInstance { get; }
+        public int ElementsPerInstance { get; } 
     }
 
     [NonAnimatable]
@@ -1696,29 +1705,67 @@ namespace Swole
 
             return null;
         }
+        public string GetBoundPropertyName(ComputeShader computeShader)
+        {
+            foreach (var binding in boundMaterialProperties)
+            {
+                if (binding.computeShader == computeShader) return binding.propertyName;
+            }
+
+            return null;
+        }
+
         /// <summary>
         /// Binds the buffer to the material and will set the property value again if the buffer changes to a new internal buffer instance.
         /// </summary>
-        public void BindMaterialProperty(Material material, string propertyName)
+        public void BindMaterialProperty(Material material, string propertyName) => BindMaterialProperty(material, propertyName,  true);
+        public void BindMaterialProperty(Material material, string propertyName, bool persistent)
         {
             //if (bufferPool == null) Debug.LogError("Buffer pool null");
             //if (bufferPool.ActiveBuffer == null) Debug.LogError("Buffer pool active buffer null");
             material.SetBuffer(propertyName, bufferPool.ActiveBuffer);
-            foreach (var binding in boundMaterialProperties) if (binding.material == material && binding.propertyName == propertyName) return;
-
-            boundMaterialProperties.Add(new BoundMaterialProperty() { material = material, propertyName = propertyName });
+            if (persistent)
+            {
+                foreach (var binding in boundMaterialProperties) if (binding.material == material && binding.propertyName == propertyName) return;
+                boundMaterialProperties.Add(new BoundMaterialProperty() { material = material, propertyName = propertyName });
+            }
         }
         public void UnbindMaterialProperty(Material material, string propertyName)
         {
             boundMaterialProperties.RemoveAll(i => (i.material == material && i.propertyName == propertyName));
         }
 
+        /// <summary>
+        /// Binds the buffer to the shader and will set the property value again if the buffer changes to a new internal buffer instance.
+        /// </summary>
+        public void BindShaderProperty(ComputeShader shader, int kernelIndex, string propertyName, bool persistent) => BindMaterialProperty(shader, kernelIndex, propertyName, persistent);
+        public void BindMaterialProperty(ComputeShader shader, int kernelIndex, string propertyName, bool persistent)
+        {
+            shader.SetBuffer(kernelIndex, propertyName, bufferPool.ActiveBuffer);
+
+            if (persistent)
+            {
+                foreach (var binding in boundMaterialProperties) if (binding.computeShader == shader && binding.kernelIndex == kernelIndex && binding.propertyName == propertyName) return;
+                boundMaterialProperties.Add(new BoundMaterialProperty() { computeShader = shader, kernelIndex = kernelIndex, propertyName = propertyName });
+            }
+        }
+        public void UnbindShaderProperty(ComputeShader shader, int kernelIndex, string propertyName) => UnbindMaterialProperty(shader, kernelIndex, propertyName);
+        public void UnbindMaterialProperty(ComputeShader shader, int kernelIndex, string propertyName)
+        {
+            boundMaterialProperties.RemoveAll(i => (i.computeShader == shader && i.propertyName == propertyName && i.kernelIndex == kernelIndex));
+        }
+        public void UnbindShaderProperty(ComputeShader shader, string propertyName) => UnbindMaterialProperty(shader, propertyName);
+        public void UnbindMaterialProperty(ComputeShader shader, string propertyName)
+        {
+            boundMaterialProperties.RemoveAll(i => (i.computeShader == shader && i.propertyName == propertyName));
+        }
+
         protected void OnBufferSwap(ComputeBuffer newBuffer)
         {
             foreach (var binding in boundMaterialProperties) 
             {
-                //Debug.Log($"UPDATING BUFFER {name} ON {binding.propertyName} FOR MAT {binding.material.name}"); 
-                binding.material.SetBuffer(binding.propertyName, newBuffer); 
+                //Debug.Log($"UPDATING BUFFER {name} ON {binding.propertyName}"); 
+                binding.SetBuffer(newBuffer); 
             }
         }
 
@@ -1742,6 +1789,8 @@ namespace Swole
             set => bufferPool[index] = value;
         }
         public bool IsValid() => bufferPool != null && bufferPool.IsValid();
+
+        public ComputeBuffer BufferThisFrame => bufferPool == null ? null : bufferPool.ActiveBuffer;
 
 
         public bool WriteToBuffer(int index, T data)

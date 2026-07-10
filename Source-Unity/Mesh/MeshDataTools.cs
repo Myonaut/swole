@@ -682,10 +682,11 @@ namespace Swole
             return outputArray;
         }
 
-        [Serializable]
+        [Serializable, StructLayout(LayoutKind.Sequential)]
         public struct WeightedVertexConnection
         {
             public int index;
+            public int triIndex;
             public float weight;
         }
 
@@ -695,7 +696,7 @@ namespace Swole
             int vertexCount = vertices.Length;
 
             WeightedVertexConnection[][] outputArray = new WeightedVertexConnection[vertexCount][];
-            void AddConnectedVertex(int rootVertex, int connectedVertex, float distance = -1)
+            void AddConnectedVertex(int rootVertex, int connectedVertex, int triIndex, float distance = -1)
             {
                 WeightedVertexConnection[] originalArray, array;
                 originalArray = array = outputArray[rootVertex];
@@ -710,31 +711,35 @@ namespace Swole
                     for (int a = 0; a < originalArray.Length; a++) array[a] = originalArray[a];
                 }
 
-                array[array.Length - 1] = new WeightedVertexConnection() { index = connectedVertex, weight = distance < 0 ? Vector3.Distance(vertices[rootVertex], vertices[connectedVertex]) : distance };
+                array[array.Length - 1] = new WeightedVertexConnection() { index = connectedVertex, weight = distance < 0 ? Vector3.Distance(vertices[rootVertex], vertices[connectedVertex]) : distance, triIndex = triIndex };
                 outputArray[rootVertex] = array;
             }
-            void AddConnectedMergedVertex(WeldedVertex rootVertex, WeldedVertex connectedVertex)
+            void AddConnectedMergedVertex(WeldedVertex rootVertex, WeldedVertex connectedVertex, int triIndex)
             {
                 float distance = Vector3.Distance(vertices[rootVertex.firstIndex], vertices[connectedVertex.firstIndex]);
-                AddConnectedVertex(rootVertex.firstIndex, connectedVertex.firstIndex, distance);              
+                AddConnectedVertex(rootVertex.firstIndex, connectedVertex.firstIndex, triIndex, distance);              
             }
 
             if (mergedVertices == null)
             {
                 for (int a = 0; a < triangles.Length; a += 3)
                 {
-                    int v0 = triangles[a];
-                    int v1 = triangles[a + 1];
-                    int v2 = triangles[a + 2];
+                    int i0 = a;
+                    int i1 = a + 1;
+                    int i2 = a + 2;
 
-                    AddConnectedVertex(v0, v1);
-                    AddConnectedVertex(v0, v2);
+                    int v0 = triangles[i0];
+                    int v1 = triangles[i1];
+                    int v2 = triangles[i2];
+
+                    AddConnectedVertex(v0, v1, i0);
+                    AddConnectedVertex(v0, v2, i0);
                      
-                    AddConnectedVertex(v1, v0);
-                    AddConnectedVertex(v1, v2);
+                    AddConnectedVertex(v1, v0, i1);
+                    AddConnectedVertex(v1, v2, i1);
 
-                    AddConnectedVertex(v2, v0);
-                    AddConnectedVertex(v2, v1);
+                    AddConnectedVertex(v2, v0, i2);
+                    AddConnectedVertex(v2, v1, i2);
                 }
 
 
@@ -760,18 +765,22 @@ namespace Swole
             {
                 for (int a = 0; a < triangles.Length; a += 3)
                 {
-                    var v0 = mergedVertices[triangles[a]];
-                    var v1 = mergedVertices[triangles[a + 1]];
-                    var v2 = mergedVertices[triangles[a + 2]];
+                    int i0 = a;
+                    int i1 = a + 1;
+                    int i2 = a + 2;
 
-                    AddConnectedMergedVertex(v0, v1);
-                    AddConnectedMergedVertex(v0, v2);
+                    var v0 = mergedVertices[triangles[i0]];
+                    var v1 = mergedVertices[triangles[i1]];
+                    var v2 = mergedVertices[triangles[i2]];
 
-                    AddConnectedMergedVertex(v1, v0);
-                    AddConnectedMergedVertex(v1, v2);
+                    AddConnectedMergedVertex(v0, v1, i0);
+                    AddConnectedMergedVertex(v0, v2, i0);
 
-                    AddConnectedMergedVertex(v2, v0);
-                    AddConnectedMergedVertex(v2, v1);
+                    AddConnectedMergedVertex(v1, v0, i1);
+                    AddConnectedMergedVertex(v1, v2, i1);
+
+                    AddConnectedMergedVertex(v2, v0, i2);
+                    AddConnectedMergedVertex(v2, v1, i2);
                 }
 
                 for (int a = 0; a < outputArray.Length; a++)
