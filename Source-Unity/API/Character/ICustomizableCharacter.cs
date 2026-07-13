@@ -302,6 +302,8 @@ namespace Swole.API.Unity
 
             public const string _skinningMatricesDefaultPropertyName = "_SkinningMatrices";
 
+            public const string _vertexMaskDefaultPropertyName = "_VertexMask";
+
             public const string _frameWeightsMuscleShapesDefaultPropertyName = "_FrameWeightsMuscleShapes";
 
             public const string _frameWeightsFlexShapesDefaultPropertyName = "_FrameWeightsFlexShapes";

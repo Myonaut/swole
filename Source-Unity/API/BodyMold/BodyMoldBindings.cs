@@ -166,6 +166,32 @@ namespace Swole.Modding
             }
         }
 
+        [NonSerialized]
+        private ComputeBuffer vertexColorsBuffer;
+        public ComputeBuffer VertexColorsBuffer
+        {
+            get
+            {
+                if (vertexColorsBuffer == null)
+                {
+                    TrackDisposables();
+                    var vColors = clothingMesh.colors;
+                    if (vColors == null || vColors.Length <= 0)
+                    {
+                        vColors = new Color[clothingMesh.vertexCount];
+                        for (int a = 0; a < vColors.Length; a++)
+                        {
+                            vColors[a] = Color.white;
+                        }
+                    }
+                    vertexColorsBuffer = new ComputeBuffer(vColors.Length, UnsafeUtility.SizeOf(typeof(float4)), ComputeBufferType.Structured, ComputeBufferMode.Immutable);
+                    vertexColorsBuffer.SetData(vColors); 
+                }
+
+                return vertexColorsBuffer;
+            }
+        }
+
         [HideInInspector]
         public MeshDataTools.WeightedVertexConnection[] vertexConnections;
         [HideInInspector]
@@ -215,6 +241,7 @@ namespace Swole.Modding
                 if (vertexDataBuffer == null)
                 {
                     TrackDisposables();
+                    var clothingMesh = EditedClothingMesh;
                     var vertices = clothingMesh.vertices;
                     var normals = clothingMesh.normals;
                     var tangents = clothingMesh.tangents;
@@ -320,6 +347,12 @@ namespace Swole.Modding
                 trianglesBuffer = null; 
             }
 
+            if (vertexColorsBuffer != null)
+            {
+                vertexColorsBuffer.Dispose();
+                vertexColorsBuffer = null; 
+            }
+
             if (vertexDataBuffer != null)
             {
                 vertexDataBuffer.Dispose();
@@ -366,8 +399,19 @@ namespace Swole.Modding
             public float4[] vertexBindingWeights;
             [HideInInspector]
             public Triangles32[] collisionTriangles;
+            [HideInInspector]
+            public PushBackVertex[] pushBackVertices;
+            [HideInInspector]
+            public MaskedVertex[] maskedVertices;
 
-            public int MaskLength => vertexBindingLocalIndices != null ? vertexBindingIndices.Length : 0;
+
+            public int BindingMaskLength => vertexBindingLocalIndices != null ? vertexBindingIndices.Length : 0;
+
+            public int PushBackVerticesCount => pushBackVertices != null ? pushBackVertices.Length : 0;
+            public bool HasPushBackVertices => PushBackVerticesCount > 0;
+
+            public int MaskedVerticesCount => maskedVertices != null ? maskedVertices.Length : 0;
+            public bool HasMaskedVertices => MaskedVerticesCount > 0;
 
             [NonSerialized]
             private bool trackingDisposables = false; 
@@ -394,6 +438,10 @@ namespace Swole.Modding
             private ComputeBuffer weightsBuffer;
             [NonSerialized]
             private ComputeBuffer collisionTrianglesBuffer;
+            [NonSerialized]
+            private ComputeBuffer pushBackVerticesBuffer;
+            [NonSerialized]
+            private ComputeBuffer maskedVerticesBuffer;
 
             public ComputeBuffer LocalIndicesBuffer
             {
@@ -455,6 +503,36 @@ namespace Swole.Modding
                 }
             }
 
+            public ComputeBuffer PushBackVerticesBuffer
+            {
+                get
+                {
+                    if (pushBackVerticesBuffer == null)
+                    {
+                        TrackDisposables();
+                        pushBackVerticesBuffer = new ComputeBuffer(pushBackVertices.Length, UnsafeUtility.SizeOf(typeof(PushBackVertex)), ComputeBufferType.Structured, ComputeBufferMode.Immutable);
+                        pushBackVerticesBuffer.SetData(pushBackVertices);
+                    }
+
+                    return pushBackVerticesBuffer;
+                }
+            }
+
+            public ComputeBuffer MaskedVerticesBuffer
+            {
+                get
+                {
+                    if (maskedVerticesBuffer == null)
+                    {
+                        TrackDisposables();
+                        maskedVerticesBuffer = new ComputeBuffer(maskedVertices.Length, UnsafeUtility.SizeOf(typeof(MaskedVertex)), ComputeBufferType.Structured, ComputeBufferMode.Immutable);
+                        maskedVerticesBuffer.SetData(maskedVertices);
+                    }
+
+                    return maskedVerticesBuffer;
+                }
+            }
+
             public void Dispose()
             {
                 if (localIndicesBuffer != null)
@@ -479,6 +557,18 @@ namespace Swole.Modding
                 {
                     collisionTrianglesBuffer.Dispose();
                     collisionTrianglesBuffer = null;
+                }
+
+                if (pushBackVerticesBuffer != null)
+                {
+                    pushBackVerticesBuffer.Dispose();
+                    pushBackVerticesBuffer = null;
+                }
+
+                if (maskedVerticesBuffer != null)
+                {
+                    maskedVerticesBuffer.Dispose();
+                    maskedVerticesBuffer = null;
                 }
             }
 

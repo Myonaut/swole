@@ -150,15 +150,24 @@ VertexData VD_SubtractDelta(VertexData A, MeshVertexDelta B)
 
 struct Triangles32
 {
-    int4 trianglesA;
-    int4 trianglesB;
-    int4 trianglesC;
-    int4 trianglesD;
+    //int4 trianglesA;
+    //int4 trianglesB;
+    //int4 trianglesC;
+    //int4 trianglesD;
 
-    int4 trianglesE;
-    int4 trianglesF;
-    int4 trianglesG;
-    int4 trianglesH;
+    //int4 trianglesE;
+    //int4 trianglesF;
+    //int4 trianglesG;
+    //int4 trianglesH;
+    
+    int triangles[32]; 
+};
+
+struct PushBackVertex
+{
+    int vertexIndex;
+    //Triangles32 pushBackTriangles;
+    int pushBackTriangles[32];
 };
 
 struct WeightedVertexConnection

@@ -6,15 +6,23 @@
 #pragma kernel CalculateBounds_Reduce
 #pragma kernel DeformVertices
 #pragma kernel DeformVerticesWithShape
+#pragma kernel BodyMold_RecalculateNormals
 #pragma kernel AdjustSkinBindings
+#pragma kernel PrepareLiveVertexData
+#pragma kernel PushBackBodyFromClothing
+
+#pragma multi_compile_local _ USE_PROXY_NORMAL_DELTAS
 
 #include "SkinnedMeshData.hlsl"
 
 StructuredBuffer<VertexData> _ClothingBaseVertexData;
 StructuredBuffer<MeshVertexDelta> _ClothingVertexDeltasReadOnly;
 RWStructuredBuffer<MeshVertexDelta> _ClothingVertexDeltas;
+StructuredBuffer<float3> _ClothingProxyNormalDeltasReadOnly;
+RWStructuredBuffer<float3> _ClothingProxyNormalDeltas;
 StructuredBuffer<int> _ClothingTriangles;
 RWStructuredBuffer<float> _ClothingStretch;
+StructuredBuffer<float4> _ClothingVertexColors;
 
 StructuredBuffer<SkinInfluence> _SkinBindingsReadOnly;
 RWStructuredBuffer<SkinInfluence> _SkinBindings;
@@ -23,7 +31,7 @@ StructuredBuffer<float3> _BodyVertexPositions;
 StructuredBuffer<float3> _BodyVertexNormals;
 StructuredBuffer<MeshVertexDelta> _BodyDeltas;
 StructuredBuffer<MeshVertexDelta> _BodyPreviousDeltas;
-StructuredBuffer<int3> _BodyTriangles; // optional triangle list (i0,i1,i2)
+StructuredBuffer<int3> _TargetTriangles; // optional triangle list (i0,i1,i2)
 StructuredBuffer<SkinInfluence> _BodySkinBindings;
 
 StructuredBuffer<WeightedVertexConnection> _VertexConnections; // flattened connection entries
@@ -59,6 +67,7 @@ cbuffer Params
     float _FrontPushFactor; // 0..1 how much to lerp toward front-projection when starting behind (per-iteration)
     float _ClothThickness;
     float _CollisionRelaxation; // 0..1 relaxation factor applied to each correction (lower -> softer)
+    int _InstanceID;
     int _CollisionPasses; // number of internal collision resolve passes
     int _BodyVertexCount;
     int _BodyDeltasChanged; // 1 if this dispatch is the first after body update; used to apply delta diffs once.
@@ -66,11 +75,28 @@ cbuffer Params
     int _SDFResolution; // e.g., 64
     int _IndexOffset;
     int _FirstRun; // 1 if this is the first run of the simulation (used to apply initial shape deltas from body to clothing)
+    int _BoneCount;
     uint _VertexCount;
     float3 _SDFBoundsMin;
     float3 _SDFBoundsMax;
     float _PaddingScale; // scale factor for bounds size
     uint _DeformedVertexCount; // total number of vertices for bounds calculation
+}
+
+MeshVertexDelta SampleClothingVertexDelta(uint idInBuffer)
+{
+    MeshVertexDelta delta = _ClothingVertexDeltasReadOnly[idInBuffer];
+#if USE_PROXY_NORMAL_DELTAS
+    delta.normalDelta = _ClothingProxyNormalDeltasReadOnly[idInBuffer];
+#endif
+    return delta;
+}
+void WriteToClothingVertexDeltas(uint idInBuffer, MeshVertexDelta delta)
+{
+    _ClothingVertexDeltas[idInBuffer] = delta; 
+#if USE_PROXY_NORMAL_DELTAS
+    _ClothingProxyNormalDeltas[idInBuffer] = delta.normalDelta;
+#endif
 }
 
 MeshVertexDelta SampleBodyDelta(uint idInBuffer)
@@ -183,6 +209,11 @@ void SmoothConnectionDivergence(uint clothingId, in VertexData localBaseVertex, 
     finalOffset.positionDelta = lerp(finalOffset.positionDelta, newOffset, smoothAmt);
 }
 
+void GetClothingIds(uint tid, out uint id, out uint idInBuffer)
+{
+    id = (_ClothingVertexIndexCount > 0) ? _BindingLocalIndices[tid] : tid;
+    idInBuffer = id + _IndexOffset;
+}
 
 bool CalculateShapePreservingClothingVertexOffset(uint tid, out uint id, out uint idInBuffer, out int4 bindIdx, out float4 bindW, out VertexData localBaseVertex, out MeshVertexDelta origOffset, out MeshVertexDelta finalOffset, out float averageStretch, out float3 thicknessVector)
 {
@@ -205,15 +236,17 @@ bool CalculateShapePreservingClothingVertexOffset(uint tid, out uint id, out uin
     
     thicknessVector = float3(0, 0, 0);
     
-    id = (_ClothingVertexIndexCount > 0) ? _BindingLocalIndices[tid] : tid;
-    idInBuffer = id + _IndexOffset;
+    GetClothingIds(tid, id, idInBuffer);
     if (id >= _VertexCount) return false;
     
     localBaseVertex = _ClothingBaseVertexData[id];
     localBaseVertex.normal = normalize(localBaseVertex.normal);
     localBaseVertex.tangent.xyz = normalize(localBaseVertex.tangent.xyz);
-    origOffset = _ClothingVertexDeltasReadOnly[idInBuffer];
+    origOffset = SampleClothingVertexDelta(idInBuffer);
     finalOffset = origOffset;
+    
+    float4 vColor = _ClothingVertexColors[id];
+    float looseness = vColor.y; // 0..1, 0 = loose, 1 = tight
         
     bindIdx = _BindingIndices[tid];
     bindW = _BindingWeights[tid];
@@ -309,25 +342,28 @@ bool CalculateShapePreservingClothingVertexOffset(uint tid, out uint id, out uin
     if (isRawPass)
     {
         MeshVertexDelta deltaDiff = MVD_Subtract(weightedDelta, weightedPrevDelta);
-        finalOffset = MVD_Lerp(MVD_Add(origOffset, deltaDiff), MVD_Mul(weightedDelta, _DeltaMultiplier), 0.8);
+        finalOffset = MVD_Lerp(MVD_Add(origOffset, deltaDiff), MVD_Mul(weightedDelta, _DeltaMultiplier), 0.8 * looseness);
     }
     else
     {
-        finalOffset = MVD_Lerp(origOffset, MVD_Mul(weightedDelta, _DeltaMultiplier), 0.2);   
+        finalOffset = MVD_Lerp(origOffset, MVD_Mul(weightedDelta, _DeltaMultiplier), 0.2 * looseness);
     }
     
     //VertexData localVertex = VD_Add(localBaseVertex, localOffset);
     
-    MeshVertexDelta editedOffset;
     if (!isRawPass)
     {
+        MeshVertexDelta editedOffset;
+        editedOffset.positionDelta = float3(0, 0, 0);
+        editedOffset.normalDelta = float3(0, 0, 0);
+        editedOffset.tangentDelta = float3(0, 0, 0);
         float totalWeight = 0.0;
         for (int a = 0; a < connCount; a++) // calculates neighboring deltas and tries to modify the local delta to be in a similar offset as the base position relative to its neighbors 
         {
             WeightedVertexConnection connection = _VertexConnections[connStart + a];
 
             VertexData neighborBaseVertex = _ClothingBaseVertexData[connection.index];
-            MeshVertexDelta neighborOffset = _ClothingVertexDeltasReadOnly[connection.index + _IndexOffset];
+            MeshVertexDelta neighborOffset = SampleClothingVertexDelta(connection.index + _IndexOffset);
 
             VertexData neighborVertex = VD_AddDelta(neighborBaseVertex, neighborOffset);
             neighborVertex.normal = normalize(neighborVertex.normal);
@@ -348,12 +384,12 @@ bool CalculateShapePreservingClothingVertexOffset(uint tid, out uint id, out uin
             float3 offsetWithDeltas = neighborVertex.position - startNeighborVertexPos; // localPos - neighborPos after new deltas applied.
             float offsetDist = length(offsetWithDeltas);
             if (offsetDist > 0.0)
-                neighborVertex.position = lerp(neighborVertex.position, ((neighborVertex.position - localBaseVertex.position) * (originalDistance / offsetDist)) + localBaseVertex.position, 0.05); // try to blend back to original distance between vertices to avoid stretching the mesh too much
+                neighborVertex.position = lerp(neighborVertex.position, ((neighborVertex.position - localBaseVertex.position) * (originalDistance / offsetDist)) + localBaseVertex.position, 0.05 * looseness); // try to blend back to original distance between vertices to avoid stretching the mesh too much
         
             float cWeight = connection.weight; // * connectionMaskWeight;
             editedOffset.positionDelta = editedOffset.positionDelta + (neighborVertex.position - localBaseVertex.position) * cWeight;
             editedOffset.normalDelta = editedOffset.normalDelta + (neighborVertex.normal - localBaseVertex.normal) * cWeight;
-            editedOffset.tangentDelta = editedOffset.tangentDelta + (neighborVertex.tangent.xyz - localBaseVertex.tangent.xyz) * cWeight;
+            editedOffset.tangentDelta = editedOffset.tangentDelta + (neighborVertex.tangent.xyz - localBaseVertex.tangent.xyz) * cWeight; 
 
             totalWeight += cWeight;
         }
@@ -372,7 +408,7 @@ bool CalculateShapePreservingClothingVertexOffset(uint tid, out uint id, out uin
 }
 
 [numthreads(256, 1, 1)]
-void ApplyVertexDeltas(uint3 dtid : SV_DispatchThreadID)
+void ApplyVertexDeltas(uint3 dtid : SV_DispatchThreadID) 
 {
     //uint tid = dtid.x;
     //if (tid >= _VertexCount)
@@ -598,7 +634,7 @@ void BodyMold_VertexCloud(uint3 dtid : SV_DispatchThreadID)
         }
     }
 
-    _ClothingVertexDeltas[idInBuffer] = finalOffset;
+    WriteToClothingVertexDeltas(idInBuffer, finalOffset);
     _ClothingStretch[id] = avgStretch;
 }
 
@@ -610,7 +646,7 @@ float3 CollideWithBodyTriangles(uint tid, uint clothingId, float thickness, Vert
 
     uint bodyTriCount = 0;
     uint bodyTriStride = 0;
-    _BodyTriangles.GetDimensions(bodyTriCount, bodyTriStride);
+    _TargetTriangles.GetDimensions(bodyTriCount, bodyTriStride);
 
     float3 origWorldPos = localBaseVertex.position + origOffset.positionDelta;
     float3 worldPos = localBaseVertex.position + finalOffset.positionDelta;
@@ -622,16 +658,17 @@ float3 CollideWithBodyTriangles(uint tid, uint clothingId, float thickness, Vert
 
     for (int i = 0; i < 32; i++)
     {
-        int triIndex =
-        (i == 0) ? triBind.trianglesA.x : (i == 1) ? triBind.trianglesA.y : (i == 2) ? triBind.trianglesA.z : (i == 3) ? triBind.trianglesA.w :
-        (i == 4) ? triBind.trianglesB.x : (i == 5) ? triBind.trianglesB.y : (i == 6) ? triBind.trianglesB.z : (i == 7) ? triBind.trianglesB.w :
-        (i == 8) ? triBind.trianglesC.x : (i == 9) ? triBind.trianglesC.y : (i == 10) ? triBind.trianglesC.z : (i == 11) ? triBind.trianglesC.w :
-        (i == 12) ? triBind.trianglesD.x : (i == 13) ? triBind.trianglesD.y : (i == 14) ? triBind.trianglesD.z : (i == 15) ? triBind.trianglesD.w :
+        //int triIndex =
+        //(i == 0) ? triBind.trianglesA.x : (i == 1) ? triBind.trianglesA.y : (i == 2) ? triBind.trianglesA.z : (i == 3) ? triBind.trianglesA.w :
+        //(i == 4) ? triBind.trianglesB.x : (i == 5) ? triBind.trianglesB.y : (i == 6) ? triBind.trianglesB.z : (i == 7) ? triBind.trianglesB.w :
+        //(i == 8) ? triBind.trianglesC.x : (i == 9) ? triBind.trianglesC.y : (i == 10) ? triBind.trianglesC.z : (i == 11) ? triBind.trianglesC.w :
+        //(i == 12) ? triBind.trianglesD.x : (i == 13) ? triBind.trianglesD.y : (i == 14) ? triBind.trianglesD.z : (i == 15) ? triBind.trianglesD.w :
+        //(i == 16) ? triBind.trianglesE.x : (i == 17) ? triBind.trianglesE.y : (i == 18) ? triBind.trianglesE.z : (i == 19) ? triBind.trianglesE.w :
+        //(i == 20) ? triBind.trianglesF.x : (i == 21) ? triBind.trianglesF.y : (i == 22) ? triBind.trianglesF.z : (i == 23) ? triBind.trianglesF.w :
+        //(i == 24) ? triBind.trianglesG.x : (i == 25) ? triBind.trianglesG.y : (i == 26) ? triBind.trianglesG.z : (i == 27) ? triBind.trianglesG.w :
+        //(i == 28) ? triBind.trianglesH.x : (i == 29) ? triBind.trianglesH.y : (i == 30) ? triBind.trianglesH.z : triBind.trianglesH.w;
 
-        (i == 16) ? triBind.trianglesE.x : (i == 17) ? triBind.trianglesE.y : (i == 18) ? triBind.trianglesE.z : (i == 19) ? triBind.trianglesE.w :
-        (i == 20) ? triBind.trianglesF.x : (i == 21) ? triBind.trianglesF.y : (i == 22) ? triBind.trianglesF.z : (i == 23) ? triBind.trianglesF.w :
-        (i == 24) ? triBind.trianglesG.x : (i == 25) ? triBind.trianglesG.y : (i == 26) ? triBind.trianglesG.z : (i == 27) ? triBind.trianglesG.w :
-        (i == 28) ? triBind.trianglesH.x : (i == 29) ? triBind.trianglesH.y : (i == 30) ? triBind.trianglesH.z : triBind.trianglesH.w;
+        int triIndex = triBind.triangles[i];
 
         if (triIndex < 0)
             continue;
@@ -640,7 +677,7 @@ float3 CollideWithBodyTriangles(uint tid, uint clothingId, float thickness, Vert
 
         foundTri = true;
 
-        int3 tri = _BodyTriangles[triIndex];
+        int3 tri = _TargetTriangles[triIndex];
         float3 a = _BodyVertexPositions[tri.x] + SampleBodyDelta(tri.x).positionDelta;
         float3 b = _BodyVertexPositions[tri.y] + SampleBodyDelta(tri.y).positionDelta;
         float3 c = _BodyVertexPositions[tri.z] + SampleBodyDelta(tri.z).positionDelta;
@@ -772,7 +809,7 @@ float3 CollideWithBodyTriangles_TriangleBased(uint tid, uint clothingId, float t
 
     uint bodyTriCount = 0;
     uint bodyTriStride = 0;
-    _BodyTriangles.GetDimensions(bodyTriCount, bodyTriStride);
+    _TargetTriangles.GetDimensions(bodyTriCount, bodyTriStride);
 
     float3 origWorldPos = localBaseVertex.position + origOffset.positionDelta;
     float3 worldPos = localBaseVertex.position + finalOffset.positionDelta;
@@ -881,15 +918,17 @@ float3 CollideWithBodyTriangles_TriangleBased(uint tid, uint clothingId, float t
         // Check against nearby body triangles
         for (int i = 0; i < 32; i++)
         {
-            int triIndex =
-            (i == 0) ? triBind.trianglesA.x : (i == 1) ? triBind.trianglesA.y : (i == 2) ? triBind.trianglesA.z : (i == 3) ? triBind.trianglesA.w :
-            (i == 4) ? triBind.trianglesB.x : (i == 5) ? triBind.trianglesB.y : (i == 6) ? triBind.trianglesB.z : (i == 7) ? triBind.trianglesB.w :
-            (i == 8) ? triBind.trianglesC.x : (i == 9) ? triBind.trianglesC.y : (i == 10) ? triBind.trianglesC.z : (i == 11) ? triBind.trianglesC.w :
-            (i == 12) ? triBind.trianglesD.x : (i == 13) ? triBind.trianglesD.y : (i == 14) ? triBind.trianglesD.z : (i == 15) ? triBind.trianglesD.w :
-            (i == 16) ? triBind.trianglesE.x : (i == 17) ? triBind.trianglesE.y : (i == 18) ? triBind.trianglesE.z : (i == 19) ? triBind.trianglesE.w :
-            (i == 20) ? triBind.trianglesF.x : (i == 21) ? triBind.trianglesF.y : (i == 22) ? triBind.trianglesF.z : (i == 23) ? triBind.trianglesF.w :
-            (i == 24) ? triBind.trianglesG.x : (i == 25) ? triBind.trianglesG.y : (i == 26) ? triBind.trianglesG.z : (i == 27) ? triBind.trianglesG.w :
-            (i == 28) ? triBind.trianglesH.x : (i == 29) ? triBind.trianglesH.y : (i == 30) ? triBind.trianglesH.z : triBind.trianglesH.w;
+            //int triIndex =
+            //(i == 0) ? triBind.trianglesA.x : (i == 1) ? triBind.trianglesA.y : (i == 2) ? triBind.trianglesA.z : (i == 3) ? triBind.trianglesA.w :
+            //(i == 4) ? triBind.trianglesB.x : (i == 5) ? triBind.trianglesB.y : (i == 6) ? triBind.trianglesB.z : (i == 7) ? triBind.trianglesB.w :
+            //(i == 8) ? triBind.trianglesC.x : (i == 9) ? triBind.trianglesC.y : (i == 10) ? triBind.trianglesC.z : (i == 11) ? triBind.trianglesC.w :
+            //(i == 12) ? triBind.trianglesD.x : (i == 13) ? triBind.trianglesD.y : (i == 14) ? triBind.trianglesD.z : (i == 15) ? triBind.trianglesD.w :
+            //(i == 16) ? triBind.trianglesE.x : (i == 17) ? triBind.trianglesE.y : (i == 18) ? triBind.trianglesE.z : (i == 19) ? triBind.trianglesE.w :
+            //(i == 20) ? triBind.trianglesF.x : (i == 21) ? triBind.trianglesF.y : (i == 22) ? triBind.trianglesF.z : (i == 23) ? triBind.trianglesF.w :
+            //(i == 24) ? triBind.trianglesG.x : (i == 25) ? triBind.trianglesG.y : (i == 26) ? triBind.trianglesG.z : (i == 27) ? triBind.trianglesG.w :
+            //(i == 28) ? triBind.trianglesH.x : (i == 29) ? triBind.trianglesH.y : (i == 30) ? triBind.trianglesH.z : triBind.trianglesH.w;
+
+            int triIndex = triBind.triangles[i];
 
             if (triIndex < 0 || (uint)triIndex >= bodyTriCount)
                 continue;
@@ -897,7 +936,7 @@ float3 CollideWithBodyTriangles_TriangleBased(uint tid, uint clothingId, float t
             foundTri = true;
 
             // Get body triangle vertices
-            int3 tri = _BodyTriangles[triIndex];
+            int3 tri = _TargetTriangles[triIndex];
             float3 a = _BodyVertexPositions[tri.x] + SampleBodyDelta(tri.x).positionDelta;
             float3 b = _BodyVertexPositions[tri.y] + SampleBodyDelta(tri.y).positionDelta;
             float3 c = _BodyVertexPositions[tri.z] + SampleBodyDelta(tri.z).positionDelta;
@@ -1085,14 +1124,14 @@ void BodyMold_Triangle(uint3 dtid : SV_DispatchThreadID)
     CollideWithBodyTriangles_TriangleBased(tid, id, _ClothThickness * max(1.0, avgStretch), localBaseVertex, origOffset, finalOffset, foundTri, anyFront);
     //SmoothConnectionDivergence(id, localBaseVertex, finalOffset, _FrontPushFactor);
     
-    _ClothingVertexDeltas[idInBuffer] = finalOffset;
+    WriteToClothingVertexDeltas(idInBuffer, finalOffset);
     _ClothingStretch[id] = avgStretch;
 }
 
 // The baked 3D SDF Texture passed from C#
 Texture3D<float> _BodySDFTex;
 
-void CollideWithSDF_Precombined(float thickness, float3 combinedVertex, inout MeshVertexDelta finalOffset)
+void CollideWithSDF_Precombined(float thickness, float3 combinedVertex, float innerPushStrength, float outerPushStrength, inout MeshVertexDelta finalOffset)
 {
     float3 pos = combinedVertex;
 
@@ -1134,14 +1173,14 @@ void CollideWithSDF_Precombined(float thickness, float3 combinedVertex, inout Me
             float3 outwardDirection = normalize(float3(posX - negX, posY - negY, posZ - negZ));
 
             // 7. Push the cloth vertex out of the body bounds instantly
-            finalOffset.positionDelta += outwardDirection * penetrationDepth * 0.3;
+            finalOffset.positionDelta += outwardDirection * penetrationDepth * lerp(innerPushStrength, outerPushStrength, saturate(penetrationDepth / thickness));
         }
     }
 }
 
-void CollideWithSDF(float thickness, VertexData localBaseVertex, inout MeshVertexDelta finalOffset)
+void CollideWithSDF(float thickness, VertexData localBaseVertex, float innerPushStrength, float outerPushStrength, inout MeshVertexDelta finalOffset)
 {
-    CollideWithSDF_Precombined(thickness, localBaseVertex.position + finalOffset.positionDelta, finalOffset);
+    CollideWithSDF_Precombined(thickness, localBaseVertex.position + finalOffset.positionDelta, innerPushStrength, outerPushStrength, finalOffset);
 }
 
 [numthreads(256, 1, 1)]
@@ -1161,10 +1200,10 @@ void BodyMold_SDF(uint3 dtid : SV_DispatchThreadID)
     if (!CalculateShapePreservingClothingVertexOffset(tid, id, idInBuffer, bindIdx, bindW, localBaseVertex, origOffset, finalOffset, avgStretch, thicknessVector)) 
         return;
    
-    CollideWithSDF(0.0, localBaseVertex, finalOffset); 
+    CollideWithSDF(0.0, localBaseVertex, 1.0, 0.3, finalOffset); 
     //SmoothConnectionDivergence(id, localBaseVertex, finalOffset, _FrontPushFactor * 0.5);
     
-    _ClothingVertexDeltas[idInBuffer] = finalOffset;
+    WriteToClothingVertexDeltas(idInBuffer, finalOffset);
     _ClothingStretch[id] = avgStretch;
 }
 
@@ -1197,18 +1236,72 @@ void BodyMold_TriangleSDF(uint3 dtid : SV_DispatchThreadID)
     foundTri = foundTri || foundTri2;
     anyFront = anyFront || anyFront2; 
 
-    if (!anyFront || !foundTri)
-    {
+    //if (!anyFront || !foundTri)
+    //{
         // No triangle in front: use full SDF workflow to resolve
-        CollideWithSDF_Precombined(0.0, worldPos, finalOffset);  
-    } 
+        CollideWithSDF_Precombined(0.005 * avgStretch, worldPos, 1.0, 0.05, finalOffset);   
+    //} 
 
     //SmoothConnectionDivergence(id, localBaseVertex, finalOffset, 1.0);
     //SmoothConnectionDivergence(id, localBaseVertex, finalOffset, 1.0);
     //SmoothConnectionDivergence(id, localBaseVertex, finalOffset, 1.0);
 
-    _ClothingVertexDeltas[idInBuffer] = finalOffset;
+    WriteToClothingVertexDeltas(idInBuffer, finalOffset);
     _ClothingStretch[id] = avgStretch;
+}
+
+
+[numthreads(256, 1, 1)]
+void BodyMold_RecalculateNormals(uint3 dtid : SV_DispatchThreadID)
+{
+    uint tid = dtid.x;
+
+    uint id;
+    uint idInBuffer;
+    GetClothingIds(tid, id, idInBuffer);
+    if (id >= _VertexCount)
+        return;
+    
+    int connCount = _VertexConnectionCounts[id];
+    int connStart = _VertexConnectionStartIndices[id];
+    if (connCount <= 0)
+        return;
+
+    MeshVertexDelta finalOffset = _ClothingVertexDeltasReadOnly[idInBuffer];
+    
+    float3 localPos = _ClothingBaseVertexData[id].position + finalOffset.positionDelta; 
+    float3 localNormal = _ClothingBaseVertexData[id].normal;
+    
+    float3 normalDelta = float3(0,0,0);
+    float w = 0.0;
+    for (int ci = 0; ci < connCount; ci += 2)
+    {
+        int neighborA = _VertexConnections[connStart + ci].index;
+        int neighborB = _VertexConnections[connStart + ci + 1].index;
+        if (neighborA < 0 || neighborB < 0)
+            continue;
+
+        VertexData nbBaseA = _ClothingBaseVertexData[neighborA];
+        MeshVertexDelta nbDeltaA = _ClothingVertexDeltasReadOnly[neighborA + _IndexOffset];
+        float3 nbPosA = nbBaseA.position + nbDeltaA.positionDelta;
+        
+        VertexData nbBaseB = _ClothingBaseVertexData[neighborB];
+        MeshVertexDelta nbDeltaB = _ClothingVertexDeltasReadOnly[neighborB + _IndexOffset];
+        float3 nbPosB = nbBaseB.position + nbDeltaB.positionDelta;
+        
+        float3 n = cross(nbPosA - localPos, nbPosB - localPos); 
+        if (dot(n, localNormal) < 0.0)
+            n = -n;
+        
+        normalDelta += n;
+        
+        w += 1.0;
+    }
+    
+    normalDelta = normalize(normalDelta / max(w, 1.0)) - localNormal;
+    finalOffset.normalDelta = lerp(finalOffset.normalDelta, normalDelta, 1);
+    
+    _ClothingVertexDeltas[idInBuffer] = finalOffset; // raw write into buffer to avoid writing into proxy normals
 }
 
 // Adjust clothing skin bindings based on closest body triangle
@@ -1241,7 +1334,7 @@ void AdjustSkinBindings(uint3 dtid : SV_DispatchThreadID)
 
     uint bodyTriCount = 0;
     uint bodyTriStride = 0;
-    _BodyTriangles.GetDimensions(bodyTriCount, bodyTriStride);
+    _TargetTriangles.GetDimensions(bodyTriCount, bodyTriStride);
 
     // Find closest body triangle
     float minDistSq = 1e10;
@@ -1251,21 +1344,23 @@ void AdjustSkinBindings(uint3 dtid : SV_DispatchThreadID)
 
     for (int i = 0; i < 32; i++)
     {
-        int triIndex =
-        (i == 0) ? triBind.trianglesA.x : (i == 1) ? triBind.trianglesA.y : (i == 2) ? triBind.trianglesA.z : (i == 3) ? triBind.trianglesA.w :
-        (i == 4) ? triBind.trianglesB.x : (i == 5) ? triBind.trianglesB.y : (i == 6) ? triBind.trianglesB.z : (i == 7) ? triBind.trianglesB.w :
-        (i == 8) ? triBind.trianglesC.x : (i == 9) ? triBind.trianglesC.y : (i == 10) ? triBind.trianglesC.z : (i == 11) ? triBind.trianglesC.w :
-        (i == 12) ? triBind.trianglesD.x : (i == 13) ? triBind.trianglesD.y : (i == 14) ? triBind.trianglesD.z : (i == 15) ? triBind.trianglesD.w :
-        (i == 16) ? triBind.trianglesE.x : (i == 17) ? triBind.trianglesE.y : (i == 18) ? triBind.trianglesE.z : (i == 19) ? triBind.trianglesE.w :
-        (i == 20) ? triBind.trianglesF.x : (i == 21) ? triBind.trianglesF.y : (i == 22) ? triBind.trianglesF.z : (i == 23) ? triBind.trianglesF.w :
-        (i == 24) ? triBind.trianglesG.x : (i == 25) ? triBind.trianglesG.y : (i == 26) ? triBind.trianglesG.z : (i == 27) ? triBind.trianglesG.w :
-        (i == 28) ? triBind.trianglesH.x : (i == 29) ? triBind.trianglesH.y : (i == 30) ? triBind.trianglesH.z : triBind.trianglesH.w;
+        //int triIndex =
+        //(i == 0) ? triBind.trianglesA.x : (i == 1) ? triBind.trianglesA.y : (i == 2) ? triBind.trianglesA.z : (i == 3) ? triBind.trianglesA.w :
+        //(i == 4) ? triBind.trianglesB.x : (i == 5) ? triBind.trianglesB.y : (i == 6) ? triBind.trianglesB.z : (i == 7) ? triBind.trianglesB.w :
+        //(i == 8) ? triBind.trianglesC.x : (i == 9) ? triBind.trianglesC.y : (i == 10) ? triBind.trianglesC.z : (i == 11) ? triBind.trianglesC.w :
+        //(i == 12) ? triBind.trianglesD.x : (i == 13) ? triBind.trianglesD.y : (i == 14) ? triBind.trianglesD.z : (i == 15) ? triBind.trianglesD.w :
+        //(i == 16) ? triBind.trianglesE.x : (i == 17) ? triBind.trianglesE.y : (i == 18) ? triBind.trianglesE.z : (i == 19) ? triBind.trianglesE.w :
+        //(i == 20) ? triBind.trianglesF.x : (i == 21) ? triBind.trianglesF.y : (i == 22) ? triBind.trianglesF.z : (i == 23) ? triBind.trianglesF.w :
+        //(i == 24) ? triBind.trianglesG.x : (i == 25) ? triBind.trianglesG.y : (i == 26) ? triBind.trianglesG.z : (i == 27) ? triBind.trianglesG.w :
+        //(i == 28) ? triBind.trianglesH.x : (i == 29) ? triBind.trianglesH.y : (i == 30) ? triBind.trianglesH.z : triBind.trianglesH.w;
 
+        int triIndex = triBind.triangles[i];
+        
         if (triIndex < 0 || (uint)triIndex >= bodyTriCount)
             continue;
 
         // Get body triangle vertices with deltas applied
-        int3 tri = _BodyTriangles[triIndex];
+        int3 tri = _TargetTriangles[triIndex];
         float3 a = _BodyVertexPositions[tri.x] + SampleBodyDelta(tri.x).positionDelta;
         float3 b = _BodyVertexPositions[tri.y] + SampleBodyDelta(tri.y).positionDelta;
         float3 c = _BodyVertexPositions[tri.z] + SampleBodyDelta(tri.z).positionDelta;
@@ -1387,7 +1482,7 @@ void AdjustSkinBindings(uint3 dtid : SV_DispatchThreadID)
     }
 
     // Get the three body vertices of the closest triangle
-    int3 tri = _BodyTriangles[closestTriIndex];
+    int3 tri = _TargetTriangles[closestTriIndex];
     SkinInfluence skinA = _BodySkinBindings[tri.x];
     SkinInfluence skinB = _BodySkinBindings[tri.y];
     SkinInfluence skinC = _BodySkinBindings[tri.z];
@@ -1540,3 +1635,130 @@ void AdjustSkinBindings(uint3 dtid : SV_DispatchThreadID)
     _SkinBindings[clothingId] = result;
 }
 
+// Push back handling
+
+void CalculateLiveVertexData(uint instanceId, uint vertexIndex, uint vertexCount, uint boneCount, StructuredBuffer<VertexData> baseDataBuffer, MeshVertexDelta delta, StructuredBuffer<SkinInfluence> skinningData, StructuredBuffer<float4x4> skinningMatrices, RWStructuredBuffer<VertexData> outputBuffer)
+{
+    uint vertexBufferIndex = vertexIndex + instanceId * vertexCount; 
+    
+    SkinInfluence si = skinningData[vertexIndex];
+	
+    const int boneIndexOffset = instanceId * boneCount; 
+    float4x4 blendedMatrix =
+	mul(skinningMatrices[boneIndexOffset + int(si.indicesA.x)], si.weightsA.x)
+	+ mul(skinningMatrices[boneIndexOffset + int(si.indicesA.y)], si.weightsA.y)
+	+ mul(skinningMatrices[boneIndexOffset + int(si.indicesA.z)], si.weightsA.z)
+	+ mul(skinningMatrices[boneIndexOffset + int(si.indicesA.w)], si.weightsA.w)
+	+ mul(skinningMatrices[boneIndexOffset + int(si.indicesB.x)], si.weightsB.x)
+	+ mul(skinningMatrices[boneIndexOffset + int(si.indicesB.y)], si.weightsB.y)
+	+ mul(skinningMatrices[boneIndexOffset + int(si.indicesB.z)], si.weightsB.z)
+    + mul(skinningMatrices[boneIndexOffset + int(si.indicesB.w)], si.weightsB.w);
+
+    VertexData output = baseDataBuffer[vertexIndex];
+    output.position = mul(blendedMatrix, float4(output.position + delta.positionDelta, 1)).xyz;
+    output.normal = mul(blendedMatrix, float4(normalize(output.normal + delta.normalDelta), 0)).xyz;
+    output.tangent.xyz = mul(blendedMatrix, float4(normalize(output.tangent.xyz + delta.tangentDelta), 0)).xyz;
+    
+    outputBuffer[vertexIndex] = output;
+}
+
+StructuredBuffer<float4x4> _SkinningMatrices;
+
+StructuredBuffer<VertexData> _LiveBodyVertexData;
+StructuredBuffer<VertexData> _LiveClothVertexData;
+
+// Pre-baked Topological Maps
+StructuredBuffer<PushBackVertex> _AnchorMap;
+
+RWStructuredBuffer<VertexData> _OutputVertexData;
+RWStructuredBuffer<MeshVertexDelta> _PushBackDeltas;
+
+[numthreads(256, 1, 1)]
+void PrepareLiveVertexData(uint3 id : SV_DispatchThreadID)
+{
+    uint vertexIndex = id.x;
+    if (vertexIndex >= _VertexCount)
+        return;
+    
+    MeshVertexDelta delta = _Deltas[vertexIndex];
+#if USE_PROXY_NORMAL_DELTAS
+    delta.normalDelta = _ClothingProxyNormalDeltasReadOnly[vertexIndex];
+#endif
+    CalculateLiveVertexData(_InstanceID, vertexIndex, _VertexCount, _BoneCount, _LiveBodyVertexData, delta, _SkinBindingsReadOnly, _SkinningMatrices, _OutputVertexData);  
+}
+
+[numthreads(64, 1, 1)]
+void PushBackBodyFromClothing(uint3 id : SV_DispatchThreadID)
+{
+    uint maskIdx = id.x;
+    if ((int) maskIdx >= _VertexCount)
+        return;
+
+    PushBackVertex anchor = _AnchorMap[maskIdx];
+    uint targetBodyIdx = anchor.vertexIndex;
+    if (targetBodyIdx >= _BodyVertexCount)
+        return;
+
+    VertexData liveBodyData = _LiveBodyVertexData[targetBodyIdx];
+    float3 finalPushedPos = liveBodyData.position;
+
+    uint clothTriCount = 0;
+    uint clothTriStride = 0;
+    _TargetTriangles.GetDimensions(clothTriCount, clothTriStride);
+    
+    // Hard unrolled vector matrix processing
+    [unroll]
+    for (int i = 0; i < 32; i++)
+    {
+        int triIndex = anchor.pushBackTriangles[i];
+        if (triIndex < 0 || (uint) triIndex >= clothTriCount)
+            continue;
+        
+        // Get clothing triangle vertices
+        int3 clothTri = _TargetTriangles[triIndex];
+        
+        int clothVertIdx = clothTri.x; // just use the first vertex
+
+        VertexData clothVertexData = _LiveClothVertexData[clothVertIdx];
+
+        // 1. Vector from clothing vertex to the body vertex
+        float3 toBody = liveBodyData.position - clothVertexData.position;
+
+        // 2. Fast Radius Gate: If the body vertex is horizontally too far away from this
+        // specific clothing node, skip the expensive plane calculations completely.
+        float sqrDistance = dot(toBody, toBody);
+        if (sqrDistance > 0.04)
+            continue; // 20cm bounding cutoff radius
+
+        // 3. Project distance strictly along the live clothing normal line
+        float depthDistance = dot(toBody, clothVertexData.normal);
+
+        // --- THE TARGET CONDITION ---
+        // If depthDistance > 0, it means the body vertex has physically crossed the plane 
+        // of the clothing normal and is protruding on the outside profile.
+        if (depthDistance > 0.0)
+        {
+            // Calculate target tuck position (push it behind the plane + 2mm safety gap)
+            float3 safeTuckPoint = liveBodyData.position - (clothVertexData.normal * (depthDistance + 0.002));
+
+            // If multiple tracking nodes register a clash, keep the deepest internal tuck
+            if (dot(safeTuckPoint - liveBodyData.position, clothVertexData.normal) < dot(finalPushedPos - liveBodyData.position, clothVertexData.normal))
+            {
+                finalPushedPos = safeTuckPoint;
+            }
+        }
+    }
+
+    MeshVertexDelta delta;
+    delta.positionDelta = finalPushedPos - liveBodyData.position; 
+    delta.normalDelta = float3(0, 0, 0);
+    delta.tangentDelta = float3(0, 0, 0);
+    
+    // debug
+    //delta.positionDelta = liveBodyData.position;
+    //delta.normalDelta = liveBodyData.normal;
+    //delta.tangentDelta = liveBodyData.tangent.xyz;
+    
+    _PushBackDeltas[targetBodyIdx] = delta;
+
+}

@@ -155,6 +155,12 @@ namespace Swole.Morphing
                     OnMeshUpdate.RemoveAllListeners();
                     OnMeshUpdate = null;
                 }              
+
+                if (OnSkinningModeChanged != null)
+                {
+                    OnSkinningModeChanged.RemoveAllListeners();
+                    OnSkinningModeChanged = null;
+                }
             }
 
             private MeshGroupV2 ownerGroup;
@@ -286,6 +292,46 @@ namespace Swole.Morphing
             {
                 if (OnMeshUpdate == null) return;
                 OnMeshUpdate.Invoke();
+            }
+
+            protected UnityEvent OnSkinningModeChanged;
+
+            public void ListenForSkinningModeChange(UnityAction listener)
+            {
+                if (OnSkinningModeChanged == null) OnSkinningModeChanged = new UnityEvent();
+                OnSkinningModeChanged.AddListener(listener);
+            }
+
+            public void EndListenForSkinningModeChange(UnityAction listener)
+            {
+                if (OnSkinningModeChanged == null) return;
+                OnSkinningModeChanged.RemoveListener(listener);
+            }
+
+            public void NotifySkinningModeChanged()
+            {
+                if (OnSkinningModeChanged == null) return;
+                OnSkinningModeChanged.Invoke();
+            }
+
+            protected UnityEvent OnVertexMaskUsageChanged;
+
+            public void ListenForVertexMaskUsageChange(UnityAction listener)
+            {
+                if (OnVertexMaskUsageChanged == null) OnVertexMaskUsageChanged = new UnityEvent();
+                OnVertexMaskUsageChanged.AddListener(listener);
+            }
+
+            public void EndListenForVertexMaskUsageChange(UnityAction listener)
+            {
+                if (OnVertexMaskUsageChanged == null) return;
+                OnVertexMaskUsageChanged.RemoveListener(listener);
+            }
+
+            public void NotifyVertexMaskUsageChanged()
+            {
+                if (OnVertexMaskUsageChanged == null) return;
+                OnVertexMaskUsageChanged.Invoke();
             }
 
         }
@@ -839,6 +885,35 @@ namespace Swole.Morphing
 #endif
                 }
 
+                try
+                {
+                    if (precalculatedSkinningMatrices != null && precalculatedSkinningMatrices.IsValid())
+                    {
+                        precalculatedSkinningMatrices.Release();
+                        precalculatedSkinningMatrices = null;
+                    }
+                }
+                catch (Exception ex)
+                {
+#if UNITY_EDITOR
+                    Debug.LogException(ex);
+#endif
+                }
+
+                try
+                {
+                    if (vertexMask != null && vertexMask.IsValid()) 
+                    {
+                        vertexMask.Release();
+                        vertexMask = null;
+                    }
+                }
+                catch (Exception ex)
+                {
+#if UNITY_EDITOR
+                    Debug.LogException(ex);
+#endif
+                }
             }
 
             #endregion
@@ -847,6 +922,13 @@ namespace Swole.Morphing
 
             #region Material Handling
 
+            public const string _precalculatedSkinningKeyword = "USE_PRECALCULATED_SKINNING";
+            public const string _vertexMaskKeyword = "USE_VERTEX_MASK";
+            public void ApplyMainMaterialOverrides(IEnumerable<Material> materials)
+            {
+                if (materials == null) return;
+                foreach (var material in materials) ApplyMainMaterialOverrides(material);
+            }
             public Material ApplyMainMaterialOverrides(Material material)
             {
                 if (material != null)
@@ -909,10 +991,78 @@ namespace Swole.Morphing
                             material.SetFloat(delta.indexPropertyName, index);
                         }
 
+                        if (PrecalculateSkinningMatrices)
+                        {
+                            ApplyPrecalculatedSkinningMaterialOverrides(material);
+                        }
+                        else if (material.IsKeywordEnabled(_precalculatedSkinningKeyword))
+                        {
+                            RemovePrecalculatedSkinningMaterialOverrides(material);
+                        }
+
+                        if (UseVertexMask)
+                        {
+                            ApplyVertexMaskMaterialOverrides(material);
+                        }
+                        else if (material.IsKeywordEnabled(_vertexMaskKeyword))
+                        {
+                            RemoveVertexMaskMaterialOverrides(material); 
+                        }
+
                     }
                 }
 
                 return material;
+            }
+
+            public void ApplyPrecalculatedSkinningMaterialOverrides(IEnumerable<Material> materials)
+            {
+                if (materials == null) return;
+                foreach (var material in materials) ApplyPrecalculatedSkinningMaterialOverrides(material);
+            }
+            public void ApplyPrecalculatedSkinningMaterialOverrides(Material material)
+            {
+                if (material == null) return;
+
+                material.SetBuffer(data.SkinningMatricesPropertyName, PrecalculatedSkinningMatrices);
+                material.EnableKeyword(_precalculatedSkinningKeyword);
+            }
+
+            public void RemovePrecalculatedSkinningMaterialOverrides(IEnumerable<Material> materials)
+            {
+                if (materials == null) return;
+                foreach (var material in materials) RemovePrecalculatedSkinningMaterialOverrides(material);
+            }
+            public void RemovePrecalculatedSkinningMaterialOverrides(Material material)
+            {
+                if (material == null) return;
+
+                material.DisableKeyword(_precalculatedSkinningKeyword);
+            }
+
+            public void ApplyVertexMaskMaterialOverrides(IEnumerable<Material> materials)
+            {
+                if (materials == null) return;
+                foreach (var material in materials) ApplyVertexMaskMaterialOverrides(material);
+            }
+            public void ApplyVertexMaskMaterialOverrides(Material material)
+            {
+                if (material == null) return;
+
+                material.SetBuffer(data.VertexMaskPropertyName, VertexMask);
+                material.EnableKeyword(_vertexMaskKeyword);
+            }
+
+            public void RemoveVertexMaskMaterialOverrides(IEnumerable<Material> materials)
+            {
+                if (materials == null) return;
+                foreach (var material in materials) RemoveVertexMaskMaterialOverrides(material);
+            }
+            public void RemoveVertexMaskMaterialOverrides(Material material)
+            {
+                if (material == null) return;
+
+                material.DisableKeyword(_vertexMaskKeyword);
             }
 
             private List<Material[]> materialInstances;
@@ -1092,6 +1242,79 @@ namespace Swole.Morphing
             private int maxInstanceCount;
             public int MaxInstanceCount => maxInstanceCount;
 
+            private bool precalculateSkinningMatrices;
+            public bool PrecalculateSkinningMatrices
+            {
+                get => precalculateSkinningMatrices;
+                set
+                {
+                    precalculateSkinningMatrices = value;
+
+                    if (precalculateSkinningMatrices)
+                    {
+                        if (precalculatedSkinningMatrices == null || !precalculatedSkinningMatrices.IsValid())
+                        {
+                            precalculatedSkinningMatrices = new ComputeBuffer(MaxInstanceCount * data.VertexCount, UnsafeUtility.SizeOf<float4x4>(), ComputeBufferType.Structured, ComputeBufferMode.SubUpdates);
+                        }
+                    }
+                    else
+                    {
+                        if (precalculatedSkinningMatrices != null && precalculatedSkinningMatrices.IsValid())
+                        {
+                            precalculatedSkinningMatrices.Release();
+                            precalculatedSkinningMatrices = null;
+                        }
+
+                        if (activeInstances != null)
+                        {
+                            foreach (var inst in activeInstances.Values)
+                            {
+                                inst.NotifySkinningModeChanged();
+                            }
+                        }
+                    }
+                }
+            }
+            private ComputeBuffer precalculatedSkinningMatrices;
+            public ComputeBuffer PrecalculatedSkinningMatrices => precalculatedSkinningMatrices;
+
+            private bool useVertexMask;
+            public bool UseVertexMask
+            {
+                get => useVertexMask;
+                set
+                {
+                    useVertexMask = value;
+
+                    if (useVertexMask)
+                    {
+                        if (vertexMask == null || !vertexMask.IsValid())
+                        {
+                            vertexMask = new ComputeBuffer(MaxInstanceCount * data.VertexCount, sizeof(float), ComputeBufferType.Structured, ComputeBufferMode.SubUpdates);
+                            vertexMask.SetData(new float[vertexMask.count]);
+                        }
+                    }
+                    else
+                    {
+                        if (vertexMask != null && vertexMask.IsValid())
+                        {
+                            vertexMask.Release();
+                            vertexMask = null;
+                        }
+
+                        if (activeInstances != null)
+                        {
+                            foreach (var inst in activeInstances.Values)
+                            {
+                                inst.NotifyVertexMaskUsageChanged();
+                            }
+                        }
+                    }
+                }
+            }
+            private ComputeBuffer vertexMask;
+            public ComputeBuffer VertexMask => vertexMask;
+
             private NativeList<int> indicesToUpdate;
             private NativeList<int> indicesToPhysiqueUpdate;
             private NativeList<int> indicesToVariationUpdate;
@@ -1242,6 +1465,30 @@ namespace Swole.Morphing
                 foreach (var index in indicesToVariationUpdateNext) indicesToVariationUpdate.Add(index);
                 indicesToPhysiqueUpdateNext.Clear();
                 indicesToVariationUpdateNext.Clear();
+
+                if (PrecalculateSkinningMatrices && TryGetInstanceBuffer<float4x4>(data.SkinningMatricesPropertyName, out var baseSkinningMatricesBuffer))
+                {
+                    var skinningShader = data.SkinningComputeShader;
+                    if (skinningShader != null)
+                    {
+                        var baseBuffer = baseSkinningMatricesBuffer.BufferThisFrame;
+                        int boneCount = data.HasBonesArray ? data.BoneCount : (baseBuffer.count / MaxInstanceCount); 
+
+                        int vertexCount = data.VertexCount;
+
+                        var kernel = skinningShader.FindKernel(data.SkinningComputeAllKernel);
+
+                        skinningShader.SetBuffer(kernel, "_SkinBindings", data.BoneWeightsBuffer);
+                        skinningShader.SetBuffer(kernel, "_SkinningMatrices", baseBuffer);
+                        skinningShader.SetBuffer(kernel, "_BlendedMatrices", PrecalculatedSkinningMatrices);
+                        skinningShader.SetInt("_BoneCount", boneCount);
+                        skinningShader.SetInt("_VertexCount", vertexCount);
+                        skinningShader.SetInt("_InstanceCount", maxInstanceCount);
+
+                        int dispatchGroups = Mathf.CeilToInt((vertexCount * maxInstanceCount) / 256f);
+                        skinningShader.Dispatch(kernel, dispatchGroups, 1, 1);
+                    }
+                }
             }
             public void BeginNewJob()
             {
@@ -2629,6 +2876,39 @@ namespace Swole.Morphing
 
                 return true;
             }
+
+            [NonSerialized]
+            private ComputeBuffer vertexDataBuffer;
+            public ComputeBuffer VertexDataBuffer
+            {
+                get
+                {
+                    if (vertexDataBuffer == null)
+                    {
+                        TrackDisposables();
+
+                        if (TryGetVertices(0, out var vertices) && TryGetNormals(0, out var normals) && TryGetTangents(0, out var tangents))
+                        {
+                            var vertexData = new MeshVertexData[VertexCount];
+                            for (int a = 0; a < vertexData.Length; a++)
+                            {
+                                vertexData[a] = new MeshVertexData
+                                {
+                                    position = vertices[a],
+                                    normal = normals[a],
+                                    tangent = tangents[a]
+                                };
+                            }
+
+                            vertexDataBuffer = new ComputeBuffer(vertexData.Length, UnsafeUtility.SizeOf(typeof(MeshVertexData)), ComputeBufferType.Structured, ComputeBufferMode.Immutable);
+                            vertexDataBuffer.SetData(vertexData);
+                        }
+                    }
+
+                    return vertexDataBuffer;
+                }
+            }
+
             public bool TryGetColors(int lod, out NativeArray<float4> array)
             {
                 array = default;
@@ -2939,6 +3219,45 @@ namespace Swole.Morphing
 
             public int BoneCount => HasBonesArray ? boneNames.Length : (baseBindPose == null ? 0 : baseBindPose.Length);
 
+            public ComputeShader skinningComputeShader;
+            public ComputeShader SkinningComputeShader
+            {
+                get
+                {
+                    if (skinningComputeShader == null)
+                    {
+                        skinningComputeShader = Resources.Load<ComputeShader>("SkinningCompute");
+                    }
+
+                    return skinningComputeShader;
+                }
+            }
+            public string skinningComputeKernel; 
+            public string SkinningComputeKernel
+            {
+                get
+                {
+                    if (string.IsNullOrWhiteSpace(skinningComputeKernel))
+                    {
+                        return "CalculateSkinningMatrices";
+                    }
+                    return skinningComputeKernel;
+                }
+            }
+
+            public string skinningcomputeAllKernel;
+            public string SkinningComputeAllKernel
+            {
+                get
+                {
+                    if (string.IsNullOrWhiteSpace(skinningcomputeAllKernel))
+                    {
+                        return "CalculateAllSkinningMatrices";
+                    }
+                    return skinningcomputeAllKernel;
+                }
+            }
+
             [Header("Shapes")]
             public Vector2Int standaloneShapes;
             public Vector2Int StandaloneShapes => standaloneShapes;
@@ -3009,6 +3328,9 @@ namespace Swole.Morphing
 
             public string skinningMatricesPropertyNameOverride;
             public string SkinningMatricesPropertyName => string.IsNullOrWhiteSpace(skinningMatricesPropertyNameOverride) ? _skinningMatricesDefaultPropertyName : skinningMatricesPropertyNameOverride;
+
+            public string vertexMaskPropertyNameOverride;
+            public string VertexMaskPropertyName => string.IsNullOrWhiteSpace(vertexMaskPropertyNameOverride) ? _vertexMaskDefaultPropertyName : vertexMaskPropertyNameOverride;
 
             public string standaloneVertexGroupsBufferRangePropertyNameOverride;
             public string StandaloneVertexGroupsBufferRangePropertyName => string.IsNullOrWhiteSpace(standaloneVertexGroupsBufferRangePropertyNameOverride) ? _standaloneVertexGroupsBufferRangeDefaultPropertyName : standaloneVertexGroupsBufferRangePropertyNameOverride;
@@ -3453,6 +3775,38 @@ namespace Swole.Morphing
                 }
             }
 
+            protected NativeArray<float> emptyWeights;
+            public NativeArray<float> EmptyWeights
+            {
+                get
+                {
+                    if (!emptyWeights.IsCreated || emptyWeights.Length < VertexCount)
+                    {
+                        if (emptyWeights.IsCreated) emptyWeights.Dispose();
+                        emptyWeights = new NativeArray<float>(VertexCount, Allocator.Persistent, NativeArrayOptions.ClearMemory);
+                    }
+
+                    return emptyWeights;
+                }
+            }
+
+            [NonSerialized]
+            protected ComputeBuffer emptyWeightsBuffer;
+            public virtual ComputeBuffer EmptyWeightsBuffer
+            {
+                get
+                {
+                    if (emptyWeightsBuffer == null || !emptyWeightsBuffer.IsValid() || emptyWeightsBuffer.count < VertexCount)
+                    {
+                        if (emptyWeightsBuffer != null && emptyWeightsBuffer.IsValid()) emptyWeightsBuffer.Dispose();
+                        emptyWeightsBuffer = new ComputeBuffer(VertexCount, sizeof(float), ComputeBufferType.Structured, ComputeBufferMode.Immutable); 
+                        emptyWeightsBuffer.SetData(EmptyWeights);
+                    }
+
+                    return emptyWeightsBuffer;
+                }
+            }
+
             #endregion
 
             #region Disposal
@@ -3535,7 +3889,7 @@ namespace Swole.Morphing
 
                 try
                 {
-                    if (normalsBuffer != null && normalsBuffer.IsValid()) 
+                    if (normalsBuffer != null && normalsBuffer.IsValid())
                     {
                         normalsBuffer.Dispose();
                         normalsBuffer = null;
@@ -3550,10 +3904,25 @@ namespace Swole.Morphing
 
                 try
                 {
+                    if (vertexDataBuffer != null && vertexDataBuffer.IsValid()) 
+                    {
+                        vertexDataBuffer.Dispose();
+                        vertexDataBuffer = null;
+                    }
+                }
+                catch (Exception ex)
+                {
+#if UNITY_EDITOR
+                    Debug.LogException(ex);
+#endif
+                }
+
+                try
+                {
                     if (trianglesBuffer != null && trianglesBuffer.IsValid())
                     {
                         trianglesBuffer.Dispose();
-                        trianglesBuffer = null; 
+                        trianglesBuffer = null;
                     }
                 }
                 catch (Exception ex)
@@ -3838,6 +4207,36 @@ namespace Swole.Morphing
                     meshUV3s = null;
                 }
 
+                try
+                {
+                    if (emptyWeights.IsCreated)
+                    {
+                        emptyWeights.Dispose();
+                        emptyWeights = default;
+                    }
+                }
+                catch (Exception ex)
+                {
+#if UNITY_EDITOR
+                    Debug.LogException(ex);
+#endif
+                }
+
+                try
+                {
+                    if (emptyWeightsBuffer != null && emptyWeightsBuffer.IsValid()) 
+                    {
+                        emptyWeightsBuffer.Dispose(); 
+                        emptyWeightsBuffer = null;
+                    }
+                }
+                catch (Exception ex)
+                {
+#if UNITY_EDITOR
+                    Debug.LogException(ex);
+#endif
+                }
+                 
             }
 
             #endregion
@@ -5128,6 +5527,20 @@ namespace Swole.Morphing
             OnInstanceUpdate?.Invoke(instance.localID);
             OnInstanceUpdateNoArg?.Invoke();
         }
+        protected UnityEvent OnSkinningModeChanged;
+        protected virtual void NotifySkinningModeChanged()
+        {
+            if (instance.OwnerGroup.PrecalculateSkinningMatrices)
+            {
+                UnbindSkinningMatricesBufferFromMaterials();
+            } 
+            else
+            {
+                BindSkinningMatricesBufferToMaterials();
+            }
+
+            OnSkinningModeChanged?.Invoke();
+        }
         protected override void CreateInstance()
         {
             if (instance != null && instance.IsValid) return;
@@ -5135,6 +5548,7 @@ namespace Swole.Morphing
             instance = Updater.Register(Data);
             instance.updateManually = updateMeshManually;
             instance.ListenForMeshUpdate(NotifyInstanceUpdate);
+            instance.ListenForSkinningModeChange(NotifySkinningModeChanged);
 
             OnClaimInstance?.Invoke(instance);
         }
@@ -5159,6 +5573,43 @@ namespace Swole.Morphing
             //Utils.PrintNativeAllocationSizes($"{nameof(CustomizableCharacterMeshV2)}:{name}", this);
 #endif
         }
+
+        #region Skinning
+
+        public override void BindSkinningMatricesBufferToMaterials(IEnumerable<Material> materialInstances)
+        {
+            if (materialInstances == null) return;
+
+            if (instance.OwnerGroup.PrecalculateSkinningMatrices)
+            {
+                foreach(var mat in materialInstances)
+                {
+                    if (mat == null) continue;
+                    Instance2.OwnerGroup.ApplyPrecalculatedSkinningMaterialOverrides(mat); 
+                }
+            } 
+            else
+            {
+                base.BindSkinningMatricesBufferToMaterials(materialInstances); 
+            }
+        }
+        public override void UnbindSkinningMatricesBufferFromMaterials(IEnumerable<Material> materialInstances)
+        {
+            if (materialInstances == null) return;
+
+            if (instance.OwnerGroup.PrecalculateSkinningMatrices)
+            {
+                foreach (var mat in materialInstances)
+                {
+                    if (mat == null) continue;
+                    Instance2.OwnerGroup.RemovePrecalculatedSkinningMaterialOverrides(mat);
+                }
+            }
+            
+            base.UnbindSkinningMatricesBufferFromMaterials(materialInstances);
+        }
+
+        #endregion
 
         #region Data
 
@@ -5706,6 +6157,8 @@ namespace Swole.Morphing
             if (OnInstanceUpdate != null) OnInstanceUpdate.RemoveAllListeners();
             if (OnInstanceUpdateNoArg != null) OnInstanceUpdateNoArg.RemoveAllListeners();
 
+            if (OnVertexMaskReset != null) OnVertexMaskReset.RemoveAllListeners();
+
             base.ClearListeners();
         }
 
@@ -5812,6 +6265,115 @@ namespace Swole.Morphing
 
             result = finalResult.hitInfo;
             return finalResult.didHit;
+        }
+
+        #endregion
+
+        #region Vertex Masking
+
+        protected UnityEvent OnVertexMaskReset;
+
+        public void ListenForVertexMaskReset(UnityAction listener)
+        {
+            if (OnVertexMaskReset == null) OnVertexMaskReset = new UnityEvent();
+            OnVertexMaskReset.AddListener(listener);
+        }
+        public void EndListenForVertexMaskReset(UnityAction listener)
+        {
+            if (OnVertexMaskReset != null) OnVertexMaskReset.RemoveListener(listener);
+        }
+        
+        public void NotifyVertexMaskReset()
+        {
+            OnVertexMaskReset?.Invoke();
+        }
+
+        public void ResetVertexMask()
+        {
+            if (instance == null || !instance.IsValid || !instance.OwnerGroup.UseVertexMask) return;
+            var subData = SubData;
+            instance.OwnerGroup.VertexMask.SetData(subData.EmptyWeights, 0, InstanceID * subData.VertexCount, subData.VertexCount);
+            NotifyVertexMaskReset();
+        }
+
+        public void WriteToVertexMask(float[] weights, int inputArrayStartIndex = 0)
+        {
+            if (instance == null || !instance.IsValid || !instance.OwnerGroup.UseVertexMask) return;
+            var subData = SubData;
+            instance.OwnerGroup.VertexMask.SetData(weights, inputArrayStartIndex, InstanceID * subData.VertexCount, subData.VertexCount);
+        }
+
+        public void WriteToVertexMask(NativeArray<float> weights, int inputArrayStartIndex = 0)
+        {
+            if (instance == null || !instance.IsValid || !instance.OwnerGroup.UseVertexMask) return;
+            var subData = SubData;
+            instance.OwnerGroup.VertexMask.SetData(weights, inputArrayStartIndex, InstanceID * subData.VertexCount, subData.VertexCount);
+        }
+
+        public void WriteToVertexMask(Swole.Modding.MaskedVertex[] weights, int inputArrayStartIndex = 0, int inputArrayCount = 0)
+        {
+            if (instance == null || !instance.IsValid || !instance.OwnerGroup.UseVertexMask) return;
+
+            if (inputArrayCount <= 0) inputArrayCount = weights.Length - inputArrayStartIndex;
+
+            var subData = SubData;
+            var vertexCount = subData.VertexCount;
+            using (var tempWeights = new NativeArray<float>(vertexCount, Allocator.Temp))
+            {
+                var tempWeights_ = tempWeights;
+                for (int i = 0; i < inputArrayCount; i++)
+                {
+                    var w = weights[inputArrayStartIndex + i];
+                    if (w.vertexIndex >= 0 && w.vertexIndex < vertexCount)
+                    {
+                        tempWeights_[w.vertexIndex] = w.masking;
+                    }
+                }
+
+                instance.OwnerGroup.VertexMask.SetData(tempWeights, 0, InstanceID * vertexCount, vertexCount); 
+            }
+        }
+
+        public void WriteToVertexMask(IEnumerable<Swole.Modding.MaskedVertex> weights)
+        {
+            if (instance == null || !instance.IsValid || !instance.OwnerGroup.UseVertexMask) return;
+
+            var subData = SubData;
+            var vertexCount = subData.VertexCount;
+            using (var tempWeights = new NativeArray<float>(vertexCount, Allocator.Temp))
+            {
+                var tempWeights_ = tempWeights;
+                foreach(var w in weights)
+                {
+                    if (w.vertexIndex >= 0 && w.vertexIndex < vertexCount)
+                    {
+                        tempWeights_[w.vertexIndex] = w.masking;
+                    }
+                }
+
+                instance.OwnerGroup.VertexMask.SetData(tempWeights, 0, InstanceID * vertexCount, vertexCount);
+            }
+        }
+
+        public void WriteToVertexMask(IEnumerable<float> weights)
+        {
+            if (instance == null || !instance.IsValid || !instance.OwnerGroup.UseVertexMask) return;
+
+            var subData = SubData;
+            var vertexCount = subData.VertexCount;
+            using (var tempWeights = new NativeArray<float>(vertexCount, Allocator.Temp)) 
+            {
+                var tempWeights_ = tempWeights;
+                int vertexIndex = 0;
+                foreach (var w in weights)
+                {
+                    tempWeights_[vertexIndex] = w;
+                    vertexIndex++;
+                    if (vertexIndex >= vertexCount) break;
+                }
+
+                instance.OwnerGroup.VertexMask.SetData(tempWeights, 0, InstanceID * vertexCount, vertexCount); 
+            }
         }
 
         #endregion

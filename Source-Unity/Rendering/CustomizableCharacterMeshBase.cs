@@ -2689,7 +2689,7 @@ namespace Swole.Morphing
         {
             BindSkinningMatricesBufferToMaterials(MaterialInstances);
         }
-        public void BindSkinningMatricesBufferToMaterials(IEnumerable<Material> materialInstances)
+        public virtual void BindSkinningMatricesBufferToMaterials(IEnumerable<Material> materialInstances)
         {
             var matricesBuffer = SkinningMatricesBuffer;
             if (matricesBuffer != null)
@@ -2724,7 +2724,7 @@ namespace Swole.Morphing
         {
             UnbindSkinningMatricesBufferFromMaterials(MaterialInstances);
         }
-        public void UnbindSkinningMatricesBufferFromMaterials(IEnumerable<Material> materialInstances)
+        public virtual void UnbindSkinningMatricesBufferFromMaterials(IEnumerable<Material> materialInstances)
         {
             if (skinningMatricesBuffer != null && materialInstances != null)
             {

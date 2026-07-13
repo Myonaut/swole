@@ -80,11 +80,28 @@ void ApplyMultiShape_float(int shapeBaseIndex, float weight, float multiplier, i
 	outTangent = inTangent;
 }
 
+void ApplyFinalWorldDeltas_float(int instanceID, int vertexIndex, int vertexCount, float3 inPosition, float3 inNormal, float3 inTangent, out float3 outPosition, out float3 outNormal, out float3 outTangent) 
+{
+
+    outPosition = inPosition;
+    outNormal = inNormal;
+    outTangent = inTangent;
+
+}
+
+void SampleVertexMask_float(int instanceID, int vertexIndex, int vertexCount, out float mask)
+{
+	
+    mask = 0;
+
+}
+
 #endif
 
 #ifndef SHADERGRAPH_PREVIEW
 
 uniform int _BoneCount;
+uniform int _PrecalculatedSkinningVertexCount;
 
 uniform int2 _RangeStandaloneShapes; 
 
@@ -97,12 +114,22 @@ StructuredBuffer<float> _MeshShapeFrameWeights;
 StructuredBuffer<int2> _MeshShapeIndices;
 
 StructuredBuffer<float> _ControlStandaloneShapes;
+
+StructuredBuffer<BlendShapeDelta> _FinalWorldDeltas;
+
+StructuredBuffer<float> _VertexMask;
 //#else
 //#endif
 
 void SkinNoShapesOutMatrix_float(int instanceID, int vertexIndex, float3 inPosition, float3 inNormal, float3 inTangent, out float3 outPosition, out float3 outNormal, out float3 outTangent, out float4x4 blendedMatrix)
 {
 
+	#ifdef USE_PRECALCULATED_SKINNING
+	
+	blendedMatrix = _SkinningMatrices[(instanceID * _PrecalculatedSkinningVertexCount) + vertexIndex];
+	
+	#else
+	
 	SkinInfluence si = _SkinBindings[vertexIndex];
 	
 	const int boneIndexOffset = instanceID * _BoneCount;
@@ -115,6 +142,8 @@ void SkinNoShapesOutMatrix_float(int instanceID, int vertexIndex, float3 inPosit
 	+ mul(_SkinningMatrices[boneIndexOffset + int(si.indicesB.y)], si.weightsB.y)
 	+ mul(_SkinningMatrices[boneIndexOffset + int(si.indicesB.z)], si.weightsB.z)
     + mul(_SkinningMatrices[boneIndexOffset + int(si.indicesB.w)], si.weightsB.w);
+	
+	#endif
 
 	outPosition = mul(blendedMatrix, float4(inPosition, 1)).xyz;
     outNormal = mul(blendedMatrix, float4(inNormal, 0));
@@ -308,6 +337,32 @@ void SkinAndShapes_float(int shapesID, int rigID, int vertexIndex, int vertexCou
 
 }
 
+void ApplyFinalWorldDeltas_float(int instanceID, int vertexIndex, int vertexCount, float3 inPosition, float3 inNormal, float3 inTangent, out float3 outPosition, out float3 outNormal, out float3 outTangent) 
+{
+
+    outPosition = inPosition;
+    outNormal = inNormal;
+    outTangent = inTangent;
+
+#ifdef USE_FINAL_WORLD_DELTAS
+	BlendShapeDelta delta = _FinalWorldDeltas[instanceID * vertexCount + vertexIndex];
+	outPosition += delta.deltaVertex;
+	outNormal = normalize(outNormal + delta.deltaNormal);
+	outTangent = normalize(outTangent + delta.deltaTangent);
+#endif
+
+}
+
+void SampleVertexMask_float(int instanceID, int vertexIndex, int vertexCount, out float mask) 
+{
+	
+    mask = 0; 
+
+#ifdef USE_VERTEX_MASK
+	mask = _VertexMask[instanceID * vertexCount + vertexIndex];
+#endif
+
+}
 
 #endif
 #endif

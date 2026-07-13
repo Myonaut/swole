@@ -447,7 +447,7 @@ namespace Swole.Cloth
 
                 sdfComputeShader.SetVector("_BoundsMin", boundsMin);
                 sdfComputeShader.SetVector("_BoundsMax", boundsMax);
-                sdfComputeShader.Dispatch(kPopulate, Mathf.CeilToInt(triCount / 64f), 1, 1);
+                sdfComputeShader.Dispatch(kPopulate, Mathf.CeilToInt(triCount / 64f), 1, 1); 
 
                 // Reset start indices back to baseline before Pass 4 reads them
                 // (Subtracting the local counts shifts our indices back to perfect start markers)
@@ -483,9 +483,9 @@ namespace Swole.Cloth
                 sdfComputeShader.SetVector("_BoundsMin", boundsMin);
                 sdfComputeShader.SetVector("_BoundsMax", boundsMax);
                 sdfComputeShader.SetFloat("_MaxDistance", maxDistance);
-                int groups = Mathf.CeilToInt(64f / 8f);
+                int groups = Mathf.CeilToInt(textureResolution / 8f);
                 sdfComputeShader.Dispatch(kSDF, groups, groups, groups);
-
+ 
                 // Release temporary grid structural buffers
                 countBuffer.Release(); startBuffer.Release(); offsetBuffer.Release(); listBuffer.Release(); counterBuffer.Release();
             }

@@ -1,0 +1,77 @@
+#pragma kernel CalculateSkinningMatrices
+
+struct SkinInfluence
+{
+	
+    float4 indicesA;
+    float4 indicesB;
+
+    float4 weightsA;
+    float4 weightsB;
+
+};
+
+// Input buffers
+StructuredBuffer<SkinInfluence> _SkinBindings;
+StructuredBuffer<float4x4> _SkinningMatrices;
+
+// Output buffer
+RWStructuredBuffer<float4x4> _BlendedMatrices;
+
+// Parameters
+int _BoneCount;
+int _VertexCount;
+int _InstanceID;
+int _InstanceCount;
+
+float4x4 CalculateBlendedMatrix(SkinInfluence si, int boneIndexOffset)
+{
+    float4x4 blendedMatrix =
+        mul(_SkinningMatrices[boneIndexOffset + int(si.indicesA.x)], si.weightsA.x)
+        + mul(_SkinningMatrices[boneIndexOffset + int(si.indicesA.y)], si.weightsA.y)
+        + mul(_SkinningMatrices[boneIndexOffset + int(si.indicesA.z)], si.weightsA.z)
+        + mul(_SkinningMatrices[boneIndexOffset + int(si.indicesA.w)], si.weightsA.w)
+        + mul(_SkinningMatrices[boneIndexOffset + int(si.indicesB.x)], si.weightsB.x)
+        + mul(_SkinningMatrices[boneIndexOffset + int(si.indicesB.y)], si.weightsB.y)
+        + mul(_SkinningMatrices[boneIndexOffset + int(si.indicesB.z)], si.weightsB.z)
+        + mul(_SkinningMatrices[boneIndexOffset + int(si.indicesB.w)], si.weightsB.w);
+    
+    return blendedMatrix;
+}
+
+[numthreads(256, 1, 1)]
+void CalculateSkinningMatrices(uint3 dtid : SV_DispatchThreadID)
+{
+    uint vertexIndex = dtid.x;
+
+    if (vertexIndex >= _VertexCount)
+        return;
+
+    SkinInfluence si = _SkinBindings[vertexIndex];
+
+    const int boneIndexOffset = _InstanceID * _BoneCount;
+
+    float4x4 blendedMatrix = CalculateBlendedMatrix(si, boneIndexOffset);
+
+    _BlendedMatrices[vertexIndex] = blendedMatrix;
+}
+
+[numthreads(256, 1, 1)]
+void CalculateAllSkinningMatrices(uint3 dtid : SV_DispatchThreadID)
+{
+    uint instanceId = dtid.x / _VertexCount;
+    if (instanceId >= _InstanceCount)
+        return;
+    
+    uint vertexIndex = dtid.x % _VertexCount;
+    if (vertexIndex >= _VertexCount)
+        return;
+
+    SkinInfluence si = _SkinBindings[vertexIndex];
+
+    const int boneIndexOffset = instanceId * _BoneCount;
+
+    float4x4 blendedMatrix = CalculateBlendedMatrix(si, boneIndexOffset);
+
+    _BlendedMatrices[vertexIndex] = blendedMatrix;
+}
