@@ -1332,6 +1332,74 @@ namespace Swole
 
         #endregion
 
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static float3 ClosestPointOnTriangle(float3 p, float3 a, float3 b, float3 c, out float3 barycentric)
+        {
+            float3 ab = b - a;
+            float3 ac = c - a;
+            float3 ap = p - a;
+
+            float d1 = math.dot(ab, ap);
+            float d2 = math.dot(ac, ap);
+
+            if (d1 <= 0f && d2 <= 0f)
+            {
+                barycentric = new float3(1f, 0f, 0f);
+                return a;
+            }
+
+            float3 bp = p - b;
+            float d3 = math.dot(ab, bp);
+            float d4 = math.dot(ac, bp);
+
+            if (d3 >= 0f && d4 <= d3)
+            {
+                barycentric = new float3(0f, 1f, 0f);
+                return b;
+            }
+
+            float vc = d1 * d4 - d3 * d2;
+            if (vc <= 0f && d1 >= 0f && d3 <= 0f)
+            {
+                float v = d1 / (d1 - d3);
+                barycentric = new float3(1f - v, v, 0f);
+                return a + v * ab;
+            }
+
+            float3 cp = p - c;
+            float d5 = math.dot(ab, cp);
+            float d6 = math.dot(ac, cp);
+
+            if (d6 >= 0f && d5 <= d6)
+            {
+                barycentric = new float3(0f, 0f, 1f);
+                return c;
+            }
+
+            float vb = d5 * d2 - d1 * d6;
+            if (vb <= 0f && d2 >= 0f && d6 <= 0f)
+            {
+                float w = d2 / (d2 - d6);
+                barycentric = new float3(1f - w, 0f, w);
+                return a + w * ac;
+            }
+
+            float va = d3 * d6 - d5 * d4;
+            if (va <= 0f && (d4 - d3) >= 0f && (d5 - d6) >= 0f)
+            {
+                float w = (d4 - d3) / ((d4 - d3) + (d5 - d6));
+                barycentric = new float3(0f, 1f - w, w);
+                return b + w * (c - b);
+            }
+
+            float denom = 1f / (va + vb + vc);
+            float vOut = vb * denom;
+            float wOut = vc * denom;
+            barycentric = new float3(1f - vOut - wOut, vOut, wOut);
+
+            return a + ab * vOut + ac * wOut;
+        }
+
         public static Vector3 StoreValue(this Vector3 vec, float value, XYZChannel channels)
         {
             if (channels.HasFlag(XYZChannel.X)) vec.x = value;

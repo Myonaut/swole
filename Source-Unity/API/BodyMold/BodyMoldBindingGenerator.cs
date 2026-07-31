@@ -7,13 +7,15 @@ using Unity.Jobs;
 using Unity.Collections;
 using Unity.Burst;
 
+using Swole.API.Unity;
+
 namespace Swole.Modding
 {
     public static class BodyMoldBindingGenerator
     {
 
         private static readonly Dictionary<string, int> boneNameIndexConverter = new Dictionary<string, int>();
-        public static void GenerateBindingsForBodies(SkinnedMeshRenderer clothing, ClothingEditor.WeightedRenderer[] bodies, Quaternion clothingToBodyRot, out int[][] localIndicesPerBody, out int4[][] indicesPerBody, out float4[][] weightsPerBody, out Triangles32[][] collisionTriangles, out PushBackVertex[][] pushBackVertices, out MaskedVertex[][] maskedVertices, bool includeCollisionTriangles = true, bool includePushBackVertices = true, bool includeCoverageMask = true, string clothingVertexMaskName = null, float distanceBindingWeight = 0.1f)
+        public static void GenerateBindingsForBodies(SkinnedMeshRenderer clothing, string optionalBindingShapeName, float optionalBindingShapeWeight, ClothingEditor.WeightedRenderer[] bodies, Quaternion clothingToBodyRot, out int[][] localIndicesPerBody, out int4[][] indicesPerBody, out float4[][] weightsPerBody, out Triangles32[][] collisionTriangles, out PushBackVertex[][] pushBackVertices, out MaskedVertex[][] maskedVertices, bool includeCollisionTriangles = true, bool includePushBackVertices = true, bool includeCoverageMask = true, string clothingVertexMaskName = null, float distanceBindingWeight = 0.1f, bool maskByDistanceToFirst = false)
         {
             if (bodies == null) throw new ArgumentNullException(nameof(bodies));
 
@@ -28,36 +30,53 @@ namespace Swole.Modding
             maskedVertices = new MaskedVertex[bodies.Length][];
             var finalData = new Dictionary<int, (int4, float4)>();
 
-            var influenceData = ClothingEditor.GenerateInfluenceData(bodies, bindingData, 0.1f);
+            // Use per-body influences to ensure each body mesh gets proper bindings
+            var perBodyInfluences = ClothingEditor.GeneratePerBodyInfluences(bodies, bindingData, distanceBindingWeight);
             var influenceLists = new List<float3>[bodies.Length];
-            for(int bIndex = 0; bIndex < bodies.Length; bIndex++) influenceLists[bIndex] = new List<float3>();
 
-            for(int cVIndex = 0; cVIndex < influenceData.Length; cVIndex++)
+            for(int bIndex = 0; bIndex < bodies.Length; bIndex++) 
             {
-                var infData = influenceData[cVIndex];
-                if (infData.influences.influenceA.meshIndex >= 0) influenceLists[infData.influences.influenceA.meshIndex].Add(new float3(cVIndex, infData.influences.influenceA.vertexIndex, infData.influences.influenceA.weight));
-                if (infData.influences.influenceB.meshIndex >= 0) influenceLists[infData.influences.influenceB.meshIndex].Add(new float3(cVIndex, infData.influences.influenceB.vertexIndex, infData.influences.influenceB.weight));
-                if (infData.influences.influenceC.meshIndex >= 0) influenceLists[infData.influences.influenceC.meshIndex].Add(new float3(cVIndex, infData.influences.influenceC.vertexIndex, infData.influences.influenceC.weight));
-                if (infData.influences.influenceD.meshIndex >= 0) influenceLists[infData.influences.influenceD.meshIndex].Add(new float3(cVIndex, infData.influences.influenceD.vertexIndex, infData.influences.influenceD.weight)); 
+                influenceLists[bIndex] = new List<float3>();
 
-                //if (cVIndex % 250 == 0)
-                //{
-                //    if (infData.influences.influenceA.meshIndex >= 0) Debug.DrawLine(bindingData.skinningData_character[infData.influences.influenceA.meshIndex][infData.influences.influenceA.vertexIndex].vertex.worldPosition, bindingData.skinningData_clothing[cVIndex].vertex.worldPosition, Color.red, 200f); 
-                //} 
+                // Build influence list from this body's per-vertex influences
+                var bodyInfluences = perBodyInfluences[bIndex];
+                for (int cVIndex = 0; cVIndex < bodyInfluences.Length; cVIndex++)
+                {
+                    var inf = bodyInfluences[cVIndex];
+                    if (inf.influenceA.meshIndex >= 0 && inf.influenceA.weight > 0f)
+                    {
+                        influenceLists[bIndex].Add(new float3(cVIndex, inf.influenceA.vertexIndex, inf.influenceA.weight));  
+                    }
+                    if (inf.influenceB.meshIndex >= 0 && inf.influenceB.weight > 0f)
+                    {
+                        influenceLists[bIndex].Add(new float3(cVIndex, inf.influenceB.vertexIndex, inf.influenceB.weight));  
+                    }
+                }
+            }
+
+            // Track minimum distances from clothing vertices to first body mesh vertices (for distance masking)
+            Dictionary<int, float> firstBodyMinDistances = null;
+            if (maskByDistanceToFirst && bodies.Length > 1)
+            {
+                firstBodyMinDistances = new Dictionary<int, float>();
             }
 
             for (int bIndex = 0; bIndex < bodies.Length; bIndex++)
             {
                 var renderer = bodies[bIndex].renderer;
-                if (renderer == null || renderer.sharedMesh == null)
+                bool isMaskOnly = bodies[bIndex].weight < 0f;
+                if (renderer == null || renderer.sharedMesh == null || isMaskOnly)
                 {
                     localIndicesPerBody[bIndex] = new int[0];
                     indicesPerBody[bIndex] = new int4[0];
                     weightsPerBody[bIndex] = new float4[0];
                     collisionTriangles[bIndex] = new Triangles32[0];
                     pushBackVertices[bIndex] = new PushBackVertex[0];
-                    maskedVertices[bIndex] = new MaskedVertex[0];
-                    continue;
+                    if (!isMaskOnly)
+                    {
+                        maskedVertices[bIndex] = new MaskedVertex[0];
+                        continue;
+                    }
                 }
 
                 var bodyMesh = renderer.sharedMesh;
@@ -65,261 +84,333 @@ namespace Swole.Modding
                 var bodyTris = bodyMesh.triangles;
                 int bodyTriCount = bodyTris.Length / 3;
 
-                // Build vertex->triangle adjacency for quick neighborhood expansion
-                List<int>[] vertexToTriangles = new List<int>[bodyMesh.vertexCount];
-                for (int v = 0; v < vertexToTriangles.Length; v++) vertexToTriangles[v] = new List<int>();
-                for (int t = 0; t < bodyTriCount; t++)
+                if (!isMaskOnly)
                 {
-                    int a = bodyTris[t * 3 + 0];
-                    int b = bodyTris[t * 3 + 1];
-                    int c = bodyTris[t * 3 + 2];
-                    vertexToTriangles[a].Add(t);
-                    vertexToTriangles[b].Add(t);
-                    vertexToTriangles[c].Add(t);
-                }
-
-                finalData.Clear();
-                var list = influenceLists[bIndex];
-                for(int i = 0; i < list.Count; i++)
-                {
-                    var listData = list[i];
-
-                    int localIndex = (int)listData.x;
-                    int bodyVIndex = (int)listData.y;
-                    float weight = listData.z;
-
-                    if (!finalData.TryGetValue(localIndex, out var finalVal))
+                    // Build vertex->triangle adjacency for quick neighborhood expansion
+                    List<int>[] vertexToTriangles = new List<int>[bodyMesh.vertexCount];
+                    for (int v = 0; v < vertexToTriangles.Length; v++) vertexToTriangles[v] = new List<int>();
+                    for (int t = 0; t < bodyTriCount; t++)
                     {
-                        finalVal = (new int4(-1, -1, -1, -1), new float4(0f, 0f, 0f, 0f));
+                        int a = bodyTris[t * 3 + 0];
+                        int b = bodyTris[t * 3 + 1];
+                        int c = bodyTris[t * 3 + 2];
+                        vertexToTriangles[a].Add(t);
+                        vertexToTriangles[b].Add(t);
+                        vertexToTriangles[c].Add(t);
                     }
 
-                    if (weight > 0f)
+                    finalData.Clear();
+                    var list = influenceLists[bIndex];
+
+                    // Get body weight for distance scaling
+                    float bodyWeight = bodies[bIndex].weight;
+                    if (bodyWeight <= 0f) bodyWeight = 1f; // Avoid division by zero
+
+                    for (int i = 0; i < list.Count; i++)
                     {
-                        var finalIndices = finalVal.Item1;
-                        var finalWeights = finalVal.Item2;
+                        var listData = list[i];
 
-                        bool flag = true; 
-                        if (finalIndices.x == bodyVIndex)
-                        {
-                            if (weight > finalWeights.x) finalWeights.x = weight;
-                            flag = false;
-                        }
-                        else if (finalIndices.y == bodyVIndex)
-                        {
-                            if (weight > finalWeights.y) finalWeights.y = weight;
-                            flag = false;
-                        }
-                        else if (finalIndices.z == bodyVIndex)
-                        {
-                            if (weight > finalWeights.z) finalWeights.z = weight;
-                            flag = false;
-                        }
-                        else if (finalIndices.w == bodyVIndex) 
-                        {
-                            if (weight > finalWeights.w) finalWeights.w = weight;
-                            flag = false;
-                        }
+                        int localIndex = (int)listData.x;
+                        int bodyVIndex = (int)listData.y;
+                        float weight = listData.z;
 
-                        if (flag)
+                        // Apply distance masking for subsequent body meshes
+                        if (maskByDistanceToFirst && bIndex > 0 && firstBodyMinDistances != null)
                         {
-                            if (finalIndices.x < 0 || finalWeights.x < weight)
+                            // Calculate distance from clothing vertex to current body vertex
+                            Vector3 clothingPos = bindingData.skinningData_clothing[localIndex].vertex.worldPosition;
+                            Vector3 bodyPos = bindingData.skinningData_character[bIndex][bodyVIndex].vertex.worldPosition;
+                            float currentDistance = Vector3.Distance(clothingPos, bodyPos) / bodyWeight;
+
+                            // Check if this vertex has a binding to the first body
+                            if (firstBodyMinDistances.TryGetValue(localIndex, out float firstBodyDistance))
                             {
-                                if (finalIndices.x >= 0)
+                                // If current distance is further than first body distance, skip this binding
+                                if (currentDistance > firstBodyDistance)
                                 {
-                                    finalIndices.w = finalIndices.z;
-                                    finalWeights.w = finalWeights.z;
-
-                                    finalIndices.z = finalIndices.y;
-                                    finalWeights.z = finalWeights.y;
-
-                                    finalIndices.y = finalIndices.x;
-                                    finalWeights.y = finalWeights.x;
+                                    continue;
                                 }
-
-                                finalIndices.x = bodyVIndex;
-                                finalWeights.x = weight;
-                            }
-                            else if (finalIndices.y < 0 || finalWeights.y < weight)
-                            {
-                                if (finalIndices.y >= 0)
-                                {
-                                    finalIndices.w = finalIndices.z;
-                                    finalWeights.w = finalWeights.z;
-
-                                    finalIndices.z = finalIndices.y;
-                                    finalWeights.z = finalWeights.y;
-                                }
-
-                                finalIndices.y = bodyVIndex;
-                                finalWeights.y = weight;
-                            }
-                            else if (finalIndices.z < 0 || finalWeights.z < weight)
-                            {
-                                if (finalIndices.z >= 0)
-                                {
-                                    finalIndices.w = finalIndices.z;
-                                    finalWeights.w = finalWeights.z;
-                                }
-
-                                finalIndices.z = bodyVIndex;
-                                finalWeights.z = weight;
-                            }
-                            else if (finalIndices.w < 0 || finalWeights.w < weight)
-                            {
-                                finalIndices.w = bodyVIndex;
-                                finalWeights.w = weight;
                             }
                         }
 
-                        finalVal.Item1 = finalIndices;
-                        finalVal.Item2 = finalWeights;
-                    }
-
-                    finalData[localIndex] = finalVal; 
-                }
-
-                localIndicesPerBody[bIndex] = new int[finalData.Count];
-                indicesPerBody[bIndex] = new int4[finalData.Count];
-                weightsPerBody[bIndex] = new float4[finalData.Count];
-                collisionTriangles[bIndex] = new Triangles32[finalData.Count];
-                int entryIndex = -1;
-                foreach (var entry in finalData)
-                {
-                    entryIndex++;
-                    int clothingVIndex = entry.Key;
-                    int4 bodyVIndices = entry.Value.Item1;
-                    float4 bodyVWeights = entry.Value.Item2;
-
-                    localIndicesPerBody[bIndex][entryIndex] = clothingVIndex;
-                    indicesPerBody[bIndex][entryIndex] = bodyVIndices;
-                    weightsPerBody[bIndex][entryIndex] = bodyVWeights;
-
-                    if (!includeCollisionTriangles)
-                    {
-                        // marker: fill with -1 to indicate empty
-                        collisionTriangles[bIndex][entryIndex] = new Triangles32
+                        if (!finalData.TryGetValue(localIndex, out var finalVal))
                         {
-                            trianglesA = new int4(-1,-1,-1,-1),
-                            trianglesB = new int4(-1,-1,-1,-1),
-                            trianglesC = new int4(-1,-1,-1,-1),
-                            trianglesD = new int4(-1,-1,-1,-1),
-                            trianglesE = new int4(-1,-1,-1,-1),
-                            trianglesF = new int4(-1,-1,-1,-1),
-                            trianglesG = new int4(-1,-1,-1,-1),
-                            trianglesH = new int4(-1,-1,-1,-1),
-                        };
-                        continue;
-                    }
-
-                    // Collect up to 32 triangle indices using the four body vertex indices and their weights
-                    var vertsArr = new int[4] { bodyVIndices.x, bodyVIndices.y, bodyVIndices.z, bodyVIndices.w };
-                    var weightsArr = new float[4] { bodyVWeights.x, bodyVWeights.y, bodyVWeights.z, bodyVWeights.w };
-
-                    var selectedSet = new HashSet<int>();
-                    var selectionOrder = new List<int>();
-                    var q = new Queue<int>();
-
-                    // Seed triangles by iterating vertices in order of descending weight so higher-weight verts prioritize their triangles
-                    int[] order = new int[4] { 0, 1, 2, 3 };
-                    Array.Sort(order, (a, b) => weightsArr[b].CompareTo(weightsArr[a]));
-                    for (int oi = 0; oi < 4; oi++)
-                    {
-                        int idx = order[oi];
-                        int v = vertsArr[idx];
-                        if (v < 0 || v >= vertexToTriangles.Length) continue;
-                        foreach (var triIdx in vertexToTriangles[v])
-                        {
-                            if (selectedSet.Add(triIdx)) { q.Enqueue(triIdx); selectionOrder.Add(triIdx); }
+                            finalVal = (new int4(-1, -1, -1, -1), new float4(0f, 0f, 0f, 0f));
                         }
-                        if (selectedSet.Count >= 32) break;
+
+                        if (weight > 0f)
+                        {
+                            var finalIndices = finalVal.Item1;
+                            var finalWeights = finalVal.Item2;
+
+                            bool flag = true;
+                            if (finalIndices.x == bodyVIndex)
+                            {
+                                if (weight > finalWeights.x) finalWeights.x = weight;
+                                flag = false;
+                            }
+                            else if (finalIndices.y == bodyVIndex)
+                            {
+                                if (weight > finalWeights.y) finalWeights.y = weight;
+                                flag = false;
+                            }
+                            else if (finalIndices.z == bodyVIndex)
+                            {
+                                if (weight > finalWeights.z) finalWeights.z = weight;
+                                flag = false;
+                            }
+                            else if (finalIndices.w == bodyVIndex)
+                            {
+                                if (weight > finalWeights.w) finalWeights.w = weight;
+                                flag = false;
+                            }
+
+                            if (flag)
+                            {
+                                if (finalIndices.x < 0 || finalWeights.x < weight)
+                                {
+                                    if (finalIndices.x >= 0)
+                                    {
+                                        finalIndices.w = finalIndices.z;
+                                        finalWeights.w = finalWeights.z;
+
+                                        finalIndices.z = finalIndices.y;
+                                        finalWeights.z = finalWeights.y;
+
+                                        finalIndices.y = finalIndices.x;
+                                        finalWeights.y = finalWeights.x;
+                                    }
+
+                                    finalIndices.x = bodyVIndex;
+                                    finalWeights.x = weight;
+                                }
+                                else if (finalIndices.y < 0 || finalWeights.y < weight)
+                                {
+                                    if (finalIndices.y >= 0)
+                                    {
+                                        finalIndices.w = finalIndices.z;
+                                        finalWeights.w = finalWeights.z;
+
+                                        finalIndices.z = finalIndices.y;
+                                        finalWeights.z = finalWeights.y;
+                                    }
+
+                                    finalIndices.y = bodyVIndex;
+                                    finalWeights.y = weight;
+                                }
+                                else if (finalIndices.z < 0 || finalWeights.z < weight)
+                                {
+                                    if (finalIndices.z >= 0)
+                                    {
+                                        finalIndices.w = finalIndices.z;
+                                        finalWeights.w = finalWeights.z;
+                                    }
+
+                                    finalIndices.z = bodyVIndex;
+                                    finalWeights.z = weight;
+                                }
+                                else if (finalIndices.w < 0 || finalWeights.w < weight)
+                                {
+                                    finalIndices.w = bodyVIndex;
+                                    finalWeights.w = weight;
+                                }
+                            }
+
+                            finalVal.Item1 = finalIndices;
+                            finalVal.Item2 = finalWeights;
+                        }
+
+                        finalData[localIndex] = finalVal;
                     }
 
-                    // Expand by adjacency until we have enough triangles or run out
-                    while (selectedSet.Count < 32 && q.Count > 0)
+                    localIndicesPerBody[bIndex] = new int[finalData.Count];
+                    indicesPerBody[bIndex] = new int4[finalData.Count];
+                    weightsPerBody[bIndex] = new float4[finalData.Count];
+                    collisionTriangles[bIndex] = new Triangles32[finalData.Count];
+                    int entryIndex = -1;
+                    foreach (var entry in finalData)
                     {
-                        int tri = q.Dequeue();
-                        int a = bodyTris[tri * 3 + 0];
-                        int b = bodyTris[tri * 3 + 1];
-                        int c = bodyTris[tri * 3 + 2];
-                        int[] triVerts = new int[] { a, b, c };
-                        foreach (var v in triVerts)
+                        entryIndex++;
+                        int clothingVIndex = entry.Key;
+                        int4 bodyVIndices = entry.Value.Item1;
+                        float4 bodyVWeights = entry.Value.Item2;
+                        float weightSum = bodyVWeights.x + bodyVWeights.y + bodyVWeights.z + bodyVWeights.w;
+                        bodyVWeights = bodyVWeights / weightSum;
+
+                        localIndicesPerBody[bIndex][entryIndex] = clothingVIndex;
+                        indicesPerBody[bIndex][entryIndex] = bodyVIndices;
+                        weightsPerBody[bIndex][entryIndex] = bodyVWeights;
+
+                        if (!includeCollisionTriangles)
                         {
-                            foreach (var neighborTri in vertexToTriangles[v])
+                            // marker: fill with -1 to indicate empty
+                            collisionTriangles[bIndex][entryIndex] = new Triangles32
                             {
-                                if (selectedSet.Add(neighborTri)) { q.Enqueue(neighborTri); selectionOrder.Add(neighborTri); }
-                                if (selectedSet.Count >= 32) break;
+                                trianglesA = new int4(-1, -1, -1, -1),
+                                trianglesB = new int4(-1, -1, -1, -1),
+                                trianglesC = new int4(-1, -1, -1, -1),
+                                trianglesD = new int4(-1, -1, -1, -1),
+                                trianglesE = new int4(-1, -1, -1, -1),
+                                trianglesF = new int4(-1, -1, -1, -1),
+                                trianglesG = new int4(-1, -1, -1, -1),
+                                trianglesH = new int4(-1, -1, -1, -1),
+                            };
+                            continue;
+                        }
+
+                        // Collect up to 32 triangle indices using the four body vertex indices and their weights
+                        var vertsArr = new int[4] { bodyVIndices.x, bodyVIndices.y, bodyVIndices.z, bodyVIndices.w };
+                        var weightsArr = new float[4] { bodyVWeights.x, bodyVWeights.y, bodyVWeights.z, bodyVWeights.w };
+
+                        var selectedSet = new HashSet<int>();
+                        var selectionOrder = new List<int>();
+                        var q = new Queue<int>();
+
+                        // Seed triangles by iterating vertices in order of descending weight so higher-weight verts prioritize their triangles
+                        int[] order = new int[4] { 0, 1, 2, 3 };
+                        Array.Sort(order, (a, b) => weightsArr[b].CompareTo(weightsArr[a]));
+                        for (int oi = 0; oi < 4; oi++)
+                        {
+                            int idx = order[oi];
+                            int v = vertsArr[idx];
+                            if (v < 0 || v >= vertexToTriangles.Length) continue;
+                            foreach (var triIdx in vertexToTriangles[v])
+                            {
+                                if (selectedSet.Add(triIdx)) { q.Enqueue(triIdx); selectionOrder.Add(triIdx); }
                             }
                             if (selectedSet.Count >= 32) break;
                         }
-                    }
 
-                    // If still not enough, add nearest triangles by a score combining centroid distance and overlap with weighted verts
-                    if (selectedSet.Count < 32)
-                    {
-                        var remaining = new List<KeyValuePair<float, int>>();
-                        // compute a representative position weighted by body vertex weights
-                        Vector3 repPos = Vector3.zero;
-                        float repTotal = 0f;
-                        for (int k = 0; k < 4; k++)
+                        // Expand by adjacency until we have enough triangles or run out
+                        while (selectedSet.Count < 32 && q.Count > 0)
                         {
-                            int vv = vertsArr[k];
-                            if (vv >= 0 && vv < bodyVerts.Length)
+                            int tri = q.Dequeue();
+                            int a = bodyTris[tri * 3 + 0];
+                            int b = bodyTris[tri * 3 + 1];
+                            int c = bodyTris[tri * 3 + 2];
+                            int[] triVerts = new int[] { a, b, c };
+                            foreach (var v in triVerts)
                             {
-                                repPos += bodyVerts[vv] * weightsArr[k];
-                                repTotal += weightsArr[k];
+                                foreach (var neighborTri in vertexToTriangles[v])
+                                {
+                                    if (selectedSet.Add(neighborTri)) { q.Enqueue(neighborTri); selectionOrder.Add(neighborTri); }
+                                    if (selectedSet.Count >= 32) break;
+                                }
+                                if (selectedSet.Count >= 32) break;
                             }
                         }
-                        if (repTotal > 0f) repPos /= repTotal;
-                        else repPos = (vertsArr[0] >= 0 && vertsArr[0] < bodyVerts.Length) ? bodyVerts[vertsArr[0]] : Vector3.zero;
 
-                        for (int t = 0; t < bodyTriCount; t++)
+                        // If still not enough, add nearest triangles by a score combining centroid distance and overlap with weighted verts
+                        if (selectedSet.Count < 32)
                         {
-                            if (selectedSet.Contains(t)) continue;
-                            int a = bodyTris[t * 3 + 0];
-                            int b = bodyTris[t * 3 + 1];
-                            int c = bodyTris[t * 3 + 2];
-                            Vector3 centroid = (bodyVerts[a] + bodyVerts[b] + bodyVerts[c]) / 3f;
-                            float d = (centroid - repPos).sqrMagnitude;
-                            // overlap score: sum of weights for body verts that appear in this triangle
-                            float overlap = 0f;
+                            var remaining = new List<KeyValuePair<float, int>>();
+                            // compute a representative position weighted by body vertex weights
+                            Vector3 repPos = Vector3.zero;
+                            float repTotal = 0f;
                             for (int k = 0; k < 4; k++)
                             {
                                 int vv = vertsArr[k];
-                                if (vv == a || vv == b || vv == c) overlap += weightsArr[k];
+                                if (vv >= 0 && vv < bodyVerts.Length)
+                                {
+                                    repPos += bodyVerts[vv] * weightsArr[k];
+                                    repTotal += weightsArr[k];
+                                }
                             }
-                            float score = d / (1f + overlap);
-                            remaining.Add(new KeyValuePair<float, int>(score, t));
+                            if (repTotal > 0f) repPos /= repTotal;
+                            else repPos = (vertsArr[0] >= 0 && vertsArr[0] < bodyVerts.Length) ? bodyVerts[vertsArr[0]] : Vector3.zero;
+
+                            for (int t = 0; t < bodyTriCount; t++)
+                            {
+                                if (selectedSet.Contains(t)) continue;
+                                int a = bodyTris[t * 3 + 0];
+                                int b = bodyTris[t * 3 + 1];
+                                int c = bodyTris[t * 3 + 2];
+                                Vector3 centroid = (bodyVerts[a] + bodyVerts[b] + bodyVerts[c]) / 3f;
+                                float d = (centroid - repPos).sqrMagnitude;
+                                // overlap score: sum of weights for body verts that appear in this triangle
+                                float overlap = 0f;
+                                for (int k = 0; k < 4; k++)
+                                {
+                                    int vv = vertsArr[k];
+                                    if (vv == a || vv == b || vv == c) overlap += weightsArr[k];
+                                }
+                                float score = d / (1f + overlap);
+                                remaining.Add(new KeyValuePair<float, int>(score, t));
+                            }
+                            remaining.Sort((x, y) => x.Key.CompareTo(y.Key));
+                            for (int r = 0; r < remaining.Count && selectedSet.Count < 32; r++) { selectedSet.Add(remaining[r].Value); selectionOrder.Add(remaining[r].Value); }
                         }
-                        remaining.Sort((x, y) => x.Key.CompareTo(y.Key));
-                        for (int r = 0; r < remaining.Count && selectedSet.Count < 32; r++) { selectedSet.Add(remaining[r].Value); selectionOrder.Add(remaining[r].Value); }
+
+                        // Pack up to 32 triangle indices into Triangles32 fields in order
+                        int[] packed = new int[32];
+                        for (int k = 0; k < 32; k++) packed[k] = -1;
+                        for (int k = 0; k < selectionOrder.Count && k < 32; k++) packed[k] = selectionOrder[k];
+
+                        collisionTriangles[bIndex][entryIndex] = new Triangles32
+                        {
+                            trianglesA = new int4(packed[0], packed[1], packed[2], packed[3]),
+                            trianglesB = new int4(packed[4], packed[5], packed[6], packed[7]),
+                            trianglesC = new int4(packed[8], packed[9], packed[10], packed[11]),
+                            trianglesD = new int4(packed[12], packed[13], packed[14], packed[15]),
+                            trianglesE = new int4(packed[16], packed[17], packed[18], packed[19]),
+                            trianglesF = new int4(packed[20], packed[21], packed[22], packed[23]),
+                            trianglesG = new int4(packed[24], packed[25], packed[26], packed[27]),
+                            trianglesH = new int4(packed[28], packed[29], packed[30], packed[31]),
+                        };
                     }
 
-                    // Pack up to 32 triangle indices into Triangles32 fields in order
-                    int[] packed = new int[32];
-                    for (int k = 0; k < 32; k++) packed[k] = -1;
-                    for (int k = 0; k < selectionOrder.Count && k < 32; k++) packed[k] = selectionOrder[k];
-
-                    collisionTriangles[bIndex][entryIndex] = new Triangles32
+                    // For the first body mesh, populate the minimum distances dictionary
+                    if (maskByDistanceToFirst && bIndex == 0 && firstBodyMinDistances != null)
                     {
-                        trianglesA = new int4(packed[0], packed[1], packed[2], packed[3]),
-                        trianglesB = new int4(packed[4], packed[5], packed[6], packed[7]),
-                        trianglesC = new int4(packed[8], packed[9], packed[10], packed[11]),
-                        trianglesD = new int4(packed[12], packed[13], packed[14], packed[15]),
-                        trianglesE = new int4(packed[16], packed[17], packed[18], packed[19]),
-                        trianglesF = new int4(packed[20], packed[21], packed[22], packed[23]),
-                        trianglesG = new int4(packed[24], packed[25], packed[26], packed[27]),
-                        trianglesH = new int4(packed[28], packed[29], packed[30], packed[31]),
-                    };
-                }
+                        float firstBodyWeight = bodies[0].weight;
+                        if (firstBodyWeight <= 0f) firstBodyWeight = 1f;
 
-                if (includePushBackVertices)
-                {
-                    pushBackVertices[bIndex] = GeneratePushBackTriangles(bodyMesh, clothing.sharedMesh, clothingToBodyRot, distanceBindingWeight);
-                }
-                else
-                {
-                    pushBackVertices[bIndex] = new PushBackVertex[0]; 
-                }
+                        foreach (var entry in finalData)
+                        {
+                            int clothingVIndex = entry.Key;
+                            int4 bodyVIndices = entry.Value.Item1;
+                            float4 bodyVWeights = entry.Value.Item2;
+
+                            Vector3 clothingPos = bindingData.skinningData_clothing[clothingVIndex].vertex.worldPosition;
+                            float minDist = float.MaxValue;
+
+                            // Calculate weighted average distance or minimum distance to bound body vertices
+                            for (int k = 0; k < 4; k++)
+                            {
+                                int bodyVIdx = -1;
+                                if (k == 0) bodyVIdx = bodyVIndices.x;
+                                else if (k == 1) bodyVIdx = bodyVIndices.y;
+                                else if (k == 2) bodyVIdx = bodyVIndices.z;
+                                else if (k == 3) bodyVIdx = bodyVIndices.w;
+
+                                if (bodyVIdx >= 0 && bodyVIdx < bindingData.skinningData_character[0].Length)
+                                {
+                                    Vector3 bodyPos = bindingData.skinningData_character[0][bodyVIdx].vertex.worldPosition;
+                                    float dist = Vector3.Distance(clothingPos, bodyPos) / firstBodyWeight;
+                                    if (dist < minDist)
+                                    {
+                                        minDist = dist;
+                                    }
+                                }
+                            }
+
+                            if (minDist < float.MaxValue)
+                            {
+                                firstBodyMinDistances[clothingVIndex] = minDist;
+                            }
+                        }
+                    }
+
+                    if (includePushBackVertices)
+                    {
+                        pushBackVertices[bIndex] = GeneratePushBackTriangles(bodyMesh, clothing.sharedMesh, clothingToBodyRot, distanceBindingWeight);
+                    }
+                    else
+                    {
+                        pushBackVertices[bIndex] = new PushBackVertex[0];
+                    }
+
+                } 
 
                 if (includeCoverageMask)
                 {
@@ -349,11 +440,11 @@ namespace Swole.Modding
             bindingData.Dispose();
         }
 
-        public static void GenerateBindings(SkinnedMeshRenderer clothing, SkinnedMeshRenderer body, Quaternion clothingToBodyRot, out int[][] localIndicesPerBody, out int4[][] indicesPerBody, out float4[][] weightsPerBody, out Triangles32[][] collisionTriangles, out PushBackVertex[][] pushBackVertices, out MaskedVertex[][] maskedVertices, bool includeCollisionTriangles = true, bool includePushBackVertices = true, bool includeCoverageMask = true, string clothingVertexMaskName = null, float distanceBindingWeight = 0.1f)
+        public static void GenerateBindings(SkinnedMeshRenderer clothing, string optionalBindingShapeName, float optionalBindingShapeWeight, SkinnedMeshRenderer body, Quaternion clothingToBodyRot, out int[][] localIndicesPerBody, out int4[][] indicesPerBody, out float4[][] weightsPerBody, out Triangles32[][] collisionTriangles, out PushBackVertex[][] pushBackVertices, out MaskedVertex[][] maskedVertices, bool includeCollisionTriangles = true, bool includePushBackVertices = true, bool includeCoverageMask = true, string clothingVertexMaskName = null, float distanceBindingWeight = 0.1f, bool maskByDistanceToFirst = false)
         {
-            GenerateBindingsForBodies(clothing, new ClothingEditor.WeightedRenderer[] { new ClothingEditor.WeightedRenderer() { renderer = body, weight = 1f } }, clothingToBodyRot, out localIndicesPerBody, out indicesPerBody, out weightsPerBody, out collisionTriangles, out pushBackVertices, out maskedVertices, includeCollisionTriangles, includePushBackVertices, includeCoverageMask, clothingVertexMaskName, distanceBindingWeight);
+            GenerateBindingsForBodies(clothing, optionalBindingShapeName, optionalBindingShapeWeight, new ClothingEditor.WeightedRenderer[] { new ClothingEditor.WeightedRenderer() { renderer = body, weight = 1f } }, clothingToBodyRot, out localIndicesPerBody, out indicesPerBody, out weightsPerBody, out collisionTriangles, out pushBackVertices, out maskedVertices, includeCollisionTriangles, includePushBackVertices, includeCoverageMask, clothingVertexMaskName, distanceBindingWeight, maskByDistanceToFirst);
         }
-        public static void GenerateBindings(SkinnedMeshRenderer clothing, SkinnedMeshRenderer[] bodies, Quaternion clothingToBodyRot, out int[][] localIndicesPerBody, out int4[][] indicesPerBody, out float4[][] weightsPerBody, out Triangles32[][] collisionTriangles, out PushBackVertex[][] pushBackVertices, out MaskedVertex[][] maskedVertices, bool includeCollisionTriangles = true, bool includePushBackVertices = true, bool includeCoverageMask = true, string clothingVertexMaskName = null, float distanceBindingWeight = 0.1f)
+        public static void GenerateBindings(SkinnedMeshRenderer clothing, string optionalBindingShapeName, float optionalBindingShapeWeight, SkinnedMeshRenderer[] bodies, Quaternion clothingToBodyRot, out int[][] localIndicesPerBody, out int4[][] indicesPerBody, out float4[][] weightsPerBody, out Triangles32[][] collisionTriangles, out PushBackVertex[][] pushBackVertices, out MaskedVertex[][] maskedVertices, bool includeCollisionTriangles = true, bool includePushBackVertices = true, bool includeCoverageMask = true, string clothingVertexMaskName = null, float distanceBindingWeight = 0.1f, bool maskByDistanceToFirst = false)
         {
             var arr = new ClothingEditor.WeightedRenderer[bodies.Length];
             for(int a = 0; a < bodies.Length; a++)
@@ -361,7 +452,7 @@ namespace Swole.Modding
                 arr[a] = new ClothingEditor.WeightedRenderer() { renderer = bodies[a], weight = 1f };
             }
 
-            GenerateBindingsForBodies(clothing, arr, clothingToBodyRot, out localIndicesPerBody, out indicesPerBody, out weightsPerBody, out collisionTriangles, out pushBackVertices, out maskedVertices, includeCollisionTriangles, includePushBackVertices, includeCoverageMask, clothingVertexMaskName, distanceBindingWeight);
+            GenerateBindingsForBodies(clothing, optionalBindingShapeName, optionalBindingShapeWeight, arr, clothingToBodyRot, out localIndicesPerBody, out indicesPerBody, out weightsPerBody, out collisionTriangles, out pushBackVertices, out maskedVertices, includeCollisionTriangles, includePushBackVertices, includeCoverageMask, clothingVertexMaskName, distanceBindingWeight, maskByDistanceToFirst);
         }
 
         // Job struct for push-back triangle generation
@@ -433,29 +524,48 @@ namespace Swole.Modding
                 selectionOrder.Add(closestTriIndex);
                 queue.Enqueue(closestTriIndex);
 
-                while (selectionOrder.Length < 32 && queue.Count > 0)
+                int maxIterations = 1000; // Hard limit to prevent infinite loops
+                int iteration = 0;
+
+                while (selectionOrder.Length < 32 && queue.Count > 0 && iteration < maxIterations)
                 {
+                    iteration++;
                     int currentTri = queue.Dequeue();
+
+                    // Bounds check for adjacency offset
+                    if (currentTri < 0 || currentTri >= triAdjacencyOffsets.Length)
+                        continue;
+
                     int adjStart = triAdjacencyOffsets[currentTri];
                     int adjEnd = currentTri < triAdjacencyOffsets.Length - 1 ? triAdjacencyOffsets[currentTri + 1] : triAdjacencyData.Length;
 
-                    for (int i = adjStart; i < adjEnd; i++)
+                    // Validate adjacency range
+                    if (adjStart < 0 || adjStart > triAdjacencyData.Length || adjEnd < adjStart || adjEnd > triAdjacencyData.Length)
+                        continue;
+
+                    for (int i = adjStart; i < adjEnd && selectionOrder.Length < 32; i++)
                     {
                         int neighborTri = triAdjacencyData[i];
-                        if (selectedSet.Contains(neighborTri)) continue;
+
+                        // Validate neighbor index and check if already selected
+                        if (neighborTri < 0 || neighborTri >= triCentroids.Length || selectedSet.Contains(neighborTri)) 
+                            continue;
 
                         float3 triCenter = triCentroids[neighborTri];
                         float3 triNormal = triNormals[neighborTri];
                         float3 bodyToTri = triCenter - bodyVertPos;
-                        float dot = math.dot(math.normalizesafe(bodyToTri), triNormal);
+                        float dot = math.dot(math.normalizesafe(bodyToTri), triNormal); 
 
                         if (dot > 0f)
                         {
                             selectedSet.Add(neighborTri);
                             selectionOrder.Add(neighborTri);
-                            queue.Enqueue(neighborTri);
 
-                            if (selectionOrder.Length >= 32) break;
+                            // Only enqueue if we haven't reached the limit
+                            if (selectionOrder.Length < 32)
+                            {
+                                queue.Enqueue(neighborTri);
+                            }
                         }
                     }
                 }
@@ -1337,10 +1447,38 @@ namespace Swole.Modding
             NativeArray<int> nativeNeighborData = new NativeArray<int>(neighborData.ToArray(), Allocator.TempJob);
             NativeArray<float> blurredMaskingMap = new NativeArray<float>(bodyVerts.Length, Allocator.TempJob);
 
+            // Flatten welded groups for job system and build vertex-to-group lookup
+            List<int> weldedGroupData = new List<int>();
+            List<int> weldedGroupOffsets = new List<int>();
+            int[] vertexToGroupIndex = new int[bodyVerts.Length];
+            for (int i = 0; i < vertexToGroupIndex.Length; i++) vertexToGroupIndex[i] = -1; // -1 = not welded
+
+            int currentGroupIndex = 0;
+            foreach (var group in weldedGroups.Values)
+            {
+                weldedGroupOffsets.Add(weldedGroupData.Count);
+                foreach (int vertexIndex in group)
+                {
+                    weldedGroupData.Add(vertexIndex);
+                    vertexToGroupIndex[vertexIndex] = currentGroupIndex;
+                }
+                currentGroupIndex++;
+            }
+            weldedGroupOffsets.Add(weldedGroupData.Count); // Add final offset for bounds checking
+
+            NativeArray<int> nativeWeldedGroupOffsets = new NativeArray<int>(weldedGroupOffsets.ToArray(), Allocator.TempJob);
+            NativeArray<int> nativeWeldedGroupData = new NativeArray<int>(weldedGroupData.ToArray(), Allocator.TempJob);
+            NativeArray<int> nativeVertexToGroupIndex = new NativeArray<int>(vertexToGroupIndex, Allocator.TempJob);
+
             // Run multiple blur passes for heavy smoothing
             int blurPasses = 1024;
+            /*int batchSize = 32; // Complete every N passes to prevent job queue overflow
+
+            JobHandle previousHandle = default;
+
             for (int pass = 0; pass < blurPasses; pass++)
             {
+                // Blur: always read from maskingMap, write to blurredMaskingMap
                 var blurJob = new DirectionalBlurJob
                 {
                     inputMasking = maskingMap,
@@ -1350,33 +1488,57 @@ namespace Swole.Modding
                     blurStrength = 0.99f
                 };
 
-                JobHandle blurHandle = blurJob.Schedule(bodyVerts.Length, 64);
-                blurHandle.Complete();
+                JobHandle blurHandle = blurJob.Schedule(bodyVerts.Length, 64, previousHandle);
 
-                // Swap buffers for next pass
-                var temp = maskingMap;
-                maskingMap = blurredMaskingMap;
-                blurredMaskingMap = temp;
-
-                // CRITICAL: Synchronize welded vertices after each blur pass
-                // All welded vertices must have the same value
-                foreach (var group in weldedGroups.Values)
+                // Sync: read blur output (blurredMaskingMap), write back to maskingMap
+                var syncJob = new SyncWeldedVerticesJob
                 {
-                    // Average the blurred values across the welded group
-                    float avgMasking = 0f;
-                    foreach (int idx in group)
-                    {
-                        avgMasking += maskingMap[idx];
-                    }
-                    avgMasking /= group.Count;
+                    inputMasking = blurredMaskingMap,
+                    outputMasking = maskingMap,
+                    weldedGroupOffsets = nativeWeldedGroupOffsets,
+                    weldedGroupData = nativeWeldedGroupData,
+                    vertexToGroupIndex = nativeVertexToGroupIndex
+                };
 
-                    // Apply the same value to ALL vertices in the group
-                    foreach (int idx in group)
-                    {
-                        maskingMap[idx] = avgMasking;
-                    }
+                previousHandle = syncJob.Schedule(bodyVerts.Length, 64, blurHandle);
+
+                // CRITICAL: Complete in batches to prevent Unity job scheduler deadlock
+                // Without this, 1024 chained jobs can overflow the job system's internal queue
+                if ((pass + 1) % batchSize == 0 || pass == blurPasses - 1)
+                {
+                    previousHandle.Complete();
+                    previousHandle = default; 
                 }
-            }
+            }  */
+
+            // Allocate a temporary 3rd tracking buffer for the sync ping-pong step
+            var syncMaskingMap = new NativeArray<float>(maskingMap.Length, Allocator.TempJob);  
+
+            var singleFrameJob = new CombinedBlurAndSyncJob
+            {
+                maskingMap = maskingMap,
+                blurredMaskingMap = blurredMaskingMap,
+                syncMaskingMap = syncMaskingMap,
+                neighborOffsets = nativeNeighborOffsets,
+                neighborData = nativeNeighborData,
+                weldedGroupOffsets = nativeWeldedGroupOffsets,
+                weldedGroupData = nativeWeldedGroupData,
+                vertexToGroupIndex = nativeVertexToGroupIndex,
+                totalBlurPasses = blurPasses,
+                blurStrength = 0.99f,
+                totalVertices = bodyVerts.Length
+            };
+
+            // 1. Schedule EXACTLY one job handle
+            JobHandle finalHandle = singleFrameJob.Schedule();
+
+            // 2. Call Complete EXACTLY once. Burst handles the thousands of iterations instantly.
+            finalHandle.Complete();
+
+            // 3. Dispose of temporary buffer
+            syncMaskingMap.Dispose();
+
+            // Result is always in maskingMap after sync - no swap needed!
 
             // Apply minMaskThreshold AFTER blurring is complete
             var finalResult = new List<MaskedVertex>();
@@ -1406,6 +1568,9 @@ namespace Swole.Modding
             blurredMaskingMap.Dispose();
             nativeNeighborOffsets.Dispose();
             nativeNeighborData.Dispose();
+            nativeWeldedGroupOffsets.Dispose();
+            nativeWeldedGroupData.Dispose();
+            nativeVertexToGroupIndex.Dispose();
 
             return finalResult.ToArray();
         }
@@ -1477,6 +1642,164 @@ namespace Swole.Modding
                 }
 
                 outputMasking[v] = blurred;
+            }
+        }
+
+        // Job to synchronize masking values across welded vertices
+        [BurstCompile]
+        private struct SyncWeldedVerticesJob : IJobParallelFor
+        {
+            [ReadOnly] public NativeArray<float> inputMasking;
+            [WriteOnly] public NativeArray<float> outputMasking;
+            [ReadOnly] public NativeArray<int> weldedGroupOffsets;
+            [ReadOnly] public NativeArray<int> weldedGroupData;
+            [ReadOnly] public NativeArray<int> vertexToGroupIndex;
+
+            public void Execute(int vertexIndex)
+            {
+                int groupIndex = vertexToGroupIndex[vertexIndex];
+
+                // If vertex is not part of any welded group, just copy the value
+                if (groupIndex < 0)
+                {
+                    outputMasking[vertexIndex] = inputMasking[vertexIndex];
+                    return;
+                }
+
+                int start = weldedGroupOffsets[groupIndex];
+                int end = weldedGroupOffsets[groupIndex + 1];
+
+                // Calculate average masking across all vertices in this welded group
+                float sum = 0f;
+                int count = end - start;
+
+                for (int i = start; i < end; i++)
+                {
+                    int weldedVertexIndex = weldedGroupData[i];
+                    sum += inputMasking[weldedVertexIndex];
+                }
+
+                float avgMasking = sum / count;
+
+                // Write the average to THIS vertex only (no race condition)
+                outputMasking[vertexIndex] = avgMasking;
+            }
+        }
+
+        [BurstCompile(FloatMode = FloatMode.Fast, FloatPrecision = FloatPrecision.Standard, CompileSynchronously = true)]
+        public struct CombinedBlurAndSyncJob : IJob
+        {
+            // Pass 3 arrays to swap cleanly without race conditions
+            public NativeArray<float> maskingMap;         // Buffer A
+            public NativeArray<float> blurredMaskingMap;  // Buffer B
+            public NativeArray<float> syncMaskingMap;     // Buffer C
+
+            [ReadOnly] public NativeArray<int> neighborOffsets;
+            [ReadOnly] public NativeArray<int> neighborData;
+            [ReadOnly] public NativeArray<int> weldedGroupOffsets;
+            [ReadOnly] public NativeArray<int> weldedGroupData;
+            [ReadOnly] public NativeArray<int> vertexToGroupIndex;
+
+            public int totalBlurPasses;
+            public float blurStrength;
+            public int totalVertices;
+
+            public void Execute()
+            {
+                // Treat 'maskingMap' as our active source buffer at the start
+                // We use boolean pointers to determine which buffer is source vs destination
+                bool readFromBufferA = true;
+
+                for (int pass = 0; pass < totalBlurPasses; pass++)
+                {
+                    // Pick our active buffers for this specific pass
+                    NativeArray<float> currentSource = readFromBufferA ? maskingMap : syncMaskingMap;
+                    NativeArray<float> currentBlurDest = blurredMaskingMap;
+                    NativeArray<float> currentSyncDest = readFromBufferA ? syncMaskingMap : maskingMap;
+
+                    // STEP 1: BLUR PASS (Loop through every vertex)
+                    for (int v = 0; v < totalVertices; v++)
+                    {
+                        float currentMasking = currentSource[v];
+                        int start = neighborOffsets[v];
+                        int end = v < neighborOffsets.Length - 1 ? neighborOffsets[v + 1] : neighborData.Length;
+
+                        if (start >= end)
+                        {
+                            currentBlurDest[v] = currentMasking;
+                            continue;
+                        }
+
+                        float neighborSum = 0f;
+                        int neighborCount = 0;
+
+                        for (int i = start; i < end; i++)
+                        {
+                            int neighborIdx = neighborData[i];
+                            neighborSum += currentSource[neighborIdx]; // Read safely from immutable source
+                            neighborCount++;
+                        }
+
+                        if (neighborCount == 0)
+                        {
+                            currentBlurDest[v] = currentMasking;
+                            continue;
+                        }
+
+                        float avgNeighborMasking = neighborSum / neighborCount;
+                        float blurred;
+
+                        if (currentMasking < 0.001f)
+                        {
+                            blurred = currentMasking;
+                        }
+                        else if (avgNeighborMasking < currentMasking)
+                        {
+                            blurred = math.lerp(currentMasking, avgNeighborMasking, blurStrength);
+                        }
+                        else
+                        {
+                            blurred = math.lerp(currentMasking, avgNeighborMasking, blurStrength * 0.1f);
+                        }
+
+                        currentBlurDest[v] = blurred; // Write cleanly to scratchpad buffer
+                    }
+
+                    // STEP 2: SYNC PASS (Loop through every vertex)
+                    for (int v = 0; v < totalVertices; v++)
+                    {
+                        int groupIndex = vertexToGroupIndex[v];
+
+                        if (groupIndex < 0)
+                        {
+                            currentSyncDest[v] = currentBlurDest[v];
+                            continue;
+                        }
+
+                        int start = weldedGroupOffsets[groupIndex];
+                        int end = weldedGroupOffsets[groupIndex + 1];
+
+                        float sum = 0f;
+                        int count = end - start;
+
+                        for (int i = start; i < end; i++)
+                        {
+                            int weldedVertexIndex = weldedGroupData[i];
+                            sum += currentBlurDest[weldedVertexIndex]; // Read from completed blur pass data
+                        }
+
+                        currentSyncDest[v] = sum / count; // Write back to the source for the next pass
+                    }
+
+                    // Ping-pong: the destination sync map becomes the next pass's source map
+                    readFromBufferA = !readFromBufferA;
+                }
+
+                // Final Safety Check: If we ended on an odd pass, copy results back to maskingMap
+                if (!readFromBufferA)
+                {
+                    maskingMap.CopyFrom(syncMaskingMap);
+                }
             }
         }
 

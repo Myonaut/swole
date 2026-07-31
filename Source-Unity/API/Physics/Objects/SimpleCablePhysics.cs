@@ -224,11 +224,19 @@ namespace Swole.API.Unity
                 if (i == 1) rbA.isKinematic = true; 
                 if (i == transformChain.Length - 1) rbB.isKinematic = true;
 
+#if UNITY_6000_0_OR_NEWER
+                rbA.linearDamping = segmentDrag;
+                rbB.linearDamping = segmentDrag;
+
+                rbA.angularDamping = segmentAngularDrag;
+                rbB.angularDamping = segmentAngularDrag;
+#else
                 rbA.drag = segmentDrag;
                 rbB.drag = segmentDrag;
 
                 rbA.angularDrag = segmentAngularDrag;
                 rbB.angularDrag = segmentAngularDrag;
+#endif
 
                 rbA.mass = segmentMass;
                 rbB.mass = segmentMass;

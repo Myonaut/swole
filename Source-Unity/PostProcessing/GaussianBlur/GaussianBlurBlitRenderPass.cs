@@ -1,5 +1,6 @@
 #if (UNITY_STANDALONE || UNITY_EDITOR)
 
+using System;
 using System.Collections;
 using System.Collections.Generic;
 
@@ -26,11 +27,14 @@ namespace Swole
         {
             material = new Material(Shader.Find("Hidden/GaussianBlur"));
 
-            blurTextureDescriptor = new RenderTextureDescriptor(Screen.width, Screen.height, RenderTextureFormat.Default, 0);
+            blurTextureDescriptor = new RenderTextureDescriptor(Screen.width, Screen.height, RenderTextureFormat.Default, 0); 
 
             return true;
         }
 
+#if UNITY_6000_0_OR_NEWER
+        [Obsolete]
+#endif
         public override void Configure(CommandBuffer cmd, RenderTextureDescriptor cameraTextureDescriptor)
         {
 
@@ -54,6 +58,9 @@ namespace Swole
             base.Configure(cmd, cameraTextureDescriptor);
         }
 
+#if UNITY_6000_0_OR_NEWER
+        [Obsolete]
+#endif
         public override void Execute(ScriptableRenderContext context, ref RenderingData renderingData)
         {
 

@@ -21,7 +21,7 @@ namespace Swole.API.Unity
          * 
          */
 
-
+         
         protected const float _PI_2 = Mathf.PI * 2f;
         protected const float _RPM_TO_RPS = _PI_2 / 60f;
         protected const float _RPS_TO_RPM = 60f / _PI_2;
@@ -191,7 +191,11 @@ namespace Swole.API.Unity
 
             //public PhysicMaterial forwardPhysicsMaterial;
             //public PhysicMaterial sidewaysPhysicsMaterial;
+#if UNITY_6000_0_OR_NEWER
+            public PhysicsMaterial physicsMaterial;
+#else
             public PhysicMaterial physicsMaterial;
+#endif
 
             [Tooltip("Curve for how much longitudinal slip affects the wheel's traction. x-axis (0-1) is the slip ratio, y-axis (0-1) is a multiplier of traction force.")]
             public AnimationCurve longitudinalSlipCurve;
@@ -409,41 +413,69 @@ namespace Swole.API.Unity
             }
         }
 
+#if UNITY_6000_0_OR_NEWER
+        private static PhysicsMaterial defaultForwardWheelPhysicsMaterial;
+        public static PhysicsMaterial DefaultForwardWheelPhysicsMaterial
+#else
         private static PhysicMaterial defaultForwardWheelPhysicsMaterial;
         public static PhysicMaterial DefaultForwardWheelPhysicsMaterial
+#endif
         {
             get
             {
                 if (defaultForwardWheelPhysicsMaterial == null)
                 {
+#if UNITY_6000_0_OR_NEWER
+                    defaultForwardWheelPhysicsMaterial = new PhysicsMaterial("DefaultForwardWheelPhysicsMaterial")
+#else
                     defaultForwardWheelPhysicsMaterial = new PhysicMaterial("DefaultForwardWheelPhysicsMaterial")
+#endif
                     {
                         dynamicFriction = 0.95f,
                         staticFriction = 0.95f,
                         bounciness = 0f,
+#if UNITY_6000_0_OR_NEWER
+                        frictionCombine = PhysicsMaterialCombine.Multiply,
+                        bounceCombine = PhysicsMaterialCombine.Multiply
+#else
                         frictionCombine = PhysicMaterialCombine.Multiply,
                         bounceCombine = PhysicMaterialCombine.Multiply
+#endif
                     };
                 }
 
                 return defaultForwardWheelPhysicsMaterial;
             }
         }
+#if UNITY_6000_0_OR_NEWER
+        private static PhysicsMaterial defaultSidewaysWheelPhysicsMaterial;
+        public static PhysicsMaterial DefaultSidewaysWheelPhysicsMaterial
+#else
         private static PhysicMaterial defaultSidewaysWheelPhysicsMaterial;
         public static PhysicMaterial DefaultSidewaysWheelPhysicsMaterial
+#endif
         {
             get
             {
                 if (defaultSidewaysWheelPhysicsMaterial == null)
                 {
+#if UNITY_6000_0_OR_NEWER
+                    defaultSidewaysWheelPhysicsMaterial = new PhysicsMaterial("DefaultSidewaysWheelPhysicsMaterial")
+#else
                     defaultSidewaysWheelPhysicsMaterial = new PhysicMaterial("DefaultSidewaysWheelPhysicsMaterial")
+#endif
                     {
                         dynamicFriction = 0.5f,
                         staticFriction = 0.95f,
 
                         bounciness = 0f,
+#if UNITY_6000_0_OR_NEWER
+                        frictionCombine = PhysicsMaterialCombine.Multiply,
+                        bounceCombine = PhysicsMaterialCombine.Multiply
+#else
                         frictionCombine = PhysicMaterialCombine.Multiply,
                         bounceCombine = PhysicMaterialCombine.Multiply
+#endif
                     };
                 }
 
@@ -522,7 +554,11 @@ namespace Swole.API.Unity
             float gravityMag = gravity.magnitude;
             var gravityDir = gravityMag > 0f ? gravity / gravityMag : gravity;
 
+#if UNITY_6000_0_OR_NEWER
+            carVelocity = carBody.linearVelocity;
+#else
             carVelocity = carBody.velocity;
+#endif
             carSpeed = carVelocity.magnitude;
 
             carDriveSpeed = Vector3.Dot(carBody.rotation * Vector3.forward, carVelocity);
@@ -562,7 +598,11 @@ namespace Swole.API.Unity
             */
             
 
+#if UNITY_6000_0_OR_NEWER
+            carVelocity = carBody.linearVelocity;
+#else
             carVelocity = carBody.velocity;
+#endif
             
             /*if (grounded)
             {
@@ -571,8 +611,12 @@ namespace Swole.API.Unity
 
                 gravity = gravity - gravNerf * Mathf.Max(Vector3.Dot(groundNormal, -gravityDir)); 
             }*/
-            carVelocity = carVelocity + gravity * Time.fixedDeltaTime; 
+            carVelocity = carVelocity + gravity * Time.fixedDeltaTime;
+#if UNITY_6000_0_OR_NEWER
+            carBody.linearVelocity = carVelocity;
+#else
             carBody.velocity = carVelocity;
+#endif
         }
 
         [Range(0f, 0.2f)]

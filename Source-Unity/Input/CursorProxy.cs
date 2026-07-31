@@ -64,9 +64,14 @@ namespace Swole
         public void UpdateRaycasterListLocal()
         {
             if (raycasters == null) raycasters = new List<BaseRaycaster>();
-            raycasters.Clear();
+            raycasters.Clear(); 
 
+#if UNITY_6000_0_OR_NEWER
+            raycasters.AddRange(GameObject.FindObjectsByType<BaseRaycaster>(FindObjectsInactive.Include, FindObjectsSortMode.None));
+#else
             raycasters.AddRange(GameObject.FindObjectsOfType<BaseRaycaster>(true));
+#endif
+
         }
 
         public static void UpdateRaycasterList()

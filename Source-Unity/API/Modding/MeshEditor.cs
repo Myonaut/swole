@@ -2353,24 +2353,37 @@ namespace Swole.Modding
         private delegate void AddSkinnedVertex8DataElementToNativeCollection(int index, SkinnedVertex8Reference data);
         private static void AddSkinnedVertex8DataToNativeCollection(SkinnedMeshRenderer smr, ICollection<Vector3> vertices, Matrix4x4[] perVertexSkinning, AddSkinnedVertex8DataElementToNativeCollection setElement)
         {
+            AddSkinnedVertex8DataToNativeCollection(smr, vertices, null, 0f, perVertexSkinning, setElement);
+        }
+        private static void AddSkinnedVertex8DataToNativeCollection(SkinnedMeshRenderer smr, ICollection<Vector3> vertices, ICollection<Vector3> vertexDeltas, float vertexDeltasWeight, Matrix4x4[] perVertexSkinning, AddSkinnedVertex8DataElementToNativeCollection setElement)
+        {
             using (var boneWeights = smr.sharedMesh.GetAllBoneWeights())
             {
                 using (var boneCounts = smr.sharedMesh.GetBonesPerVertex())
                 {
-                    AddSkinnedVertex8DataToNativeCollection(smr, vertices, boneWeights, boneCounts, perVertexSkinning, setElement);
+                    AddSkinnedVertex8DataToNativeCollection(smr, vertices, vertexDeltas, vertexDeltasWeight, boneWeights, boneCounts, perVertexSkinning, setElement);
                 }
             }
         }
         private static void AddSkinnedVertex8DataToNativeCollection(SkinnedMeshRenderer smr, ICollection<Vector3> vertices, NativeArray<BoneWeight1> boneWeights, NativeArray<byte> boneCounts, Matrix4x4[] perVertexSkinning, AddSkinnedVertex8DataElementToNativeCollection setElement)
         {
+            AddSkinnedVertex8DataToNativeCollection(smr, vertices, null, 0f, boneWeights, boneCounts, perVertexSkinning, setElement);
+        }
+        private static void AddSkinnedVertex8DataToNativeCollection(SkinnedMeshRenderer smr, ICollection<Vector3> vertices, ICollection<Vector3> vertexDeltas, float vertexDeltasWeight, NativeArray<BoneWeight1> boneWeights, NativeArray<byte> boneCounts, Matrix4x4[] perVertexSkinning, AddSkinnedVertex8DataElementToNativeCollection setElement)
+        {
             if (vertices == null) vertices = smr.sharedMesh.vertices;
             if (perVertexSkinning == null) perVertexSkinning = RealtimeMesh.GetPerVertexSkinningMatrices(smr.bones, smr.sharedMesh.bindposes, boneWeights, boneCounts);
 
+            bool hasVertexDeltas = vertexDeltas != null && vertexDeltasWeight > 0f;
+            var vertexDeltasEnu = vertexDeltas?.GetEnumerator(); 
             int boneWeightIndex = 0;
             int vIndex = 0;
             foreach (var vert in vertices)
             {
-                var skinnedData = new SkinnedVertex8() { skinningMatrix = perVertexSkinning[vIndex], worldPosition = perVertexSkinning[vIndex].MultiplyPoint(vert) };
+                var vert_ = vert;
+                if (hasVertexDeltas && vertexDeltasEnu.MoveNext()) vert_ += vertexDeltasEnu.Current * vertexDeltasWeight;
+
+                var skinnedData = new SkinnedVertex8() { skinningMatrix = perVertexSkinning[vIndex], worldPosition = perVertexSkinning[vIndex].MultiplyPoint(vert_) };
 
                 var boneWeightCount = boneCounts[vIndex];
                 var localBoneWeights = VertexBoneWeight8.Empty;
@@ -2423,35 +2436,52 @@ namespace Swole.Modding
                 setElement(vIndex, new SkinnedVertex8Reference() { vertexIndex = vIndex, vertex = skinnedData });
                 vIndex++;
             }
+
+            vertexDeltasEnu?.Dispose();
         }
+
         public static NativeArray<SkinnedVertex8Reference> GetSkinnedVertex8Data(SkinnedMeshRenderer smr, ICollection<Vector3> vertices, NativeArray<BoneWeight1> boneWeights, NativeArray<byte> boneCounts, Matrix4x4[] perVertexSkinning, NativeArray<SkinnedVertex8Reference> outputArray = default)
+            => GetSkinnedVertex8Data(smr, vertices, null, 0f, boneWeights, boneCounts, perVertexSkinning, outputArray);
+        public static NativeArray<SkinnedVertex8Reference> GetSkinnedVertex8Data(SkinnedMeshRenderer smr, ICollection<Vector3> vertices, ICollection<Vector3> vertexDeltas, float vertexDeltasWeight, NativeArray<BoneWeight1> boneWeights, NativeArray<byte> boneCounts, Matrix4x4[] perVertexSkinning, NativeArray<SkinnedVertex8Reference> outputArray = default)
         {
             if (!outputArray.IsCreated) outputArray = new NativeArray<SkinnedVertex8Reference>(smr.sharedMesh.vertexCount, Allocator.Persistent);
-            AddSkinnedVertex8DataToNativeCollection(smr, vertices, boneWeights, boneCounts, perVertexSkinning, (int index, SkinnedVertex8Reference data) => outputArray[index] = data);
+            AddSkinnedVertex8DataToNativeCollection(smr, vertices, vertexDeltas, vertexDeltasWeight, boneWeights, boneCounts, perVertexSkinning, (int index, SkinnedVertex8Reference data) => outputArray[index] = data);
             return outputArray;
         }
+
         public static NativeArray<SkinnedVertex8Reference> GetSkinnedVertex8Data(SkinnedMeshRenderer smr, ICollection<Vector3> vertices, Matrix4x4[] perVertexSkinning, NativeArray<SkinnedVertex8Reference> outputArray = default)
+            => GetSkinnedVertex8Data(smr, vertices, null, 0f, perVertexSkinning, outputArray);
+        public static NativeArray<SkinnedVertex8Reference> GetSkinnedVertex8Data(SkinnedMeshRenderer smr, ICollection<Vector3> vertices, ICollection<Vector3> vertexDeltas, float vertexDeltasWeight, Matrix4x4[] perVertexSkinning, NativeArray<SkinnedVertex8Reference> outputArray = default)
         {
             if (!outputArray.IsCreated) outputArray = new NativeArray<SkinnedVertex8Reference>(smr.sharedMesh.vertexCount, Allocator.Persistent);
-            AddSkinnedVertex8DataToNativeCollection(smr, vertices, perVertexSkinning, (int index, SkinnedVertex8Reference data) => outputArray[index] = data);
+            AddSkinnedVertex8DataToNativeCollection(smr, vertices, vertexDeltas, vertexDeltasWeight, perVertexSkinning, (int index, SkinnedVertex8Reference data) => outputArray[index] = data);
             return outputArray;
         }
-        public static NativeArray<SkinnedVertex8Reference> GetSkinnedVertex8Data(SkinnedMeshRenderer smr, ICollection<Vector3> vertices, NativeArray<SkinnedVertex8Reference> outputArray = default) => GetSkinnedVertex8Data(smr, vertices, null, outputArray);
+
+        public static NativeArray<SkinnedVertex8Reference> GetSkinnedVertex8Data(SkinnedMeshRenderer smr, ICollection<Vector3> vertices, ICollection<Vector3> vertexDeltas, float vertexDeltasWeight, NativeArray<SkinnedVertex8Reference> outputArray = default) => GetSkinnedVertex8Data(smr, vertices, vertexDeltas, vertexDeltasWeight, null, outputArray);
+        public static NativeArray<SkinnedVertex8Reference> GetSkinnedVertex8Data(SkinnedMeshRenderer smr, ICollection<Vector3> vertices, NativeArray<SkinnedVertex8Reference> outputArray = default) => GetSkinnedVertex8Data(smr, vertices, null, 0f, null, outputArray);
         public static NativeArray<SkinnedVertex8Reference> GetSkinnedVertex8Data(SkinnedMeshRenderer smr, Matrix4x4[] perVertexSkinning, NativeArray<SkinnedVertex8Reference> outputArray = default) => GetSkinnedVertex8Data(smr, null, perVertexSkinning, outputArray);
         public static NativeArray<SkinnedVertex8Reference> GetSkinnedVertex8Data(SkinnedMeshRenderer smr, NativeArray<SkinnedVertex8Reference> outputArray = default) => GetSkinnedVertex8Data(smr, null, null, outputArray);
+
         public static NativeList<SkinnedVertex8Reference> GetSkinnedVertex8DataAsList(SkinnedMeshRenderer smr, ICollection<Vector3> vertices, NativeArray<BoneWeight1> boneWeights, NativeArray<byte> boneCounts, Matrix4x4[] perVertexSkinning, NativeList<SkinnedVertex8Reference> outputList = default)
+            => GetSkinnedVertex8DataAsList(smr, vertices, null, 0f, boneWeights, boneCounts, perVertexSkinning, outputList);
+        public static NativeList<SkinnedVertex8Reference> GetSkinnedVertex8DataAsList(SkinnedMeshRenderer smr, ICollection<Vector3> vertices, ICollection<Vector3> vertexDeltas, float vertexDeltasWeight, NativeArray<BoneWeight1> boneWeights, NativeArray<byte> boneCounts, Matrix4x4[] perVertexSkinning, NativeList<SkinnedVertex8Reference> outputList = default)
         {
             if (!outputList.IsCreated) outputList = new NativeList<SkinnedVertex8Reference>(smr.sharedMesh.vertexCount, Allocator.Persistent);
-            AddSkinnedVertex8DataToNativeCollection(smr, vertices, boneWeights, boneCounts, perVertexSkinning, (int index, SkinnedVertex8Reference data) => outputList.Add(data));
+            AddSkinnedVertex8DataToNativeCollection(smr, vertices, vertexDeltas, vertexDeltasWeight, boneWeights, boneCounts, perVertexSkinning, (int index, SkinnedVertex8Reference data) => outputList.Add(data));
             return outputList;
         }
-        public static NativeList<SkinnedVertex8Reference> GetSkinnedVertex8DataAsList(SkinnedMeshRenderer smr, ICollection<Vector3> vertices, Matrix4x4[] perVertexSkinning, NativeList<SkinnedVertex8Reference> outputList = default)
+
+        public static NativeList<SkinnedVertex8Reference> GetSkinnedVertex8DataAsList(SkinnedMeshRenderer smr, ICollection<Vector3> vertices, Matrix4x4[] perVertexSkinning, NativeList<SkinnedVertex8Reference> outputList = default) => GetSkinnedVertex8DataAsList(smr, vertices, null, 0f, perVertexSkinning, outputList);    
+        public static NativeList<SkinnedVertex8Reference> GetSkinnedVertex8DataAsList(SkinnedMeshRenderer smr, ICollection<Vector3> vertices, ICollection<Vector3> vertexDeltas, float vertexDeltasWeight, Matrix4x4[] perVertexSkinning, NativeList<SkinnedVertex8Reference> outputList = default)
         {
             if (!outputList.IsCreated) outputList = new NativeList<SkinnedVertex8Reference>(smr.sharedMesh.vertexCount, Allocator.Persistent);
-            AddSkinnedVertex8DataToNativeCollection(smr, vertices, perVertexSkinning, (int index, SkinnedVertex8Reference data) => outputList.Add(data));
+            AddSkinnedVertex8DataToNativeCollection(smr, vertices, vertexDeltas, vertexDeltasWeight, perVertexSkinning, (int index, SkinnedVertex8Reference data) => outputList.Add(data));
             return outputList;
         }
-        public static NativeList<SkinnedVertex8Reference> GetSkinnedVertex8DataAsList(SkinnedMeshRenderer smr, ICollection<Vector3> vertices, NativeList<SkinnedVertex8Reference> outputList = default) => GetSkinnedVertex8DataAsList(smr, vertices, null, outputList);
+
+        public static NativeList<SkinnedVertex8Reference> GetSkinnedVertex8DataAsList(SkinnedMeshRenderer smr, ICollection<Vector3> vertices, ICollection<Vector3> vertexDeltas, float vertexDeltasWeight, NativeList<SkinnedVertex8Reference> outputList = default) => GetSkinnedVertex8DataAsList(smr, vertices, vertexDeltas, vertexDeltasWeight, null, outputList);
+        public static NativeList<SkinnedVertex8Reference> GetSkinnedVertex8DataAsList(SkinnedMeshRenderer smr, ICollection<Vector3> vertices, NativeList<SkinnedVertex8Reference> outputList = default) => GetSkinnedVertex8DataAsList(smr, vertices, null, 0f, null, outputList);
         public static NativeList<SkinnedVertex8Reference> GetSkinnedVertex8DataAsList(SkinnedMeshRenderer smr, Matrix4x4[] perVertexSkinning, NativeList<SkinnedVertex8Reference> outputList = default) => GetSkinnedVertex8DataAsList(smr, null, perVertexSkinning, outputList);
         public static NativeList<SkinnedVertex8Reference> GetSkinnedVertex8DataAsList(SkinnedMeshRenderer smr, NativeList<SkinnedVertex8Reference> outputList = default) => GetSkinnedVertex8DataAsList(smr, null, null, outputList);
 
@@ -2542,6 +2572,81 @@ namespace Swole.Modding
             }
 
             return outputList;
+        }
+
+        [BurstCompile]
+        public struct CalculateVertexInfluencePerBodyJob : IJobParallelFor
+        {
+            public float maxDistance;
+            public float distanceBindingWeight;
+            public float scoreMultiplier;
+            public int referenceIndex;
+            public int bodyCount;
+
+            [ReadOnly]
+            public NativeList<float> mask;
+
+            [ReadOnly]
+            public NativeList<SkinnedVertex8Reference> referenceSkinnedVertices;
+            [ReadOnly]
+            public NativeList<int> referenceVertexIndices;
+
+            [ReadOnly]
+            public NativeList<SkinnedVertex8Reference> localSkinnedVertices;
+            [ReadOnly]
+            public NativeList<int> localVertexIndices;
+
+            [NativeDisableParallelForRestriction]
+            public NativeArray<VertexInfluence2> perBodyInfluences;
+
+            public void Execute(int index)
+            {
+                int localIndex = localVertexIndices[index];
+                SkinnedVertex8Reference localVertex = localSkinnedVertices[localIndex];
+
+                // Calculate the index for this clothing vertex + body mesh pair
+                int influenceIndex = localIndex * bodyCount + referenceIndex;
+
+                var inf2 = perBodyInfluences[influenceIndex];
+
+                // Find the best matching vertex from this specific body mesh
+                for (int a = 0; a < referenceVertexIndices.Length; a++)
+                {
+                    var refVertIndex = referenceVertexIndices[a];
+                    var refVertex = referenceSkinnedVertices[refVertIndex]; 
+
+                    float distance = math.distance(localVertex.vertex.worldPosition, refVertex.vertex.worldPosition);
+                    if (distance > maxDistance) continue;
+
+                    float score = localVertex.vertex.ComparisonScore(refVertex.vertex, distance, distanceBindingWeight) * scoreMultiplier; 
+                    if (score > inf2.influenceA.score)
+                    {
+                        inf2.influenceB = inf2.influenceA;
+                        inf2.influenceA = new VertexInfluence
+                        {
+                            meshIndex = referenceIndex,
+                            vertexIndex = refVertIndex,
+                            score = score,
+                            weight = score
+                        };
+                    }
+                    else if (score > inf2.influenceB.score)
+                    {
+                        inf2.influenceB = new VertexInfluence
+                        {
+                            meshIndex = referenceIndex,
+                            vertexIndex = refVertIndex,
+                            score = score,
+                            weight = score
+                        };
+                    }
+                }
+
+                float totalScore = inf2.influenceA.score + inf2.influenceB.score;
+                inf2.influenceA.weight = math.select(0f, inf2.influenceA.score / totalScore, totalScore > 0f) * mask[localIndex];
+                inf2.influenceB.weight = math.select(0f, inf2.influenceB.score / totalScore, totalScore > 0f) * mask[localIndex];
+                perBodyInfluences[influenceIndex] = inf2;
+            }
         }
 
         [BurstCompile]

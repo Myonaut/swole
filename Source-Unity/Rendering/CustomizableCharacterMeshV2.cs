@@ -8,6 +8,7 @@ using System.Runtime.CompilerServices;
 
 using UnityEngine;
 using UnityEngine.Events;
+using UnityEngine.Rendering;
 
 using Unity.Mathematics;
 using Unity.Collections;
@@ -235,9 +236,26 @@ namespace Swole.Morphing
                 }
             }
 
-            public void SetBustSizeUnsafe(float2 bustSize)
+            public void SetBustSize(float2 bustSize)
             {
                 ownerGroup.SetBustSizeUnsafe(localID, bustSize);
+            }
+            public void SetBustSize(float bustSize)
+            {
+                float2 bustValues = ownerGroup.GetBustSizeUnsafe(localID);
+                bustValues.x = bustSize;
+                ownerGroup.SetBustSizeUnsafe(localID, bustValues);
+            }
+            public void SetBustShape(float bustShape)
+            {
+                float2 bustValues = ownerGroup.GetBustSizeUnsafe(localID);
+                bustValues.y = bustShape;
+                ownerGroup.SetBustSizeUnsafe(localID, bustValues);
+            }
+
+            public float2 GetBustSize()
+            {
+                return ownerGroup.GetBustSizeUnsafe(localID);
             }
 
             public void SetMuscleGroupWeightUnsafe(int groupIndex, float2 massWeight)
@@ -924,12 +942,31 @@ namespace Swole.Morphing
 
             public const string _precalculatedSkinningKeyword = "USE_PRECALCULATED_SKINNING";
             public const string _vertexMaskKeyword = "USE_VERTEX_MASK";
-            public void ApplyMainMaterialOverrides(IEnumerable<Material> materials)
+
+            public void ApplyInitialMaterialOverrides(IEnumerable<Material> materials)
             {
                 if (materials == null) return;
-                foreach (var material in materials) ApplyMainMaterialOverrides(material);
+                foreach (var material in materials) ApplyInitialMaterialOverrides(material); 
             }
-            public Material ApplyMainMaterialOverrides(Material material)
+            public Material ApplyInitialMaterialOverrides(Material material) 
+            {
+                if (material != null)
+                {
+                    if (data != null)
+                    {
+                        material.SetBuffer(data.PerVertexDeltaDataPropertyName, PersistentJobDataTracker.GetEmptyGraphicsBuffer()); 
+                    }
+                }
+
+                return material;
+            }
+            public void ApplyMainMaterialOverrides(IEnumerable<Material> materials, bool includeBoneWeights = true)
+            {
+                if (materials == null) return;
+                foreach (var material in materials) ApplyMainMaterialOverrides(material, includeBoneWeights);
+            }
+
+            public Material ApplyMainMaterialOverrides(Material material, bool includeBoneWeights = true)
             {
                 if (material != null)
                 {
@@ -937,9 +974,12 @@ namespace Swole.Morphing
                     {
                         material.SetFloat(data.VertexCountPropertyName, data.vertexCount);
 
-                        material.SetFloat(data.MinMassShapeWeightPropertyName, data.minMassShapeWeight);                
+                        material.SetFloat(data.MinMassShapeWeightPropertyName, data.minMassShapeWeight);
 
-                        material.SetBuffer(data.SkinningDataPropertyName, data.BoneWeightsBuffer);
+                        if (includeBoneWeights)
+                        {
+                            material.SetBuffer(data.SkinningDataPropertyName, data.BoneWeightsBuffer);
+                        }
                         material.SetInteger(data.BoneCountPropertyName, data.BoneCount);
                         
                         material.SetVector(data.MuscleVertexGroupsBufferRangePropertyName, new Vector4(data.muscleGroups.x, data.muscleGroups.y, 0f, 0f));
@@ -983,7 +1023,9 @@ namespace Swole.Morphing
                             Debug.LogException(ex);
                         }
 
-                        for(int index = 0; index < data.VertexColorDeltaCount; index++)
+                        material.SetBuffer(data.StandaloneShapesControlPropertyName, PersistentJobDataTracker.GetEmptyGraphicsBuffer());  
+
+                        for (int index = 0; index < data.VertexColorDeltaCount; index++)
                         {
                             var delta = data.GetVertexColorDeltaUnsafe(index);
                             if (delta == null || string.IsNullOrWhiteSpace(delta.indexPropertyName)) continue;
@@ -1048,7 +1090,6 @@ namespace Swole.Morphing
             public void ApplyVertexMaskMaterialOverrides(Material material)
             {
                 if (material == null) return;
-
                 material.SetBuffer(data.VertexMaskPropertyName, VertexMask);
                 material.EnableKeyword(_vertexMaskKeyword);
             }
@@ -1081,8 +1122,9 @@ namespace Swole.Morphing
             {
                 if (material == null) return null;
 
+                material = ApplyInitialMaterialOverrides(material);
                 material = ApplyMainMaterialOverrides(Instantiate(material));
-
+                
                 if (instanceBuffers != null)
                 {
                     foreach(var buffer in instanceBuffers)
@@ -1350,6 +1392,10 @@ namespace Swole.Morphing
             public void SetBustSizeUnsafe(int instanceIndex, float2 bustSize)
             {
                 bustSizes[instanceIndex] = bustSize;
+            }
+            public float2 GetBustSizeUnsafe(int instanceIndex)
+            {
+                return bustSizes[instanceIndex];
             }
 
             private NativeList<GroupControlWeight2> muscleGroupControlWeightsNext;
@@ -1768,7 +1814,7 @@ namespace Swole.Morphing
                         {
                             bustSizes = bustSizes,
                             bustSizeShapeIndex = meshShapeInfos[data.bustSizeShape],
-                            breastShapeIndex = meshShapeInfos[data.bustShapeShape],
+                            breastShapeIndex = meshShapeInfos[data.bustShapeShape], 
                             meshIndicesToUpdate = indicesToUpdate,
                             meshShapeDeltas = meshShapeDeltas,
                             meshShapeFrameWeights = meshShapeFrameWeights,
@@ -5903,6 +5949,9 @@ namespace Swole.Morphing
 
         #region Rendering
 
+        [SerializeField]
+        public ShadowCastingMode shadowCastingMode = ShadowCastingMode.On;
+
         public override bool CanRender => instance != null && instance.IsValid;
 
         protected override Renderer[] CreateRenderersForLOD(int lod, MeshLOD meshLOD, Transform renderersRoot, DefaultRenderedMesh defaultRenderedMesh)
@@ -5915,9 +5964,16 @@ namespace Swole.Morphing
             {
                 defaultRenderedMesh.meshFilter = renderersRoot.gameObject.AddComponent<MeshFilter>();
                 defaultRenderedMesh.meshFilter.sharedMesh = meshLOD.mesh;
-                defaultRenderedMesh.meshRenderer = renderersRoot.gameObject.AddComponent<MeshRenderer>();
+                defaultRenderedMesh.meshRenderer = renderersRoot.gameObject.AddComponent<MeshRenderer>(); 
                 defaultRenderedMesh.meshRenderer.sharedMaterials = MaterialInstances;
                 defaultRenderedMesh.meshRenderer.localBounds = bounds;
+                defaultRenderedMesh.meshRenderer.shadowCastingMode = shadowCastingMode;
+
+                if (defaultRenderedMesh.meshRenderer.enabled)
+                {
+                    defaultRenderedMesh.meshRenderer.enabled = false;
+                    defaultRenderedMesh.meshRenderer.enabled = true; 
+                }
 
                 renderers = new Renderer[] { defaultRenderedMesh.meshRenderer };
             }
@@ -5957,6 +6013,13 @@ namespace Swole.Morphing
                     for (int c = 0; c < renderSet.materialCount; c++) mats[c] = materials[renderSet.materialIndexStart + c];
                     meshRenderer.sharedMaterials = mats;
                     meshRenderer.localBounds = bounds;
+                    meshRenderer.shadowCastingMode = shadowCastingMode;
+
+                    if (meshRenderer.enabled)
+                    {
+                        meshRenderer.enabled = false;
+                        meshRenderer.enabled = true;
+                    }
 
                     renderers[b] = meshRenderer;
                 }
@@ -6055,6 +6118,16 @@ namespace Swole.Morphing
                     instance.SetVariationGroupWeightUnsafe(variationShapeIndex, groupIndex, weight);
                     instance.MarkForVariationUpdateUnsafe(); 
                 } 
+            }
+        }
+
+        protected override void OnSetBust(float size, float shape)
+        {
+            var prevData = instance.GetBustSize();
+            if (prevData.x != size || prevData.y != shape)
+            {
+                instance.SetBustSize(new float2(size, shape));
+                instance.MarkForPhysiqueUpdateUnsafe(); 
             }
         }
 
@@ -6273,12 +6346,12 @@ namespace Swole.Morphing
 
         protected UnityEvent OnVertexMaskReset;
 
-        public void ListenForVertexMaskReset(UnityAction listener)
+        public void ListenForVertexMaskRebuild(UnityAction listener)
         {
             if (OnVertexMaskReset == null) OnVertexMaskReset = new UnityEvent();
             OnVertexMaskReset.AddListener(listener);
         }
-        public void EndListenForVertexMaskReset(UnityAction listener)
+        public void EndListenForVertexMaskRebuild(UnityAction listener)
         {
             if (OnVertexMaskReset != null) OnVertexMaskReset.RemoveListener(listener);
         }
@@ -6288,7 +6361,7 @@ namespace Swole.Morphing
             OnVertexMaskReset?.Invoke();
         }
 
-        public void ResetVertexMask()
+        public void RebuildVertexMask()
         {
             if (instance == null || !instance.IsValid || !instance.OwnerGroup.UseVertexMask) return;
             var subData = SubData;
@@ -6296,21 +6369,67 @@ namespace Swole.Morphing
             NotifyVertexMaskReset();
         }
 
-        public void WriteToVertexMask(float[] weights, int inputArrayStartIndex = 0)
+        public void OverwriteVertexMask(float[] weights, int inputArrayStartIndex = 0)
         {
             if (instance == null || !instance.IsValid || !instance.OwnerGroup.UseVertexMask) return;
             var subData = SubData;
             instance.OwnerGroup.VertexMask.SetData(weights, inputArrayStartIndex, InstanceID * subData.VertexCount, subData.VertexCount);
+        }
+
+        public void OverwriteVertexMask(NativeArray<float> weights, int inputArrayStartIndex = 0)
+        {
+            if (instance == null || !instance.IsValid || !instance.OwnerGroup.UseVertexMask) return;
+            var subData = SubData;
+            instance.OwnerGroup.VertexMask.SetData(weights, inputArrayStartIndex, InstanceID * subData.VertexCount, subData.VertexCount);  
+        }
+
+        public void WriteToVertexMask(float[] weights, int inputArrayStartIndex = 0)
+        {
+            if (instance == null || !instance.IsValid || !instance.OwnerGroup.UseVertexMask) return;
+
+            var subData = SubData;
+            var vertexCount = subData.VertexCount;
+            using (var tempWeights = new NativeArray<float>(vertexCount, Allocator.Persistent))
+            {
+                var tempWeights_ = tempWeights;
+
+                var request = AsyncGPUReadback.RequestIntoNativeArray(ref tempWeights_, instance.OwnerGroup.VertexMask, vertexCount * sizeof(float), vertexCount * InstanceID);
+                request.WaitForCompletion();
+
+                for (int i = 0; i < weights.Length; i++)
+                {
+                    var w = weights[inputArrayStartIndex + i];
+                    tempWeights_[i] += w;
+                }
+
+                instance.OwnerGroup.VertexMask.SetData(tempWeights, 0, InstanceID * vertexCount, vertexCount);
+            }
         }
 
         public void WriteToVertexMask(NativeArray<float> weights, int inputArrayStartIndex = 0)
         {
-            if (instance == null || !instance.IsValid || !instance.OwnerGroup.UseVertexMask) return;
+            if (instance == null || !instance.IsValid || !instance.OwnerGroup.UseVertexMask) return; 
+
             var subData = SubData;
-            instance.OwnerGroup.VertexMask.SetData(weights, inputArrayStartIndex, InstanceID * subData.VertexCount, subData.VertexCount);
+            var vertexCount = subData.VertexCount;
+            using (var tempWeights = new NativeArray<float>(vertexCount, Allocator.Persistent))
+            {
+                var tempWeights_ = tempWeights;
+
+                var request = AsyncGPUReadback.RequestIntoNativeArray(ref tempWeights_, instance.OwnerGroup.VertexMask, vertexCount * sizeof(float), vertexCount * InstanceID);
+                request.WaitForCompletion();
+
+                for (int i = 0; i < weights.Length; i++)
+                {
+                    var w = weights[inputArrayStartIndex + i];
+                    tempWeights_[i] += w;
+                }
+
+                instance.OwnerGroup.VertexMask.SetData(tempWeights, 0, InstanceID * vertexCount, vertexCount);
+            }
         }
 
-        public void WriteToVertexMask(Swole.Modding.MaskedVertex[] weights, int inputArrayStartIndex = 0, int inputArrayCount = 0)
+        public void WriteToVertexMask(Swole.API.Unity.MaskedVertex[] weights, int inputArrayStartIndex = 0, int inputArrayCount = 0)
         {
             if (instance == null || !instance.IsValid || !instance.OwnerGroup.UseVertexMask) return;
 
@@ -6318,15 +6437,19 @@ namespace Swole.Morphing
 
             var subData = SubData;
             var vertexCount = subData.VertexCount;
-            using (var tempWeights = new NativeArray<float>(vertexCount, Allocator.Temp))
+            using (var tempWeights = new NativeArray<float>(vertexCount, Allocator.Persistent))
             {
                 var tempWeights_ = tempWeights;
+
+                var request = AsyncGPUReadback.RequestIntoNativeArray(ref tempWeights_, instance.OwnerGroup.VertexMask, vertexCount * sizeof(float), vertexCount * InstanceID); 
+                request.WaitForCompletion();
+
                 for (int i = 0; i < inputArrayCount; i++)
                 {
                     var w = weights[inputArrayStartIndex + i];
                     if (w.vertexIndex >= 0 && w.vertexIndex < vertexCount)
                     {
-                        tempWeights_[w.vertexIndex] = w.masking;
+                        tempWeights_[w.vertexIndex] += w.masking;
                     }
                 }
 
@@ -6334,20 +6457,24 @@ namespace Swole.Morphing
             }
         }
 
-        public void WriteToVertexMask(IEnumerable<Swole.Modding.MaskedVertex> weights)
+        public void WriteToVertexMask(IEnumerable<Swole.API.Unity.MaskedVertex> weights)
         {
             if (instance == null || !instance.IsValid || !instance.OwnerGroup.UseVertexMask) return;
 
             var subData = SubData;
             var vertexCount = subData.VertexCount;
-            using (var tempWeights = new NativeArray<float>(vertexCount, Allocator.Temp))
+            using (var tempWeights = new NativeArray<float>(vertexCount, Allocator.Persistent))
             {
                 var tempWeights_ = tempWeights;
-                foreach(var w in weights)
+
+                var request = AsyncGPUReadback.RequestIntoNativeArray(ref tempWeights_, instance.OwnerGroup.VertexMask, vertexCount * sizeof(float), vertexCount * InstanceID);
+                request.WaitForCompletion();
+
+                foreach (var w in weights)
                 {
                     if (w.vertexIndex >= 0 && w.vertexIndex < vertexCount)
                     {
-                        tempWeights_[w.vertexIndex] = w.masking;
+                        tempWeights_[w.vertexIndex] += w.masking;
                     }
                 }
 
@@ -6361,13 +6488,17 @@ namespace Swole.Morphing
 
             var subData = SubData;
             var vertexCount = subData.VertexCount;
-            using (var tempWeights = new NativeArray<float>(vertexCount, Allocator.Temp)) 
+            using (var tempWeights = new NativeArray<float>(vertexCount, Allocator.Persistent))
             {
                 var tempWeights_ = tempWeights;
+
+                var request = AsyncGPUReadback.RequestIntoNativeArray(ref tempWeights_, instance.OwnerGroup.VertexMask, vertexCount * sizeof(float), vertexCount * InstanceID);
+                request.WaitForCompletion();
+
                 int vertexIndex = 0;
                 foreach (var w in weights)
                 {
-                    tempWeights_[vertexIndex] = w;
+                    tempWeights_[vertexIndex] += w;
                     vertexIndex++;
                     if (vertexIndex >= vertexCount) break;
                 }

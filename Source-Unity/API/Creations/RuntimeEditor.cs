@@ -673,8 +673,10 @@ namespace Swole.API.Unity
             public Vector3 relativeOffset, relativeScale;
             public Quaternion relativeRotation;
         }
+#if BULKOUT_ENV
         private TransformManipulation currentTransformManipulation = default;
         private readonly List<Transform> tempManipTransforms = new List<Transform>();
+#endif
 
         private int draggedGizmoCount;
 

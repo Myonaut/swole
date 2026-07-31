@@ -554,6 +554,7 @@ namespace Swole.UI
 
             Vector3 startPos = canvasTransform.InverseTransformPoint(content.position);
 
+#if SWOLE_ENV
             void ShiftMembers()
             {
 
@@ -583,6 +584,7 @@ namespace Swole.UI
                 OnSlideEnd?.Invoke();
 
             }
+#endif
 
             if (time <= 0)
             {

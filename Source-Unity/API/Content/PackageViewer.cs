@@ -1887,9 +1887,10 @@ namespace Swole.API.Unity
         public static void OpenFileBrowserAndLoadTexture(LoadTextureFromFilePickerDelegate callbackTexture) => OpenFileBrowserAndLoadImage(null, callbackTexture);
         public static void OpenFileBrowserAndLoadImage(LoadSpriteFromFilePickerDelegate callbackSprite, LoadTextureFromFilePickerDelegate callbackTexture)
         {
-
+#if BULKOUT_ENV
             bool cancel = false;
-            ExternalAssets.ILoaderContext finalContext = null;
+            ExternalAssets.ILoaderContext finalContext = null; 
+
             void OnLoad(ExternalAssets.ILoaderContext context)
             {
                 finalContext = context;
@@ -1899,12 +1900,8 @@ namespace Swole.API.Unity
                 cancel = true;
             }
 
-#if BULKOUT_ENV
             var loader = ExternalAssets.GetNewImageLoader();
             loader.LoadImageFromFilePickerAsync(false, null, "Select an image file", OnLoad, null, null, OnError, null); 
-#else
-            return;
-#endif
 
             IEnumerator WaitForLoad()
             {
@@ -1912,7 +1909,6 @@ namespace Swole.API.Unity
 
                 if (cancel) yield break;
 
-#if BULKOUT_ENV
                 if (finalContext is ExternalAssets.ImageLoaderContext ilc && ilc.output.bytes != null)
                 {
                     var res = ExternalAssets.CreateNewTextureAsset(ilc, ilc.output, true);
@@ -1941,10 +1937,10 @@ namespace Swole.API.Unity
                         swole.LogError(ex);
                     }
                 }
-#endif
             }
 
             CoroutineProxy.Start(WaitForLoad());
+#endif
         }
 
         public const string _id_Type = "Type";

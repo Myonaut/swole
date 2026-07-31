@@ -1676,7 +1676,11 @@ namespace Swole.Script
         {
             if (host != null && host.Scope != PermissionScope.None)
             {
+#if UNITY_6000_0_OR_NEWER
+                var obj = Resources.EntityIdToObject(instanceId);
+#else
                 var obj = Resources.InstanceIDToObject(instanceId);
+#endif
                 if (obj == null) return null;
 
                 var scope = host.Scope;

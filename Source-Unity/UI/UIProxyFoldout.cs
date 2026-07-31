@@ -302,6 +302,7 @@ namespace Swole.UI
             state = false;
             if (!enabled) return;
 
+#if SWOLE_ENV
             void OnComplete()
             {
 
@@ -360,6 +361,7 @@ namespace Swole.UI
                 OnFoldBegin?.Invoke();
 
             }
+#endif
 
             if (tweenTime <= 0)
             {
@@ -404,6 +406,7 @@ namespace Swole.UI
             state = true;
             if (!enabled) return;
 
+#if SWOLE_ENV
             void OnComplete()
             {
 
@@ -442,6 +445,7 @@ namespace Swole.UI
                 }
 
             }
+#endif
 
             if (tweenTime <= 0)
             {

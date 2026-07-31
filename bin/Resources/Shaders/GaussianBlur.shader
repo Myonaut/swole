@@ -19,7 +19,7 @@ Shader "Hidden/GaussianBlur"
         uint _GridSize;
         float _Spread;
         
-        float4 _BlitTexture_TexelSize;
+        //float4 _BlitTexture_TexelSize;
 
         float gauss(int x)
         {

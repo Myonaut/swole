@@ -218,7 +218,7 @@ namespace Swole.API.Unity.Animation.Curves
             if (dropdown != null)
             {
                 var options = dropdown.options;
-                for (int a = 0; a < options.Count; a++) optionsList.Add(new TMP_Dropdown.OptionData(options[a].text, options[a].image));
+                for (int a = 0; a < options.Count; a++) optionsList.Add(new TMP_Dropdown.OptionData(options[a].text, options[a].image, Color.white));
             }
 
             return optionsList;
@@ -485,7 +485,11 @@ namespace Swole.API.Unity.Animation.Curves
             if (raycasters == null) raycasters = new List<BaseRaycaster>();
 
             raycasters.Clear();
+#if UNITY_6000_0_OR_NEWER
+            raycasters.AddRange(GameObject.FindObjectsByType<BaseRaycaster>(FindObjectsInactive.Exclude, FindObjectsSortMode.None));
+#else
             raycasters.AddRange(GameObject.FindObjectsOfType<BaseRaycaster>());
+#endif
         }
 
         protected readonly List<GameObject> objectsUnderCursor = new List<GameObject>();

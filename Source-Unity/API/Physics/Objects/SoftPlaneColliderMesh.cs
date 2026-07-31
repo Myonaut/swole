@@ -420,10 +420,15 @@ namespace Swole.API.Unity
                 objRB.automaticCenterOfMass = false;
                 objRB.automaticInertiaTensor = false;
 #endif
-                
+
+#if UNITY_6000_0_OR_NEWER
+                objRB.linearDamping = drag;
+                objRB.angularDamping = 1f;
+#else
                 objRB.drag = drag; 
                 objRB.angularDrag = 1f;
-                objRB.useGravity = useGravity;
+#endif
+                objRB.useGravity = useGravity; 
 
                 rigidbodies[a] = objRB;
             }

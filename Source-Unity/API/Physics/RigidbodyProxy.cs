@@ -108,13 +108,26 @@ namespace Swole.API.Unity
             get 
             {
                 if (rigidbody == null) return default;
+#if UNITY_6000_0_OR_NEWER
+                return UnityEngineHook.AsSwoleVector(rigidbody.linearVelocity);
+#else
                 return UnityEngineHook.AsSwoleVector(rigidbody.velocity);
+#endif
             }         
             set
             {
                 if (rigidbody == null) return;
+#if UNITY_6000_0_OR_NEWER
+                rigidbody.linearVelocity = UnityEngineHook.AsUnityVector(value);
+#else
                 rigidbody.velocity = UnityEngineHook.AsUnityVector(value);
-            }    
+#endif
+            }
+        }
+        public EngineInternal.Vector3 linearVelocity
+        {
+            get => velocity;
+            set => velocity = value;
         }
         public EngineInternal.Vector3 angularVelocity
         {
@@ -134,26 +147,52 @@ namespace Swole.API.Unity
             get
             {
                 if (rigidbody == null) return default;
+#if UNITY_6000_0_OR_NEWER
+                return rigidbody.linearDamping;
+#else
                 return rigidbody.drag;
+#endif
             }
             set
             {
                 if (rigidbody == null) return;
+#if UNITY_6000_0_OR_NEWER
+                rigidbody.linearDamping = value;
+#else
                 rigidbody.drag = value;
+#endif
             }
+        }
+        public float linearDamping
+        {
+            get => drag;
+            set => drag = value;
         }
         public float angularDrag
         {
             get
             {
                 if (rigidbody == null) return default;
+#if UNITY_6000_0_OR_NEWER
+                return rigidbody.angularDamping;
+#else
                 return rigidbody.angularDrag;
+#endif
             }
             set
             {
                 if (rigidbody == null) return;
+#if UNITY_6000_0_OR_NEWER
+                rigidbody.angularDamping = value;
+#else
                 rigidbody.angularDrag = value;
+#endif
             }
+        }
+        public float angularDamping
+        {
+            get => angularDrag;
+            set => angularDrag = value;
         }
         public float mass
         {
@@ -546,7 +585,7 @@ namespace Swole.API.Unity
         public EngineInternal.Vector3 ClosestPointOnBounds(EngineInternal.Vector3 position)
         {
             if (rigidbody == null) return default;
-            return UnityEngineHook.AsSwoleVector(rigidbody.ClosestPointOnBounds(UnityEngineHook.AsUnityVector(position)));
+            return UnityEngineHook.AsSwoleVector(rigidbody.ClosestPointOnBounds(UnityEngineHook.AsUnityVector(position))); 
         }
 
         public bool SweepTest(EngineInternal.Vector3 direction, out IRaycastHit hitInfo, float maxDistance, string queryTriggerInteraction)
@@ -579,7 +618,7 @@ namespace Swole.API.Unity
             throw new NotImplementedException();
         }
 
-        #endregion
+#endregion
 
     }
     public class ExternalRigidbody : MonoBehaviour, IRigidbodyProxy

@@ -882,8 +882,13 @@ namespace Swole.API.Unity.Animation
 
         public void ApplyParameters(Rigidbody rigidbody)
         {
+#if UNITY_6000_0_OR_NEWER
+            rigidbody.linearDamping = drag;
+            rigidbody.angularDamping = angularDrag;
+#else
             rigidbody.drag = drag;
             rigidbody.angularDrag = angularDrag;
+#endif
             rigidbody.mass = mass;
             rigidbody.useGravity = useGravity;
             rigidbody.isKinematic = isKinematic;
@@ -906,8 +911,13 @@ namespace Swole.API.Unity.Animation
         {
             var settings = new UnityRigidbody();
 
+#if UNITY_6000_0_OR_NEWER
+            settings.drag = rigidbody.linearDamping;
+            settings.angularDrag = rigidbody.angularDamping;
+#else
             settings.drag = rigidbody.drag;
             settings.angularDrag = rigidbody.angularDrag;
+#endif
             settings.mass = rigidbody.mass;
             settings.useGravity = rigidbody.useGravity;
             settings.isKinematic = rigidbody.isKinematic;

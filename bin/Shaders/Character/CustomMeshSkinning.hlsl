@@ -21,6 +21,177 @@ struct BlendShapeDelta
 
 };
 
+struct VertexData
+{
+    float3 position;
+    float3 normal;
+    float4 tangent;
+};
+
+// MeshVertexDelta layout must match the C# struct in MorphUtils.cs
+struct MeshVertexDelta
+{
+    float3 positionDelta;
+    float3 normalDelta;
+    float3 tangentDelta;
+};
+
+VertexData VD_Lerp(VertexData A, VertexData B, float t)
+{
+    VertexData result;
+    result.position = lerp(A.position, B.position, t);
+    result.normal = lerp(A.normal, B.normal, t);
+    result.tangent = lerp(A.tangent, B.tangent, t);
+
+    return result;
+}
+MeshVertexDelta MVD_Lerp(MeshVertexDelta A, MeshVertexDelta B, float t)
+{
+    MeshVertexDelta result;
+    result.positionDelta = lerp(A.positionDelta, B.positionDelta, t);
+    result.normalDelta = lerp(A.normalDelta, B.normalDelta, t);
+    result.tangentDelta = lerp(A.tangentDelta, B.tangentDelta, t);
+
+    return result;
+}
+
+VertexData VD_Mul(VertexData A, float scalar)
+{
+    VertexData result;
+    result.position = A.position * scalar;
+    result.normal = A.normal * scalar;
+    result.tangent.xyz = A.tangent.xyz * scalar;
+    result.tangent.w = A.tangent.w; // preserve tangent w (handedness)
+
+    return result;
+}
+MeshVertexDelta MVD_Mul(MeshVertexDelta A, float scalar)
+{
+    MeshVertexDelta result;
+    result.positionDelta = A.positionDelta * scalar;
+    result.normalDelta = A.normalDelta * scalar;
+    result.tangentDelta = A.tangentDelta * scalar;
+
+    return result;
+}
+    
+VertexData VD_Div(VertexData A, float scalar)
+{
+    VertexData result;
+    result.position = A.position / scalar;
+    result.normal = A.normal / scalar;
+    result.tangent.xyz = A.tangent.xyz / scalar;
+    result.tangent.w = A.tangent.w; // preserve tangent w (handedness)
+
+    return result;
+}
+MeshVertexDelta MVD_Div(MeshVertexDelta A, float scalar)
+{
+    MeshVertexDelta result;
+    result.positionDelta = A.positionDelta / scalar;
+    result.normalDelta = A.normalDelta / scalar;
+    result.tangentDelta.xyz = A.tangentDelta.xyz / scalar;
+
+    return result;
+}
+    
+VertexData VD_Add(VertexData A, VertexData B)
+{
+    VertexData result;
+    result.position = A.position + B.position;
+    result.normal = A.normal + B.normal;
+    result.tangent.xyz = A.tangent.xyz + B.tangent.xyz;
+    result.tangent.w = A.tangent.w; // preserve tangent w (handedness)
+
+    return result;
+}
+MeshVertexDelta MVD_Add(MeshVertexDelta A, MeshVertexDelta B)
+{
+    MeshVertexDelta result;
+    result.positionDelta = A.positionDelta + B.positionDelta;
+    result.normalDelta = A.normalDelta + B.normalDelta;
+    result.tangentDelta = A.tangentDelta + B.tangentDelta;
+
+    return result;
+}
+    
+VertexData VD_Subtract(VertexData A, VertexData B)
+{
+    VertexData result;
+    result.position = A.position - B.position;
+    result.normal = A.normal - B.normal;
+    result.tangent.xyz = A.tangent.xyz - B.tangent.xyz;
+    result.tangent.w = A.tangent.w; // preserve tangent w (handedness)
+
+    return result;
+}
+MeshVertexDelta MVD_Subtract(MeshVertexDelta A, MeshVertexDelta B)
+{
+    MeshVertexDelta result;
+    result.positionDelta = A.positionDelta - B.positionDelta;
+    result.normalDelta = A.normalDelta - B.normalDelta;
+    result.tangentDelta = A.tangentDelta - B.tangentDelta;
+
+    return result;
+}
+
+VertexData VD_AddDelta(VertexData A, MeshVertexDelta B)
+{
+    VertexData result;
+    result.position = A.position + B.positionDelta;
+    result.normal = A.normal + B.normalDelta;
+    result.tangent.xyz = A.tangent.xyz + B.tangentDelta;
+    result.tangent.w = A.tangent.w;
+
+    return result;
+}
+    
+VertexData VD_SubtractDelta(VertexData A, MeshVertexDelta B)
+{
+    VertexData result;
+    result.position = A.position - B.positionDelta;
+    result.normal = A.normal - B.normalDelta;
+    result.tangent.xyz = A.tangent.xyz - B.tangentDelta;
+    result.tangent.w = A.tangent.w;
+
+    return result;
+}
+
+struct VertexBinding
+{
+    int triangleIndex;
+    float3 pad; // Matches the 3 padding floats on CPU
+    
+    float4 vertexIndices;
+    float4 weights;
+    float4 localOffset;
+};
+
+float3 SlerpNormals(float3 n1, float3 n2, float t)
+{
+    float dotp = clamp(dot(n1, n2), -1.0, 1.0);
+    float theta = acos(dotp) * t;
+    float3 relative = normalize(n2 - n1 * dotp);
+    return n1 * cos(theta) + relative * sin(theta);
+}
+float3 SlerpNormalsShortestPath(float3 n1, float3 n2, float t)
+{
+    float dotp = dot(n1, n2);
+    
+    // Flip target vector if the angle is obtuse to ensure shortest path
+    float3 target = n2;
+    if (dotp < 0.0)
+    {
+        dotp = -dotp;
+        target = -n2;
+    }
+    
+    dotp = clamp(dotp, -1.0, 1.0);
+    float theta = acos(dotp) * t;
+    float3 relative = normalize(target - n1 * dotp);
+    return n1 * cos(theta) + relative * sin(theta);
+}
+
 #ifdef SHADERGRAPH_PREVIEW
 
 void SkinNoShapes_float(int instanceID, int vertexIndex, float3 inPosition, float3 inNormal, float3 inTangent, out float3 outPosition, out float3 outNormal, out float3 outTangent) 
@@ -118,6 +289,9 @@ StructuredBuffer<float> _ControlStandaloneShapes;
 StructuredBuffer<BlendShapeDelta> _FinalWorldDeltas;
 
 StructuredBuffer<float> _VertexMask;
+
+StructuredBuffer<VertexBinding> _MeshProxyBindings;
+uniform int _MeshProxyVertexCount;
 //#else
 //#endif
 

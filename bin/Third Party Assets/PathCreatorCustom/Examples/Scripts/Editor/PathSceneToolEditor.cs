@@ -97,9 +97,14 @@ namespace PathCreation.Examples
                 {
                     pathTool.pathCreator = pathTool.GetComponent<PathCreator>();
                 }
-                else if (FindObjectOfType<PathCreator>())
-                {
+                else
+                { 
+
+#if UNITY_6000_0_OR_NEWER
+                    pathTool.pathCreator = FindFirstObjectByType<PathCreator>(); 
+#else
                     pathTool.pathCreator = FindObjectOfType<PathCreator>();
+#endif
                 }
             }
             return pathTool.pathCreator != null;

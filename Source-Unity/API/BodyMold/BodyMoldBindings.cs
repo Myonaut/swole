@@ -1,6 +1,7 @@
 using System;
 using System.Collections;
 using System.Collections.Generic;
+using System.IO;
 
 using UnityEngine;
 
@@ -10,86 +11,318 @@ using Unity.Collections.LowLevel.Unsafe;
 using Swole.Morphing;
 using Swole.DataStructures;
 
-namespace Swole.Modding
+namespace Swole.API.Unity
 {
     [CreateAssetMenu(menuName = "Swole/Body Mold Bindings", fileName = "BodyMoldBindings")]
     public class BodyMoldBindings : ScriptableObject, IDisposable
     {
-        [SerializeField]
-        protected Mesh clothingMesh;
-        public Mesh OriginalMesh => clothingMesh;
-        public void SetOriginalMesh(Mesh mesh) => clothingMesh = mesh; 
-
-        private Mesh editedClothingMesh;
-        public Mesh EditedClothingMesh 
+        [Serializable]
+        public class GeneratedMeshLOD
         {
-            get
+#if !UNITY_EDITOR
+            [NonSerialized]
+#endif
+            public Mesh originalMesh;
+
+            public MeshLOD meshLod;
+
+#if UNITY_EDITOR
+            [SerializeField]
+            protected string originalMeshHash; 
+#endif
+
+#if UNITY_EDITOR
+            public void RegenerateMesh(GeneratedMeshLOD highestDetailMesh, BodyMoldBindings bindings)
             {
-                if (editedClothingMesh == null)
+                if (originalMesh == null) return; 
+
+                meshLod.mesh = Instantiate(originalMesh);
+                meshLod.mesh.name = originalMesh.name + "_MoldEdited";
+
+                var rotOffset = Quaternion.Euler(bindings.eulerOffset);
+                var vertices = meshLod.mesh.vertices;
+                var normals = meshLod.mesh.normals;
+                var tangents = meshLod.mesh.tangents;
+                var colors = meshLod.mesh.colors;
+                if (colors == null || colors.Length != vertices.Length)
                 {
-                    if (eulerOffset != Vector3.zero)
+                    colors = new Color[vertices.Length];
+                    for (int a = 0; a < colors.Length; a++)
                     {
-                        editedClothingMesh = Instantiate(clothingMesh);
-                        editedClothingMesh.name = clothingMesh.name + "_Edited";
-                        editedClothingMesh.ClearBlendShapes();
-
-                        var rotOffset = Quaternion.Euler(eulerOffset);
-                        var vertices = editedClothingMesh.vertices;
-                        var normals = editedClothingMesh.normals;
-                        var tangents = editedClothingMesh.tangents;
-
-                        bool hasNormals = normals != null && normals.Length == vertices.Length;
-                        bool hasTangents = tangents != null && tangents.Length == vertices.Length;
-
-                        for (int i = 0; i < vertices.Length; i++)
-                        {
-                            vertices[i] = rotOffset * vertices[i];
-
-                            if (hasNormals)
-                            {
-                                normals[i] = Vector3.Normalize(rotOffset * normals[i]);
-                            }
-
-                            if (hasTangents)
-                            {
-                                var tangent = tangents[i];
-                                var tangentVec3 = new Vector3(tangent.x, tangent.y, tangent.z);
-                                tangentVec3 = Vector3.Normalize(rotOffset * tangentVec3);
-                                tangents[i] = new Vector4(tangentVec3.x, tangentVec3.y, tangentVec3.z, tangent.w);
-                            }
-                        }
-
-                        editedClothingMesh.vertices = vertices;
-
-                        if (hasNormals)
-                        {
-                            editedClothingMesh.normals = normals;
-                        }
-                        else
-                        {
-                            editedClothingMesh.RecalculateNormals();
-                        }
-
-                        if (hasTangents)
-                        {
-                            editedClothingMesh.tangents = tangents;
-                        }
-                        else if (hasNormals)
-                        {
-                            editedClothingMesh.RecalculateTangents();
-                        }
-
-                        editedClothingMesh.UploadMeshData(false);
-                    } 
-                    else
-                    {
-                        return clothingMesh; 
+                        colors[a] = Color.white;
                     }
                 }
 
-                return editedClothingMesh;
+                if (ReferenceEquals(highestDetailMesh, this))
+                {
+                    switch (bindings.vertexIndexChannel)
+                    {
+                        case RGBAChannel.R:
+                            {
+                                for (int i = 0; i < colors.Length; i++)
+                                {
+                                    var c = colors[i];
+                                    c.r = i;
+                                    colors[i] = c; 
+                                }
+                            }
+                            break;
+
+                        case RGBAChannel.G:
+                            {
+                                for (int i = 0; i < colors.Length; i++)
+                                {
+                                    var c = colors[i];
+                                    c.g = i;
+                                    colors[i] = c;
+                                }
+                            }
+                            break;
+
+                        case RGBAChannel.B:
+                            {
+                                for (int i = 0; i < colors.Length; i++)
+                                {
+                                    var c = colors[i];
+                                    c.b = i;
+                                    colors[i] = c;
+                                }
+                            }
+                            break;
+
+                        case RGBAChannel.A:
+                            {
+                                for (int i = 0; i < colors.Length; i++)
+                                {
+                                    var c = colors[i];
+                                    c.a = i;
+                                    colors[i] = c;
+                                }
+                            }
+                            break;
+                    }
+                }
+                else
+                {
+                    int[] nearestVertices = new int[meshLod.mesh.vertexCount];
+                    if (bindings.useUVsToFindClosestVertex)
+                    {
+                        var baseUV = highestDetailMesh.originalMesh.GetUVsByChannelAsList((int)bindings.nearestVertexUVChannel);
+                        var lodUV = meshLod.mesh.GetUVsByChannelAsList((int)bindings.nearestVertexUVChannel);
+                        MeshDataTools.FindClosestVerticesUV(lodUV, baseUV, nearestVertices);
+                    }
+                    else
+                    {
+                        var baseV = highestDetailMesh.originalMesh.vertices;
+                        var lodV = originalMesh.vertices;
+                        MeshDataTools.FindClosestVertices(lodV, baseV, nearestVertices);
+                    }
+
+                    switch (bindings.vertexIndexChannel)
+                    {
+                        case RGBAChannel.R:
+                            {
+                                for (int i = 0; i < colors.Length; i++)
+                                {
+                                    var c = colors[i];
+                                    c.r = nearestVertices[i];
+                                    colors[i] = c;
+                                }
+                            }
+                            break;
+
+                        case RGBAChannel.G:
+                            {
+                                for (int i = 0; i < colors.Length; i++)
+                                {
+                                    var c = colors[i];
+                                    c.g = nearestVertices[i];
+                                    colors[i] = c;
+                                }
+                            }
+                            break;
+
+                        case RGBAChannel.B:
+                            {
+                                for (int i = 0; i < colors.Length; i++)
+                                {
+                                    var c = colors[i];
+                                    c.b = nearestVertices[i];
+                                    colors[i] = c;
+                                }
+                            }
+                            break;
+
+                        case RGBAChannel.A:
+                            {
+                                for (int i = 0; i < colors.Length; i++)
+                                {
+                                    var c = colors[i];
+                                    c.a = nearestVertices[i];
+                                    colors[i] = c;
+                                }
+                            }
+                            break;
+                    }
+                }
+
+                meshLod.mesh.colors = colors;
+
+                var blendShapes = meshLod.mesh.GetBlendShapes();
+                bool hasBlendShapes = blendShapes.Count > 0;
+
+                bool hasNormals = normals != null && normals.Length == vertices.Length;
+                bool hasTangents = tangents != null && tangents.Length == vertices.Length;
+
+                for (int i = 0; i < vertices.Length; i++)
+                {
+                    vertices[i] = rotOffset * vertices[i];
+
+                    if (hasNormals)
+                    {
+                        normals[i] = Vector3.Normalize(rotOffset * normals[i]);
+                    }
+
+                    if (hasTangents)
+                    {
+                        var tangent = tangents[i];
+                        var tangentVec3 = new Vector3(tangent.x, tangent.y, tangent.z);
+                        tangentVec3 = Vector3.Normalize(rotOffset * tangentVec3);
+                        tangents[i] = new Vector4(tangentVec3.x, tangentVec3.y, tangentVec3.z, tangent.w);
+                    }
+
+                    if (hasBlendShapes)
+                    {
+                        foreach (var shape in blendShapes)
+                        {
+                            if (shape.frames == null) continue;
+                            foreach (var frame in shape.frames)
+                            {
+                                frame.deltaVertices[i] = rotOffset * frame.deltaVertices[i];
+                                frame.deltaNormals[i] = rotOffset * frame.deltaNormals[i];
+                                frame.deltaTangents[i] = rotOffset * frame.deltaTangents[i];
+                            }
+                        }
+                    }
+                }
+
+                meshLod.mesh.vertices = vertices;
+
+                if (hasNormals)
+                {
+                    meshLod.mesh.normals = normals;
+                }
+                else
+                {
+                    meshLod.mesh.RecalculateNormals();
+                }
+
+                if (hasTangents)
+                {
+                    meshLod.mesh.tangents = tangents;
+                }
+                else if (hasNormals)
+                {
+                    meshLod.mesh.RecalculateTangents();
+                }
+
+                if (hasBlendShapes)
+                {
+                    meshLod.mesh.ClearBlendShapes();
+                    foreach (var shape in blendShapes) shape.AddToMesh(meshLod.mesh, false);
+                }
+
+                meshLod.mesh.UploadMeshData(false);
+
+                string assetDir = UnityEditor.AssetDatabase.GetAssetPath(originalMesh);
+                assetDir = Path.GetDirectoryName(assetDir);
+                string assetPath = Path.Combine(assetDir, meshLod.mesh.name + ".asset");
+                /*int j = 0;
+                while (UnityEditor.AssetDatabase.AssetPathExists(assetPath))
+                {
+                    j++;
+                    assetPath = Path.Combine(assetDir, meshLod.mesh.name + "_" + j + ".asset");
+                }*/
+                if (UnityEditor.AssetDatabase.AssetPathExists(assetPath))
+                {
+                    // This deletes the asset file and its corresponding .meta file
+                    UnityEditor.AssetDatabase.DeleteAsset(assetPath);
+                } 
+
+                UnityEditor.AssetDatabase.CreateAsset(meshLod.mesh, assetPath);
+                UnityEditor.AssetDatabase.SaveAssets();
+
+                var origPath = UnityEditor.AssetDatabase.GetAssetPath(originalMesh);
+                originalMeshHash = UnityEditor.AssetDatabase.GetAssetDependencyHash(origPath).ToString();
+            }
+#endif
+
+            public Mesh GetMesh(BodyMoldBindings bindings)
+            {
+#if UNITY_EDITOR
+                if (originalMesh != null)
+                {
+                    bool flag = string.IsNullOrWhiteSpace(originalMeshHash) || meshLod.mesh == null;
+                    if (!flag)
+                    {
+                        var meshPath = UnityEditor.AssetDatabase.GetAssetPath(originalMesh);
+                        var meshHash = UnityEditor.AssetDatabase.GetAssetDependencyHash(meshPath);
+                        var origHash = Hash128.Parse(originalMeshHash);
+                        flag = meshHash != origHash;
+                    }
+
+                    if (flag)
+                    {
+                        RegenerateMesh(bindings.GetGeneratedMesh(0), bindings); 
+                    }
+                }
+#endif
+
+                return meshLod.mesh;
             }
         }
+
+        [SerializeField]
+        public RGBAChannel vertexIndexChannel = RGBAChannel.R;
+        [SerializeField]
+        public bool useUVsToFindClosestVertex = true;
+        [SerializeField]
+        public UVChannelURP nearestVertexUVChannel = UVChannelURP.UV0;
+
+        [SerializeField]
+        protected GeneratedMeshLOD[] meshLods;
+        public int LodCount => meshLods != null ? meshLods.Length : 0;
+        public void SetGeneratedMeshes(GeneratedMeshLOD[] lods)
+        {
+            meshLods = lods;
+        }
+        public GeneratedMeshLOD GetGeneratedMesh(int lod)
+        {
+            if (meshLods == null || meshLods.Length <= 0 || lod < 0 || lod >= meshLods.Length) return null;
+            return meshLods[lod];
+        }
+        public Mesh GetMesh(int lod)
+        {
+            var generatedMesh = GetGeneratedMesh(lod);
+            if (generatedMesh == null) return null;
+
+            return generatedMesh.GetMesh(this);
+        }
+        public Mesh GetMesh() => GetMesh(0);
+        public MeshLOD GetMeshLOD(int lod)
+        {
+            var generatedMesh = GetGeneratedMesh(lod);
+            if (generatedMesh == null) return default;
+
+            var meshLod = generatedMesh.meshLod;
+            meshLod.mesh = generatedMesh.GetMesh(this);
+            return meshLod;
+        }
+
+        [SerializeField]
+        protected Material[] materials;
+        public void SetMaterials(Material[] mats) => materials = mats;
+        public Material[] GetMaterials() => materials;
 
         public bool dynamicBoneWeights;
         public Vector3 eulerOffset; 
@@ -103,10 +336,11 @@ namespace Swole.Modding
         {
             if (BoneWeightsAreInitialized) return;
 
-            boneWeights = new BoneWeight8Float[clothingMesh.vertexCount];
+            var mesh = GetMesh(0);
+            boneWeights = new BoneWeight8Float[mesh.vertexCount];
 
-            var _boneCounts = clothingMesh.GetBonesPerVertex();
-            var _boneWeights = clothingMesh.GetAllBoneWeights();
+            var _boneCounts = mesh.GetBonesPerVertex();
+            var _boneWeights = mesh.GetAllBoneWeights();
             int i = 0;
             for (int a = 0; a < _boneCounts.Length; a++)
             {
@@ -157,7 +391,8 @@ namespace Swole.Modding
                 if (trianglesBuffer == null)
                 {
                     TrackDisposables();
-                    var triangles = clothingMesh.triangles;
+                    var mesh = GetMesh(0);
+                    var triangles = mesh.triangles;
                     trianglesBuffer = new ComputeBuffer(triangles.Length, UnsafeUtility.SizeOf(typeof(int)), ComputeBufferType.Structured, ComputeBufferMode.Immutable);
                     trianglesBuffer.SetData(triangles); 
                 }
@@ -175,10 +410,11 @@ namespace Swole.Modding
                 if (vertexColorsBuffer == null)
                 {
                     TrackDisposables();
-                    var vColors = clothingMesh.colors;
+                    var mesh = GetMesh(0);
+                    var vColors = mesh.colors;
                     if (vColors == null || vColors.Length <= 0)
                     {
-                        vColors = new Color[clothingMesh.vertexCount];
+                        vColors = new Color[mesh.vertexCount];
                         for (int a = 0; a < vColors.Length; a++)
                         {
                             vColors[a] = Color.white;
@@ -189,6 +425,37 @@ namespace Swole.Modding
                 }
 
                 return vertexColorsBuffer;
+            }
+        }
+
+        [NonSerialized]
+        private ComputeBuffer vertexDataBuffer;
+        public ComputeBuffer VertexDataBuffer
+        {
+            get
+            {
+                if (vertexDataBuffer == null)
+                {
+                    TrackDisposables();
+                    var mesh = GetMesh(0);
+                    var vertices = mesh.vertices;
+                    var normals = mesh.normals;
+                    var tangents = mesh.tangents;
+                    var vertexData = new MeshVertexData[mesh.vertexCount];
+                    for (int a = 0; a < vertexData.Length; a++)
+                    {
+                        vertexData[a] = new MeshVertexData
+                        {
+                            position = vertices[a],
+                            normal = normals == null || a >= normals.Length ? Vector3.zero : normals[a],
+                            tangent = tangents == null || a >= tangents.Length ? Vector4.zero : tangents[a]
+                        };
+                    }
+                    vertexDataBuffer = new ComputeBuffer(vertexData.Length, UnsafeUtility.SizeOf(typeof(MeshVertexData)), ComputeBufferType.Structured, ComputeBufferMode.Immutable);
+                    vertexDataBuffer.SetData(vertexData);
+                }
+
+                return vertexDataBuffer;
             }
         }
 
@@ -207,8 +474,9 @@ namespace Swole.Modding
             var vertexConnectionCounts = new List<int>();
             var vertexConnectionStartIndices = new List<int>();
 
-            var vertices = clothingMesh.vertices;
-            var arrays = MeshDataTools.GetDistanceWeightedVertexConnections(clothingMesh.triangles, vertices, MeshDataTools.WeldVertices(vertices));
+            var mesh = GetMesh(0);
+            var vertices = mesh.vertices;
+            var arrays = MeshDataTools.GetDistanceWeightedVertexConnections(mesh.triangles, vertices, MeshDataTools.WeldVertices(vertices));
 
             int vertexConnectionIndex = 0;
             for (int a = 0; a < arrays.Length; a++)
@@ -233,38 +501,6 @@ namespace Swole.Modding
         }
 
         [NonSerialized]
-        private ComputeBuffer vertexDataBuffer;
-        public ComputeBuffer VertexDataBuffer
-        {
-            get
-            {
-                if (vertexDataBuffer == null)
-                {
-                    TrackDisposables();
-                    var clothingMesh = EditedClothingMesh;
-                    var vertices = clothingMesh.vertices;
-                    var normals = clothingMesh.normals;
-                    var tangents = clothingMesh.tangents;
-                    var vertexData = new MeshVertexData[clothingMesh.vertexCount];
-                    for(int a = 0; a < vertexData.Length; a++)
-                    {
-                        vertexData[a] = new MeshVertexData
-                        {
-                            position = vertices[a],
-                            normal = normals == null || a >= normals.Length ? Vector3.zero : normals[a],
-                            tangent = tangents == null || a >= tangents.Length ? Vector4.zero : tangents[a]
-                        };
-                    }
-                    vertexDataBuffer = new ComputeBuffer(vertexData.Length, UnsafeUtility.SizeOf(typeof(MeshVertexData)), ComputeBufferType.Structured, ComputeBufferMode.Immutable); 
-                    vertexDataBuffer.SetData(vertexData);
-                }
-
-                return vertexDataBuffer;
-            }
-        }
-
-
-        [NonSerialized]
         private ComputeBuffer vertexConnectionsBuffer;
         [NonSerialized]
         private ComputeBuffer vertexConnectionCountsBuffer;
@@ -278,6 +514,7 @@ namespace Swole.Modding
                 if (vertexConnectionsBuffer == null)
                 {
                     TrackDisposables();
+                    if (!VertexConnectionsAreInitialized) InitializeVertexConnections();
                     vertexConnectionsBuffer = new ComputeBuffer(vertexConnections.Length, UnsafeUtility.SizeOf(typeof(MeshDataTools.WeightedVertexConnection)), ComputeBufferType.Structured, ComputeBufferMode.Immutable);
                     vertexConnectionsBuffer.SetData(vertexConnections);
                 }
@@ -293,6 +530,7 @@ namespace Swole.Modding
                 if (vertexConnectionCountsBuffer == null)
                 {
                     TrackDisposables();
+                    if (!VertexConnectionsAreInitialized) InitializeVertexConnections();
                     vertexConnectionCountsBuffer = new ComputeBuffer(vertexConnectionCounts.Length, UnsafeUtility.SizeOf(typeof(int)), ComputeBufferType.Structured, ComputeBufferMode.Immutable);
                     vertexConnectionCountsBuffer.SetData(vertexConnectionCounts);
                 }
@@ -308,11 +546,51 @@ namespace Swole.Modding
                 if (vertexConnectionStartIndicesBuffer == null)
                 {
                     TrackDisposables();
+                    if (!VertexConnectionsAreInitialized) InitializeVertexConnections();
                     vertexConnectionStartIndicesBuffer = new ComputeBuffer(vertexConnectionStartIndices.Length, UnsafeUtility.SizeOf(typeof(int)), ComputeBufferType.Structured, ComputeBufferMode.Immutable);
                     vertexConnectionStartIndicesBuffer.SetData(vertexConnectionStartIndices);
                 }
 
                 return vertexConnectionStartIndicesBuffer;
+            }
+        }
+
+        [HideInInspector]
+        public uint[] vertexWeld;
+        public bool VertexWeldingIsInitialized => vertexWeld != null && vertexWeld.Length > 0;
+        public void InitializeVertexWelding()
+        {
+            if (VertexWeldingIsInitialized) return;
+            
+            var mesh = GetMesh(0);
+            var vertices = mesh.vertices;
+            var weld = MeshDataTools.WeldVertices(vertices);
+            var vertexWeld = new uint[weld.Length];
+
+            for (int a = 0; a < weld.Length; a++)
+            {
+                vertexWeld[a] = (uint)weld[a].firstIndex;
+            }
+
+            this.vertexWeld = vertexWeld; 
+        }
+
+        [NonSerialized]
+        private ComputeBuffer vertexWeldBuffer;
+
+        public ComputeBuffer VertexWeldBuffer
+        {
+            get
+            {
+                if (vertexWeldBuffer == null)
+                {
+                    TrackDisposables();
+                    if (!VertexWeldingIsInitialized) InitializeVertexWelding();
+                    vertexWeldBuffer = new ComputeBuffer(vertexWeld.Length, UnsafeUtility.SizeOf(typeof(uint)), ComputeBufferType.Structured, ComputeBufferMode.Immutable);
+                    vertexWeldBuffer.SetData(vertexWeld);
+                }
+
+                return vertexWeldBuffer;
             }
         }
 
@@ -377,6 +655,12 @@ namespace Swole.Modding
                 vertexConnectionStartIndicesBuffer = null;
             }
 
+            if (vertexWeldBuffer != null)
+            {
+                vertexWeldBuffer.Dispose();
+                vertexWeldBuffer = null;
+            }
+
             if (perBodyBindings != null)
             {
                 foreach (var binding in perBodyBindings) binding.Dispose();
@@ -391,11 +675,13 @@ namespace Swole.Modding
             public string fallbackMeshName;
             public string FallbackMeshName => string.IsNullOrWhiteSpace(fallbackMeshName) ? (mesh == null ? string.Empty : mesh.name) : fallbackMeshName;
 
+            public bool maskOnly;
+
             //[HideInInspector]
             public int[] vertexBindingLocalIndices;
-            [HideInInspector]
+            //[HideInInspector]
             public int4[] vertexBindingIndices;
-            [HideInInspector]
+            //[HideInInspector]
             public float4[] vertexBindingWeights;
             [HideInInspector]
             public Triangles32[] collisionTriangles;

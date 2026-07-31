@@ -12,27 +12,68 @@ namespace Swole
 {
     public class PersistentJobDataTracker : SingletonBehaviour<PersistentJobDataTracker>, IDisposable
     {
-        protected readonly Dictionary<int, ComputeBuffer> emptyBuffers = new Dictionary<int, ComputeBuffer>();
-        public static ComputeBuffer GetEmptyBuffer(int stride)
+        protected readonly Dictionary<int, ComputeBuffer> emptyComputeBuffers = new Dictionary<int, ComputeBuffer>();
+        public static ComputeBuffer GetEmptyComputeBuffer(int stride)
         {
             var instance = Instance;
             if (instance == null) return null;
 
-            if (!instance.emptyBuffers.TryGetValue(stride, out var buffer) || buffer == null || !buffer.IsValid())
+            bool isMultipleOfFour = stride % 4 == 0;
+            if (!isMultipleOfFour)
             {
-                buffer = new ComputeBuffer(1, stride);
-                instance.emptyBuffers[stride] = buffer;
+#if UNITY_EDITOR
+                swole.LogError($"Requested empty compute buffer with stride {stride}, which is not a multiple of 4. This may cause issues on some platforms.");
+#endif
+                stride = Mathf.CeilToInt(stride / 4f) * 4; 
+            }
+            if (!instance.emptyComputeBuffers.TryGetValue(stride, out var buffer) || buffer == null || !buffer.IsValid())
+            {
+                buffer = new ComputeBuffer(1, stride, ComputeBufferType.Structured, ComputeBufferMode.Immutable);
+                instance.emptyComputeBuffers[stride] = buffer;
             }
 
             return buffer;
         }
-        public static ComputeBuffer GetEmptyBuffer<T>() where T : struct
+        public static ComputeBuffer GetEmptyComputeBuffer() => GetEmptyComputeBuffer(4); 
+        public static ComputeBuffer GetEmptyComputeBuffer<T>() where T : struct
         {
-            return GetEmptyBuffer(UnsafeUtility.SizeOf<T>());
+            return GetEmptyComputeBuffer(UnsafeUtility.SizeOf<T>());
         }
-        public static ComputeBuffer GetEmptyBuffer(Type type)
+        public static ComputeBuffer GetEmptyComputeBuffer(Type type)
         {
-            return GetEmptyBuffer(UnsafeUtility.SizeOf(type));
+            return GetEmptyComputeBuffer(UnsafeUtility.SizeOf(type));
+        }
+
+        protected readonly Dictionary<int, GraphicsBuffer> emptyGraphicsBuffers = new Dictionary<int, GraphicsBuffer>(); 
+        public static GraphicsBuffer GetEmptyGraphicsBuffer(int stride)
+        {
+            var instance = Instance;
+            if (instance == null) return null;
+
+            bool isMultipleOfFour = stride % 4 == 0;
+            if (!isMultipleOfFour)
+            {
+#if UNITY_EDITOR
+                swole.LogError($"Requested empty graphics buffer with stride {stride}, which is not a multiple of 4. This may cause issues on some platforms.");  
+#endif
+                stride = Mathf.CeilToInt(stride / 4f) * 4;
+            }
+            if (!instance.emptyGraphicsBuffers.TryGetValue(stride, out var buffer) || buffer == null || !buffer.IsValid())
+            {
+                buffer = new GraphicsBuffer(GraphicsBuffer.Target.Structured, GraphicsBuffer.UsageFlags.None, 1, stride);
+                instance.emptyGraphicsBuffers[stride] = buffer;
+            }
+
+            return buffer;
+        }
+        public static GraphicsBuffer GetEmptyGraphicsBuffer() => GetEmptyGraphicsBuffer(4);
+        public static GraphicsBuffer GetEmptyGraphicsBuffer<T>() where T : struct
+        {
+            return GetEmptyGraphicsBuffer(UnsafeUtility.SizeOf<T>());
+        }
+        public static GraphicsBuffer GetEmptyGraphicsBuffer(Type type)
+        {
+            return GetEmptyGraphicsBuffer(UnsafeUtility.SizeOf(type));
         }
 
         // Refrain from update calls
@@ -50,16 +91,28 @@ namespace Swole
         public void Dispose()
         {
 
-            if (emptyBuffers != null)
+            if (emptyComputeBuffers != null)
             {
-                foreach(var entry in emptyBuffers)
+                foreach(var entry in emptyComputeBuffers)
                 {
                     if (entry.Value != null && entry.Value.IsValid())
                     {
                         entry.Value.Release();
                     }
                 } 
-                emptyBuffers.Clear();
+                emptyComputeBuffers.Clear();
+            }
+
+            if (emptyGraphicsBuffers != null)
+            {
+                foreach(var entry in emptyGraphicsBuffers)
+                {
+                    if (entry.Value != null && entry.Value.IsValid())
+                    {
+                        entry.Value.Release();
+                    }
+                } 
+                emptyGraphicsBuffers.Clear();
             }
 
             if (disposables != null)

@@ -875,7 +875,7 @@ namespace Swole.API.Unity
         public string assetSaveDir;
         public string heightMapName;
 
-        [SerializeField]
+        [Serializable]
         public enum HeightMapFormat
         {
             R8, R16, RFloat
@@ -948,8 +948,13 @@ namespace Swole.API.Unity
             
             if (castAgainstMeshes)
             {
+#if UNITY_6000_0_OR_NEWER
+                var meshFilterComponents = new List<MeshFilter>(GameObject.FindObjectsByType<MeshFilter>(FindObjectsInactive.Include, FindObjectsSortMode.None));
+                var lodControllers = GameObject.FindObjectsByType<LODGroup>(FindObjectsInactive.Include, FindObjectsSortMode.None);
+#else
                 var meshFilterComponents = new List<MeshFilter>(GameObject.FindObjectsOfType<MeshFilter>(true)); 
                 var lodControllers = GameObject.FindObjectsOfType<LODGroup>(true);
+#endif
                 foreach (LODGroup lod in lodControllers)
                 {
                     if (lod.lodCount > 1) // only cast against the highest level of detail
@@ -1253,7 +1258,7 @@ namespace Swole.API.Unity
 
         public void UpdateRendererBounds() // TODO: Add functionality to update renderer bounds based on possible displacement
         {
-            var meshRenderers = GameObject.FindObjectsOfType<MeshRenderer>(true);
+            //var meshRenderers = GameObject.FindObjectsOfType<MeshRenderer>(true);
         }
 
         [SerializeField, HideInInspector]
@@ -1493,8 +1498,12 @@ namespace Swole.API.Unity
             var saveDir = string.Empty;
 #endif
 
+#if UNITY_6000_0_OR_NEWER
+            var meshFilterComponents = GameObject.FindObjectsByType<MeshFilter>(FindObjectsInactive.Include, FindObjectsSortMode.None);
+#else
             var meshFilterComponents = GameObject.FindObjectsOfType<MeshFilter>(true); 
-            foreach(var filter in meshFilterComponents)
+#endif
+            foreach (var filter in meshFilterComponents)
             {
                 var collider = filter.GetComponent<MeshCollider>();
                 if (collider == null)

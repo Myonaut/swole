@@ -242,8 +242,12 @@ namespace Swole
             RLD.RLDApp rldApp = null;
 #endif
             if (hideUI)
-            {
+            { 
+#if UNITY_6000_0_OR_NEWER
+                canvases = GameObject.FindObjectsByType<Canvas>(FindObjectsInactive.Exclude, FindObjectsSortMode.None);
+#else
                 canvases = GameObject.FindObjectsOfType<Canvas>(); 
+#endif
                 for (int a = 0; a < canvases.Length; a++)
                 {
                     var canvas = canvases[a];

@@ -31,6 +31,11 @@ struct DeltaData
 
 };
 
+void CalculateVeinNerf_float(float4 muscleData, float4 fatData, out float veinNerf)
+{
+    veinNerf = 1.0 - (saturate(max(muscleData.x, 0.08)) * (1.0 - saturate(pow(fatData.x, 0.5)))); 
+}
+
 #ifdef CUSTOM_SKINNING
 #ifdef SHADERGRAPH_PREVIEW
 
@@ -368,9 +373,9 @@ StructuredBuffer<DeltaData> _PerVertexDeltaData;
 
 StructuredBuffer<float4> _VertexColorDeltas;
 
-#ifdef USE_LEFTRIGHT_BUFFER
+//#ifdef USE_LEFTRIGHT_BUFFER
 StructuredBuffer<bool> _LeftRightFlags;
-#endif
+//#endif
 
 //#else
 //#endif
@@ -598,7 +603,7 @@ void CalculateMuscleShapeAffectors(float4 muscleData, float4 fatData, float bust
 {
     fatClamped = saturate(fatData.x);
     float bustNerf = 1 - saturate(bustFactor) * 0.45;
-    float fatNerf = lerp(1, 0.65 * fatData.y, fatClamped);
+    float fatNerf = lerp(1, 0.35 * fatData.y, fatClamped);
     nerf = bustNerf * fatNerf;
 }
 void ApplyMuscleShapes_float(float4 muscleData, float4 fatData, float bustFactor, int vertexIndex, int vertexCount, float3 inPosition, float3 inNormal, float3 inTangent, out float3 outPosition, out float3 outNormal, out float3 outTangent)
@@ -628,7 +633,12 @@ void ApplyFlexShapes_float(float4 muscleData, float4 fatData, float bustFactor, 
     float nerf;
     float fatSat;
     CalculateMuscleShapeAffectors(muscleData, fatData, bustFactor, nerf, fatSat);
+    float3 startN = outNormal;
+    float3 startT = outTangent;
 	ApplyMultiShape_float(_FlexShapeIndex, muscleData.y, nerf, vertexIndex, vertexCount, outPosition, outNormal, outTangent, outPosition, outNormal, outTangent);
+    float nM = lerp(1, 0.2, nerf);
+    outNormal = normalize(lerp(startN, outNormal, nM));
+    outTangent = normalize(lerp(startT, outTangent, nM)); 
 
 }
 
@@ -943,22 +953,33 @@ void SkinPreCalculatedVeins_float(int shrinkShapeIndex, int growShapeIndex, int 
 	outPosition = inPosition + vertexDelta.positionDelta;
 	outNormal = inNormal + vertexDelta.normalDelta;
 	outTangent = inTangent + vertexDelta.tangentDelta;
+	
+    float3 startNormal = outNormal;
+    float3 startTangent = outTangent;
 
 	float l2 = vertexColors.r;
 	float visibility = lerp(saturate(muscleData.z / 0.25), saturate((muscleData.z - 0.25) / 0.25), l2);
 	alpha = saturate(visibility / 0.55);
 
-	float veinsShrink = ((1.0 - visibility) * 0.95);
+	float veinsShrink = ((1.0 - visibility) * 0.95); 
 	float veinsShrink1M = 1.0 - veinsShrink;
 	ApplySingleFrameShape_float(shrinkShapeIndex, veinsShrink, vertexIndex, vertexCount, outPosition, outNormal, outTangent, outPosition, outNormal, outTangent);
 
+    float veinNerf;
+    CalculateVeinNerf_float(muscleData, fatData, veinNerf);
 	float veinMass = max(_DefaultShapeMuscleWeight, muscleData.x);
 	float veinsVaricose = muscleData.w + (0.2 * saturate((muscleData.x - 0.5) / 1.5)) + (0.25 * saturate(muscleData.z - 0.95) * saturate(muscleData.x));
 	float veinsGrow = ((max(0, muscleData.z - 0.95) + lerp(0.0, 0.05, muscleData.x)) + (veinsVaricose * 0.4)) * visibility; 
 	ApplyMultiShape_float(growShapeIndex, veinMass, veinsGrow * veinsShrink1M, vertexIndex, vertexCount, outPosition, outNormal, outTangent, outPosition, outNormal, outTangent); 
-	ApplySingleFrameShape_float(flattenShapeIndex, ((veinsGrow * -0.1) + saturate((1.0 - alpha) / 0.3)) * veinsShrink1M, vertexIndex, vertexCount, outPosition, outNormal, outTangent, outPosition, outNormal, outTangent);	
+    float3 tempNormal = outNormal;
+    float3 tempTangent = outTangent;
+    ApplySingleFrameShape_float(flattenShapeIndex, ((veinsGrow * -0.1) + max(veinNerf * 0.8, saturate((1.0 - alpha) / 0.3))) * veinsShrink1M, vertexIndex, vertexCount, outPosition, outNormal, outTangent, outPosition, tempNormal, tempTangent); // ignore normal and tangent delta when flattening
 	ApplyMultiShape_float(varicoseShapeIndex, veinMass, veinsVaricose * veinsShrink1M, vertexIndex, vertexCount, outPosition, outNormal, outTangent, outPosition, outNormal, outTangent); 
 
+    BlendShapeDelta veinNerfDelta = _MeshShapeFrameDeltas[((_MeshShapeIndices[shrinkShapeIndex].x + (_MeshShapeIndices[shrinkShapeIndex].y - 1)) * vertexCount) + vertexIndex]; 
+    outNormal = SlerpNormalsShortestPath(normalize(outNormal), normalize(startNormal + veinNerfDelta.deltaNormal), veinNerf);
+    outTangent = SlerpNormalsShortestPath(normalize(outTangent), normalize(startTangent + veinNerfDelta.deltaTangent), veinNerf);  
+	
 	ApplyStandaloneShapes_float(shapesID, vertexIndex, vertexCount, outPosition, outNormal, outTangent, outPosition, outNormal, outTangent);
 
 	ApplyFlexShapes_float(muscleData, fatData, bustNerfFactor, vertexIndex, vertexCount, outPosition, outNormal, outTangent, outPosition, outNormal, outTangent);
@@ -966,7 +987,7 @@ void SkinPreCalculatedVeins_float(int shrinkShapeIndex, int growShapeIndex, int 
 	outNormal = normalize(outNormal);
 	outTangent = normalize(outTangent);
 
-	SkinNoShapes_float(rigID, vertexIndex, outPosition, outNormal, outTangent, outPosition, outNormal, outTangent); 
+	SkinNoShapes_float(rigID, vertexIndex, outPosition, outNormal, outTangent, outPosition, outNormal, outTangent);  
 
 }
 

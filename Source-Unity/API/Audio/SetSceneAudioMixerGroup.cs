@@ -24,9 +24,13 @@ namespace Swole.API.Unity
         private void Apply()
         {
 
-            apply = false;
-
+            apply = false; 
+             
+#if UNITY_6000_0_OR_NEWER
+            AudioSource[] sources = FindObjectsByType<AudioSource>(FindObjectsInactive.Include, FindObjectsSortMode.None);
+#else
             AudioSource[] sources = FindObjectsOfType<AudioSource>(true);
+#endif
 
             foreach (var source in sources)
             {

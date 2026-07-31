@@ -24,7 +24,7 @@ namespace Swole
         public const int _priority = 99999;
         public override int Priority => _priority;
 
-        public static RenderParams GetDefaultRenderParams()
+        public static RenderParams GetDefaultRenderParams() 
         {
 
             return new RenderParams()
@@ -32,7 +32,11 @@ namespace Swole
 
                 camera = null,
                 layer = 0,
+#if UNITY_6000_0_OR_NEWER
+                renderingLayerMask = RenderingLayerMask.defaultRenderingLayerMask,
+#else
                 renderingLayerMask = GraphicsSettings.defaultRenderingLayerMask,
+#endif
                 rendererPriority = 0,
                 worldBounds = new Bounds(Vector3.zero, Vector3.zero),
                 lightProbeProxyVolume = null,

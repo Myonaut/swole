@@ -1634,6 +1634,7 @@ namespace Swole.Morphing
         protected LODGroup lodGroup;
 
         protected DefaultRenderedMesh[] defaultRenderedMeshes;
+        public Renderer FirstRenderer => defaultRenderedMeshes == null  || defaultRenderedMeshes.Length <= 0 ? null : defaultRenderedMeshes[0].meshRenderer;
 
         public bool RenderingIsInitialized() => lodGroup != null && defaultRenderedMeshes != null;
         public bool IsRendering() => RenderingIsInitialized() && CanRender;
@@ -1698,14 +1699,14 @@ namespace Swole.Morphing
             if (lodGroup != null) lodGroup.gameObject.SetActive(true);
 
             CreateInstance();
-            InitializeRendering();
+            InitializeRendering(); 
 
             var materialInstances = MaterialInstances;
             BindSkinningMatricesBufferToMaterials(materialInstances);
             BindStandaloneShapesControlBufferToMaterials(materialInstances);
             BindMuscleGroupsControlBufferToMaterials(materialInstances);
             BindFatGroupsControlBufferToMaterials(materialInstances);
-            BindVariationGroupsControlBufferToMaterials(materialInstances);
+            BindVariationGroupsControlBufferToMaterials(materialInstances); 
 
             ApplyCachedMaterialPropertyOverrides();
             ApplyIDsToMaterials();
@@ -1824,6 +1825,10 @@ namespace Swole.Morphing
             get => bustShape;
             set => SetBustShape(value);
         }
+
+        public UnityEvent<int> OnBustDataChanged;
+        public UnityEvent OnBustDataChangedNoArg;
+
         //[NonSerialized]
         //protected bool hasBustSizeProperty;
         public virtual void SetBustSize(float value)
@@ -1838,6 +1843,10 @@ namespace Swole.Morphing
                 SetFloatOverrideWithCheck(CustomizationData.BustMixPropertyName, Mathf.Clamp01(value), true);
             //}
 
+            OnSetBust(bustSize, bustShape);
+            OnBustDataChanged?.Invoke(0);
+            OnBustDataChangedNoArg?.Invoke();
+
             if (children != null)
             {
                 foreach (var child in children) if (child.IsValid && child.type.HasFlag(ICustomizableCharacter.ChildType.Mesh)) child.instance.SetBustSize(value);
@@ -1848,10 +1857,17 @@ namespace Swole.Morphing
             float prevValue = bustShape;
             bustShape = value;
 
+            OnSetBust(bustSize, bustShape);
+            OnBustDataChanged?.Invoke(0);
+            OnBustDataChangedNoArg?.Invoke();
+
             if (children != null)
             {
                 foreach (var child in children) if (child.IsValid && child.type.HasFlag(ICustomizableCharacter.ChildType.Mesh)) child.instance.SetBustShape(value);
             }
+        }
+        protected virtual void OnSetBust(float size, float shape)
+        {
         }
         [NonSerialized]
         protected bool hideNipples;
@@ -3083,10 +3099,16 @@ namespace Swole.Morphing
                     OnVariationDataChanged.AddListener(listener);
                     break;
 
+                case ICustomizableCharacter.ListenableEvent.OnBustDataChanged:
+                    if (OnBustDataChanged == null) OnBustDataChanged = new UnityEvent<int>();
+                    OnBustDataChanged.AddListener(listener);
+                    break;
+
                 case ICustomizableCharacter.ListenableEvent.OnAnyDataChanged:
                     AddListener(ICustomizableCharacter.ListenableEvent.OnMuscleDataChanged, listener);
                     AddListener(ICustomizableCharacter.ListenableEvent.OnFatDataChanged, listener);
                     AddListener(ICustomizableCharacter.ListenableEvent.OnVariationDataChanged, listener);
+                    AddListener(ICustomizableCharacter.ListenableEvent.OnBustDataChanged, listener);
                     break;
             }
         }
@@ -3104,10 +3126,15 @@ namespace Swole.Morphing
                     if (OnVariationDataChanged != null) OnVariationDataChanged.RemoveListener(listener);
                     break;
 
+                case ICustomizableCharacter.ListenableEvent.OnBustDataChanged:
+                    if (OnBustDataChanged != null) OnBustDataChanged.RemoveListener(listener);
+                    break;
+
                 case ICustomizableCharacter.ListenableEvent.OnAnyDataChanged:
                     RemoveListener(ICustomizableCharacter.ListenableEvent.OnMuscleDataChanged, listener);
                     RemoveListener(ICustomizableCharacter.ListenableEvent.OnFatDataChanged, listener);
                     RemoveListener(ICustomizableCharacter.ListenableEvent.OnVariationDataChanged, listener);
+                    RemoveListener(ICustomizableCharacter.ListenableEvent.OnBustDataChanged, listener);
                     break;
             }
         }
@@ -3128,11 +3155,15 @@ namespace Swole.Morphing
                     if (OnVariationDataChangedNoArg == null) OnVariationDataChangedNoArg = new UnityEvent();
                     OnVariationDataChangedNoArg.AddListener(listener);
                     break;
-
+                case ICustomizableCharacter.ListenableEvent.OnBustDataChanged:
+                    if (OnBustDataChangedNoArg == null) OnBustDataChangedNoArg = new UnityEvent();
+                    OnBustDataChangedNoArg.AddListener(listener);
+                    break;
                 case ICustomizableCharacter.ListenableEvent.OnAnyDataChanged:
                     AddListener(ICustomizableCharacter.ListenableEvent.OnMuscleDataChanged, listener);
                     AddListener(ICustomizableCharacter.ListenableEvent.OnFatDataChanged, listener);
                     AddListener(ICustomizableCharacter.ListenableEvent.OnVariationDataChanged, listener); 
+                    AddListener(ICustomizableCharacter.ListenableEvent.OnBustDataChanged, listener);
                     break;
             }
         }
@@ -3149,11 +3180,14 @@ namespace Swole.Morphing
                 case ICustomizableCharacter.ListenableEvent.OnVariationDataChanged:
                     if (OnVariationDataChangedNoArg != null) OnVariationDataChangedNoArg.RemoveListener(listener);
                     break;
-
+                case ICustomizableCharacter.ListenableEvent.OnBustDataChanged:
+                    if (OnBustDataChangedNoArg != null) OnBustDataChangedNoArg.RemoveListener(listener);
+                    break;
                 case ICustomizableCharacter.ListenableEvent.OnAnyDataChanged:
                     RemoveListener(ICustomizableCharacter.ListenableEvent.OnMuscleDataChanged, listener);
                     RemoveListener(ICustomizableCharacter.ListenableEvent.OnFatDataChanged, listener);
                     RemoveListener(ICustomizableCharacter.ListenableEvent.OnVariationDataChanged, listener);
+                    RemoveListener(ICustomizableCharacter.ListenableEvent.OnBustDataChanged, listener);
                     break;
             }
         }
@@ -3167,7 +3201,10 @@ namespace Swole.Morphing
             if (OnFatDataChangedNoArg != null) OnFatDataChangedNoArg.RemoveAllListeners();
 
             if (OnVariationDataChanged != null) OnVariationDataChanged.RemoveAllListeners();
-            if (OnVariationDataChangedNoArg != null) OnVariationDataChangedNoArg.RemoveAllListeners();         
+            if (OnVariationDataChangedNoArg != null) OnVariationDataChangedNoArg.RemoveAllListeners();      
+            
+            if (OnBustDataChanged != null) OnBustDataChanged.RemoveAllListeners();
+            if (OnBustDataChangedNoArg != null) OnBustDataChangedNoArg.RemoveAllListeners();
         }
 
         #endregion

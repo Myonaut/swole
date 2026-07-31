@@ -167,7 +167,9 @@ namespace Swole.API.Unity {
                     yield break;
                 }
 
+#if BULKOUT_ENV
                 int i = -1;
+#endif
                 while (true)
                 {
 #if BULKOUT_ENV
@@ -798,22 +800,43 @@ namespace Swole.API.Unity {
             {
                 if (isLinear)
                 {
-                    if (isPNG && SystemInfo.IsFormatSupported(GraphicsFormat.RGBA_DXT5_UNorm, UnityEngine.Experimental.Rendering.FormatUsage.Sample))
+                    if (isPNG && SystemInfo.IsFormatSupported(GraphicsFormat.RGBA_DXT5_UNorm,
+#if UNITY_6000_0_OR_NEWER
+            UnityEngine.Experimental.Rendering.GraphicsFormatUsage.Sample)) 
+#else
+            UnityEngine.Experimental.Rendering.FormatUsage.Sample))
+#endif
+
                     {
                         tex = new Texture2D(4, 4, UnityEngine.TextureFormat.DXT5, useMipMaps, true); 
                     }
-                    else if (!isPNG && SystemInfo.IsFormatSupported(GraphicsFormat.RGBA_DXT1_UNorm, UnityEngine.Experimental.Rendering.FormatUsage.Sample))
+                    else if (!isPNG && SystemInfo.IsFormatSupported(GraphicsFormat.RGBA_DXT1_UNorm,
+#if UNITY_6000_0_OR_NEWER
+            UnityEngine.Experimental.Rendering.GraphicsFormatUsage.Sample))
+#else
+            UnityEngine.Experimental.Rendering.FormatUsage.Sample))
+#endif
                     {
                         tex = new Texture2D(4, 4, UnityEngine.TextureFormat.DXT1, useMipMaps, true);
                     }
                 }
                 else
                 {
-                    if (isPNG && SystemInfo.IsFormatSupported(GraphicsFormat.RGBA_DXT5_SRGB, UnityEngine.Experimental.Rendering.FormatUsage.Sample))
+                    if (isPNG && SystemInfo.IsFormatSupported(GraphicsFormat.RGBA_DXT5_SRGB,
+#if UNITY_6000_0_OR_NEWER
+            UnityEngine.Experimental.Rendering.GraphicsFormatUsage.Sample))
+#else
+            UnityEngine.Experimental.Rendering.FormatUsage.Sample))
+#endif
                     {
                         tex = new Texture2D(4, 4, UnityEngine.TextureFormat.DXT5, useMipMaps, false);
                     }
-                    else if (!isPNG && SystemInfo.IsFormatSupported(GraphicsFormat.RGBA_DXT1_SRGB, UnityEngine.Experimental.Rendering.FormatUsage.Sample))
+                    else if (!isPNG && SystemInfo.IsFormatSupported(GraphicsFormat.RGBA_DXT1_SRGB,
+#if UNITY_6000_0_OR_NEWER
+            UnityEngine.Experimental.Rendering.GraphicsFormatUsage.Sample))
+#else
+            UnityEngine.Experimental.Rendering.FormatUsage.Sample))
+#endif
                     {
                         tex = new Texture2D(4, 4, UnityEngine.TextureFormat.DXT1, useMipMaps, false);
                     }

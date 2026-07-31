@@ -1,4 +1,4 @@
-#if (UNITY_STANDALONE || UNITY_EDITOR)
+#if UNITY_2017_1_OR_NEWER
 
 using System;
 using System.Reflection;
@@ -8,7 +8,6 @@ using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.Rendering;
 using UnityEngine.Rendering.Universal;
-using UnityEngine.Experimental.Rendering.Universal;
 
 namespace Swole.API.Unity
 {

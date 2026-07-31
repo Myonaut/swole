@@ -1,4 +1,4 @@
-#if (UNITY_STANDALONE || UNITY_EDITOR)
+#if UNITY_2017_1_OR_NEWER
 
 using System.Collections;
 using System.Collections.Generic;
@@ -302,8 +302,8 @@ namespace Swole.Modding
                 targetIK.solver = solver;
                 targetIK.fixTransforms = ik.fixTransforms;
             }
-        }
 #endif
+        }
     }
 
 }

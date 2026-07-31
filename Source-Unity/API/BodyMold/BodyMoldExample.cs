@@ -2,7 +2,7 @@ using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
 
-namespace Swole.Modding
+namespace Swole.API.Unity
 {
     // Example component demonstrating runtime usage of BodyMoldSystem.
     // Attach to a GameObject and assign clothingSource (MeshFilter) and bodySource (MeshFilter).
@@ -23,7 +23,7 @@ namespace Swole.Modding
         {
             if (clothingSource == null || bodyMoldCompute == null || precomputedBindings == null)
             {
-                Debug.LogError("BodyMoldExample: assign clothingSource, compute shader, and precomputed Bindings.");
+                Debug.LogError("BodyMoldExample: assign clothingSource, compute shader, and precomputed Bindings."); 
                 return;
             }
 
@@ -32,10 +32,10 @@ namespace Swole.Modding
             //workingClothingMesh.name = clothingSource.sharedMesh.name + "_molded";
             //clothingSource.sharedMesh = workingClothingMesh;
 
-            moldSystem = gameObject.AddOrGetComponent<BodyMoldSystem>();  
-            moldSystem.computeShader = bodyMoldCompute;
-            moldSystem.SetupFromBindings(precomputedBindings);
-            //moldSystem.tempMesh = workingClothingMesh;  
+            //moldSystem = gameObject.AddOrGetComponent<BodyMoldSystem>();  
+            //moldSystem.computeShader = bodyMoldCompute;
+            //moldSystem.SetupFromBindings(precomputedBindings);
+            //moldSystem.tempMesh = workingClothingMesh;   
         }
 
         void Update()
@@ -47,7 +47,7 @@ namespace Swole.Modding
             {
                 Debug.Log($"Dispatching {iterationsPerFrame} iterations");
                 // Run iterative smoothing and apply to the working mesh
-                moldSystem.DispatchIterations(iterationsPerFrame); 
+                moldSystem.DispatchIterations(iterationsPerFrame, true); 
                 //moldSystem.ApplyToMesh(targetSdfIndex, workingClothingMesh);
             }
         }

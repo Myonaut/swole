@@ -5,11 +5,17 @@
 #pragma kernel RasterizeTrianglesWithDeltas
 #pragma kernel FinalizeSDF
 
-#include "SkinnedMeshData.hlsl"
+#pragma kernel CS_SmoothSDFCrevices
+#pragma kernel CS_MorphologicalClosingSDF
+
+#include "SkinnedMeshData.hlsl" 
 
 // Pass 1 Output / Pass 2 Input: Shared atomic integer texture
 RWTexture3D<uint> _InterlockingGrid;
 
+// Input 3D Texture
+Texture3D<float> _Source;
+SamplerState sampler_Source;
 // Output 3D Texture
 RWTexture3D<float> _Result;
 
@@ -24,15 +30,19 @@ int _TriangleCount;
 int _Resolution;
 int _ShapeDeltasIndexOffset;
 
-float3 _BoundsMin;
-float3 _BoundsMax;
-float _MaxDistance;
+//float3 _BoundsMin;
+//float3 _BoundsMax;
+StructuredBuffer<float3> _BoundsMin;
+StructuredBuffer<float3> _BoundsMax;
+//float _MaxDistance;
+StructuredBuffer<float> _MaxDistance;
+float _MaxNegativeDistance; // Maximum depth for negative (inside) distances - prevents artifacts from open meshes
 
 MeshVertexDelta SampleDelta(uint idInBuffer)
 {
     MeshVertexDelta delta = _Deltas[idInBuffer];
     if (_ShapeDeltasIndexOffset >= 0) 
-        delta = MVD_Add(delta, _ShapeDeltas[_ShapeDeltasIndexOffset + idInBuffer]);
+        delta = MVD_Add(delta, _ShapeDeltas[_ShapeDeltasIndexOffset + idInBuffer]); 
     
     return delta;
 }
@@ -42,7 +52,7 @@ float ShortestDistanceToTriangleSq(float3 p, float3 a, float3 b, float3 c, out b
 {
     float3 ab = b - a;
     float3 bc = c - b;
-    float3 ca = a - c;
+    float3 ca = a - c; 
 
     float3 ap = p - a;
     float3 bp = p - b;
@@ -99,7 +109,7 @@ void Generate(uint3 id : SV_DispatchThreadID)
 
     // 1. Convert Voxel ID (0 to Resolution) to a Local 3D Position
     float3 voxelUV = float3(id) / ((float) _Resolution - 1.0);
-    float3 voxelPos = lerp(_BoundsMin, _BoundsMax, voxelUV);
+    float3 voxelPos = lerp(_BoundsMin[0], _BoundsMax[0], voxelUV);
 
     float minDistanceSq = 1e10; // Start with a massive initial distance
     uint insideCount = 0;
@@ -130,11 +140,17 @@ void Generate(uint3 id : SV_DispatchThreadID)
         finalDistance = -finalDistance;
     }
 
+    // Clamp negative distances to prevent artifacts from open/non-watertight meshes
+    if (_MaxNegativeDistance > 0.0 && finalDistance < 0.0)
+    {
+        finalDistance = max(finalDistance, -_MaxNegativeDistance);
+    }
+
     // debug sphere
     //float3 center = lerp(_BoundsMin, _BoundsMax, 0.5);
     //float radius = distance(_BoundsMin, _BoundsMax) * 0.25;
     //finalDistance = distance(voxelPos, center) - radius;
-    
+
     // 4. Store distance inside the 3D texture voxel
     _Result[id] = finalDistance;
 }
@@ -146,7 +162,7 @@ void GenerateWithDeltas(uint3 id : SV_DispatchThreadID)
         return;
 
     float3 voxelUV = float3(id) / ((float) _Resolution - 1.0);
-    float3 voxelPos = lerp(_BoundsMin, _BoundsMax, voxelUV); 
+    float3 voxelPos = lerp(_BoundsMin[0], _BoundsMax[0], voxelUV); 
 
     float minDistanceSq = 1e10;
     
@@ -196,6 +212,12 @@ void GenerateWithDeltas(uint3 id : SV_DispatchThreadID)
         finalDistance = -finalDistance; 
     }
 
+    // Clamp negative distances to prevent artifacts from open/non-watertight meshes
+    if (_MaxNegativeDistance > 0.0 && finalDistance < 0.0)
+    {
+        finalDistance = max(finalDistance, -_MaxNegativeDistance);
+    }
+
     _Result[id] = finalDistance;
 }
 
@@ -215,9 +237,9 @@ void WriteTriToVoxels(float3 a, float3 b, float3 c)
     float3 triMin = min(a, min(b, c));
     float3 triMax = max(a, max(b, c));
 
-    float3 invBoundsSize = 1.0 / (_BoundsMax - _BoundsMin);
-    int3 voxelMin = clamp((int3) (((triMin - _BoundsMin) * invBoundsSize) * (_Resolution - 1)), int3(0, 0, 0), int3(_Resolution - 1, _Resolution - 1, _Resolution - 1));
-    int3 voxelMax = clamp((int3) (((triMax - _BoundsMin) * invBoundsSize) * (_Resolution - 1)), int3(0, 0, 0), int3(_Resolution - 1, _Resolution - 1, _Resolution - 1));
+    float3 invBoundsSize = 1.0 / (_BoundsMax[0] - _BoundsMin[0]);
+    int3 voxelMin = clamp((int3) (((triMin - _BoundsMin[0]) * invBoundsSize) * (_Resolution - 1)), int3(0, 0, 0), int3(_Resolution - 1, _Resolution - 1, _Resolution - 1));
+    int3 voxelMax = clamp((int3) (((triMax - _BoundsMin[0]) * invBoundsSize) * (_Resolution - 1)), int3(0, 0, 0), int3(_Resolution - 1, _Resolution - 1, _Resolution - 1));
 
     //voxelMin = max(voxelMin - 1, 0);
     //voxelMax = min(voxelMax + 1, _Resolution - 1);
@@ -237,14 +259,14 @@ void WriteTriToVoxels(float3 a, float3 b, float3 c)
                 int3 voxelCoords = int3(x, y, z);
                 
                 float3 voxelUV = float3(voxelCoords) / ((float) _Resolution - 1.0);
-                float3 voxelPos = lerp(_BoundsMin, _BoundsMax, voxelUV);
+                float3 voxelPos = lerp(_BoundsMin[0], _BoundsMax[0], voxelUV);
 
                 bool dummyInside = false;
                 float dist = sqrt(ShortestDistanceToTriangleSq(voxelPos, a, b, c, dummyInside));
 
                 // --- FIXED-POINT QUANTIZATION FIX ---
                 // Convert the float distance into a perfectly linear 0 to 1,000,000 uint scale
-                float normalizedDist = saturate(dist / _MaxDistance);
+                float normalizedDist = saturate(dist / _MaxDistance[0]);
                 uint quantizedDist = (uint) (normalizedDist * 1000000.0);
 
                 // This integer comparison will now sort 100% perfectly on the GPU core
@@ -303,7 +325,7 @@ void FinalizeSDF(uint3 id : SV_DispatchThreadID)
 
     // 1. Decode the integer back into our smooth real-world float distance
     uint quantizedDist = _InterlockingGrid[id];
-    float finalDistance = ((float) quantizedDist / 1000000.0) * _MaxDistance;
+    float finalDistance = ((float) quantizedDist / 1000000.0) * _MaxDistance[0];
 
     _Result[id] = finalDistance;
 }
@@ -312,11 +334,12 @@ void FinalizeSDF(uint3 id : SV_DispatchThreadID)
 #pragma kernel CS_ClearGrid
 #pragma kernel CS_CountTriangles
 #pragma kernel CS_CountTrianglesWithDeltas
+#pragma kernel CS_PrefixSum
 #pragma kernel CS_PopulateGrid
 #pragma kernel CS_PopulateGridWithDeltas
 #pragma kernel CS_BuildHighDetailSDF
 #pragma kernel CS_BuildHighDetailSDFWithDeltas
-
+ 
 // Structural Configuration
 #define GRID_RES 16 // A coarse 16x16x16 bucket grid is perfect for partitioning a character
 
@@ -330,7 +353,7 @@ RWStructuredBuffer<uint> _GlobalCounter; // Size: 1 (Tracks current index alloca
 // Helper: Convert a 3D position to a coarse grid 3D integer index
 int3 GetGridCellCoords(float3 pos)
 {
-    float3 uvw = saturate((pos - _BoundsMin) / (_BoundsMax - _BoundsMin));
+    float3 uvw = saturate((pos - _BoundsMin[0]) / (_BoundsMax[0] - _BoundsMin[0]));
     return clamp((int3) (uvw * (GRID_RES - 1)), int3(0, 0, 0), int3(GRID_RES - 1, GRID_RES - 1, GRID_RES - 1));
 }
 
@@ -405,6 +428,83 @@ void CS_CountTrianglesWithDeltas(uint3 id : SV_DispatchThreadID)
                 int flatIndex = GetFlattenedCellIndex(int3(x, y, z));
                 InterlockedAdd(_CellTriangleCount[flatIndex], 1u);
             }
+        }
+    }
+}
+
+#define PREFIX_SUM_BUFFER_SIZE 4096
+#define PREFIX_SUM_THREADS_PER_GROUP 1024 // Maximum allowed threads per group in HLSL
+
+// Allocate shared memory for the parallel scan
+groupshared uint sharedData[PREFIX_SUM_BUFFER_SIZE];
+
+[numthreads(PREFIX_SUM_THREADS_PER_GROUP, 1, 1)]
+void CS_PrefixSum(uint3 id : SV_GroupThreadID)
+{
+    uint thid = id.x;
+
+    // 1. Cooperative Load: 1024 threads load 4096 elements into shared memory
+    [unroll]
+    for (uint i = 0; i < 4; i++)
+    {
+        uint idx = thid + (i * PREFIX_SUM_THREADS_PER_GROUP);
+        if (idx < PREFIX_SUM_BUFFER_SIZE)
+        {
+            sharedData[idx] = _CellTriangleCount[idx];
+        }
+    }
+    GroupMemoryBarrierWithGroupSync();
+
+    // 2. Up-Sweep (Reduction) Phase
+    uint stride = 1;
+    while (stride < PREFIX_SUM_BUFFER_SIZE)
+    {
+        [unroll]
+        for (uint j = 0; j < 4; j++)
+        {
+            uint idx = (thid + (j * PREFIX_SUM_THREADS_PER_GROUP) + 1) * stride * 2 - 1;
+            if (idx < PREFIX_SUM_BUFFER_SIZE)
+            {
+                sharedData[idx] += sharedData[idx - stride];
+            }
+        }
+        stride *= 2;
+        GroupMemoryBarrierWithGroupSync();
+    }
+
+    // 3. Clear the last element to make it an Exclusive Scan (Starts at 0)
+    if (thid == 0)
+    {
+        sharedData[PREFIX_SUM_BUFFER_SIZE - 1] = 0;
+    }
+    GroupMemoryBarrierWithGroupSync();
+
+    // 4. Down-Sweep Phase
+    while (stride > 0)
+    {
+        [unroll]
+        for (uint k = 0; k < 4; k++)
+        {
+            uint idx = (thid + (k * PREFIX_SUM_THREADS_PER_GROUP) + 1) * stride * 2 - 1;
+            if (idx < PREFIX_SUM_BUFFER_SIZE)
+            {
+                uint t = sharedData[idx - stride];
+                sharedData[idx - stride] = sharedData[idx];
+                sharedData[idx] += t;
+            }
+        }
+        stride /= 2;
+        GroupMemoryBarrierWithGroupSync();
+    }
+
+    // 5. Cooperative Store: Write the calculated start indices back to global memory
+    [unroll]
+    for (uint m = 0; m < 4; m++)
+    {
+        uint idx = thid + (m * PREFIX_SUM_THREADS_PER_GROUP);
+        if (idx < PREFIX_SUM_BUFFER_SIZE)
+        {
+            _CellStartIndices[idx] = sharedData[idx];
         }
     }
 }
@@ -490,7 +590,7 @@ void CS_BuildHighDetailSDF(uint3 id : SV_DispatchThreadID)
         return;
 
     float3 voxelUV = float3(id) / ((float) _Resolution - 1.0);
-    float3 voxelPos = lerp(_BoundsMin, _BoundsMax, voxelUV);
+    float3 voxelPos = lerp(_BoundsMin[0], _BoundsMax[0], voxelUV);
 
     int3 centerCell = GetGridCellCoords(voxelPos);
 
@@ -538,14 +638,14 @@ void CS_BuildHighDetailSDF(uint3 id : SV_DispatchThreadID)
     }
 
     float finalDistance = sqrt(minDistanceSq);
-    
+
     // Clear Out the Background: If a voxel didn't find any triangles nearby 
     // and retains its massive default distance, clamp it to a safe value.
     //if (finalDistance > 1e5)
     //{
     //    finalDistance = _MaxDistance; // Or force it to a soft background baseline value like 1.0
     //}
-    
+
     // --- ACCURATE SIGN EVALUATION ---
     float3 edge1 = closestB - closestA;
     float3 edge2 = closestC - closestA;
@@ -554,7 +654,13 @@ void CS_BuildHighDetailSDF(uint3 id : SV_DispatchThreadID)
 
     if (dot(voxelDirection, triangleNormal) < 0.0) 
         finalDistance = -finalDistance;
-    
+
+    // Clamp negative distances to prevent artifacts from open/non-watertight meshes
+    if (_MaxNegativeDistance > 0.0 && finalDistance < 0.0)
+    {
+        finalDistance = max(finalDistance, -_MaxNegativeDistance);
+    }
+
     _Result[id] = finalDistance;
 }
 [numthreads(8, 8, 8)]
@@ -564,7 +670,7 @@ void CS_BuildHighDetailSDFWithDeltas(uint3 id : SV_DispatchThreadID)
         return;
 
     float3 voxelUV = float3(id) / ((float) _Resolution - 1.0);
-    float3 voxelPos = lerp(_BoundsMin, _BoundsMax, voxelUV);
+    float3 voxelPos = lerp(_BoundsMin[0], _BoundsMax[0], voxelUV);
 
     int3 centerCell = GetGridCellCoords(voxelPos);
 
@@ -612,14 +718,14 @@ void CS_BuildHighDetailSDFWithDeltas(uint3 id : SV_DispatchThreadID)
     }
 
     float finalDistance = sqrt(minDistanceSq);
-    
+
     // Clear Out the Background: If a voxel didn't find any triangles nearby 
     // and retains its massive default distance, clamp it to a safe value.
     //if (finalDistance > 1e5)
     //{
     //    finalDistance = _MaxDistance; // Or force it to a soft background baseline value like 1.0
     //}
-    
+
     // --- ACCURATE SIGN EVALUATION ---
     float3 edge1 = closestB - closestA;
     float3 edge2 = closestC - closestA;
@@ -628,6 +734,434 @@ void CS_BuildHighDetailSDFWithDeltas(uint3 id : SV_DispatchThreadID)
 
     if (dot(voxelDirection, triangleNormal) < 0.0) 
         finalDistance = -finalDistance;
-    
+
+    // Clamp negative distances to prevent artifacts from open/non-watertight meshes
+    if (_MaxNegativeDistance > 0.0 && finalDistance < 0.0)
+    {
+        finalDistance = max(finalDistance, -_MaxNegativeDistance);
+    }
+
     _Result[id] = finalDistance;
+}
+
+[numthreads(8, 8, 8)]
+void CS_SmoothSDFCrevices(uint3 id : SV_DispatchThreadID)
+{
+    int3 voxelCoords = int3(id);
+    
+    // Out-of-bounds safety check for non-divisible resolutions
+    if (voxelCoords.x >= _Resolution || voxelCoords.y >= _Resolution || voxelCoords.z >= _Resolution) 
+        return;
+
+    // 1. Fetch current distance
+    float centerDist = _Result[voxelCoords];
+
+    // 2. Sample immediate 6-way voxel neighbors (clamped safely inside limits)
+    int3 oX = int3(1, 0, 0);
+    int3 oY = int3(0, 1, 0);
+    int3 oZ = int3(0, 0, 1);
+    int3 maxBounds = int3(_Resolution - 1, _Resolution - 1, _Resolution - 1);
+    
+    float pX = _Result[clamp(voxelCoords + oX, 0, maxBounds)];
+    float nX = _Result[clamp(voxelCoords - oX, 0, maxBounds)];
+    float pY = _Result[clamp(voxelCoords + oY, 0, maxBounds)];
+    float nY = _Result[clamp(voxelCoords - oY, 0, maxBounds)];
+    float pZ = _Result[clamp(voxelCoords + oZ, 0, maxBounds)];
+    float nZ = _Result[clamp(voxelCoords - oZ, 0, maxBounds)];
+
+    // 3. Calculate the discrete Laplace operator
+    float laplacian = (pX + nX + pY + nY + pZ + nZ) - (6.0 * centerDist);
+
+    // 4. If the Laplacian is positive, we are inside a crevice. Melt it outward.
+    if (laplacian > 0.0)
+    {
+        float smoothRate = 0.25;
+        centerDist += laplacian * smoothRate;
+    }
+
+    // Write back the processed filled-in data
+    _Result[voxelCoords] = centerDist; 
+}
+
+// A flat array cache containing a padded 10x10x10 region (1000 cells)
+// This loads an 8x8x8 chunk plus a 1-voxel skirt boundary on all sides.
+groupshared float s_Cache[1000];
+
+// Helper to convert localized 3D cache coords to flat array indices safely
+int GetCacheIdx(int x, int y, int z)
+{
+    return x + (y * 10) + (z * 100);
+}
+
+[numthreads(8, 8, 8)]
+void CS_MorphologicalClosingSDF(uint3 dtid : SV_DispatchThreadID, uint3 gtid : SV_GroupThreadID, uint3 gid : SV_GroupID)
+{
+    // 1. COOPERATIVELY LOAD RAW MEMORY INTO L1 GROUPSHARED BUFFER
+    // We map the 8x8x8 group base coordinate offset backward by 1 voxel to capture borders
+    int3 baseVoxelCoords = int3(gid * 8) - 1;
+
+    // There are 512 threads in an 8x8x8 group, but we need to fetch 1000 elements.
+    // Each thread sequentially reads exactly two elements to populate the cache layout.
+    for (int i = 0; i < 2; i++)
+    {
+        int flatIdx = (int) gtid.x + (int) gtid.y * 8 + (int) gtid.z * 64 + (i * 512);
+        
+        if (flatIdx < 1000)
+        {
+            // Deconstruct flat index into localized 3D cache coordinates
+            int cx = flatIdx % 10;
+            int cy = (flatIdx / 10) % 10;
+            int cz = flatIdx / 100;
+
+            // Target baseline coordinate, firmly clamped inside the master resolution boundary
+            int3 readCoords = clamp(baseVoxelCoords + int3(cx, cy, cz),
+                                    int3(0, 0, 0),
+                                    int3(_Resolution - 1, _Resolution - 1, _Resolution - 1));
+            
+            s_Cache[flatIdx] = _Source[readCoords];
+        }
+    }
+
+    // Hardware sync: lock memory steps until the cooperative cache reads finish
+    GroupMemoryBarrierWithGroupSync();
+
+    // Out-of-bounds skip checking for non-divisible resolution padding edges
+    if ((int) dtid.x >= _Resolution || (int) dtid.y >= _Resolution || (int) dtid.z >= _Resolution)
+        return;
+
+    // Shift thread IDs forward to align with our local padded cache core
+    int cx = (int) gtid.x + 1;
+    int cy = (int) gtid.y + 1;
+    int cz = (int) gtid.z + 1;
+
+    // 2. STAGE 1: IN-CACHE LOGICAL DILATION (MAX FILTER)
+    // We gather max elements for ourselves and our 6 orthogonal neighbor clusters
+    float localMax_Center = s_Cache[GetCacheIdx(cx, cy, cz)];
+    float localMax_pX = -9999.0;
+    float localMax_nX = -9999.0;
+    float localMax_pY = -9999.0;
+    float localMax_nY = -9999.0;
+    float localMax_pZ = -9999.0;
+    float localMax_nZ = -9999.0;
+
+    for (int x = -1; x <= 1; x++)
+    {
+        for (int y = -1; y <= 1; y++)
+        {
+            for (int z = -1; z <= 1; z++)
+            {
+                localMax_Center = max(localMax_Center, s_Cache[GetCacheIdx(cx + x, cy + y, cz + z)]);
+                localMax_pX = max(localMax_pX, s_Cache[GetCacheIdx(cx + 1 + x, cy + y, cz + z)]);
+                localMax_nX = max(localMax_nX, s_Cache[GetCacheIdx(cx - 1 + x, cy + y, cz + z)]);
+                localMax_pY = max(localMax_pY, s_Cache[GetCacheIdx(cx + x, cy + 1 + y, cz + z)]);
+                localMax_nY = max(localMax_nY, s_Cache[GetCacheIdx(cx + x, cy - 1 + y, cz + z)]);
+                localMax_pZ = max(localMax_pZ, s_Cache[GetCacheIdx(cx + x, cy + y, cz + 1 + z)]);
+                localMax_nZ = max(localMax_nZ, s_Cache[GetCacheIdx(cx + x, cy + y, cz - 1 + z)]);
+            }
+        }
+    }
+
+    // 3. STAGE 2: IN-CACHE LOGICAL EROSION (MIN FILTER)
+    // Intersecting the dilated values automatically removes the inner gaps
+    float finalErodedDistance = localMax_Center;
+    finalErodedDistance = min(finalErodedDistance, localMax_pX);
+    finalErodedDistance = min(finalErodedDistance, localMax_nX);
+    finalErodedDistance = min(finalErodedDistance, localMax_pY);
+    finalErodedDistance = min(finalErodedDistance, localMax_nY);
+    finalErodedDistance = min(finalErodedDistance, localMax_pZ);
+    finalErodedDistance = min(finalErodedDistance, localMax_nZ);
+
+    // 4. FLUSH FINAL SIMPLIFIED VOLUMETRIC DATA TO BUFFER
+    _Result[dtid] = finalErodedDistance;
+}
+
+#pragma kernel GenerateAOCV
+#pragma kernel GenerateAOCV_WithDeltas
+
+// Change your output buffers from a single float texture to two float4 textures
+RWTexture3D<float4> _ResultCore; // RGB = Bone/Mesh Core Anchor, A = Safe Distance to Skin
+RWTexture3D<float4> _ResultSurfaceNormal; // RGB = True Skin Normal Vector, A = Unused
+
+float ShortestDistanceToTriangleSq_WithPoint(float3 p, float3 a, float3 b, float3 c, out float3 closestPoint, out bool isInside)
+{
+    float3 ab = b - a;
+    float3 bc = c - b;
+    float3 ca = a - c;
+
+    float3 ap = p - a;
+    float3 bp = p - b;
+    float3 cp = p - c;
+
+    float3 n = cross(ab, -ca); // Corrected cross order for standard normal orientation
+
+    // Determine if the projection falls inside the triangle regions
+    bool insideAB = dot(cross(ab, n), ap) >= 0.0;
+    bool insideBC = dot(cross(bc, n), bp) >= 0.0;
+    bool insideCA = dot(cross(ca, n), cp) >= 0.0;
+
+    // Figure out whether the voxel point is on the positive/negative side of the triangle plane
+    isInside = dot(n, ap) < 0.0;
+
+    if (insideAB && insideBC && insideCA)
+    {
+        // Closest point is on the triangle face
+        float num = dot(ap, n);
+        float den = dot(n, n);
+        
+        // Calculate the absolute 3D coordinate where the voxel projects onto the face
+        closestPoint = p - (n * (num / den));
+        
+        return (num * num) / den;
+    }
+
+    // Closest point falls on one of the 3 edges/vertices
+    float3 closestPoints[3];
+    
+    // Segment AB
+    float t0 = saturate(dot(ap, ab) / dot(ab, ab));
+    closestPoints[0] = a + ab * t0;
+    
+    // Segment BC
+    float t1 = saturate(dot(bp, bc) / dot(bc, bc));
+    closestPoints[1] = b + bc * t1;
+    
+    // Segment CA
+    float t2 = saturate(dot(cp, ca) / dot(ca, ca));
+    closestPoints[2] = c + ca * t2;
+
+    // Optimized Performance Fix: Use squared distances to find the minimum to avoid 3 heavy sqrt calls
+    float3 diff0 = p - closestPoints[0];
+    float3 diff1 = p - closestPoints[1];
+    float3 diff2 = p - closestPoints[2];
+
+    float d0Sq = dot(diff0, diff1); // Using dot instead of distance()
+    float d1Sq = dot(diff1, diff1);
+    float d2Sq = dot(diff2, diff2);
+
+    // Find the smallest squared distance and assign its corresponding 3D spatial intercept point
+    float minD = d0Sq;
+    closestPoint = closestPoints[0];
+
+    if (d1Sq < minD)
+    {
+        minD = d1Sq;
+        closestPoint = closestPoints[1];
+    }
+    if (d2Sq < minD)
+    {
+        minD = d2Sq;
+        closestPoint = closestPoints[2];
+    }
+
+    return minD;
+}
+
+[numthreads(8, 8, 8)]
+void GenerateAOCV(uint3 id : SV_DispatchThreadID)
+{
+    if (id.x >= (uint) _Resolution || id.y >= (uint) _Resolution || id.z >= (uint) _Resolution)
+        return;
+
+    float3 voxelUV = float3(id) / ((float) _Resolution - 1.0);
+    float3 voxelPos = lerp(_BoundsMin[0], _BoundsMax[0], voxelUV);
+
+    float minDistanceSq = 1e10;
+    
+    float3 closestA = float3(0, 0, 0);
+    float3 closestB = float3(0, 0, 0);
+    float3 closestC = float3(0, 0, 0);
+
+    // Track the absolute closest spatial point directly on the triangle's face/edge/vertex
+    // This will act as our temporary surface projection anchor
+    float3 closestPointOnMesh = float3(0, 0, 0);
+
+    for (int i = 0; i < _TriangleCount; i += 3)
+    {
+        int ia = _Triangles[i];
+        int ib = _Triangles[i + 1];
+        int ic = _Triangles[i + 2];
+        
+        float3 a = _Vertices[ia];
+        float3 b = _Vertices[ib];
+        float3 c = _Vertices[ic];
+
+        bool dummyInside = false;
+        
+        // NOTE: If your ShortestDistanceToTriangleSq helper doesn't calculate the 
+        // explicit 3D intercept point, modify it to output the closest point vector!
+        float3 currentClosestPoint;
+        float distSq = ShortestDistanceToTriangleSq_WithPoint(voxelPos, a, b, c, currentClosestPoint, dummyInside);
+
+        if (distSq < minDistanceSq)
+        {
+            minDistanceSq = distSq;
+            closestA = a;
+            closestB = b;
+            closestC = c;
+            closestPointOnMesh = currentClosestPoint;
+        }
+    }
+
+    float finalDistance = sqrt(minDistanceSq);
+
+    // 1. Calculate the mathematical normal vector of the absolute closest triangle face
+    float3 edge1 = closestB - closestA;
+    float3 edge2 = closestC - closestA;
+    float3 triangleNormal = normalize(cross(edge1, edge2));
+
+    // Vector from the closest vertex to our current voxel point
+    float3 voxelDirection = voxelPos - closestA;
+
+    // 2. Sign Determination
+    bool isInside = dot(voxelDirection, triangleNormal) < 0.0;
+    if (isInside)
+    {
+        finalDistance = -finalDistance;
+    }
+
+    if (_MaxNegativeDistance > 0.0 && finalDistance < 0.0)
+    {
+        finalDistance = max(finalDistance, -_MaxNegativeDistance);
+    }
+
+    // ==========================================
+    // AOCV EXTENSION LOGIC (THE ADAPTATION)
+    // ==========================================
+    
+    // Core Definition: 
+    // If the voxel is inside the body, the core anchor vector is found by projecting
+    // deeply inward along the normal. If the voxel is outside, the core anchor is 
+    // simply the closest point on the skin surface itself.
+    float3 coreAnchor = float3(0, 0, 0);
+    float safeRadius = 0.0;
+
+    if (finalDistance <= 0.0)
+    {
+        // Voxel is INSIDE the body. 
+        // We push the core anchor vector deep into the body center along the normal vector.
+        // We use our max negative boundary depth to dictate the core depth line safely.
+        float maxDepth = (_MaxNegativeDistance > 0.0) ? _MaxNegativeDistance : 0.1;
+        coreAnchor = closestPointOnMesh - (triangleNormal * maxDepth);
+        
+        // The safe radius is the total distance from our generated core line back to the skin surface
+        safeRadius = maxDepth;
+    }
+    else
+    {
+        // Voxel is OUTSIDE the body.
+        // The core anchor is fixed straight to the skin surface point.
+        coreAnchor = closestPointOnMesh;
+        
+        // Outside voxels have a local safe radius of zero (any penetration past this point is a collision)
+        safeRadius = 0.0;
+    }
+
+    // 3. Write data to the dual Texture targets
+    _ResultCore[id] = float4(coreAnchor, safeRadius);
+    _ResultSurfaceNormal[id] = float4(triangleNormal, finalDistance); // We preserve finalDistance in Alpha for debugging!
+}
+
+[numthreads(8, 8, 8)]
+void GenerateAOCV_WithDeltas(uint3 id : SV_DispatchThreadID)
+{
+    if (id.x >= (uint) _Resolution || id.y >= (uint) _Resolution || id.z >= (uint) _Resolution)
+        return;
+
+    float3 voxelUV = float3(id) / ((float) _Resolution - 1.0);
+    float3 voxelPos = lerp(_BoundsMin[0], _BoundsMax[0], voxelUV);
+
+    float minDistanceSq = 1e10;
+    
+    float3 closestA = float3(0, 0, 0);
+    float3 closestB = float3(0, 0, 0);
+    float3 closestC = float3(0, 0, 0);
+
+    // Track the absolute closest spatial point directly on the triangle's face/edge/vertex
+    // This will act as our temporary surface projection anchor
+    float3 closestPointOnMesh = float3(0, 0, 0);
+
+    for (int i = 0; i < _TriangleCount; i += 3)
+    {
+        int ia = _Triangles[i];
+        int ib = _Triangles[i + 1];
+        int ic = _Triangles[i + 2];
+        
+        float3 a = _Vertices[ia] + SampleDelta(ia).positionDelta;
+        float3 b = _Vertices[ib] + SampleDelta(ib).positionDelta;
+        float3 c = _Vertices[ic] + SampleDelta(ic).positionDelta;
+
+        bool dummyInside = false;
+        
+        // NOTE: If your ShortestDistanceToTriangleSq helper doesn't calculate the 
+        // explicit 3D intercept point, modify it to output the closest point vector!
+        float3 currentClosestPoint;
+        float distSq = ShortestDistanceToTriangleSq_WithPoint(voxelPos, a, b, c, currentClosestPoint, dummyInside);
+
+        if (distSq < minDistanceSq)
+        {
+            minDistanceSq = distSq;
+            closestA = a;
+            closestB = b;
+            closestC = c;
+            closestPointOnMesh = currentClosestPoint;
+        }
+    }
+
+    float finalDistance = sqrt(minDistanceSq);
+
+    // 1. Calculate the mathematical normal vector of the absolute closest triangle face
+    float3 edge1 = closestB - closestA;
+    float3 edge2 = closestC - closestA;
+    float3 triangleNormal = normalize(cross(edge1, edge2));
+
+    // Vector from the closest vertex to our current voxel point
+    float3 voxelDirection = voxelPos - closestA;
+
+    // 2. Sign Determination
+    bool isInside = dot(voxelDirection, triangleNormal) < 0.0;
+    if (isInside)
+    {
+        finalDistance = -finalDistance;
+    }
+
+    if (_MaxNegativeDistance > 0.0 && finalDistance < 0.0)
+    {
+        finalDistance = max(finalDistance, -_MaxNegativeDistance);
+    }
+
+    // ==========================================
+    // AOCV EXTENSION LOGIC (THE ADAPTATION)
+    // ==========================================
+    
+    // Core Definition: 
+    // If the voxel is inside the body, the core anchor vector is found by projecting
+    // deeply inward along the normal. If the voxel is outside, the core anchor is 
+    // simply the closest point on the skin surface itself.
+    float3 coreAnchor = float3(0, 0, 0);
+    float safeRadius = 0.0;
+
+    if (finalDistance <= 0.0)
+    {
+        // Voxel is INSIDE the body. 
+        // We push the core anchor vector deep into the body center along the normal vector.
+        // We use our max negative boundary depth to dictate the core depth line safely.
+        float maxDepth = (_MaxNegativeDistance > 0.0) ? _MaxNegativeDistance : 0.1;
+        coreAnchor = closestPointOnMesh - (triangleNormal * maxDepth);
+        
+        // The safe radius is the total distance from our generated core line back to the skin surface
+        safeRadius = maxDepth;
+    }
+    else
+    {
+        // Voxel is OUTSIDE the body.
+        // The core anchor is fixed straight to the skin surface point.
+        coreAnchor = closestPointOnMesh;
+        
+        // Outside voxels have a local safe radius of zero (any penetration past this point is a collision)
+        safeRadius = 0.0;
+    }
+
+    // 3. Write data to the dual Texture targets
+    _ResultCore[id] = float4(coreAnchor, safeRadius);
+    _ResultSurfaceNormal[id] = float4(triangleNormal, finalDistance); // We preserve finalDistance in Alpha for debugging!
 }

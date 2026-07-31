@@ -3,21 +3,6 @@
 
 #include "CustomizableCharacterMesh.hlsl"
 
-struct VertexData
-{
-    float3 position;
-    float3 normal;
-    float4 tangent;
-};
-
-// MeshVertexDelta layout must match the C# struct in MorphUtils.cs
-struct MeshVertexDelta
-{
-    float3 positionDelta;
-    float3 normalDelta;
-    float3 tangentDelta;
-};
-
 #ifdef SHADERGRAPH_PREVIEW
 
 void SampleClothingStretch_float(int localID, int vertexIndex, int vertexCount, out float outStretch)
@@ -25,7 +10,7 @@ void SampleClothingStretch_float(int localID, int vertexIndex, int vertexCount, 
     outStretch = 1.0;
 }
 
-void SkinBoundGarmentPreCalculated_float(int localID, int rigID, int characterID, int vertexIndex, int vertexCount, float bustMix, float3 inPosition, float3 inNormal, float3 inTangent, out float3 outPosition, out float3 outNormal, out float3 outTangent, out float4 muscleData, out float4 fatData, out float alpha, out float midlineWeight)
+void SkinBoundGarmentPreCalculated_float(int localID, int rigID, int characterID, int vertexIndex, int vertexCount, float bustMix, float normalBlend, float tangentBlend, float3 inPosition, float3 inNormal, float3 inTangent, out float3 outPosition, out float3 outNormal, out float3 outTangent, out float4 muscleData, out float4 fatData, out float alpha, out float midlineWeight)
 {
     outPosition = inPosition;
     outNormal = inNormal;
@@ -68,18 +53,92 @@ void BuildBasePhysiqueData_float(int characterID, int characterVertexIndex, int 
     BuildPhysiqueDataPreCalculated_float(characterID, characterVertexIndex, characterVertexCount, float2(characterPosition.x + 0.5, 0), characterPosition, muscleData, fatData, midlineWeight, maskingLR);
 }
 
-void SkinBoundGarmentPreCalculated_float(int localID, int rigID, int characterID, int vertexIndex, int vertexCount, float bustMix, float3 inPosition, float3 inNormal, float3 inTangent, out float3 outPosition, out float3 outNormal, out float3 outTangent, out float4 muscleData, out float4 fatData, out float alpha, out float midlineWeight)
+void ApplyClothingFlexShapeDelta(int shapeIndex, int vertexIndex, int vertexCount, float weight, MeshVertexDelta baseDelta, inout float3 outPosition, inout float3 outNormal, inout float3 outTangent)
+{
+    int shapeStartIndex = ((_ClothingFlexShapeIndexInBufferStart + shapeIndex) * vertexCount) + vertexIndex;
+    MeshVertexDelta delta = _ClothingVertexDeltas[shapeStartIndex];
+    ApplyShapeDeltaRaw_float(delta.positionDelta - baseDelta.positionDelta, delta.normalDelta - baseDelta.normalDelta, delta.tangentDelta - baseDelta.tangentDelta, weight, outPosition, outNormal, outTangent, outPosition, outNormal, outTangent);
+}
+void SkinBoundGarmentPreCalculated_float(int localID, int rigID, int characterID, int vertexIndex, int vertexCount, float bustMix, float normalBlend, float tangentBlend, float3 inPosition, float3 inNormal, float3 inTangent, out float3 outPosition, out float3 outNormal, out float3 outTangent, out float4 muscleData, out float4 fatData, out float alpha, out float midlineWeight)
 {
     outPosition = inPosition;
     outNormal = inNormal;
     outTangent = inTangent;
     
-    alpha = 1.0;
+    alpha = 1.0; 
+    
+    #ifdef USE_PROXY_MESH
+
+    VertexBinding proxyBindings = _MeshProxyBindings[vertexIndex];
+    
+    MeshVertexDelta baseDeltaA = MVD_Mul(_ClothingVertexDeltas[proxyBindings.vertexIndices.x], proxyBindings.weights.x);
+    MeshVertexDelta baseDeltaB = MVD_Mul(_ClothingVertexDeltas[proxyBindings.vertexIndices.y], proxyBindings.weights.y);
+    MeshVertexDelta baseDeltaC = MVD_Mul(_ClothingVertexDeltas[proxyBindings.vertexIndices.z], proxyBindings.weights.z);
+    
+    MeshVertexDelta baseDelta = MVD_Add(MVD_Add(baseDeltaA, baseDeltaB), baseDeltaC);
+    
+    int4 bindingIndicesA = _BindingIndices[proxyBindings.vertexIndices.x];
+    float4 bindingWeightsA = _BindingWeights[proxyBindings.vertexIndices.x] * proxyBindings.weights.x;
+    
+    int4 bindingIndicesB = _BindingIndices[proxyBindings.vertexIndices.y];
+    float4 bindingWeightsB = _BindingWeights[proxyBindings.vertexIndices.y] * proxyBindings.weights.y;
+    
+    int4 bindingIndicesC = _BindingIndices[proxyBindings.vertexIndices.z];
+    float4 bindingWeightsC = _BindingWeights[proxyBindings.vertexIndices.z] * proxyBindings.weights.z;
+    
+    // Combine all weights and indices into flat arrays
+    float weights[12] =
+    {
+        bindingWeightsA.x, bindingWeightsA.y, bindingWeightsA.z, bindingWeightsA.w,
+    bindingWeightsB.x, bindingWeightsB.y, bindingWeightsB.z, bindingWeightsB.w,
+    bindingWeightsC.x, bindingWeightsC.y, bindingWeightsC.z, bindingWeightsC.w
+    };
+
+    int indices[12] =
+    {
+        bindingIndicesA.x, bindingIndicesA.y, bindingIndicesA.z, bindingIndicesA.w,
+    bindingIndicesB.x, bindingIndicesB.y, bindingIndicesB.z, bindingIndicesB.w,
+    bindingIndicesC.x, bindingIndicesC.y, bindingIndicesC.z, bindingIndicesC.w
+    };
+
+    // Perform an optimized 12-element Bubble/Insertion Sort
+    [unroll]
+    for (int i = 0; i < 12; i++)
+    {
+        [unroll]
+        for (int j = i + 1; j < 12; j++)
+        {
+            if (weights[j] > weights[i])
+            {
+            // Swap weights
+                float tempW = weights[i];
+                weights[i] = weights[j];
+                weights[j] = tempW;
+            
+            // Swap corresponding indices
+                int tempI = indices[i];
+                indices[i] = indices[j];
+                indices[j] = tempI;
+            }
+        }
+    }
+
+    // Assign the top 4
+    int4 bindingIndices = int4(indices[0], indices[1], indices[2], indices[3]);
+    float4 bindingWeights = float4(weights[0], weights[1], weights[2], weights[3]);
+
+    // Normalize the top weights so their sum equals 1.0
+    float totalWeight = dot(bindingWeights, 1.0);
+    bindingWeights = bindingWeights / totalWeight;
+    
+    #else
     
     MeshVertexDelta baseDelta = _ClothingVertexDeltas[vertexIndex];
     
     int4 bindingIndices = _BindingIndices[vertexIndex];
     float4 bindingWeights = _BindingWeights[vertexIndex];
+    
+    #endif
     
     float4 A_muscleData = float4(0,0,0,0);
     float4 A_fatData = float4(0, 0, 0, 0); 
@@ -115,19 +174,19 @@ void SkinBoundGarmentPreCalculated_float(int localID, int rigID, int characterID
     
     float A_bustFactor;
     float A_bustNerfFactor;
-    CalculateBustFactors_float(vertexIndex, vertexCount, bustMix, A_bustFactor, A_bustNerfFactor);
+    CalculateBustFactors_float(bindingIndices.x, _CharacterVertexCount, bustMix, A_bustFactor, A_bustNerfFactor);
     
     float B_bustFactor;
     float B_bustNerfFactor;
-    CalculateBustFactors_float(vertexIndex, vertexCount, bustMix, B_bustFactor, B_bustNerfFactor);
-    
+    CalculateBustFactors_float(bindingIndices.y, _CharacterVertexCount, bustMix, B_bustFactor, B_bustNerfFactor); 
+
     float C_bustFactor;
     float C_bustNerfFactor;
-    CalculateBustFactors_float(vertexIndex, vertexCount, bustMix, C_bustFactor, C_bustNerfFactor);
+    CalculateBustFactors_float(bindingIndices.z, _CharacterVertexCount, bustMix, C_bustFactor, C_bustNerfFactor);
     
     float D_bustFactor;
     float D_bustNerfFactor;
-    CalculateBustFactors_float(vertexIndex, vertexCount, bustMix, D_bustFactor, D_bustNerfFactor);
+    CalculateBustFactors_float(bindingIndices.w, _CharacterVertexCount, bustMix, D_bustFactor, D_bustNerfFactor);
     
     float bustFactor = A_bustFactor * bindingWeights.x + B_bustFactor * bindingWeights.y + C_bustFactor * bindingWeights.z + D_bustFactor * bindingWeights.w;
     float bustNerfFactor = A_bustNerfFactor * bindingWeights.x + B_bustNerfFactor * bindingWeights.y + C_bustNerfFactor * bindingWeights.z + D_bustNerfFactor * bindingWeights.w;
@@ -186,15 +245,24 @@ void SkinBoundGarmentPreCalculated_float(int localID, int rigID, int characterID
                     continue;
                 weightA = max(0, weightA);
             }
-
-            int shapeStartIndex;
-            shapeStartIndex = ((_ClothingFlexShapeIndexInBufferStart + shapeIndexA) * vertexCount) + vertexIndex;
-            MeshVertexDelta deltaA = _ClothingVertexDeltas[shapeStartIndex];
-            ApplyShapeDeltaRaw_float(deltaA.positionDelta - baseDelta.positionDelta, deltaA.normalDelta - baseDelta.normalDelta, deltaA.tangentDelta - baseDelta.tangentDelta, weightA, outPosition, outNormal, outTangent, outPosition, outNormal, outTangent);
             
-            shapeStartIndex = ((_ClothingFlexShapeIndexInBufferStart + shapeIndexB) * vertexCount) + vertexIndex;
-            MeshVertexDelta deltaB = _ClothingVertexDeltas[shapeStartIndex];
-            ApplyShapeDeltaRaw_float(deltaB.positionDelta - baseDelta.positionDelta, deltaB.normalDelta - baseDelta.normalDelta, deltaB.tangentDelta - baseDelta.tangentDelta, weightB, outPosition, outNormal, outTangent, outPosition, outNormal, outTangent);
+            #ifdef USE_PROXY_MESH
+            
+            ApplyClothingFlexShapeDelta(shapeIndexA, proxyBindings.vertexIndices.x, _MeshProxyVertexCount, weightA * proxyBindings.weights.x, baseDelta, outPosition, outNormal, outTangent);
+            ApplyClothingFlexShapeDelta(shapeIndexB, proxyBindings.vertexIndices.x, _MeshProxyVertexCount, weightB * proxyBindings.weights.x, baseDelta, outPosition, outNormal, outTangent);
+            
+            ApplyClothingFlexShapeDelta(shapeIndexA, proxyBindings.vertexIndices.y, _MeshProxyVertexCount, weightA * proxyBindings.weights.y, baseDelta, outPosition, outNormal, outTangent);
+            ApplyClothingFlexShapeDelta(shapeIndexB, proxyBindings.vertexIndices.y, _MeshProxyVertexCount, weightB * proxyBindings.weights.y, baseDelta, outPosition, outNormal, outTangent);
+            
+            ApplyClothingFlexShapeDelta(shapeIndexA, proxyBindings.vertexIndices.z, _MeshProxyVertexCount, weightA * proxyBindings.weights.z, baseDelta, outPosition, outNormal, outTangent);
+            ApplyClothingFlexShapeDelta(shapeIndexB, proxyBindings.vertexIndices.z, _MeshProxyVertexCount, weightB * proxyBindings.weights.z, baseDelta, outPosition, outNormal, outTangent);
+            
+            #else
+
+            ApplyClothingFlexShapeDelta(shapeIndexA, vertexIndex, vertexCount, weightA, baseDelta, outPosition, outNormal, outTangent);
+            ApplyClothingFlexShapeDelta(shapeIndexB, vertexIndex, vertexCount, weightB, baseDelta, outPosition, outNormal, outTangent);
+            
+            #endif
             
             break;
         }
@@ -218,22 +286,43 @@ void SkinBoundGarmentPreCalculated_float(int localID, int rigID, int characterID
             weightB = weightA / range;
             weightA = max(0, 1 - weightB);
         }
-
-        int shapeStartIndex;
-        shapeStartIndex = ((_ClothingFlexShapeIndexInBufferStart + shapeIndexA) * vertexCount) + vertexIndex;
-        MeshVertexDelta deltaA = _ClothingVertexDeltas[shapeStartIndex];
-        ApplyShapeDeltaRaw_float(deltaA.positionDelta - baseDelta.positionDelta, deltaA.normalDelta - baseDelta.normalDelta, deltaA.tangentDelta - baseDelta.tangentDelta, weightA, outPosition, outNormal, outTangent, outPosition, outNormal, outTangent);
+        
+        #ifdef USE_PROXY_MESH
             
-        shapeStartIndex = ((_ClothingFlexShapeIndexInBufferStart + shapeIndexB) * vertexCount) + vertexIndex;
-        MeshVertexDelta deltaB = _ClothingVertexDeltas[shapeStartIndex];
-        ApplyShapeDeltaRaw_float(deltaB.positionDelta - baseDelta.positionDelta, deltaB.normalDelta - baseDelta.normalDelta, deltaB.tangentDelta - baseDelta.tangentDelta, weightB, outPosition, outNormal, outTangent, outPosition, outNormal, outTangent);
+        ApplyClothingFlexShapeDelta(shapeIndexA, proxyBindings.vertexIndices.x, _MeshProxyVertexCount, weightA * proxyBindings.weights.x, baseDelta, outPosition, outNormal, outTangent);
+        ApplyClothingFlexShapeDelta(shapeIndexB, proxyBindings.vertexIndices.x, _MeshProxyVertexCount, weightB * proxyBindings.weights.x, baseDelta, outPosition, outNormal, outTangent);
+            
+        ApplyClothingFlexShapeDelta(shapeIndexA, proxyBindings.vertexIndices.y, _MeshProxyVertexCount, weightA * proxyBindings.weights.y, baseDelta, outPosition, outNormal, outTangent);
+        ApplyClothingFlexShapeDelta(shapeIndexB, proxyBindings.vertexIndices.y, _MeshProxyVertexCount, weightB * proxyBindings.weights.y, baseDelta, outPosition, outNormal, outTangent);
+            
+        ApplyClothingFlexShapeDelta(shapeIndexA, proxyBindings.vertexIndices.z, _MeshProxyVertexCount, weightA * proxyBindings.weights.z, baseDelta, outPosition, outNormal, outTangent);
+        ApplyClothingFlexShapeDelta(shapeIndexB, proxyBindings.vertexIndices.z, _MeshProxyVertexCount, weightB * proxyBindings.weights.z, baseDelta, outPosition, outNormal, outTangent);
+            
+        #else
+
+        ApplyClothingFlexShapeDelta(shapeIndexA, vertexIndex, vertexCount, weightA, baseDelta, outPosition, outNormal, outTangent);
+        ApplyClothingFlexShapeDelta(shapeIndexB, vertexIndex, vertexCount, weightB, baseDelta, outPosition, outNormal, outTangent);
+        
+        #endif
     }
     else if (flexShapeFrameCount > 0)
     {
         float maxWeight = _MeshShapeFrameWeights[flexShapeStartIndex];
-        int shapeStartIndex = (_ClothingFlexShapeIndexInBufferStart * vertexCount) + vertexIndex;
-        MeshVertexDelta delta = _ClothingVertexDeltas[shapeStartIndex];
-        ApplyShapeDeltaRaw_float(delta.positionDelta - baseDelta.positionDelta, delta.normalDelta - baseDelta.normalDelta, delta.tangentDelta - baseDelta.tangentDelta, flexWeight / maxWeight, outPosition, outNormal, outTangent, outPosition, outNormal, outTangent);
+        float flexShapeWeight = flexWeight / maxWeight;
+        
+        #ifdef USE_PROXY_MESH
+            
+        ApplyClothingFlexShapeDelta(0, proxyBindings.vertexIndices.x, _MeshProxyVertexCount, flexShapeWeight * proxyBindings.weights.x, baseDelta, outPosition, outNormal, outTangent);
+  
+        ApplyClothingFlexShapeDelta(0, proxyBindings.vertexIndices.y, _MeshProxyVertexCount, flexShapeWeight * proxyBindings.weights.y, baseDelta, outPosition, outNormal, outTangent);
+
+        ApplyClothingFlexShapeDelta(0, proxyBindings.vertexIndices.z, _MeshProxyVertexCount, flexShapeWeight * proxyBindings.weights.z, baseDelta, outPosition, outNormal, outTangent);
+            
+        #else
+        
+        ApplyClothingFlexShapeDelta(0, vertexIndex, vertexCount, flexShapeWeight, baseDelta, outPosition, outNormal, outTangent); 
+        
+        #endif
     }
 
     outPosition = lerp(inPosition, outPosition, flexMult);
@@ -241,6 +330,9 @@ void SkinBoundGarmentPreCalculated_float(int localID, int rigID, int characterID
     outTangent = lerp(inTangent, outTangent, flexMult);
     
     ApplyShapeDeltaRaw_float(baseDelta.positionDelta, baseDelta.normalDelta, baseDelta.tangentDelta, 1.0, outPosition, outNormal, outTangent, outPosition, outNormal, outTangent);
+    
+    outNormal = normalize(lerp(inNormal, outNormal, normalBlend));
+    outTangent = normalize(lerp(inTangent, outTangent, tangentBlend)); 
     
     SkinNoShapes_float(rigID, vertexIndex, outPosition, outNormal, outTangent, outPosition, outNormal, outTangent);
 }

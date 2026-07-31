@@ -3,6 +3,7 @@ using System.Collections;
 using System.Collections.Generic;
 
 using UnityEngine;
+using UnityEngine.Events;
 
 using Unity.Collections;
 using Unity.Collections.LowLevel.Unsafe;
@@ -279,6 +280,12 @@ namespace Swole
 #endif
         }
 
+        private void UploadToBuffer(ComputeBuffer buffer, int startIndex, int count)
+        {
+            var writer = buffer.BeginWrite<T>(startIndex, count);
+            NativeArray<T>.Copy(internalData.AsArray(), startIndex, writer, 0, count);
+            buffer.EndWrite<T>(count);
+        }
         public void Upload()
         {
             queuedForUpload = false;
@@ -292,9 +299,7 @@ namespace Swole
 
                 int writeCount = (writeEnd - writeStart) + 1;
                 var buffer = bufferPool[writeBuffer];
-                var writer = buffer.BeginWrite<T>(writeStart, writeCount);
-                NativeArray<T>.Copy(internalData.AsArray(), writeStart, writer, 0, writeCount);
-                buffer.EndWrite<T>(writeCount);
+                UploadToBuffer(buffer, writeStart, writeCount);
 
                 if (writeBuffer != activeBuffer) 
                 {
@@ -305,6 +310,38 @@ namespace Swole
                     else
                     {
                         SetActiveBuffer(writeBuffer);  
+                    }
+                }
+            }
+            finally
+            {
+                writeStartCounter++;
+                writeEndCounter++;
+
+                writeBuffer++;
+                if (writeBuffer >= bufferPool.Length) writeBuffer = 0;
+            }
+        }
+        public void UploadToAll()
+        {
+            queuedForUpload = false;
+
+            if (invalid || bufferPool == null) return;
+
+            try
+            {
+                int writeCount = (writeEnd - writeStart) + 1;
+                foreach(var buffer in bufferPool) UploadToBuffer(buffer, writeStart, writeCount);
+
+                if (writeBuffer != activeBuffer)
+                {
+                    if (framesToWaitBeforeSwap > 0)
+                    {
+                        CoroutineProxy.Start(WaitSetActiveBuffer(writeBuffer, framesToWaitBeforeSwap));
+                    }
+                    else
+                    {
+                        SetActiveBuffer(writeBuffer);
                     }
                 }
             }
@@ -364,12 +401,7 @@ namespace Swole
             else
             {
                 T val = default;
-#if UNITY_2022_3_OR_NEWER
-                internalData.AddReplicate(in val, size - internalData.Length);
-#else
-                int count = size - internalData.Length;
-                for (int a = 0; a < count; a++) internalData.Add(val);
-#endif
+                internalData.AddReplicated(val, size - internalData.Length);
             }
 
             for (int a = 0; a < bufferPool.Length; a++)
@@ -377,12 +409,14 @@ namespace Swole
                 var buffer = bufferPool[a];
                 if (buffer != null && buffer.IsValid()) buffer.Dispose();
 
-                buffer = new ComputeBuffer(size, stride, bufferType, bufferMode);
+                buffer = new ComputeBuffer(size, stride, bufferType, bufferMode);  
+                //buffer.SetData(internalData.AsArray());
                 bufferPool[a] = buffer;
             }
 
             //RequestUpload();
-            Upload();
+            //Upload();
+            UploadToAll();  
 
             if (updateActiveBufferFrameDelay <= 0) SetActiveBuffer(writeBuffer); else CoroutineProxy.Start(WaitSetActiveBuffer(writeBuffer, updateActiveBufferFrameDelay)); 
         }
@@ -402,7 +436,7 @@ namespace Swole
 
 #if UNITY_EDITOR
         [NonSerialized]
-        protected readonly HashSet<IComputeBufferPool> registeredBuffers = new HashSet<IComputeBufferPool>();
+        protected readonly HashSet<IComputeBufferPool> registeredBuffers = new HashSet<IComputeBufferPool>(); 
         public static void Register(IComputeBufferPool buffer)
         {
             var instance = Instance;
@@ -429,7 +463,66 @@ namespace Swole
             instance.QueueLocal(buffer);
         }
 
+        [SerializeField]
+        protected UnityEvent OnPostUpload;
+        public void ListenPostUploadLocal(UnityAction listener)
+        {
+            if (OnPostUpload == null) OnPostUpload = new UnityEvent();
+            OnPostUpload.AddListener(listener);
+        }
+        public void EndListenPostUploadLocal(UnityAction listener)
+        {
+            if (OnPostUpload == null) return;
+            OnPostUpload.RemoveListener(listener);
+        }
+
+        public static void ListenPostUpload(UnityAction listener)
+        {
+            var instance = Instance;
+            if (instance == null) return;
+            instance.ListenPostUploadLocal(listener);
+        }
+        public static void EndListenPostUpload(UnityAction listener) 
+        {
+            var instance = InstanceOrNull;
+            if (instance == null) return;
+            instance.EndListenPostUploadLocal(listener);
+        }
+
+        protected readonly List<UnityAction> postUploadActions = new List<UnityAction>(); 
+        public void QueuePostUploadActionLocal(UnityAction action)
+        {
+            postUploadActions.Add(action); 
+        }
+        public static void QueuePostUploadAction(UnityAction action)
+        {
+            var instance = Instance;
+            if (instance == null) return;
+
+            instance.QueuePostUploadActionLocal(action);
+        }
+
+        protected readonly List<IEnumerator> postUploadCoroutines = new List<IEnumerator>();
+        public void QueuePostUploadActionLocal(IEnumerator routine)
+        {
+            postUploadCoroutines.Add(routine);
+        }
+        public void QueuePostUploadCoroutineLocal(IEnumerator routine) => QueuePostUploadAction(routine);
+
+        public static void QueuePostUploadAction(IEnumerator routine)
+        {
+            var instance = Instance;
+            if (instance == null) return;
+
+            instance.QueuePostUploadActionLocal(routine);
+        }
+        public void QueuePostUploadCoroutine(IEnumerator routine) => QueuePostUploadAction(routine);  
+
         public override void OnFixedUpdate()
+        {
+        }
+
+        public override void OnUpdate()
         {
         }
 
@@ -451,10 +544,18 @@ namespace Swole
                 }
             }
             bufferQueue.Clear();
-        }
 
-        public override void OnUpdate()
-        {
+            OnPostUpload?.Invoke();
+            if (postUploadActions.Count > 0)
+            {
+                foreach (var act in postUploadActions) act();
+            }
+            postUploadActions.Clear();
+            if (postUploadCoroutines.Count > 0)
+            {
+                foreach (var act in postUploadCoroutines) StartCoroutine(act);
+            }
+            postUploadCoroutines.Clear();
         }
 
 #if UNITY_EDITOR

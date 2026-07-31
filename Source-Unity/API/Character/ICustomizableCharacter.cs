@@ -256,6 +256,7 @@ namespace Swole.API.Unity
             OnMuscleDataChanged,
             OnFatDataChanged,
             OnVariationDataChanged,
+            OnBustDataChanged,
             OnAnyDataChanged
         }
 

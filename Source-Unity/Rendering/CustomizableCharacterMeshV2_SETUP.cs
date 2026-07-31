@@ -520,6 +520,8 @@ namespace Swole.Morphing
             [Range(0, 1)]
             public float transferNormalsWeight;
 
+            public NameFloat[] transferBaseNormalsToShapes;
+
             public bool transferVertexColors;
 
             public bool transferBoneWeights;
@@ -1771,6 +1773,8 @@ namespace Swole.Morphing
                                     transferNormals = objectSetup.transferNormals,
                                     transferNormalsWeight = objectSetup.transferNormalsWeight,
 
+                                    transferBaseNormalsToShapes = objectSetup.transferBaseNormalsToShapes,
+
                                     transferVertexColors = objectSetup.transferVertexColors,
 
                                     transferBoneWeights = objectSetup.transferBoneWeights,
@@ -2759,7 +2763,7 @@ namespace Swole.Morphing
                                     }
                                     else
                                     {
-                                        var baseMeshData = surfaceTransferBaseMeshes[0].baseMeshData;
+                                        var baseMeshData = surfaceTransferBaseMeshes[0].baseMeshData; 
 
                                         var settings = new MorphUtils.TransferSurfaceDataSettings()
                                         {

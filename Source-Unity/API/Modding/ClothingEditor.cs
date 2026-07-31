@@ -879,13 +879,13 @@ namespace Swole.Modding
         }
 
 
-        public static SkinningBasedBindingData GenerateSkinningBasedBindingData(Dictionary<string, int> boneNameIndexConverter, string baseVertexMaskShape, bool includeMergeData, bool includeVertices, bool includeNormals, bool includeBlendShapes, SkinnedMeshRenderer clothingRenderer, WeightedRenderer[] characterRenderers)
+        public static SkinningBasedBindingData GenerateSkinningBasedBindingData(Dictionary<string, int> boneNameIndexConverter, string baseVertexMaskShape, bool includeMergeData, bool includeVertices, bool includeNormals, bool includeBlendShapes, SkinnedMeshRenderer clothingRenderer, WeightedRenderer[] characterRenderers, string optionalBindingShapeName = null, float optionalBindingShapeWeight = 1f)
         {
             SkinnedMeshRenderer[] characterRenderers_ = new SkinnedMeshRenderer[characterRenderers.Length];
             for (int i = 0; i < characterRenderers.Length; i++) characterRenderers_[i] = characterRenderers[i].renderer;
-            return GenerateSkinningBasedBindingData(boneNameIndexConverter, baseVertexMaskShape, includeMergeData, includeVertices, includeNormals, includeBlendShapes, clothingRenderer, characterRenderers_);
+            return GenerateSkinningBasedBindingData(boneNameIndexConverter, baseVertexMaskShape, includeMergeData, includeVertices, includeNormals, includeBlendShapes, clothingRenderer, characterRenderers_, optionalBindingShapeName, optionalBindingShapeWeight);
         }
-        public static SkinningBasedBindingData GenerateSkinningBasedBindingData(Dictionary<string, int> boneNameIndexConverter, string baseVertexMaskShape, bool includeMergeData, bool includeVertices, bool includeNormals, bool includeBlendShapes, SkinnedMeshRenderer clothingRenderer, SkinnedMeshRenderer[] characterRenderers)
+        public static SkinningBasedBindingData GenerateSkinningBasedBindingData(Dictionary<string, int> boneNameIndexConverter, string baseVertexMaskShape, bool includeMergeData, bool includeVertices, bool includeNormals, bool includeBlendShapes, SkinnedMeshRenderer clothingRenderer, SkinnedMeshRenderer[] characterRenderers, string optionalBindingShapeName = null, float optionalBindingShapeWeight = 1f)
         {
             boneNameIndexConverter.Clear();
 
@@ -915,7 +915,22 @@ namespace Swole.Modding
 
                 if (includeVertices || includeMergeData) bindingData.originalVertices_clothing = clothingRenderer.sharedMesh.vertices;
                 if (includeMergeData) bindingData.mergeData_clothing = MeshDataTools.WeldVertices(bindingData.originalVertices_clothing);
-                bindingData.skinningData_clothing = MeshEditing.GetSkinnedVertex8DataAsList(clothingRenderer);
+
+                Vector3[] bindingShapeDeltas = null;
+                if (!string.IsNullOrWhiteSpace(optionalBindingShapeName))
+                {
+                    int bindingShapeIndex = clothingRenderer.sharedMesh.GetBlendShapeIndex(optionalBindingShapeName);
+                    if (bindingShapeIndex >= 0)
+                    {
+                        Debug.Log("FOUND BIND SHAPE : " + optionalBindingShapeName);
+                        var shape = new BlendShape(clothingRenderer.sharedMesh, optionalBindingShapeName);
+                        bindingShapeDeltas = new Vector3[clothingRenderer.sharedMesh.vertexCount];
+                        shape.GetTransformedVertices(bindingShapeDeltas, optionalBindingShapeWeight, false); // writes to deltas array
+                    }
+                }
+
+                bindingData.skinningData_clothing = MeshEditing.GetSkinnedVertex8DataAsList(clothingRenderer, clothingRenderer.sharedMesh.vertices, bindingShapeDeltas, 1f); 
+
                 bindingData.indices_clothing = new NativeList<int>(bindingData.skinningData_clothing.Length, Allocator.Persistent);
                 for (int a = 0; a < bindingData.skinningData_clothing.Length; a++) bindingData.indices_clothing.Add(a);
 
@@ -1042,53 +1057,167 @@ namespace Swole.Modding
             //influenceData = new NativeList<InfluenceDataFull>(inputData_clothing.Length, Allocator.Persistent);
             InfluenceDataFull[] influenceData = new InfluenceDataFull[bindingData.skinningData_clothing.Length];
 
-            using (var influenceDataTemp = new NativeList<VertexInfluence2>(bindingData.skinningData_clothing.Length, Allocator.Persistent))
+            // CRITICAL FIX: Instead of keeping only top-2 influences globally, keep the best influence PER body mesh
+            // This ensures each body gets its best binding, which is then filtered by distance masking
+            using (var perBodyInfluences = new NativeArray<VertexInfluence2>(bindingData.skinningData_clothing.Length * characterRenderers.Length, Allocator.TempJob))
             {
-                for (int a = 0; a < bindingData.skinningData_clothing.Length; a++)
+                var perBodyInfluences_ = perBodyInfluences;
+                // Initialize all influences
+                //for (int i = 0; i < perBodyInfluences.Length; i++)
+                //{
+                //    perBodyInfluences_[i] = new VertexInfluence2 { influenceA = new VertexInfluence { meshIndex = -1, vertexIndex = -1, score = 0f, weight = 0f }, influenceB = new VertexInfluence { meshIndex = -1, vertexIndex = -1, score = 0f, weight = 0f } };
+                //}
+
+                // Calculate best influence for each body mesh independently
+                for (int bodyIndex = 0; bodyIndex < bindingData.skinningData_character.Length; bodyIndex++)
                 {
-                    //influenceData.Add(new InfluenceDataFull());
-                    influenceDataTemp.Add(new VertexInfluence2());
-                }
-                if (bindingData.skinningData_character != null)
-                {
-                    for (int a = 0; a < bindingData.skinningData_character.Length; a++)
+                    var list = bindingData.skinningData_character[bodyIndex];
+                    var index_list = bindingData.indices_character[bodyIndex];
+
+                    // Job to find best match for this body mesh
+                    tempHandle = new MeshEditing.CalculateVertexInfluencePerBodyJob()
                     {
-                        var list = bindingData.skinningData_character[a];
-                        var index_list = bindingData.indices_character[a];
-                        tempHandle = new MeshEditing.CalculateVertexInfluence2Job()
-                        {
-                            mask = bindingData.baseMask_clothing,
-                            maxDistance = 1f,
-                            scoreMultiplier = characterRenderers[a].weight,
-                            distanceBindingWeight = distanceBindingWeight,
-                            referenceIndex = a,
-                            referenceSkinnedVertices = list,
-                            referenceVertexIndices = index_list,
-                            localSkinnedVertices = bindingData.skinningData_clothing,
-                            localVertexIndices = bindingData.indices_clothing,
-                            influences = influenceDataTemp,
-                        }.Schedule(bindingData.indices_clothing.Length, 1, tempHandle);
-                    }
+                        mask = bindingData.baseMask_clothing,
+                        maxDistance = 1f,
+                        scoreMultiplier = characterRenderers[bodyIndex].weight,
+                        distanceBindingWeight = distanceBindingWeight,
+                        referenceIndex = bodyIndex,
+                        referenceSkinnedVertices = list,
+                        referenceVertexIndices = index_list,
+                        localSkinnedVertices = bindingData.skinningData_clothing,
+                        localVertexIndices = bindingData.indices_clothing,
+                        perBodyInfluences = perBodyInfluences,
+                        bodyCount = characterRenderers.Length
+                    }.Schedule(bindingData.indices_clothing.Length, 64, tempHandle);
                 }
                 tempHandle.Complete();
-                for (int a = 0; a < influenceData.Length; a++)
+
+                // Now consolidate per-body influences into top-4 for each clothing vertex
+                for (int clothingIdx = 0; clothingIdx < influenceData.Length; clothingIdx++)
                 {
-                    var infTemp = influenceDataTemp[a];
+                    // Collect all non-empty influences for this clothing vertex
+                    var influences = new System.Collections.Generic.List<VertexInfluence>();
+                    for (int bodyIdx = 0; bodyIdx < characterRenderers.Length; bodyIdx++)
+                    {
+                        int idx = clothingIdx * characterRenderers.Length + bodyIdx;
+                        var inf = perBodyInfluences[idx];
+                        if (inf.influenceA.meshIndex >= 0 && inf.influenceA.score > 0f)
+                        {
+                            influences.Add(inf.influenceA);
+                        }
+                        if (inf.influenceB.meshIndex >= 0 && inf.influenceB.score > 0f)
+                        {
+                            influences.Add(inf.influenceB);
+                        }
+                    }
 
-                    VertexInfluence4 inf = new VertexInfluence4();
+                    // Sort by score descending and take top 4
+                    influences.Sort((a, b) => b.score.CompareTo(a.score));
 
-                    inf.influenceA = infTemp.influenceA;
-                    inf.influenceB = infTemp.influenceB;
+                    VertexInfluence4 inf4 = new VertexInfluence4();
+                    float totalScore = 0f;
+                    for (int i = 0; i < influences.Count && i < 4; i++)
+                    {
+                        totalScore += influences[i].score;
+                    }
+
+                    // Assign and calculate weights
+                    if (influences.Count > 0)
+                    {
+                        inf4.influenceA = influences[0];
+                        inf4.influenceA.weight = totalScore > 0f ? (inf4.influenceA.score / totalScore) * bindingData.baseMask_clothing[clothingIdx] : 0f;
+                    }
+                    if (influences.Count > 1)
+                    {
+                        inf4.influenceB = influences[1];
+                        inf4.influenceB.weight = totalScore > 0f ? (inf4.influenceB.score / totalScore) * bindingData.baseMask_clothing[clothingIdx] : 0f;
+                    }
+                    if (influences.Count > 2)
+                    {
+                        inf4.influenceC = influences[2];
+                        inf4.influenceC.weight = totalScore > 0f ? (inf4.influenceC.score / totalScore) * bindingData.baseMask_clothing[clothingIdx] : 0f;
+                    }
+                    if (influences.Count > 3)
+                    {
+                        inf4.influenceD = influences[3];
+                        inf4.influenceD.weight = totalScore > 0f ? (inf4.influenceD.score / totalScore) * bindingData.baseMask_clothing[clothingIdx] : 0f; 
+                    }
 
                     InfluenceDataFull infData = new InfluenceDataFull();
-                    infData.influences = inf;
-
-                    influenceData[a] = infData;
+                    infData.influences = inf4;
+                    influenceData[clothingIdx] = infData;
                 }
             }
 
             return influenceData;
         }
+
+        /// <summary>
+        /// Generates per-body mesh influences without global normalization.
+        /// Returns the best influence for each clothing vertex from each body mesh independently.
+        /// Used by BodyMoldBindingGenerator to ensure each body gets proper bindings.
+        /// </summary>
+        public static VertexInfluence2[][] GeneratePerBodyInfluences(WeightedRenderer[] characterRenderers, SkinningBasedBindingData bindingData, float distanceBindingWeight = 0.1f, string optionalBindingShapeName = null, float optionalBindingShapeWeight = 1f)
+        {
+            JobHandle tempHandle = default;
+            VertexInfluence2[][] perBodyInfluences = new VertexInfluence2[characterRenderers.Length][];
+
+            using (var perBodyInfluencesTemp = new NativeArray<VertexInfluence2>(bindingData.skinningData_clothing.Length * characterRenderers.Length, Allocator.TempJob))
+            {
+                var perBodyInfluencesTemp_ = perBodyInfluencesTemp;
+                // Initialize all influences
+                //for (int i = 0; i < perBodyInfluencesTemp.Length; i++)
+                //{
+                //    perBodyInfluencesTemp_[i] = new VertexInfluence2 { influenceA = new VertexInfluence { meshIndex = -1, vertexIndex = -1, score = 0f, weight = 0f }, influenceB = new VertexInfluence { meshIndex = -1, vertexIndex = -1, score = 0f, weight = 0f } };
+                //}
+
+                int batchSize = 32; // Complete every N passes to prevent job queue overflow
+                // Calculate best influence for each body mesh independently
+                for (int bodyIndex = 0; bodyIndex < bindingData.skinningData_character.Length; bodyIndex++)
+                {
+                    var list = bindingData.skinningData_character[bodyIndex];
+                    var index_list = bindingData.indices_character[bodyIndex];
+
+                    tempHandle = new MeshEditing.CalculateVertexInfluencePerBodyJob()
+                    {
+                        mask = bindingData.baseMask_clothing,
+                        maxDistance = 1f,
+                        scoreMultiplier = characterRenderers[bodyIndex].weight,
+                        distanceBindingWeight = distanceBindingWeight,
+                        referenceIndex = bodyIndex,
+                        referenceSkinnedVertices = list,
+                        referenceVertexIndices = index_list,
+                        localSkinnedVertices = bindingData.skinningData_clothing,
+                        localVertexIndices = bindingData.indices_clothing,
+                        perBodyInfluences = perBodyInfluencesTemp,
+                        bodyCount = characterRenderers.Length
+                    }.Schedule(bindingData.indices_clothing.Length, 64, tempHandle);
+
+                    if ((bodyIndex + 1) % batchSize == 0 || bodyIndex == characterRenderers.Length - 1)
+                    {
+                        tempHandle.Complete();
+                        tempHandle = default; 
+                    }
+                }
+                tempHandle.Complete();
+
+                // Convert to per-body arrays with proper weights (normalized per-body, not globally)
+                for (int bodyIdx = 0; bodyIdx < characterRenderers.Length; bodyIdx++)
+                {
+                    perBodyInfluences[bodyIdx] = new VertexInfluence2[bindingData.skinningData_clothing.Length];
+
+                    for (int clothingIdx = 0; clothingIdx < bindingData.skinningData_clothing.Length; clothingIdx++)
+                    {
+                        int idx = clothingIdx * characterRenderers.Length + bodyIdx;
+                        var inf = perBodyInfluencesTemp[idx];
+                        perBodyInfluences[bodyIdx][clothingIdx] = inf; 
+                    }
+                }
+            }
+
+            return perBodyInfluences;
+        }
+
         protected void GenerateShapes()
         {
             influenceData = GenerateInfluenceData(characterRenderers, bindingData, distanceBindingWeight);

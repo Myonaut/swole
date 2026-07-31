@@ -922,6 +922,8 @@ namespace Swole.Morphing
             public bool transferNormals;
             public float transferNormalsWeight;
 
+            public NameFloat[] transferBaseNormalsToShapes;
+
             public bool transferUVs;
             public bool preserveExistingUVData;
             public Vector2Int uvTransferRange;
@@ -1112,6 +1114,14 @@ namespace Swole.Morphing
                     foreach (var shapeName in originalBlendShapes) if (shapeName == name) return true;
                     return false;
                 }
+                BlendShape TryGetBlendShape(string name)
+                {
+                    foreach (var shape in blendShapes)
+                    {
+                        if (shape.name == name) return shape;
+                    }
+                    return null;
+                }
                 BlendShape AddOrGetBlendShape(string name, BlendShape.Frame[] referenceFrames)
                 {
                     foreach (var shape in blendShapes)
@@ -1222,7 +1232,7 @@ namespace Swole.Morphing
                             Vector3 localVertex;
 
                             float closestDistance = float.MaxValue;
-                            int closestLocalIndex = -1;
+                            int closestLocalIndex = 0;//-1;//default to zero
                             int closestBaseIndex = 0;
 
                             for (int d = 0; d < island.vertices.Length; d++)
@@ -1788,6 +1798,50 @@ namespace Swole.Morphing
                             {
                                 var frame = entry.Key;
                                 frame.deltaNormals[vIndex] = Vector3.LerpUnclamped(frame.deltaNormals[vIndex], entry.Value, settings.transferNormalsWeight);
+                            }
+                        }
+
+                        if (settings.transferBaseNormalsToShapes != null && settings.transferBaseNormalsToShapes.Length > 0)
+                        {
+                            var baseLocalNormal = localNormals[vIndex];
+
+                            for (int d = 0; d < settings.transferBaseNormalsToShapes.Length; d++)
+                            {
+                                tempFrameNormals.Clear();
+
+                                var vertexInfo = defaultVertexInfo;
+                                var normalShapeTransfer = settings.transferBaseNormalsToShapes[d];
+
+                                var blendShape = TryGetBlendShape(normalShapeTransfer.name);
+                                if (blendShape != null)
+                                {
+                                    for (int e = 0; e < blendShape.frames.Length; e++)
+                                    {
+                                        var frame = blendShape.frames[e];
+
+                                        var deltaNormal = defaultBaseData.baseMeshNormals == null ? Vector3.zero : ((defaultBaseData.baseMeshNormals[vertexInfo.closestIndex0] * vertexInfo.closestWeight0) + (defaultBaseData.baseMeshNormals[vertexInfo.closestIndex1] * vertexInfo.closestWeight1) + (defaultBaseData.baseMeshNormals[vertexInfo.closestIndex2] * vertexInfo.closestWeight2));
+                                        tempFrameNormals[frame] = deltaNormal;
+                                    }
+                                }
+
+                                if (defaultVertexInfo.hasSecondaryBinding)
+                                {
+                                    for (int e = 0; e < blendShape.frames.Length; e++)
+                                    {
+                                        var frame = blendShape.frames[e];
+
+                                        var deltaNormal = defaultBaseData2.baseMeshNormals == null ? Vector3.zero : (defaultBaseData2.baseMeshNormals[vertexInfo.closestSecondaryIndex0] * vertexInfo.closestSecondaryWeight0) + (defaultBaseData2.baseMeshNormals[vertexInfo.closestSecondaryIndex1] * vertexInfo.closestSecondaryWeight1) + (defaultBaseData2.baseMeshNormals[vertexInfo.closestSecondaryIndex2] * vertexInfo.closestSecondaryWeight2);
+
+                                        tempFrameNormals.TryGetValue(frame, out var existingDeltaNormal);
+                                        tempFrameNormals[frame] = existingDeltaNormal + deltaNormal;
+                                    }
+                                }
+
+                                foreach (var entry in tempFrameNormals)
+                                {
+                                    var frame = entry.Key;
+                                    frame.deltaNormals[vIndex] = Vector3.LerpUnclamped(frame.deltaNormals[vIndex], entry.Value.normalized - baseLocalNormal, normalShapeTransfer.value); 
+                                }
                             }
                         }
 
@@ -3047,13 +3101,13 @@ namespace Swole.Morphing
             if (deltaMultiplier == 0f) deltaMultiplier = 1f;
 
             shape = null;
-            if (mesh.GetBlendShapeIndex(targetName) < 0)
+            if (string.IsNullOrWhiteSpace(targetName) || mesh.GetBlendShapeIndex(targetName) < 0)
             {
                 if (alternateTargetNames != null)
                 {
                     foreach (var altName in alternateTargetNames)
                     {
-                        if (mesh.GetBlendShapeIndex(altName) < 0) continue;
+                        if (string.IsNullOrWhiteSpace(altName) || mesh.GetBlendShapeIndex(altName) < 0) continue;
 
                         shape = new BlendShape(mesh, altName);
                         break;
@@ -3064,7 +3118,7 @@ namespace Swole.Morphing
             else
             {
                 shape = new BlendShape(mesh, targetName);
-            }
+            } 
 
             if (shape != null && !string.IsNullOrWhiteSpace(newName)) shape.name = newName;
 

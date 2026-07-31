@@ -2,6 +2,7 @@
 #pragma kernel BodyMold_Triangle
 #pragma kernel BodyMold_SDF
 #pragma kernel BodyMold_TriangleSDF
+#pragma kernel BodyMoldCloth_TriangleSDF
 #pragma kernel CalculateBounds
 #pragma kernel CalculateBounds_Reduce
 #pragma kernel DeformVertices
@@ -23,6 +24,7 @@ RWStructuredBuffer<float3> _ClothingProxyNormalDeltas;
 StructuredBuffer<int> _ClothingTriangles;
 RWStructuredBuffer<float> _ClothingStretch;
 StructuredBuffer<float4> _ClothingVertexColors;
+StructuredBuffer<uint> _ClothingVertexWeld;
 
 StructuredBuffer<SkinInfluence> _SkinBindingsReadOnly;
 RWStructuredBuffer<SkinInfluence> _SkinBindings;
@@ -48,6 +50,7 @@ StructuredBuffer<float3> DeformedVertices; // input vertex positions
 RWStructuredBuffer<BoundsMinMax> PartialBounds; // per-thread-group partial bounds
 RWStructuredBuffer<float3> OutputBoundsMin; // final min point
 RWStructuredBuffer<float3> OutputBoundsMax; // final max point
+RWStructuredBuffer<float> OutputBoundsMaxDistance; // final max distance
 
 // Deform vertices buffers (for SDF generation and bounds calculation)
 StructuredBuffer<float3> _BaseVertices; // base mesh vertex positions
@@ -57,8 +60,8 @@ RWStructuredBuffer<float3> _DeformedVerticesOutput; // output deformed positions
 int _DeltasIndexOffset; // offset into _Deltas buffer
 int _ShapeDeltasIndexOffset; // offset into _ShapeDeltas buffer (if used)
 
-cbuffer Params
-{
+//cbuffer Params
+//{
     float _PreserveFactor;
     float _PenetrationDistance; // minimum allowed distance from body vertex
     float _PenetrationRecovery; // extra push-out distance when penetration detected
@@ -67,6 +70,9 @@ cbuffer Params
     float _FrontPushFactor; // 0..1 how much to lerp toward front-projection when starting behind (per-iteration)
     float _ClothThickness;
     float _CollisionRelaxation; // 0..1 relaxation factor applied to each correction (lower -> softer)
+    float _SDFOuterThicknessStrength;
+    float _SDFOuterThicknessStrengthCloth;
+    float _NormalRecalculationBlend; // 0..1 how much to blend between original and recalculated normals
     int _InstanceID;
     int _CollisionPasses; // number of internal collision resolve passes
     int _BodyVertexCount;
@@ -81,13 +87,24 @@ cbuffer Params
     float3 _SDFBoundsMax;
     float _PaddingScale; // scale factor for bounds size
     uint _DeformedVertexCount; // total number of vertices for bounds calculation
-}
+//}
 
-MeshVertexDelta SampleClothingVertexDelta(uint idInBuffer)
+VertexData SampleClothingVertexData(uint vertexIndex)
 {
-    MeshVertexDelta delta = _ClothingVertexDeltasReadOnly[idInBuffer];
+    vertexIndex = _ClothingVertexWeld[vertexIndex];
+    return _ClothingBaseVertexData[vertexIndex];
+}
+float3 SampleClothingVertexPositionDelta(uint vertexIndex, uint vertexIndexOffset)
+{
+    vertexIndex = _ClothingVertexWeld[vertexIndex] + vertexIndexOffset;
+    return _ClothingVertexDeltasReadOnly[vertexIndex].positionDelta;
+}
+MeshVertexDelta SampleClothingVertexDelta(uint vertexIndex, uint vertexIndexOffset)
+{
+    vertexIndex = _ClothingVertexWeld[vertexIndex] + vertexIndexOffset;
+    MeshVertexDelta delta = _ClothingVertexDeltasReadOnly[vertexIndex];
 #if USE_PROXY_NORMAL_DELTAS
-    delta.normalDelta = _ClothingProxyNormalDeltasReadOnly[idInBuffer];
+    delta.normalDelta = _ClothingProxyNormalDeltasReadOnly[vertexIndex];
 #endif
     return delta;
 }
@@ -146,8 +163,8 @@ void SmoothConnectionDivergence(uint clothingId, in VertexData localBaseVertex, 
     {
         int n = _VertexConnections[connStart + i].index;
         if (n < 0) continue;
-        VertexData nb = _ClothingBaseVertexData[n];
-        MeshVertexDelta nbDelta = _ClothingVertexDeltasReadOnly[n + _IndexOffset];
+        VertexData nb = SampleClothingVertexData(n);
+        MeshVertexDelta nbDelta = SampleClothingVertexDelta(n, _IndexOffset);
         float3 nbPos = nb.position + nbDelta.positionDelta;
         float3 dir = SafeNormalize(nbPos - localWorld);
         // skip degenerate neighbor directions
@@ -164,7 +181,7 @@ void SmoothConnectionDivergence(uint clothingId, in VertexData localBaseVertex, 
     {
         int n = _VertexConnections[connStart + i].index;
         if (n < 0) continue;
-        VertexData nbBase = _ClothingBaseVertexData[n];
+        VertexData nbBase = SampleClothingVertexData(n);
         sumNormal += SafeNormalize(nbBase.normal);
     }
     float3 avgNormal = SafeNormalize(sumNormal);
@@ -176,8 +193,8 @@ void SmoothConnectionDivergence(uint clothingId, in VertexData localBaseVertex, 
     {
         int n = _VertexConnections[connStart + i].index;
         if (n < 0) continue;
-        VertexData nbBase = _ClothingBaseVertexData[n];
-        MeshVertexDelta nbDelta = _ClothingVertexDeltasReadOnly[n + _IndexOffset];
+        VertexData nbBase = SampleClothingVertexData(n);
+        MeshVertexDelta nbDelta = SampleClothingVertexDelta(n, _IndexOffset);
         float3 nbPos = nbBase.position + nbDelta.positionDelta;
 
         float3 origDir = SafeNormalize(nbBase.position - localBaseVertex.position);
@@ -206,7 +223,7 @@ void SmoothConnectionDivergence(uint clothingId, in VertexData localBaseVertex, 
     float3 targetWorld = avgPos;//lerp(localWorld, avgPos, smoothAmt * 0.5);
     float3 newOffset = targetWorld - localBaseVertex.position;
     // blend the final offset toward the smoothed offset
-    finalOffset.positionDelta = lerp(finalOffset.positionDelta, newOffset, smoothAmt);
+    finalOffset.positionDelta = lerp(finalOffset.positionDelta, newOffset, smoothAmt); 
 }
 
 void GetClothingIds(uint tid, out uint id, out uint idInBuffer)
@@ -215,7 +232,7 @@ void GetClothingIds(uint tid, out uint id, out uint idInBuffer)
     idInBuffer = id + _IndexOffset;
 }
 
-bool CalculateShapePreservingClothingVertexOffset(uint tid, out uint id, out uint idInBuffer, out int4 bindIdx, out float4 bindW, out VertexData localBaseVertex, out MeshVertexDelta origOffset, out MeshVertexDelta finalOffset, out float averageStretch, out float3 thicknessVector)
+bool CalculateShapePreservingClothingVertexOffset(uint tid, out uint id, out uint idInBuffer, out int4 bindIdx, out float4 bindW, float preserveMix, out VertexData localBaseVertex, out MeshVertexDelta prevRawOffset, out MeshVertexDelta rawOffset, out MeshVertexDelta origOffset, out MeshVertexDelta finalOffset, out float averageStretch, out float tightness, out float3 thicknessVector)
 {
     bindIdx = int4(-1, -1, -1, -1);
     bindW = float4(0.0, 0.0, 0.0, 0.0);
@@ -223,6 +240,14 @@ bool CalculateShapePreservingClothingVertexOffset(uint tid, out uint id, out uin
     localBaseVertex.position = float3(0, 0, 0);
     localBaseVertex.normal = float3(0, 0, 0);
     localBaseVertex.tangent = float4(0, 0, 0, 0);
+    
+    prevRawOffset.positionDelta = float3(0, 0, 0);
+    prevRawOffset.normalDelta = float3(0, 0, 0);
+    prevRawOffset.tangentDelta = float3(0, 0, 0);
+    
+    rawOffset.positionDelta = float3(0, 0, 0);
+    rawOffset.normalDelta = float3(0, 0, 0);
+    rawOffset.tangentDelta = float3(0, 0, 0);
     
     origOffset.positionDelta = float3(0, 0, 0);
     origOffset.normalDelta = float3(0, 0, 0);
@@ -233,20 +258,21 @@ bool CalculateShapePreservingClothingVertexOffset(uint tid, out uint id, out uin
     finalOffset.tangentDelta = float3(0, 0, 0); 
     
     averageStretch = 1.0;
+    tightness = 1.0;
     
     thicknessVector = float3(0, 0, 0);
     
     GetClothingIds(tid, id, idInBuffer);
-    if (id >= _VertexCount) return false;
-    
-    localBaseVertex = _ClothingBaseVertexData[id];
-    localBaseVertex.normal = normalize(localBaseVertex.normal);
-    localBaseVertex.tangent.xyz = normalize(localBaseVertex.tangent.xyz);
-    origOffset = SampleClothingVertexDelta(idInBuffer);
-    finalOffset = origOffset;
+    if (id >= _VertexCount) return false; 
     
     float4 vColor = _ClothingVertexColors[id];
-    float looseness = vColor.y; // 0..1, 0 = loose, 1 = tight
+    tightness = vColor.y; // 0..1, 0 = loose, 1 = tight
+    
+    localBaseVertex = SampleClothingVertexData(id);
+    localBaseVertex.normal = normalize(localBaseVertex.normal);
+    localBaseVertex.tangent.xyz = normalize(localBaseVertex.tangent.xyz);
+    origOffset = SampleClothingVertexDelta(id, _IndexOffset);
+    finalOffset = origOffset;
         
     bindIdx = _BindingIndices[tid];
     bindW = _BindingWeights[tid];
@@ -265,8 +291,8 @@ bool CalculateShapePreservingClothingVertexOffset(uint tid, out uint id, out uin
             continue;
 
         // neighbor base and current delta
-        VertexData neighborBaseVertex = _ClothingBaseVertexData[neighborIdx];
-        MeshVertexDelta neighborOffset = _ClothingVertexDeltasReadOnly[neighborIdx + _IndexOffset];
+        VertexData neighborBaseVertex = SampleClothingVertexData(neighborIdx);
+        MeshVertexDelta neighborOffset = SampleClothingVertexDelta(neighborIdx, _IndexOffset);
         float3 neighborPos = neighborBaseVertex.position + neighborOffset.positionDelta;
 
         // compute average stretch for this neighbor across its own connections
@@ -279,8 +305,8 @@ bool CalculateShapePreservingClothingVertexOffset(uint tid, out uint id, out uin
             int mIdx = _VertexConnections[nStart + b].index;
             if (mIdx < 0)
                 continue;
-            VertexData mBase = _ClothingBaseVertexData[mIdx];
-            MeshVertexDelta mOffset = _ClothingVertexDeltasReadOnly[mIdx + _IndexOffset];
+            VertexData mBase = SampleClothingVertexData(mIdx);
+            MeshVertexDelta mOffset = SampleClothingVertexDelta(mIdx, _IndexOffset);
 
             float origDist = length(neighborBaseVertex.position - mBase.position);
             float currDist = length(neighborPos - (mBase.position + mOffset.positionDelta));
@@ -336,18 +362,23 @@ bool CalculateShapePreservingClothingVertexOffset(uint tid, out uint id, out uin
         weightedDelta.positionDelta = weightedDelta.positionDelta + thicknessVector;
         weightedPrevDelta.positionDelta = weightedPrevDelta.positionDelta + thicknessVector;
     }
+    
+    prevRawOffset = weightedPrevDelta;
+    rawOffset = weightedDelta;
 
     bool isRawPass = _BodyDeltasChanged == 1;
     // If this is the first dispatch after a body update, add the weighted delta difference to the clothing offsets so clothing follows raw body changes immediately.
     if (isRawPass)
     {
         MeshVertexDelta deltaDiff = MVD_Subtract(weightedDelta, weightedPrevDelta);
-        finalOffset = MVD_Lerp(MVD_Add(origOffset, deltaDiff), MVD_Mul(weightedDelta, _DeltaMultiplier), 0.8 * looseness);
+        finalOffset = MVD_Lerp(MVD_Add(origOffset, deltaDiff), MVD_Mul(weightedDelta, _DeltaMultiplier), 1.0); //lerp(0.1, 0.9, tightness)); 
     }
     else
     {
-        finalOffset = MVD_Lerp(origOffset, MVD_Mul(weightedDelta, _DeltaMultiplier), 0.2 * looseness);
+        finalOffset = MVD_Lerp(origOffset, MVD_Mul(weightedDelta, _DeltaMultiplier), lerp(0.001, 0.3, tightness * preserveMix));
     }
+    
+    MeshVertexDelta startFinalOffset = finalOffset; 
     
     //VertexData localVertex = VD_Add(localBaseVertex, localOffset);
     
@@ -362,8 +393,8 @@ bool CalculateShapePreservingClothingVertexOffset(uint tid, out uint id, out uin
         {
             WeightedVertexConnection connection = _VertexConnections[connStart + a];
 
-            VertexData neighborBaseVertex = _ClothingBaseVertexData[connection.index];
-            MeshVertexDelta neighborOffset = SampleClothingVertexDelta(connection.index + _IndexOffset);
+            VertexData neighborBaseVertex = SampleClothingVertexData(connection.index);
+            MeshVertexDelta neighborOffset = SampleClothingVertexDelta(connection.index, _IndexOffset);
 
             VertexData neighborVertex = VD_AddDelta(neighborBaseVertex, neighborOffset);
             neighborVertex.normal = normalize(neighborVertex.normal);
@@ -384,7 +415,7 @@ bool CalculateShapePreservingClothingVertexOffset(uint tid, out uint id, out uin
             float3 offsetWithDeltas = neighborVertex.position - startNeighborVertexPos; // localPos - neighborPos after new deltas applied.
             float offsetDist = length(offsetWithDeltas);
             if (offsetDist > 0.0)
-                neighborVertex.position = lerp(neighborVertex.position, ((neighborVertex.position - localBaseVertex.position) * (originalDistance / offsetDist)) + localBaseVertex.position, 0.05 * looseness); // try to blend back to original distance between vertices to avoid stretching the mesh too much
+                neighborVertex.position = lerp(neighborVertex.position, ((neighborVertex.position - localBaseVertex.position) * (originalDistance / offsetDist)) + localBaseVertex.position, 0.05 * tightness); // try to blend back to original distance between vertices to avoid stretching the mesh too much
         
             float cWeight = connection.weight; // * connectionMaskWeight;
             editedOffset.positionDelta = editedOffset.positionDelta + (neighborVertex.position - localBaseVertex.position) * cWeight;
@@ -399,12 +430,695 @@ bool CalculateShapePreservingClothingVertexOffset(uint tid, out uint id, out uin
         editedOffset.tangentDelta = editedOffset.tangentDelta + finalOffset.tangentDelta * totalWeight;
 
         float mix = _PreserveFactor; // * maskWeight;
-        finalOffset.positionDelta = lerp(finalOffset.positionDelta, editedOffset.positionDelta, mix);
-        finalOffset.normalDelta = lerp(finalOffset.normalDelta, editedOffset.normalDelta, mix);
-        finalOffset.tangentDelta = lerp(finalOffset.tangentDelta, editedOffset.tangentDelta, mix);
+        finalOffset.positionDelta = lerp(startFinalOffset.positionDelta, lerp(finalOffset.positionDelta, editedOffset.positionDelta, mix), preserveMix);
+        finalOffset.normalDelta = lerp(startFinalOffset.normalDelta, lerp(finalOffset.normalDelta, editedOffset.normalDelta, mix), preserveMix);
+        finalOffset.tangentDelta = lerp(startFinalOffset.tangentDelta, lerp(finalOffset.tangentDelta, editedOffset.tangentDelta, mix), preserveMix); 
     }
 
     return true;
+}
+
+void CalculateClothVertexOffset(uint tid, uint id, uint idInBuffer, int4 bindIdx, float4 bindW, VertexData localBaseVertex, MeshVertexDelta origOffset, inout MeshVertexDelta finalOffset)
+{
+    // Start with the current offset from the previous iteration/frame
+    //finalOffset = origOffset;
+    
+    int connCount = _VertexConnectionCounts[id];
+    int connStart = _VertexConnectionStartIndices[id];
+    
+    // 1. Establish current position of this vertex in the iteration
+    float3 currentPos = localBaseVertex.position + finalOffset.positionDelta;
+    float3 totalCorrection = float3(0, 0, 0);
+
+    for (int a = 0; a < connCount; a++)
+    {
+        WeightedVertexConnection connection = _VertexConnections[connStart + a];
+
+        // 2. Fetch neighbor data
+        VertexData neighborBaseVertex = SampleClothingVertexData(connection.index);
+        MeshVertexDelta neighborOffset = SampleClothingVertexDelta(connection.index, _IndexOffset); 
+        float3 neighborCurrentPos = neighborBaseVertex.position + neighborOffset.positionDelta;
+
+        // 3. Compute vector between vertices
+        float3 deltaPos = neighborCurrentPos - currentPos;
+        float currentDistance = length(deltaPos);
+        
+        if (currentDistance > 0.0001)
+        {
+            // Rest length represents the original tailored garment distance
+            float restLength = length(neighborBaseVertex.position - localBaseVertex.position);
+            
+            // 4. Calculate Distance Error (Hooke's Law / PBD)
+            float error = currentDistance - restLength;
+            float3 direction = deltaPos / currentDistance;
+            
+            // 5. Accumulate raw correction. 
+            // In a pure PBD solver, each vertex moves 50% toward resolving the constraint if weights are equal.
+            float cWeight = connection.weight;
+            totalCorrection += direction * error * 0.5 * cWeight;
+        }
+    }
+
+    // 6. Apply iterative relaxation
+    if (connCount > 0)
+    {
+        // Divide by the number of connections so the vertex doesn't over-correct and explode
+        float3 finalCorrection = totalCorrection / (float) connCount;
+        
+        // _PreserveFactor controls the convergence rate per iteration (Keep between 0.1 and 0.5 for stability)
+        float relaxationRate = _PreserveFactor;
+        
+        finalOffset.positionDelta += finalCorrection * relaxationRate;
+    }
+}
+
+void ApplyClothPullPass2(uint id, VertexData localBaseVertex, inout MeshVertexDelta finalOffset, float clothBlendOut, float currentStretch)
+{
+    int connCount = _VertexConnectionCounts[id];
+    if (connCount == 0)
+        return;
+    
+    int connStart = _VertexConnectionStartIndices[id];
+    
+    // Read the current frame's baseline delta
+    float3 currentPos = localBaseVertex.position + finalOffset.positionDelta;
+    
+    float3 neighborPositionSum = float3(0, 0, 0);
+    float totalWeight = 0.0;
+
+    // Gather absolute neighbor positions from the source snapshot
+    for (int a = 0; a < connCount; a++)
+    {
+        WeightedVertexConnection connection = _VertexConnections[connStart + a];
+
+        VertexData neighborBaseVertex = SampleClothingVertexData(connection.index);
+        MeshVertexDelta neighborOffset = SampleClothingVertexDelta(connection.index, _IndexOffset);
+        float3 neighborCurrentPos = neighborBaseVertex.position + neighborOffset.positionDelta;
+
+        float cWeight = connection.weight;
+        neighborPositionSum += neighborCurrentPos * cWeight;
+        totalWeight += cWeight;
+    }
+
+    if (totalWeight <= 0.0001)
+    {
+        return;
+    }
+
+    // Calculate the raw spatial center of all surrounding neighbors
+    float3 averageNeighborPos = neighborPositionSum / totalWeight;
+    
+    // This vector represents 100% of the distance required to completely flatten the local mesh
+    float3 displacementVector = averageNeighborPos - currentPos;
+
+    // Inverse cloth blend out: tightness = 1.0 cancels everything, tightness = 0.0 is full cloth
+    float clothInfluence = saturate(1.0 - clothBlendOut);
+    
+    // Hyper-aggressive multiplier: 1.0 forcefully snaps the vertex to the exact center of its neighbors
+    float smoothingForce = 0.8 * clothInfluence / clamp(currentStretch, 0.5, 3.0);  
+    
+    // Apply the raw displacement vector additively to our current position
+    float3 absoluteSmoothedPos = currentPos + (displacementVector * smoothingForce);
+    
+    // Convert back into a fresh local delta (meters)
+    float3 newPositionDelta = absoluteSmoothedPos - localBaseVertex.position;
+
+    // High ceiling safety threshold (50 centimeters max change per pass)
+    float maxSafeMovement = 0.5;
+    float3 totalShift = newPositionDelta - finalOffset.positionDelta;
+    if (length(totalShift) > maxSafeMovement)
+    {
+        newPositionDelta = finalOffset.positionDelta + (normalize(totalShift) * maxSafeMovement);
+    }
+
+    // Explicitly write back out to the target buffer
+    finalOffset.positionDelta = newPositionDelta; 
+}
+
+void ApplyClothPullPass3(uint id, VertexData localBaseVertex, inout MeshVertexDelta finalOffset, float clothBlendOut, float clothMult, float currentStretch)
+{
+    int connCount = _VertexConnectionCounts[id];
+    if (connCount == 0)
+        return;
+    
+    int connStart = _VertexConnectionStartIndices[id];
+    
+    float3 currentPos = localBaseVertex.position + finalOffset.positionDelta;
+    float3 currentNormal = normalize(localBaseVertex.normal + finalOffset.normalDelta);
+    
+    float3 neighborPositionSum = float3(0, 0, 0);
+    float totalWeight = 0.0;
+
+    for (int a = 0; a < connCount; a++)
+    {
+        WeightedVertexConnection connection = _VertexConnections[connStart + a];
+
+        VertexData neighborBaseVertex = SampleClothingVertexData(connection.index);
+        MeshVertexDelta neighborOffset = SampleClothingVertexDelta(connection.index, _IndexOffset);
+        float3 neighborCurrentPos = neighborBaseVertex.position + neighborOffset.positionDelta;
+
+        float cWeight = connection.weight;
+        neighborPositionSum += neighborCurrentPos * cWeight;
+        totalWeight += cWeight;
+    }
+
+    if (totalWeight <= 0.0001)
+        return;
+
+    float3 averageNeighborPos = neighborPositionSum / totalWeight;
+    float3 displacementVector = averageNeighborPos - currentPos;
+
+    float clothInfluence = saturate(1.0 - clothBlendOut) * clothMult;
+    
+    // BOOST 1: Successive Over-Relaxation Multiplier. 
+    // Moving this above 1.0 (e.g., 1.4) acts like a predictive engine, 
+    // forcing the vertex to pre-travel further down the pipeline.
+    float overRelaxationFactor = 1.2;
+    float smoothingForce = overRelaxationFactor * clothInfluence * clamp(currentStretch, 0.5, 2);
+    
+    // Calculate the raw over-relaxed step
+    float3 rawBoostedShift = displacementVector * smoothingForce;
+
+    // BOOST 2: Anisotropic Stabilizer (The Spike Killer)
+    // We split the hyper-force into sliding (tangent) and flattening (normal) vectors.
+    float normalShiftDistance = dot(rawBoostedShift, currentNormal);
+    float3 normalShift = currentNormal * normalShiftDistance;
+    float3 tangentShift = rawBoostedShift - normalShift;
+
+    // We let horizontal sliding run at 100% maximum boosted speed,
+    // but dampen the normal axis slightly to completely prevent exploding spikes.
+    float3 stabilizedShift = tangentShift + (normalShift * 0.6);
+
+    // Apply the stabilized, over-relaxed displacement
+    float3 absoluteSmoothedPos = currentPos + stabilizedShift;
+    float3 newPositionDelta = absoluteSmoothedPos - localBaseVertex.position;
+
+    // Dynamic Safe Ceiling: Scales based on local mesh strain
+    float maxSafeMovement = 0.25 * clamp(currentStretch, 0.8, 1.5); 
+    float3 totalShift = newPositionDelta - finalOffset.positionDelta;
+    
+    if (length(totalShift) > maxSafeMovement)
+    {
+        newPositionDelta = finalOffset.positionDelta + (normalize(totalShift) * maxSafeMovement);
+    }
+
+    finalOffset.positionDelta = newPositionDelta;
+}
+
+void ApplyClothPullPass4(uint id, VertexData localBaseVertex, inout MeshVertexDelta finalOffset, float clothBlendOut, float clothMult, float currentStretch)
+{
+    int connCount = _VertexConnectionCounts[id];
+    if (connCount == 0)
+        return;
+    
+    int connStart = _VertexConnectionStartIndices[id];
+    
+    float3 currentPos = localBaseVertex.position + finalOffset.positionDelta;
+    float3 currentNormal = normalize(localBaseVertex.normal + finalOffset.normalDelta);
+    
+    // Accumulators for standard Laplacian smoothing
+    float3 neighborPositionSum = float3(0, 0, 0);
+    
+    // HC ADDITION: Accumulators to calculate the average deformation vector of neighbors
+    float3 neighborOriginalDiffSum = float3(0, 0, 0);
+    
+    float totalWeight = 0.0;
+
+    // --- First Loop: Gather Neighbor Data ---
+    for (int a = 0; a < connCount; a++)
+    {
+        WeightedVertexConnection connection = _VertexConnections[connStart + a];
+
+        VertexData neighborBaseVertex = SampleClothingVertexData(connection.index);
+        MeshVertexDelta neighborOffset = SampleClothingVertexDelta(connection.index, _IndexOffset);
+        
+        float3 neighborCurrentPos = neighborBaseVertex.position + neighborOffset.positionDelta;
+        // The distance this neighbor has deviated from its original base shape
+        float3 neighborOriginalDiff = neighborCurrentPos - neighborBaseVertex.position;
+
+        float cWeight = connection.weight;
+        
+        neighborPositionSum += neighborCurrentPos * cWeight;
+        neighborOriginalDiffSum += neighborOriginalDiff * cWeight; // HC Track
+        totalWeight += cWeight;
+    }
+
+    if (totalWeight <= 0.0001)
+        return;
+
+    // Compute averages
+    float3 averageNeighborPos = neighborPositionSum / totalWeight;
+    float3 averageNeighborDiff = neighborOriginalDiffSum / totalWeight;
+
+    // --- HC Math Engine ---
+    // Standard Laplacian displacement vector
+    float3 laplacianDisplacement = averageNeighborPos - currentPos;
+
+    // Current vertex deviation from its base shape
+    float3 currentOriginalDiff = currentPos - localBaseVertex.position;
+
+    // HC Tuning Parameters
+    // Alpha: Controls how fast the mesh relaxes/smooths (0.0 to 1.0)
+    float alpha = saturate(1.0 - clothBlendOut) * clothMult * 0.5;
+    
+    // Beta: Controls volume preservation (0.0 means standard Laplacian, 0.95 means extreme anti-shrinkage)
+    // 0.85 is the industry sweet spot for keeping thin straps/fingers intact
+    float beta = 0.85;
+
+    // The core HC Equation:
+    // It pushes the vertex toward the average neighbor position, but subtracts a fraction
+    // of how much the neighborhood is already collapsing toward the center.
+    float3 hcShift = (alpha * laplacianDisplacement) + (1.0 - beta) * (currentOriginalDiff - averageNeighborDiff);
+
+    // --- Over-Relaxation & Stabilization ---
+    float overRelaxationFactor = 1.2;
+    float3 rawBoostedShift = hcShift * overRelaxationFactor * clamp(currentStretch, 0.5, 2.0);
+
+    // Anisotropic Stabilizer: Filter normal axis to prevent mesh exploding
+    float normalShiftDistance = dot(rawBoostedShift, currentNormal);
+    float3 normalShift = currentNormal * normalShiftDistance;
+    float3 tangentShift = rawBoostedShift - normalShift;
+
+    // Keep 100% of tangent sliding, but slightly dampen normal axis adjustments
+    float3 stabilizedShift = tangentShift + (normalShift * 0.6);
+
+    // Apply the final displacement
+    float3 absoluteSmoothedPos = currentPos + stabilizedShift;
+    float3 newPositionDelta = absoluteSmoothedPos - localBaseVertex.position;
+
+    // Dynamic Safe Ceiling: Scales based on local mesh strain
+    float maxSafeMovement = 0.25 * clamp(currentStretch, 0.8, 1.5);
+    float3 totalShift = newPositionDelta - finalOffset.positionDelta;
+    
+    if (length(totalShift) > maxSafeMovement)
+    {
+        newPositionDelta = finalOffset.positionDelta + (normalize(totalShift) * maxSafeMovement);
+    }
+
+    finalOffset.positionDelta = newPositionDelta;
+}
+
+void ApplyClothPullPass8(uint id, VertexData localBaseVertex, inout MeshVertexDelta finalOffset, float clothBlendOut, float clothMult, float currentStretch)
+{
+    int connCount = _VertexConnectionCounts[id];
+    if (connCount == 0)
+        return;
+    
+    int connStart = _VertexConnectionStartIndices[id];
+    
+    float3 currentPos = localBaseVertex.position + finalOffset.positionDelta;
+    float3 currentNormal = normalize(localBaseVertex.normal + finalOffset.normalDelta);
+    
+    float3 neighborPositionSum = float3(0, 0, 0);
+    float3 neighborOriginalDiffSum = float3(0, 0, 0);
+    float totalWeight = 0.0;
+    float neighborConnSum = 0.0;
+
+    float baseDistanceSum = 0.0;
+    float currentDistanceSum = 0.0;
+
+    // --- Second Loop: Gather Neighbor Data ---
+    for (int a = 0; a < connCount; a++)
+    {
+        WeightedVertexConnection connection = _VertexConnections[connStart + a];
+
+        VertexData neighborBaseVertex = SampleClothingVertexData(connection.index);
+        MeshVertexDelta neighborOffset = SampleClothingVertexDelta(connection.index, _IndexOffset);
+        
+        float3 neighborCurrentPos = neighborBaseVertex.position + neighborOffset.positionDelta;
+        float3 neighborOriginalDiff = neighborCurrentPos - neighborBaseVertex.position;
+
+        float baseDist = distance(localBaseVertex.position, neighborBaseVertex.position);
+        float currentDist = distance(currentPos, neighborCurrentPos);
+        
+        baseDistanceSum += baseDist;
+        currentDistanceSum += currentDist;
+
+        int neighborConnCount = _VertexConnectionCounts[connection.index];
+        neighborConnSum += (float) neighborConnCount;
+
+        float neighborWeightModifier = (neighborConnCount < 5) ? 0.75 : 1.0;
+        float cWeight = connection.weight * neighborWeightModifier;
+        
+        neighborPositionSum += neighborCurrentPos * cWeight;
+        neighborOriginalDiffSum += neighborOriginalDiff * cWeight;
+        totalWeight += cWeight;
+    }
+
+    if (totalWeight <= 0.0001)
+        return;
+
+    float3 averageNeighborPos = neighborPositionSum / totalWeight;
+    float3 averageNeighborDiff = neighborOriginalDiffSum / totalWeight;
+
+    // --- 1. ANALYSIS & DETECTION ---
+    float avgLocalConnections = neighborConnSum / (float) connCount;
+    float globalConnCheck = min((float) connCount, avgLocalConnections);
+    float borderUrgency = saturate((5.0 - globalConnCheck) / 1.5);
+
+    float averageBaseDist = baseDistanceSum / (float) connCount;
+    float averageCurrentDist = currentDistanceSum / (float) connCount;
+    float distanceRatio = (averageBaseDist > 0.0001) ? (averageCurrentDist / averageBaseDist) : 1.0;
+    float shrinkIntensity = saturate(1.0 - distanceRatio);
+
+    float protectionFactor = max(borderUrgency, shrinkIntensity);
+
+    // --- 2. ACCELERATED HC ENGINE ---
+    float3 laplacianDisplacement = averageNeighborPos - currentPos;
+    float3 currentOriginalDiff = currentPos - localBaseVertex.position;
+
+    float alpha = saturate(1.0 - clothBlendOut) * clothMult;
+    float beta = lerp(0.85, 0.99, protectionFactor);
+
+    // Throttle smoothing if neighbors are compressing
+    alpha *= lerp(1.0, 0.15, shrinkIntensity);
+
+    float3 hcShift = (alpha * laplacianDisplacement) + (1.0 - beta) * (currentOriginalDiff - averageNeighborDiff);
+
+    // --- 3. ADAPTIVE OVER-RELAXATION & STABILIZATION ---
+    float overRelaxationFactor = lerp(1.5, 1.3, protectionFactor);
+    float3 rawBoostedShift = hcShift * overRelaxationFactor * clamp(currentStretch, 0.5, 2.0);
+
+    // Split vectors into Tangent (sliding along length) and Normal (radial thickness) axes
+    float normalShiftDistance = dot(rawBoostedShift, currentNormal);
+    float3 normalShift = currentNormal * normalShiftDistance;
+    float3 tangentShift = rawBoostedShift - normalShift;
+
+    // Dampen normal shift down significantly on thin geometry
+    float normalDampening = lerp(0.50, 0.02, protectionFactor);
+    float3 stabilizedShift = tangentShift + (normalShift * normalDampening);
+
+    // --- 4. HARD VOLUME GATE (Ponytail Cylinder Protection) ---
+    // Calculate how far the vertex has already moved away from its base position 
+    // strictly along the normal axis. Negative means it has collapsed inward.
+    float currentNormalDisplacement = dot(finalOffset.positionDelta, currentNormal);
+    
+    // Project our proposed new smoothing shift along the normal axis
+    float proposedNormalShift = dot(stabilizedShift, currentNormal);
+    float predictedNormalDisplacement = currentNormalDisplacement + proposedNormalShift;
+
+    // If the vertex is thin/urgent, and the smoothing engine wants to pull it 
+    // further inward (negative), we actively block or scale it back.
+    if (protectionFactor > 0.5 && predictedNormalDisplacement < currentNormalDisplacement)
+    {
+        // Calculate a hard compression threshold. We don't want the radius 
+        // to shrink past a tiny fraction of its original local edge length.
+        float maxAllowedInwardCollapse = -0.05 * averageBaseDist;
+
+        if (predictedNormalDisplacement < maxAllowedInwardCollapse)
+        {
+            // Zero out or reverse the inward normal force completely.
+            // This forces 100% of the remaining smoothing energy to happen sideways (tangent).
+            stabilizedShift -= normalShift * normalDampening;
+        }
+    }
+
+    // --- 5. APPLY & CONSTRAIN ---
+    float3 absoluteSmoothedPos = currentPos + stabilizedShift;
+    float3 newPositionDelta = absoluteSmoothedPos - localBaseVertex.position;
+
+    // Dynamic Safe Ceiling
+    float maxSafeMovement = 0.25 * clamp(currentStretch, 0.8, 1.5);
+    float3 totalShift = newPositionDelta - finalOffset.positionDelta;
+    
+    if (length(totalShift) > maxSafeMovement)
+    {
+        newPositionDelta = finalOffset.positionDelta + (normalize(totalShift) * maxSafeMovement);
+    }
+
+    finalOffset.positionDelta = newPositionDelta;
+}
+
+void ApplyClothPullPass9(uint id, VertexData localBaseVertex, inout MeshVertexDelta finalOffset, float clothBlendOut, float clothMult, float currentStretch)
+{
+    int connCount = _VertexConnectionCounts[id];
+    if (connCount == 0)
+        return;
+    
+    int connStart = _VertexConnectionStartIndices[id];
+    
+    float3 currentPos = localBaseVertex.position + finalOffset.positionDelta;
+    float3 currentNormal = normalize(localBaseVertex.normal + finalOffset.normalDelta);
+    
+    float3 neighborPositionSum = float3(0, 0, 0);
+    float3 neighborOriginalDiffSum = float3(0, 0, 0);
+    float totalWeight = 0.0;
+    float neighborConnSum = 0.0;
+
+    float baseDistanceSum = 0.0;
+    float currentDistanceSum = 0.0;
+
+    // --- Second Loop: Gather Neighbor Data ---
+    for (int a = 0; a < connCount; a++)
+    {
+        WeightedVertexConnection connection = _VertexConnections[connStart + a];
+
+        VertexData neighborBaseVertex = SampleClothingVertexData(connection.index);
+        MeshVertexDelta neighborOffset = SampleClothingVertexDelta(connection.index, _IndexOffset);
+        
+        float3 neighborCurrentPos = neighborBaseVertex.position + neighborOffset.positionDelta;
+        float3 neighborOriginalDiff = neighborCurrentPos - neighborBaseVertex.position;
+
+        float baseDist = distance(localBaseVertex.position, neighborBaseVertex.position);
+        float currentDist = distance(currentPos, neighborCurrentPos);
+        
+        baseDistanceSum += baseDist;
+        currentDistanceSum += currentDist;
+
+        int neighborConnCount = _VertexConnectionCounts[connection.index];
+        neighborConnSum += (float) neighborConnCount;
+
+        float neighborWeightModifier = (neighborConnCount < 5) ? 0.75 : 1.0;
+        float cWeight = connection.weight * neighborWeightModifier;
+        
+        neighborPositionSum += neighborCurrentPos * cWeight;
+        neighborOriginalDiffSum += neighborOriginalDiff * cWeight;
+        totalWeight += cWeight;
+    }
+
+    if (totalWeight <= 0.0001)
+        return;
+
+    float3 averageNeighborPos = neighborPositionSum / totalWeight;
+    float3 averageNeighborDiff = neighborOriginalDiffSum / totalWeight;
+
+    // --- 1. ANALYSIS & DETECTION ---
+    float avgLocalConnections = neighborConnSum / (float) connCount;
+    float globalConnCheck = min((float) connCount, avgLocalConnections);
+    float borderUrgency = saturate((5.0 - globalConnCheck) / 1.5);
+
+    float averageBaseDist = baseDistanceSum / (float) connCount;
+    float averageCurrentDist = currentDistanceSum / (float) connCount;
+    float distanceRatio = (averageBaseDist > 0.0001) ? (averageCurrentDist / averageBaseDist) : 1.0;
+    float shrinkIntensity = saturate(1.0 - distanceRatio);
+
+    float protectionFactor = max(borderUrgency, shrinkIntensity);
+
+    // --- 2. ACCELERATED HC ENGINE ---
+    float3 laplacianDisplacement = averageNeighborPos - currentPos;
+    float3 currentOriginalDiff = currentPos - localBaseVertex.position;
+
+    float alpha = saturate(1.0 - clothBlendOut) * clothMult;
+    float beta = lerp(0.85, 0.99, protectionFactor);
+
+    // Throttle smoothing if neighbors are compressing
+    alpha *= lerp(1.0, 0.15, shrinkIntensity);
+
+    float3 hcShift = (alpha * laplacianDisplacement) + (1.0 - beta) * (currentOriginalDiff - averageNeighborDiff);
+
+    // --- 3. ADAPTIVE OVER-RELAXATION & STABILIZATION ---
+    float overRelaxationFactor = lerp(1.5, 1.3, protectionFactor);
+    float3 rawBoostedShift = hcShift * overRelaxationFactor * clamp(currentStretch, 0.5, 2.0);
+
+    // Split vectors into Tangent (sliding on surface) and Normal (flattening) axes
+    float normalShiftDistance = dot(rawBoostedShift, currentNormal);
+    float3 normalShift = currentNormal * normalShiftDistance;
+    float3 surfaceTangentShift = rawBoostedShift - normalShift;
+
+    // Dampen normal shift down significantly on thin geometry
+    float normalDampening = lerp(0.50, 0.02, protectionFactor);
+    float3 stabilizedShift = surfaceTangentShift + (normalShift * normalDampening);
+
+    // --- 4. NEW: LOCAL RIBBON WIDTH FILTER (Flat Strip Protection) ---
+    // If we are on a narrow ribbon mesh, we must prevent vertices from pulling inward 
+    // along the strip's short width axis, while keeping smoothing active along its long length axis.
+    if (protectionFactor > 0.5)
+    {
+        // Find the primary direction the laplacian vector wants to pull this vertex.
+        // On a ribbon edge, the laplacian pulls directly inward across the width of the strip.
+        float3 inwardWidthDir = normalize(laplacianDisplacement);
+
+        // Calculate a longitudinal length axis that is perpendicular to both the surface normal 
+        // and the inward width collapse vector. This axis runs safely down the length of the ponytail.
+        float3 longitudinalLengthDir = normalize(cross(currentNormal, inwardWidthDir));
+
+        // Re-align our inward width direction to be perfectly planar to the mesh tangent surface
+        float3 pureWidthTangent = normalize(cross(longitudinalLengthDir, currentNormal));
+
+        // Isolate how much of our proposed smoothing shift is trying to narrow the strip's width
+        float widthShiftDistance = dot(stabilizedShift, pureWidthTangent);
+        float3 widthShiftVector = pureWidthTangent * widthShiftDistance;
+
+        // Strip out the narrowing force entirely based on our protection factor.
+        // This stops the strip from collapsing into a needle, but leaves 100% of the 
+        // longitudinal shift intact so the ponytail relaxes smoothly down its length.
+        stabilizedShift -= widthShiftVector * protectionFactor;
+    }
+
+    // --- 5. APPLY & CONSTRAIN ---
+    float3 absoluteSmoothedPos = currentPos + stabilizedShift;
+    float3 newPositionDelta = absoluteSmoothedPos - localBaseVertex.position;
+
+    // Dynamic Safe Ceiling
+    float maxSafeMovement = 0.25 * clamp(currentStretch, 0.8, 1.5);
+    float3 totalShift = newPositionDelta - finalOffset.positionDelta;
+    
+    if (length(totalShift) > maxSafeMovement)
+    {
+        newPositionDelta = finalOffset.positionDelta + (normalize(totalShift) * maxSafeMovement);
+    }
+
+    finalOffset.positionDelta = newPositionDelta;
+}
+
+void ApplyClothPullPass(uint id, VertexData localBaseVertex, inout MeshVertexDelta finalOffset, float clothBlendOut, float clothMult, float currentStretch)
+{
+    int connCount = _VertexConnectionCounts[id];
+    if (connCount == 0)
+        return;
+    
+    int connStart = _VertexConnectionStartIndices[id];
+    
+    float3 currentPos = localBaseVertex.position + finalOffset.positionDelta;
+    float3 currentNormal = normalize(localBaseVertex.normal + finalOffset.normalDelta);
+    
+    float3 neighborPositionSum = float3(0, 0, 0);
+    float3 neighborOriginalDiffSum = float3(0, 0, 0);
+    float totalWeight = 0.0;
+    float neighborConnSum = 0.0;
+
+    float baseDistanceSum = 0.0;
+    float currentDistanceSum = 0.0;
+
+    // DIRECT DISTANCE PUSH-BACK TRACKER:
+    // Accumulates vectors pushing away from neighbors that have compressed too close.
+    float3 pushBackSum = float3(0, 0, 0);
+
+    // --- Second Loop: Gather Neighbor Data ---
+    for (int a = 0; a < connCount; a++)
+    {
+        WeightedVertexConnection connection = _VertexConnections[connStart + a];
+
+        VertexData neighborBaseVertex = SampleClothingVertexData(connection.index);
+        MeshVertexDelta neighborOffset = SampleClothingVertexDelta(connection.index, _IndexOffset);
+        
+        float3 neighborCurrentPos = neighborBaseVertex.position + neighborOffset.positionDelta;
+        float3 neighborOriginalDiff = neighborCurrentPos - neighborBaseVertex.position;
+
+        // Calculate exact edge lengths between this vertex and the current neighbor
+        float baseDist = distance(localBaseVertex.position, neighborBaseVertex.position);
+        float currentDist = distance(currentPos, neighborCurrentPos);
+        
+        baseDistanceSum += baseDist;
+        currentDistanceSum += currentDist;
+
+        // --- NEW: INDIVIDUAL EDGE COMPRESSION CHECK ---
+        // If the current simulated distance is smaller than the original base distance, 
+        // the neighbor is encroaching and causing shrinkage. 
+        if (currentDist < baseDist)
+        {
+            float3 pushDir = currentPos - neighborCurrentPos;
+            float pushLen = length(pushDir);
+            
+            if (pushLen > 0.0001)
+            {
+                // Move in the exact opposite direction of the neighbor
+                pushDir /= pushLen;
+                
+                // The push force is perfectly proportional to the compression deficit
+                float compressionDeficit = baseDist - currentDist;
+                
+                // Accumulate the directional push-back force scaled by connection weight
+                pushBackSum += pushDir * compressionDeficit * connection.weight;
+            }
+        }
+
+        int neighborConnCount = _VertexConnectionCounts[connection.index];
+        neighborConnSum += (float) neighborConnCount;
+
+        float neighborWeightModifier = (neighborConnCount < 5) ? 0.75 : 1.0;
+        float cWeight = connection.weight * neighborWeightModifier;
+        
+        neighborPositionSum += neighborCurrentPos * cWeight;
+        neighborOriginalDiffSum += neighborOriginalDiff * cWeight;
+        totalWeight += cWeight;
+    }
+
+    if (totalWeight <= 0.0001)
+        return;
+
+    float3 averageNeighborPos = neighborPositionSum / totalWeight;
+    float3 averageNeighborDiff = neighborOriginalDiffSum / totalWeight;
+    
+    // Average out our collected push-back forces
+    float3 averagePushBack = pushBackSum / totalWeight;
+
+    // --- 1. ANALYSIS & DETECTION ---
+    float avgLocalConnections = neighborConnSum / (float) connCount;
+    float globalConnCheck = min((float) connCount, avgLocalConnections);
+    float borderUrgency = saturate((5.0 - globalConnCheck) / 1.5);
+
+    float averageBaseDist = baseDistanceSum / (float) connCount;
+    float averageCurrentDist = currentDistanceSum / (float) connCount;
+    float distanceRatio = (averageBaseDist > 0.0001) ? (averageCurrentDist / averageBaseDist) : 1.0;
+    float shrinkIntensity = saturate(1.0 - distanceRatio);
+
+    float protectionFactor = max(borderUrgency, shrinkIntensity);
+
+    // --- 2. ACCELERATED HC ENGINE ---
+    float3 laplacianDisplacement = averageNeighborPos - currentPos;
+    float3 currentOriginalDiff = currentPos - localBaseVertex.position; 
+
+    float alpha = saturate(1.0 - clothBlendOut) * clothMult;
+    float beta = lerp(0.85, 0.99, protectionFactor);
+
+    // Throttle smoothing if neighbors are compressing
+    alpha *= lerp(1.0, 0.15, shrinkIntensity);
+
+    float3 hcShift = (alpha * laplacianDisplacement) + (1.0 - beta) * (currentOriginalDiff - averageNeighborDiff);
+
+    // --- NEW: INJECT PUSH-BACK FORCE ---
+    // We add our self-calculated, directional push-back force directly into the shift vector.
+    // It naturally scales up or down based on individual neighbor compression levels without gating.
+    hcShift += averagePushBack * 1.5; // 1.5 multiplier gives the restoration force dominant authority
+
+    // --- 3. ADAPTIVE OVER-RELAXATION & STABILIZATION ---
+    float overRelaxationFactor = lerp(1.5, 1.3, protectionFactor);
+    float3 rawBoostedShift = hcShift * overRelaxationFactor * clamp(currentStretch, 0.5, 2.0);
+
+    // Split vectors into Tangent (sliding on surface) and Normal (flattening) axes
+    float normalShiftDistance = dot(rawBoostedShift, currentNormal);
+    float3 normalShift = currentNormal * normalShiftDistance;
+    float3 surfaceTangentShift = rawBoostedShift - normalShift;
+
+    // Dampen normal shift down significantly on thin geometry
+    float normalDampening = lerp(0.50, 0.02, protectionFactor);
+    float3 stabilizedShift = surfaceTangentShift + (normalShift * normalDampening);
+
+    // --- 4. APPLY & CONSTRAIN ---
+    float3 absoluteSmoothedPos = currentPos + stabilizedShift;
+    float3 newPositionDelta = absoluteSmoothedPos - localBaseVertex.position;
+
+    // Dynamic Safe Ceiling
+    float maxSafeMovement = 0.25 * clamp(currentStretch, 0.8, 1.5);
+    float3 totalShift = newPositionDelta - finalOffset.positionDelta;
+    
+    if (length(totalShift) > maxSafeMovement)
+    {
+        newPositionDelta = finalOffset.positionDelta + (normalize(totalShift) * maxSafeMovement);
+    }
+
+    finalOffset.positionDelta = newPositionDelta;
 }
 
 [numthreads(256, 1, 1)]
@@ -414,7 +1128,7 @@ void ApplyVertexDeltas(uint3 dtid : SV_DispatchThreadID)
     //if (tid >= _VertexCount)
         return;
 
-    //_ClothingVertexDeltas[tid] = VD_AddDelta(_ClothingBaseVertexData[tid], _ClothingVertexDeltasReadOnly[_IndexOffset + tid]);
+    //_ClothingVertexDeltas[tid] = VD_AddDelta(SampleClothingVertexData(tid), _ClothingVertexDeltasReadOnly[_IndexOffset + tid]);
 }
 
 // GPU equivalent of DeformVerticesJob
@@ -540,6 +1254,8 @@ void CalculateBounds_Reduce(uint3 gtid : SV_GroupThreadID, uint3 dtid : SV_Dispa
 
         OutputBoundsMin[0] = center - size * 0.5;
         OutputBoundsMax[0] = center + size * 0.5;
+        
+        OutputBoundsMaxDistance[0] = length(size); 
     }
 }
 
@@ -553,11 +1269,14 @@ void BodyMold_VertexCloud(uint3 dtid : SV_DispatchThreadID)
     int4 bindIdx;
     float4 bindW;
     VertexData localBaseVertex;
+    MeshVertexDelta prevRawOffset;
+    MeshVertexDelta rawOffset;
     MeshVertexDelta origOffset;
     MeshVertexDelta finalOffset;
     float avgStretch = 1.0;
+    float tightness = 1.0;
     float3 thicknessVector;
-    if (!CalculateShapePreservingClothingVertexOffset(tid, id, idInBuffer, bindIdx, bindW, localBaseVertex, origOffset, finalOffset, avgStretch, thicknessVector)) 
+    if (!CalculateShapePreservingClothingVertexOffset(tid, id, idInBuffer, bindIdx, bindW, 1.0, localBaseVertex, prevRawOffset, rawOffset, origOffset, finalOffset, avgStretch, tightness, thicknessVector)) 
         return;
 
     // Vertex-cloud penetration handling along the motion segment (start -> end)
@@ -735,8 +1454,8 @@ float3 CollideWithBodyTriangles(uint tid, uint clothingId, float thickness, Vert
             if (neighbor < 0)
                 continue;
 
-            VertexData nb = _ClothingBaseVertexData[neighbor];
-            MeshVertexDelta nbDelta = _ClothingVertexDeltasReadOnly[neighbor + _IndexOffset];
+            VertexData nb = SampleClothingVertexData(neighbor);
+            MeshVertexDelta nbDelta = SampleClothingVertexDelta(neighbor, _IndexOffset);
             float3 p0 = nb.position + nbDelta.positionDelta;
             float3 dir = worldPos - p0;
             if (dot(dir, dir) < 1e-12)
@@ -854,8 +1573,8 @@ float3 CollideWithBodyTriangles_TriangleBased(uint tid, uint clothingId, float t
         if (neighbor < 0)
             continue;
 
-        VertexData nbBase = _ClothingBaseVertexData[neighbor];
-        MeshVertexDelta nbDelta = _ClothingVertexDeltasReadOnly[neighbor + _IndexOffset];
+        VertexData nbBase = SampleClothingVertexData(neighbor);
+        MeshVertexDelta nbDelta = SampleClothingVertexDelta(neighbor, _IndexOffset);
         float3 nbPos = nbBase.position + nbDelta.positionDelta;
 
         float connDist = length(nbPos - worldPos);
@@ -882,13 +1601,13 @@ float3 CollideWithBodyTriangles_TriangleBased(uint tid, uint clothingId, float t
         int ci2 = _ClothingTriangles[clothTriIdx + 2];
 
         // Get deformed positions for clothing triangle
-        VertexData cv0 = _ClothingBaseVertexData[ci0];
-        VertexData cv1 = _ClothingBaseVertexData[ci1];
-        VertexData cv2 = _ClothingBaseVertexData[ci2];
+        VertexData cv0 = SampleClothingVertexData(ci0);
+        VertexData cv1 = SampleClothingVertexData(ci1);
+        VertexData cv2 = SampleClothingVertexData(ci2);
 
-        MeshVertexDelta cd0 = _ClothingVertexDeltasReadOnly[ci0 + _IndexOffset];
-        MeshVertexDelta cd1 = _ClothingVertexDeltasReadOnly[ci1 + _IndexOffset];
-        MeshVertexDelta cd2 = _ClothingVertexDeltasReadOnly[ci2 + _IndexOffset];
+        MeshVertexDelta cd0 = SampleClothingVertexDelta(ci0, _IndexOffset);
+        MeshVertexDelta cd1 = SampleClothingVertexDelta(ci1, _IndexOffset);
+        MeshVertexDelta cd2 = SampleClothingVertexDelta(ci2, _IndexOffset);
 
         float3 cp0 = cv0.position + cd0.positionDelta;
         float3 cp1 = cv1.position + cd1.positionDelta;
@@ -1112,16 +1831,24 @@ void BodyMold_Triangle(uint3 dtid : SV_DispatchThreadID)
     int4 bindIdx;
     float4 bindW;
     VertexData localBaseVertex;
+    MeshVertexDelta prevRawOffset;
+    MeshVertexDelta rawOffset;
     MeshVertexDelta origOffset;
     MeshVertexDelta finalOffset;
     float avgStretch = 1.0;
+    float tightness = 1.0;
     float3 thicknessVector;
-    if (!CalculateShapePreservingClothingVertexOffset(tid, id, idInBuffer, bindIdx, bindW, localBaseVertex, origOffset, finalOffset, avgStretch, thicknessVector)) 
+    if (!CalculateShapePreservingClothingVertexOffset(tid, id, idInBuffer, bindIdx, bindW, 1.0, localBaseVertex, prevRawOffset, rawOffset, origOffset, finalOffset, avgStretch, tightness, thicknessVector)) 
         return;
 
+    localBaseVertex.position = localBaseVertex.position - thicknessVector;
+    
     bool foundTri;
     bool anyFront;
-    CollideWithBodyTriangles_TriangleBased(tid, id, _ClothThickness * max(1.0, avgStretch), localBaseVertex, origOffset, finalOffset, foundTri, anyFront);
+    float3 worldPos = CollideWithBodyTriangles_TriangleBased(tid, id, 0.0, localBaseVertex, origOffset, finalOffset, foundTri, anyFront);
+    bool foundTri2;
+    bool anyFront2;
+    worldPos = CollideWithBodyTriangles(tid, id, 0.0, localBaseVertex, origOffset, finalOffset, foundTri2, anyFront2);
     //SmoothConnectionDivergence(id, localBaseVertex, finalOffset, _FrontPushFactor);
     
     WriteToClothingVertexDeltas(idInBuffer, finalOffset);
@@ -1130,8 +1857,12 @@ void BodyMold_Triangle(uint3 dtid : SV_DispatchThreadID)
 
 // The baked 3D SDF Texture passed from C#
 Texture3D<float> _BodySDFTex;
+SamplerState sampler_BodySDFTex;
 
-void CollideWithSDF_Precombined(float thickness, float3 combinedVertex, float innerPushStrength, float outerPushStrength, inout MeshVertexDelta finalOffset)
+Texture3D<float> _BodySDFTexSimplified;
+SamplerState sampler_BodySDFTexSimplified;
+
+void CollideWithSDF_Precombined(Texture3D<float> sdfTexture, float thickness, float3 combinedVertex, float innerPushStrength, float outerPushStrength, inout MeshVertexDelta finalOffset)
 {
     float3 pos = combinedVertex;
 
@@ -1146,7 +1877,7 @@ void CollideWithSDF_Precombined(float thickness, float3 combinedVertex, float in
         int3 voxelCoords = clamp(int3(uvw * (_SDFResolution - 1)), int3(0, 0, 0), int3(_SDFResolution - 1, _SDFResolution - 1, _SDFResolution - 1));
 
         // 4. Read the exact distance value out of the 3D texture
-        float distanceToSkin = _BodySDFTex[voxelCoords];
+        float distanceToSkin = sdfTexture[voxelCoords];
 
         // 5. If the vertex is piercing the body or inside the thickness margin, resolve it
         if (distanceToSkin < thickness)
@@ -1160,17 +1891,17 @@ void CollideWithSDF_Precombined(float thickness, float3 combinedVertex, float in
             int3 offsetZ = int3(0, 0, 1);
 
             // Read neighboring voxel cells safely clamped inside limits
-            float posX = _BodySDFTex[clamp(voxelCoords + offsetX, 0, _SDFResolution - 1)];
-            float negX = _BodySDFTex[clamp(voxelCoords - offsetX, 0, _SDFResolution - 1)];
+            float posX = sdfTexture[clamp(voxelCoords + offsetX, 0, _SDFResolution - 1)];
+            float negX = sdfTexture[clamp(voxelCoords - offsetX, 0, _SDFResolution - 1)];
             
-            float posY = _BodySDFTex[clamp(voxelCoords + offsetY, 0, _SDFResolution - 1)];
-            float negY = _BodySDFTex[clamp(voxelCoords - offsetY, 0, _SDFResolution - 1)];
+            float posY = sdfTexture[clamp(voxelCoords + offsetY, 0, _SDFResolution - 1)];
+            float negY = sdfTexture[clamp(voxelCoords - offsetY, 0, _SDFResolution - 1)];
             
-            float posZ = _BodySDFTex[clamp(voxelCoords + offsetZ, 0, _SDFResolution - 1)];
-            float negZ = _BodySDFTex[clamp(voxelCoords - offsetZ, 0, _SDFResolution - 1)];
+            float posZ = sdfTexture[clamp(voxelCoords + offsetZ, 0, _SDFResolution - 1)];
+            float negZ = sdfTexture[clamp(voxelCoords - offsetZ, 0, _SDFResolution - 1)];
 
             // The directional slope pointing directly away from the center of the body mesh
-            float3 outwardDirection = normalize(float3(posX - negX, posY - negY, posZ - negZ));
+            float3 outwardDirection = normalize(float3(posX - negX, posY - negY, posZ - negZ)); 
 
             // 7. Push the cloth vertex out of the body bounds instantly
             finalOffset.positionDelta += outwardDirection * penetrationDepth * lerp(innerPushStrength, outerPushStrength, saturate(penetrationDepth / thickness));
@@ -1178,9 +1909,390 @@ void CollideWithSDF_Precombined(float thickness, float3 combinedVertex, float in
     }
 }
 
-void CollideWithSDF(float thickness, VertexData localBaseVertex, float innerPushStrength, float outerPushStrength, inout MeshVertexDelta finalOffset)
+void CollideWithSDF_Precombined2(Texture3D<float> sdfTexture, SamplerState sdfSampler, float thickness, float3 combinedVertex, float innerPushStrength, float outerPushStrength, inout MeshVertexDelta finalOffset, float3 localBaseNormal)
 {
-    CollideWithSDF_Precombined(thickness, localBaseVertex.position + finalOffset.positionDelta, innerPushStrength, outerPushStrength, finalOffset);
+    float3 pos = combinedVertex;
+
+    // 1. Calculate UVW
+    float3 uvw = (pos - _SDFBoundsMin) / (_SDFBoundsMax - _SDFBoundsMin);
+
+    // 2. Safety Check
+    if (all(uvw >= 0.0) && all(uvw <= 1.0))
+    {
+        // 3. Smoothly sample using trilinear filtering hardware
+        // This provides sub-voxel distance precision
+        float distanceToSkin = sdfTexture.SampleLevel(sdfSampler, uvw, 0).r;
+
+        // 4. Check penetration
+        if (distanceToSkin < thickness)
+        {
+            float penetrationDepth = thickness - distanceToSkin;
+
+            // 5. Calculate Gradient using float UVW steps (1 voxel wide)
+            float step = 1.0 / (float) _SDFResolution;
+            
+            float posX = sdfTexture.SampleLevel(sdfSampler, uvw + float3(step, 0, 0), 0).r;
+            float negX = sdfTexture.SampleLevel(sdfSampler, uvw - float3(step, 0, 0), 0).r;
+            
+            float posY = sdfTexture.SampleLevel(sdfSampler, uvw + float3(0, step, 0), 0).r;
+            float negY = sdfTexture.SampleLevel(sdfSampler, uvw - float3(0, step, 0), 0).r;
+            
+            float posZ = sdfTexture.SampleLevel(sdfSampler, uvw + float3(0, 0, step), 0).r;
+            float negZ = sdfTexture.SampleLevel(sdfSampler, uvw - float3(0, 0, step), 0).r;
+
+            float3 gradient = float3(posX - negX, posY - negY, posZ - negZ); 
+            float3 outwardDirection;
+
+            // 6. Fail-Safe: Check if the gradient is corrupted/flat
+            if (length(gradient) > 0.0001)
+            {
+                outwardDirection = normalize(gradient);
+            }
+            else
+            {
+                // Deep field fallback: Use the original vertex normal to push outward
+                outwardDirection = localBaseNormal;
+            }
+
+            // 7. Dynamic Escape Force
+            // If the vertex is deep inside (negative distance), we multiply the push strength 
+            // exponentially to violently reject it from the core of the body mesh.
+            float deepMultiplier = (distanceToSkin < 0.0) ? (1.0 + abs(distanceToSkin) * innerPushStrength) : 1.0;
+            
+            float finalPush = penetrationDepth * deepMultiplier * outerPushStrength;
+            
+            finalOffset.positionDelta += outwardDirection * finalPush;
+        }
+    }
+}
+
+void CollideWithSDF_Precombined3(Texture3D<float> sdfTexture, SamplerState sdfSampler, float thickness, float3 combinedVertex, float innerPushStrength, float outerPushStrength, inout MeshVertexDelta finalOffset, float3 localBaseNormal)
+{
+    float3 pos = combinedVertex;
+
+    // 1. Calculate UVW
+    float3 uvw = (pos - _SDFBoundsMin) / (_SDFBoundsMax - _SDFBoundsMin);
+
+    // 2. Safety Check
+    if (all(uvw >= 0.0) && all(uvw <= 1.0))
+    {
+        // 3. Smoothly sample using trilinear filtering hardware
+        float distanceToSkin = sdfTexture.SampleLevel(sdfSampler, uvw, 0).r;
+
+        // 4. Check penetration
+        if (distanceToSkin < thickness)
+        {
+            float penetrationDepth = thickness - distanceToSkin;
+
+            // 5. Calculate Gradient using float UVW steps (1 voxel wide)
+// Calculate a dynamic sampling offset
+// If we are deep inside, we expand the search radius to peek past local voxel noise
+            float baseStep = 1.0 / (float) _SDFResolution;
+            float dynamicRadius = baseStep * (distanceToSkin < 0.0 ? (1.0 + abs(distanceToSkin) * 10.0) : 1.0);
+
+// Tetrahedral sampling offsets (mathematically balanced 4-tap structure)
+            float3 e0 = float3(1.0, -1.0, -1.0) * dynamicRadius;
+            float3 e1 = float3(-1.0, -1.0, 1.0) * dynamicRadius;
+            float3 e2 = float3(-1.0, 1.0, -1.0) * dynamicRadius;
+            float3 e3 = float3(1.0, 1.0, 1.0) * dynamicRadius;
+
+            float d0 = sdfTexture.SampleLevel(sdfSampler, uvw + e0, 0).r;
+            float d1 = sdfTexture.SampleLevel(sdfSampler, uvw + e1, 0).r;
+            float d2 = sdfTexture.SampleLevel(sdfSampler, uvw + e2, 0).r;
+            float d3 = sdfTexture.SampleLevel(sdfSampler, uvw + e3, 0).r;
+
+// Reconstruct the analytical escape gradient vector
+            float3 gradient = e0 * d0 + e1 * d1 + e2 * d2 + e3 * d3;
+            float3 outwardDirection;
+
+            if (length(gradient) > 0.0001)
+            {
+                outwardDirection = normalize(gradient);
+            }
+            else
+            {
+    // Fall back strictly to the cloth vertex normal if we are dead center
+                outwardDirection = localBaseNormal;
+            }
+
+            // FIX 2: Check for degenerate or nearly flat gradients dynamically
+            // When deep inside, the SDF slope drops significantly.
+            if (length(gradient) > 0.001 && distanceToSkin > -0.05)
+            {
+                outwardDirection = normalize(gradient);
+            }
+            else
+            {
+                // CRITICAL ESCAPE RAY: If the gradient vanishes, we MUST use the vertex normal.
+                outwardDirection = localBaseNormal;
+                
+                // If we are deep inside and the gradient failed us, we enforce a massive escape step
+                if (distanceToSkin <= -0.05)
+                {
+                    penetrationDepth = thickness + abs(distanceToSkin) + 0.02; // Force out by an extra 2cm
+                }
+            }
+
+            // 6. Dynamic Escape Force
+            float deepMultiplier = (distanceToSkin < 0.0) ? (1.0 + abs(distanceToSkin) * innerPushStrength) : 1.0;
+            float finalPush = penetrationDepth * deepMultiplier * outerPushStrength;
+            
+            // 7. IMPENETRABLE RESOLUTION (The Fix)
+            // Instead of compounding an additive push force that fights the smoothing solver,
+            // we project the displacement vector onto the outward direction.
+            float3 correctionVector = outwardDirection * finalPush;
+            
+            // If the incoming delta is pushing *into* the collision surface, 
+            // we cancel out that inward velocity entirely so it can't fight the push force.
+            float incomingInwardForce = dot(finalOffset.positionDelta, outwardDirection);
+            if (incomingInwardForce < 0.0)
+            {
+                // Strip away the inward component of the cloth solver's movement
+                finalOffset.positionDelta -= outwardDirection * incomingInwardForce;
+            }
+
+            // Apply the absolute spatial correction 
+            finalOffset.positionDelta += correctionVector; 
+        }
+    }
+}
+
+void CollideWithSDF_Precombined4(
+    Texture3D<float> sdfTexture,
+    SamplerState sdfSampler,
+    float thickness,
+    float3 prePullVertex, // Position BEFORE the cloth pull pass
+    float3 combinedVertex, // Position AFTER the cloth pull pass
+    float innerPushStrength,
+    float outerPushStrength,
+    inout MeshVertexDelta finalOffset,
+    float3 localBaseNormal)
+{
+    float3 pos = combinedVertex;
+
+    // 1. Calculate UVW for the current post-pull position
+    float3 uvw = (pos - _SDFBoundsMin) / (_SDFBoundsMax - _SDFBoundsMin);
+
+    // 2. Out-of-bounds safety check
+    if (all(uvw >= 0.0) && all(uvw <= 1.0))
+    {
+        // 3. Sample distance field at the destination point
+        float distanceToSkin = sdfTexture.SampleLevel(sdfSampler, uvw, 0).r;
+
+        // 4. If the cloth solver pulled us past the allowed thickness boundary
+        if (distanceToSkin < thickness)
+        {
+            
+
+            // 5. Calculate the local SDF Gradient direction
+// Calculate a dynamic sampling offset
+// If we are deep inside, we expand the search radius to peek past local voxel noise
+            float baseStep = 1.0 / (float) _SDFResolution;
+            float dynamicRadius = baseStep * (distanceToSkin < 0.0 ? (1.0 + abs(distanceToSkin) * 10.0) : 1.0);
+
+// Tetrahedral sampling offsets (mathematically balanced 4-tap structure)
+            float3 e0 = float3(1.0, -1.0, -1.0) * dynamicRadius;
+            float3 e1 = float3(-1.0, -1.0, 1.0) * dynamicRadius;
+            float3 e2 = float3(-1.0, 1.0, -1.0) * dynamicRadius;
+            float3 e3 = float3(1.0, 1.0, 1.0) * dynamicRadius;
+
+            float d0 = sdfTexture.SampleLevel(sdfSampler, uvw + e0, 0).r;
+            float d1 = sdfTexture.SampleLevel(sdfSampler, uvw + e1, 0).r;
+            float d2 = sdfTexture.SampleLevel(sdfSampler, uvw + e2, 0).r;
+            float d3 = sdfTexture.SampleLevel(sdfSampler, uvw + e3, 0).r;
+
+// Reconstruct the analytical escape gradient vector
+            float3 gradient = e0 * d0 + e1 * d1 + e2 * d2 + e3 * d3;
+            float3 outwardDirection;
+
+            if (length(gradient) > 0.0001)
+            {
+                outwardDirection = normalize(gradient);
+            }
+            else
+            {
+    // Fall back strictly to the cloth vertex normal if we are dead center
+                outwardDirection = localBaseNormal;
+            }
+
+            // ==========================================
+            // IMPENETRABLE VELOCITY PROJECTION (THE FIX)
+            // ==========================================
+            
+            // Calculate the actual travel vector the cloth solver tried to make this step
+            float3 pullTravelVector = combinedVertex - prePullVertex;
+
+            // Project the travel vector onto the collision normal to see how hard it's pushing inward
+            float inwardPenetrationSpeed = dot(pullTravelVector, outwardDirection);
+
+            if (inwardPenetrationSpeed < 0.0)
+            {
+                // STRIP INWARD MOMENTUM: Cancel out 100% of the vector trying to push into the body.
+                // This stops the cloth solver from overpowering the collision engine.
+                finalOffset.positionDelta -= outwardDirection * inwardPenetrationSpeed;
+            }
+
+            // Calculate exact space needed to push back out to the surface skin + thickness
+            float penetrationDepth = thickness - distanceToSkin;
+            float deepMultiplier = (distanceToSkin < 0.0) ? (1.0 + abs(distanceToSkin) * innerPushStrength) : 1.0;
+            
+            // Hard snap: Multiply by outerPushStrength (keep at 1.0 for a perfect surface snap)
+            float3 pushBackVector = outwardDirection * (penetrationDepth * deepMultiplier * outerPushStrength);
+
+            // Apply the absolute spatial correction
+            finalOffset.positionDelta += pushBackVector;
+        }
+    }
+}
+
+Texture3D<float> _BodyVDFTex;
+SamplerState sampler_BodyVDFTex;
+
+Texture3D<float> _BodyVDFTexSimplified;
+SamplerState sampler_BodyVDFTexSimplified;
+
+void CollideWithVDF_Impenetrable(
+    Texture3D<float4> vdfTexture, // Texture format: RGBAFloat or RGBAHalf
+    SamplerState vdfSampler,
+    float thickness,
+    float3 combinedVertex, // Current position with cloth offset applied
+    inout MeshVertexDelta finalOffset)
+{
+    float3 pos = combinedVertex;
+
+    // 1. Calculate UVW coordinate
+    float3 uvw = (pos - _SDFBoundsMin) / (_SDFBoundsMax - _SDFBoundsMin);
+
+    // 2. Safety Bounds Check
+    if (all(uvw >= 0.0) && all(uvw <= 1.0))
+    {
+        // 3. Sample the Vector Distance Field in a single texture call
+        float4 vdfSample = vdfTexture.SampleLevel(vdfSampler, uvw, 0);
+        
+        // RGB = Pre-calculated direction vector pointing straight out to the closest surface point
+        float3 escapeDirection = vdfSample.xyz;
+        
+        // A = Signed Distance (Negative inside the body, positive outside)
+        float distanceToSkin = vdfSample.w;
+
+        // 4. Check if the vertex has penetrated the safety thickness threshold
+        if (distanceToSkin < thickness)
+        {
+            // 5. Un-cheatable Escape Normal
+            // If the sample vector is corrupted or zero, use a hard default fallback, 
+            // but a true baked VDF vector will never be zero unless perfectly at the center core.
+            float vecLength = length(escapeDirection);
+            if (vecLength > 0.001)
+            {
+                escapeDirection = escapeDirection / vecLength;
+            }
+            else
+            {
+                return; // Safely skip if completely dead core center
+            }
+
+            // 6. Absolute Positional Correction
+            // Calculate exactly how many meters we need to travel along the escape vector 
+            // to sit precisely at the safe outer skin shell + thickness boundary.
+            float requiredPushDistance = thickness - distanceToSkin;
+
+            // 7. HARD RESET RESOLUTION
+            // Instead of compounding additive velocity forces that fight your high-speed 
+            // over-relaxed cloth solver, we forcefully overwrite the offset.
+            // We subtract the inward movement vector that crossed the line, 
+            // then append the absolute spatial push back out.
+            float inwardVelocity = dot(finalOffset.positionDelta, escapeDirection);
+            
+            if (inwardVelocity < 0.0)
+            {
+                // Kill the cloth solver's inward momentum entirely
+                finalOffset.positionDelta -= escapeDirection * inwardVelocity;
+            }
+
+            // Snap the vertex cleanly out to the impenetrable surface boundary
+            finalOffset.positionDelta += escapeDirection * requiredPushDistance;
+        }
+    }
+}
+
+// Texture 1 (Core Mapping): RGB = Bone Core Anchor, A = Safe Distance to Skin Mesh
+Texture3D<float4> _BodyCoreTexture;
+// Texture 2 (Surface Direction): RGB = True Skin Normal Vector at the target boundary, A = Unused
+Texture3D<float4> _BodySurfaceNormalTexture;
+
+SamplerState sampler_BodyCoreTexture;
+
+void CollideWithAnisotropicCoreVolume(
+    float3 prePullVertex, // Position BEFORE the over-relaxed cloth pull pass
+    float3 combinedVertex, // Position AFTER the over-relaxed cloth pull pass
+    float thickness,
+    inout MeshVertexDelta finalOffset,
+    float3 localBaseNormal)       // The clothing vertex's own normal vector
+{
+    float3 pos = combinedVertex;
+
+    // 1. Map current vertex position to the volume's UVW bounds
+    float3 uvw = (pos - _SDFBoundsMin) / (_SDFBoundsMax - _SDFBoundsMin);
+
+    if (all(uvw >= 0.0) && all(uvw <= 1.0))
+    {
+        // 2. Fetch the pre-baked core anchor and target surface orientation
+        float4 coreSample = _BodyCoreTexture.SampleLevel(sampler_BodyCoreTexture, uvw, 0);
+        float3 coreAnchor = coreSample.xyz;
+        float safeRadius = coreSample.w;
+
+        float3 targetSkinNormal = _BodySurfaceNormalTexture.SampleLevel(sampler_BodyCoreTexture, uvw, 0).xyz;
+
+        // 3. ANGLE-BASED ESCAPE RESOLUTION
+        // Calculate the vector pointing from the deep bone core out to our current vertex position
+        float3 coreToVertexVec = pos - coreAnchor;
+        float coreDistance = length(coreToVertexVec);
+
+        // Standard radial fallback direction
+        float3 radialDirection = (coreDistance > 0.001) ? (coreToVertexVec / coreDistance) : localBaseNormal;
+
+        // Blending the radial vector with the true target surface normal.
+        // This resolves concavities (like armpits): if the vertex pushes deep, 
+        // it is forced out along the opening angle of the crevice, not just sideways into the arm/torso walls.
+        float3 escapeDirection = normalize(radialDirection + targetSkinNormal);
+
+        // 4. CHOOSE THE MOST CONSERVATIVE PENETRATION DEPTH
+        // Measure depth two ways: radially from the core, and lineally along the surface normal
+        float radialPenetration = safeRadius - coreDistance;
+        
+        // This dot product detects if the vertex has crossed "under" the skin surface plane
+        float surfacePenetration = thickness - dot(coreToVertexVec, targetSkinNormal);
+
+        // If either check indicates we are inside, we trigger a hard collision
+        if (coreDistance < safeRadius || surfacePenetration > 0.0)
+        {
+            // Pick the deepest required escape distance to guarantee complete ejection
+            float finalPenetrationDepth = max(radialPenetration, surfacePenetration) + thickness;
+
+            // 5. ISOLATE AND ELIMINATE CLOTH SOLVER VELOCITY
+            // Find the exact trajectory your hyper-boosted cloth pull pass calculated this frame
+            float3 pullTravelVector = combinedVertex - prePullVertex;
+            
+            // Check if that movement vector was fighting our exit path
+            float inwardVelocity = dot(pullTravelVector, escapeDirection);
+
+            if (inwardVelocity < 0.0)
+            {
+                // Erase 100% of the cloth solver's inward trajectory.
+                // This breaks the feedback loop completely, freezing the vertex on the hull boundary.
+                finalOffset.positionDelta -= escapeDirection * inwardVelocity;
+            }
+
+            // 6. ABSOLUTE PENETRATION REJECTION
+            // Forcefully snap the vertex to the safe outer shell plus the desired thickness gap
+            finalOffset.positionDelta += escapeDirection * finalPenetrationDepth; 
+        }
+    }
+}
+
+void CollideWithSDF(Texture3D<float> sdfTexture, float thickness, VertexData localBaseVertex, float innerPushStrength, float outerPushStrength, inout MeshVertexDelta finalOffset)
+{
+    CollideWithSDF_Precombined(sdfTexture, thickness, localBaseVertex.position + finalOffset.positionDelta, innerPushStrength, outerPushStrength, finalOffset);
 }
 
 [numthreads(256, 1, 1)]
@@ -1193,14 +2305,24 @@ void BodyMold_SDF(uint3 dtid : SV_DispatchThreadID)
     int4 bindIdx;
     float4 bindW;
     VertexData localBaseVertex;
+    MeshVertexDelta prevRawOffset;
+    MeshVertexDelta rawOffset;
     MeshVertexDelta origOffset;
     MeshVertexDelta finalOffset;
     float avgStretch = 1.0;
+    float tightness = 1.0;
     float3 thicknessVector;
-    if (!CalculateShapePreservingClothingVertexOffset(tid, id, idInBuffer, bindIdx, bindW, localBaseVertex, origOffset, finalOffset, avgStretch, thicknessVector)) 
+    if (!CalculateShapePreservingClothingVertexOffset(tid, id, idInBuffer, bindIdx, bindW, 1.0, localBaseVertex, prevRawOffset, rawOffset, origOffset, finalOffset, avgStretch, tightness, thicknessVector)) 
         return;
-   
-    CollideWithSDF(0.0, localBaseVertex, 1.0, 0.3, finalOffset); 
+    
+    MeshVertexDelta finalOffset2 = finalOffset;
+    CalculateClothVertexOffset(tid, id, idInBuffer, bindIdx, bindW, localBaseVertex, origOffset, finalOffset2);
+    
+    finalOffset.positionDelta = lerp(finalOffset2.positionDelta, finalOffset.positionDelta, tightness); 
+    
+    localBaseVertex.position = localBaseVertex.position - thicknessVector;
+    
+    CollideWithSDF(_BodySDFTex, 0.005 * avgStretch, localBaseVertex, 1.0, _SDFOuterThicknessStrength, finalOffset);
     //SmoothConnectionDivergence(id, localBaseVertex, finalOffset, _FrontPushFactor * 0.5);
     
     WriteToClothingVertexDeltas(idInBuffer, finalOffset);
@@ -1218,36 +2340,100 @@ void BodyMold_TriangleSDF(uint3 dtid : SV_DispatchThreadID)
     int4 bindIdx;
     float4 bindW;
     VertexData localBaseVertex;
+    MeshVertexDelta prevRawOffset;
+    MeshVertexDelta rawOffset;
     MeshVertexDelta origOffset;
     MeshVertexDelta finalOffset;
     float avgStretch = 1.0;
+    float tightness = 1.0;
     float3 thicknessVector;
-    if (!CalculateShapePreservingClothingVertexOffset(tid, id, idInBuffer, bindIdx, bindW, localBaseVertex, origOffset, finalOffset, avgStretch, thicknessVector))
+    if (!CalculateShapePreservingClothingVertexOffset(tid, id, idInBuffer, bindIdx, bindW, 0.01, localBaseVertex, prevRawOffset, rawOffset, origOffset, finalOffset, avgStretch, tightness, thicknessVector))
         return;
     
-    localBaseVertex.position = localBaseVertex.position - thicknessVector;  
+    localBaseVertex.position = localBaseVertex.position - thicknessVector;   
     
     bool foundTri;
     bool anyFront;
     float3 worldPos = CollideWithBodyTriangles_TriangleBased(tid, id, 0.0, localBaseVertex, origOffset, finalOffset, foundTri, anyFront);
     bool foundTri2;
     bool anyFront2;
-    worldPos = CollideWithBodyTriangles(tid, id, 0.0, localBaseVertex, origOffset, finalOffset, foundTri2, anyFront2);
+    worldPos = CollideWithBodyTriangles(tid, id, 0.0, localBaseVertex, origOffset, finalOffset, foundTri2, anyFront2);  
     foundTri = foundTri || foundTri2;
     anyFront = anyFront || anyFront2; 
-
-    //if (!anyFront || !foundTri)
+    
+    float3 origWorldPos = localBaseVertex.position + rawOffset.positionDelta;
+    
+    MeshVertexDelta finalOffset2 = finalOffset;
+    //CollideWithAnisotropicCoreVolume(origWorldPos, worldPos, 0.005 * avgStretch, finalOffset2, localBaseVertex.normal);
+    CollideWithSDF_Precombined3(_BodySDFTex, sampler_BodySDFTex, 0.005 * avgStretch, worldPos, 1.0, _SDFOuterThicknessStrength, finalOffset2, localBaseVertex.normal); 
+    //if (tightness < 0.92)
     //{
-        // No triangle in front: use full SDF workflow to resolve
-        CollideWithSDF_Precombined(0.005 * avgStretch, worldPos, 1.0, 0.05, finalOffset);   
-    //} 
-
-    //SmoothConnectionDivergence(id, localBaseVertex, finalOffset, 1.0);
-    //SmoothConnectionDivergence(id, localBaseVertex, finalOffset, 1.0);
-    //SmoothConnectionDivergence(id, localBaseVertex, finalOffset, 1.0);
+    //    MeshVertexDelta finalOffset3 = finalOffset2;
+    //    worldPos = localBaseVertex.position + finalOffset2.positionDelta;
+    //    CollideWithSDF_Precombined3(_BodySDFTex, sampler_BodySDFTex, 0.005 * avgStretch, worldPos, 1.0, 0.05, finalOffset3, localBaseVertex.normal);
+    //    finalOffset2 = MVD_Lerp(finalOffset3, finalOffset2, tightness); 
+    //}
+    if (foundTri && anyFront)
+    {
+        finalOffset = MVD_Lerp(finalOffset2, finalOffset, tightness);
+    }
+    else
+    {
+        finalOffset = finalOffset2;
+    }
 
     WriteToClothingVertexDeltas(idInBuffer, finalOffset);
     _ClothingStretch[id] = avgStretch;
+}
+
+[numthreads(256, 1, 1)]
+void BodyMoldCloth_TriangleSDF(uint3 dtid : SV_DispatchThreadID)
+{
+    uint tid = dtid.x;
+    
+    uint id;
+    uint idInBuffer;
+    GetClothingIds(tid, id, idInBuffer);
+    if (id >= _VertexCount)
+        return;
+    
+    float4 vColor = _ClothingVertexColors[id];
+    float tightness = vColor.y; // 0 = loose (bridge), 1 = tight (wrap)
+    float stretch = _ClothingStretch[id];
+    
+    VertexData localBaseVertex = SampleClothingVertexData(id);
+    localBaseVertex.normal = normalize(localBaseVertex.normal);
+    localBaseVertex.tangent.xyz = normalize(localBaseVertex.tangent.xyz);
+    
+    MeshVertexDelta origOffset = SampleClothingVertexDelta(id, _IndexOffset);
+    MeshVertexDelta finalOffset = origOffset; 
+    
+    float3 origWorldPos = localBaseVertex.position + origOffset.positionDelta; 
+    
+    ApplyClothPullPass(id, localBaseVertex, finalOffset, 0.0, 1.0 / max(1.0, LengthSqr(finalOffset.positionDelta)), stretch);
+    
+    float thickness = stretch * _ClothThickness;
+    float3 currentNormal = normalize(localBaseVertex.normal + finalOffset.normalDelta);  
+    float3 thicknessVector = currentNormal * thickness;
+    //localBaseVertex.position = localBaseVertex.position + thicknessVector;
+    
+    float3 worldPos = localBaseVertex.position + finalOffset.positionDelta;
+    MeshVertexDelta finalOffset2 = finalOffset;
+    //CollideWithAnisotropicCoreVolume(origWorldPos, worldPos, 0.001 * stretch, finalOffset2, localBaseVertex.normal);
+    CollideWithSDF_Precombined3(_BodySDFTex, sampler_BodySDFTex, thickness, worldPos, 1.0, _SDFOuterThicknessStrengthCloth, finalOffset2, currentNormal);
+
+    finalOffset2.positionDelta = finalOffset2.positionDelta - thicknessVector; 
+    bool foundTri;
+    bool anyFront;
+    CollideWithBodyTriangles_TriangleBased(tid, id, 0.0, localBaseVertex, origOffset, finalOffset2, foundTri, anyFront);
+    bool foundTri2;
+    bool anyFront2;
+    CollideWithBodyTriangles(tid, id, 0.0, localBaseVertex, origOffset, finalOffset2, foundTri2, anyFront2);  
+    finalOffset2.positionDelta = finalOffset2.positionDelta + thicknessVector; 
+    
+    finalOffset = MVD_Lerp(finalOffset2, origOffset, tightness); 
+     
+    WriteToClothingVertexDeltas(idInBuffer, finalOffset);
 }
 
 
@@ -1267,10 +2453,11 @@ void BodyMold_RecalculateNormals(uint3 dtid : SV_DispatchThreadID)
     if (connCount <= 0)
         return;
 
-    MeshVertexDelta finalOffset = _ClothingVertexDeltasReadOnly[idInBuffer];
+    MeshVertexDelta finalOffset = SampleClothingVertexDelta(id, _IndexOffset);
     
-    float3 localPos = _ClothingBaseVertexData[id].position + finalOffset.positionDelta; 
-    float3 localNormal = _ClothingBaseVertexData[id].normal;
+    VertexData localBaseVertex = SampleClothingVertexData(id);
+    float3 localPos = localBaseVertex.position + finalOffset.positionDelta; 
+    float3 localNormal = localBaseVertex.normal;
     
     float3 normalDelta = float3(0,0,0);
     float w = 0.0;
@@ -1281,12 +2468,12 @@ void BodyMold_RecalculateNormals(uint3 dtid : SV_DispatchThreadID)
         if (neighborA < 0 || neighborB < 0)
             continue;
 
-        VertexData nbBaseA = _ClothingBaseVertexData[neighborA];
-        MeshVertexDelta nbDeltaA = _ClothingVertexDeltasReadOnly[neighborA + _IndexOffset];
+        VertexData nbBaseA = SampleClothingVertexData(neighborA);
+        MeshVertexDelta nbDeltaA = SampleClothingVertexDelta(neighborA, _IndexOffset);
         float3 nbPosA = nbBaseA.position + nbDeltaA.positionDelta;
         
-        VertexData nbBaseB = _ClothingBaseVertexData[neighborB];
-        MeshVertexDelta nbDeltaB = _ClothingVertexDeltasReadOnly[neighborB + _IndexOffset];
+        VertexData nbBaseB = SampleClothingVertexData(neighborB);
+        MeshVertexDelta nbDeltaB = SampleClothingVertexDelta(neighborB, _IndexOffset);
         float3 nbPosB = nbBaseB.position + nbDeltaB.positionDelta;
         
         float3 n = cross(nbPosA - localPos, nbPosB - localPos); 
@@ -1299,7 +2486,7 @@ void BodyMold_RecalculateNormals(uint3 dtid : SV_DispatchThreadID)
     }
     
     normalDelta = normalize(normalDelta / max(w, 1.0)) - localNormal;
-    finalOffset.normalDelta = lerp(finalOffset.normalDelta, normalDelta, 1);
+    finalOffset.normalDelta = lerp(finalOffset.normalDelta, normalDelta, _NormalRecalculationBlend);
     
     _ClothingVertexDeltas[idInBuffer] = finalOffset; // raw write into buffer to avoid writing into proxy normals
 }
@@ -1322,11 +2509,11 @@ void AdjustSkinBindings(uint3 dtid : SV_DispatchThreadID)
     else if (tid >= _VertexCount)
         return;
 
-    uint idInBuffer = clothingId + _IndexOffset;
+    //uint idInBuffer = clothingId + _IndexOffset;
 
     // Get clothing vertex deformed position
-    VertexData localBaseVertex = _ClothingBaseVertexData[clothingId];
-    MeshVertexDelta clothingDelta = _ClothingVertexDeltasReadOnly[idInBuffer];
+    VertexData localBaseVertex = SampleClothingVertexData(clothingId);
+    MeshVertexDelta clothingDelta = SampleClothingVertexDelta(clothingId, _IndexOffset);
     float3 clothingPos = localBaseVertex.position + clothingDelta.positionDelta;
 
     // Get nearby triangles
@@ -1582,7 +2769,7 @@ void AdjustSkinBindings(uint3 dtid : SV_DispatchThreadID)
             if (boneWeights[j] > boneWeights[i])
             {
                 // Swap weights
-                float tempWeight = boneWeights[i];
+                float tempWeight = boneWeights[i]; 
                 boneWeights[i] = boneWeights[j];
                 boneWeights[j] = tempWeight;
 

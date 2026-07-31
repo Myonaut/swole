@@ -1,4 +1,4 @@
-#if (UNITY_EDITOR || UNITY_STANDALONE)
+#if UNITY_2017_1_OR_NEWER
 
 using System;
 using System.IO;
@@ -446,6 +446,7 @@ namespace Swole
             }
 
             private bool isPlaying;
+            public bool IsPlaying => isPlaying;
 
             public void StartPlayback(ModelEditor editor)
             {
@@ -1808,6 +1809,7 @@ namespace Swole
             var activePreset = activeImportSettings;
             if (activePreset == null) activePreset = _defaultImportPreset;
 
+#if BULKOUT_ENV
             void OnLoad(AssetLoaderContext context)
             {
                 LoadModelAndStartNewSession(activePreset, context.RootGameObject, (ITransformCurve[] defaultTransformCurves, IPropertyCurve[] defaultPropertyCurves, Transform rootBone, Transform rigContainer, Matrix4x4 rendererL2W, Transform[] bones, Matrix4x4[] bindpose) =>
@@ -1823,8 +1825,9 @@ namespace Swole
 
             var assetLoaderFilePicker = AssetLoaderFilePicker.Create();
             assetLoaderFilePicker.LoadModelFromFilePickerAsync("Select a Model File", OnLoad, null, null, null, OnError, null, activePreset.GetLoaderOptions());
+#endif
         }
-        #endregion
+#endregion
 
         #region Animations
         public RectTransform curveEditorWindow;
@@ -3524,6 +3527,7 @@ namespace Swole
         private UnityEvent OnSetupFail = new UnityEvent();
 
         private bool initialized;
+        public bool IsInitialized => initialized; 
         protected void Awake()
         {
             ReloadImportPresets();

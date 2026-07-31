@@ -8,29 +8,68 @@ using UnityEngine.Events;
 using UnityEngine.Rendering;
 
 using Unity.Mathematics;
+using Unity.Collections;
 using Unity.Collections.LowLevel.Unsafe;
 
 using Swole.Morphing;
 using Swole.Cloth;
 using Swole.DataStructures;
+ 
 
-
-namespace Swole.Modding
+namespace Swole.API.Unity
 {
     /// <summary>
     /// Runtime system to mold clothing to a body mesh using a compute shader.
     /// </summary>
     public class BodyMoldSystem : MonoBehaviour, IDisposable
     {
+        public const string clothingMatProp_skinBindings = "_SkinBindings";
+        public const string clothingMatProp_characterVertices = "_CharacterVertices";
+        public const string clothingMatProp_clothingVertexDeltas = "_ClothingVertexDeltas";
+        public const string clothingMatProp_clothingStretch = "_ClothingStretch";
+        public const string clothingMatProp_bindingIndices = "_BindingIndices";
+        public const string clothingMatProp_bindingWeights = "_BindingWeights";
+
+        public const string bodyMatProp_finalWorldDeltas = "_FinalWorldDeltas"; 
+
+        public static void PrewarmMaterialBuffers(Material mat, bool asProxy)
+        {
+            if (!asProxy)
+            {
+                mat.SetBuffer(clothingMatProp_skinBindings, PersistentJobDataTracker.GetEmptyGraphicsBuffer());
+            }
+            
+            mat.SetBuffer(clothingMatProp_characterVertices, PersistentJobDataTracker.GetEmptyGraphicsBuffer());
+            mat.SetBuffer(clothingMatProp_clothingVertexDeltas, PersistentJobDataTracker.GetEmptyGraphicsBuffer());
+            mat.SetBuffer(clothingMatProp_clothingStretch, PersistentJobDataTracker.GetEmptyGraphicsBuffer());
+            mat.SetBuffer(clothingMatProp_bindingIndices, PersistentJobDataTracker.GetEmptyGraphicsBuffer());
+            mat.SetBuffer(clothingMatProp_bindingWeights, PersistentJobDataTracker.GetEmptyGraphicsBuffer());
+        }
+
+        public static string SdfIdToShapeId(Collision3dTexture.OutputCollision output) => output == null ? "default" : (string.IsNullOrWhiteSpace(output.MeshShapeName) ? "default" : ($"{output.MeshShapeName}{BoundMeshData.shapeIdFrameSuffix}.{output.MeshShapeFrame}"));  
+
         public Transform rootTransform;
         public Transform RootTransform => rootTransform == null ? transform.parent : rootTransform;
 
         public ComputeShader computeShader;
+        public bool dontInstantiateShader;
+        private bool shaderIsInstantiated;
 
         public Mesh tempMesh;
 
         [SerializeField]
         protected BodyMoldBindings bindings;
+        protected Mesh mainMesh;
+
+        [SerializeField]
+        protected BodyMoldBindings maskBindings;
+
+        [SerializeField]
+        protected BodyMoldBindings pushBackVertexBindings;
+
+        [SerializeField, Tooltip("Meshes bound to this mold mesh as their proxy.")]
+        protected BoundMesh[] boundToProxy;
+        public bool IsProxy => boundToProxy != null && boundToProxy.Length > 0;
 
         [Header("Algorithm Parameters")]
         public float preserveFactor = 0.3f;
@@ -42,7 +81,11 @@ namespace Swole.Modding
         public float collisionRelaxation = 0.3f;
         public int shapeChangeFollowUpIterations = 5;
         public float thickness = 0.03f;
+        public float sdfOuterThicknessStrength = 0.05f;
+        public float sdfOuterThicknessStrengthCloth = 0.08f;
         public bool recalculateNormalsAfterMold = true;
+        [Range(0f, 1f)]
+        public float normalRecalculationBlend = 0.7f;
 
         public enum CollisionMode { VertexCloud = 0, Triangle = 1, SDF = 2, TriangleSDF = 3 }
         public CollisionMode collisionMode = CollisionMode.VertexCloud;
@@ -61,13 +104,13 @@ namespace Swole.Modding
         ComputeBuffer dynamicBoneWeightsBuffer;
 
         ComputeBuffer worldSpaceVertexDataBuffer;
-
-        protected int GetOffsetsBufferStartIndexAndGrow()
+         
+        protected int3 GetOffsetsBufferStartIndexAndGrow(int frameIndex)
         {
-            if (clothingMesh == null) return 0;
+            if (mainMesh == null) return default;
 
             int startIndex = cbClothingOffsetsA == null ? 0 : cbClothingOffsetsA.count;
-            int newCount = startIndex + clothingMesh.vertexCount;
+            int newCount = startIndex + mainMesh.vertexCount;
             var newBufferA = new ComputeBuffer(newCount, UnsafeUtility.SizeOf(typeof(MeshVertexDelta)));
             var newBufferB = new ComputeBuffer(newCount, UnsafeUtility.SizeOf(typeof(MeshVertexDelta)));
             var newProxyBufferA = new ComputeBuffer(newCount, UnsafeUtility.SizeOf(typeof(float3)));
@@ -75,37 +118,56 @@ namespace Swole.Modding
             // Copy existing data to new buffers
             if (cbClothingOffsetsA != null || cbClothingOffsetsB != null || cbClothingProxyDeltasA != null || cbClothingProxyDeltasB != null) 
             {
-                MeshVertexDelta[] existingData = new MeshVertexDelta[startIndex];
+                MeshVertexDelta[] existingData = new MeshVertexDelta[newCount];
 
                 if (cbClothingOffsetsA != null)
                 {
-                    cbClothingOffsetsA.GetData(existingData);
+                    cbClothingOffsetsA.GetData(existingData, 0, 0, cbClothingOffsetsA.count);
                     newBufferA.SetData(existingData);
-                    cbClothingOffsetsA.Release();
+                    cbClothingOffsetsA.Release(); 
                 }
 
                 if (cbClothingOffsetsB != null)
                 {
-                    cbClothingOffsetsB.GetData(existingData);
+                    cbClothingOffsetsB.GetData(existingData, 0, 0, cbClothingOffsetsB.count);
                     newBufferB.SetData(existingData);
                     cbClothingOffsetsB.Release();
                 }
 
-                float3[] existingProxyNormals = new float3[startIndex];
+                float3[] existingProxyNormals = new float3[newCount];
 
                 if (cbClothingProxyDeltasA != null)
                 {
-                    cbClothingProxyDeltasA.GetData(existingProxyNormals);
+                    cbClothingProxyDeltasA.GetData(existingProxyNormals, 0, 0, cbClothingProxyDeltasA.count); 
                     newProxyBufferA.SetData(existingProxyNormals); 
                     cbClothingProxyDeltasA.Release();
                 }
                 if (cbClothingProxyDeltasB != null)
                 {
-                    cbClothingProxyDeltasB.GetData(existingProxyNormals);
+                    cbClothingProxyDeltasB.GetData(existingProxyNormals, 0, 0, cbClothingProxyDeltasB.count);
                     newProxyBufferB.SetData(existingProxyNormals);
                     cbClothingProxyDeltasB.Release();
                 }
             }
+
+            if (cbClothingOffsetsA == null || cbClothingOffsetsB == null)
+            {
+                using(var emptyData = new NativeArray<MeshVertexDelta>(newCount, Allocator.Temp, NativeArrayOptions.ClearMemory))
+                {
+                    newBufferA.SetData(emptyData);
+                    newBufferB.SetData(emptyData);
+                }
+            }
+
+            if (cbClothingProxyDeltasA == null || cbClothingProxyDeltasB == null)
+            {
+                using (var emptyData = new NativeArray<float3>(newCount, Allocator.Temp, NativeArrayOptions.ClearMemory))
+                {
+                    newProxyBufferA.SetData(emptyData);
+                    newProxyBufferB.SetData(emptyData);  
+                }
+            }
+
             // Assign new buffers
             cbClothingOffsetsA = newBufferA;
             cbClothingOffsetsB = newBufferB;
@@ -113,19 +175,51 @@ namespace Swole.Modding
             cbClothingProxyDeltasB = newProxyBufferB;
 
 
-            return startIndex;
+            return new int3(startIndex / vertexCount, frameIndex, startIndex);
         }
 
         /// <summary>
         /// Mapping from SDF texture ID to the offset in the clothing vertex offset buffer.
         /// </summary>
-        protected readonly Dictionary<string, int> sdfIdToBufferIndexOffsets = new Dictionary<string, int>();
+        protected readonly Dictionary<string, int3> shapeIdToBufferIndexOffsets = new Dictionary<string, int3>();
 
-        Mesh clothingMesh;
-        List<Material> clothingMaterials;
+        [NonSerialized]
+        protected Dictionary<Material, Material> clothingMaterials;
+        public bool useTargetRendererMaterials;
         [SerializeField]
         protected MeshRenderer[] targetClothingRenderers;
         public int clothingFlexShapeStartIndex = 1;
+
+        public IEnumerable<Material> AllClothingMaterials()
+        {
+            if (clothingMaterials != null)
+            {
+                foreach (var kvp in clothingMaterials) if (kvp.Value != null) yield return kvp.Value;
+            }
+            if (IsProxy)
+            {
+                foreach (var subMesh in boundToProxy)
+                {
+                    if (subMesh == null) continue;
+                    foreach (var mat in subMesh.Materials()) yield return mat;
+                }
+            }
+        }
+        public IEnumerable<(Material, bool)> AllClothingMaterialsWithProxyFlag()
+        {
+            if (clothingMaterials != null)
+            {
+                foreach (var kvp in clothingMaterials) if (kvp.Value != null) yield return (kvp.Value, false); 
+            }
+            if (IsProxy)
+            {
+                foreach (var subMesh in boundToProxy)
+                {
+                    if (subMesh == null) continue;
+                    foreach (var mat in subMesh.Materials()) yield return (mat, true);
+                }
+            }
+        } 
 
         Vector3[] clothingOriginalPositions;
         Vector3[] clothingOriginalNormals;
@@ -133,7 +227,43 @@ namespace Swole.Modding
         // Per-mesh triangle indices when available (used by triangle kernel)
 
         int kernelHandle = -1;
+        int clothKernelHandle = -1;
+        int fallbackKernelHandle = -1;
+        int fallbackClothKernelHandle = -1;
         int vertexCount = 0;
+
+        protected int GetKernelHandle(bool hasSdf, out bool useSdf)
+        {
+            useSdf = false;
+            switch (collisionMode)
+            {
+                case CollisionMode.TriangleSDF:
+                    useSdf = hasSdf;
+                    return hasSdf ? kernelHandle : fallbackKernelHandle;
+
+                case CollisionMode.SDF:
+                    useSdf = hasSdf;
+                    return hasSdf ? kernelHandle : fallbackKernelHandle;
+            }
+             
+            return kernelHandle;
+        }
+        protected int GetClothKernelHandle(bool hasSdf, out bool useSdf)
+        {
+            useSdf = false;
+            switch (collisionMode)
+            {
+                case CollisionMode.TriangleSDF:
+                    useSdf = hasSdf;
+                    return hasSdf ? clothKernelHandle : fallbackClothKernelHandle;
+
+                case CollisionMode.SDF:
+                    useSdf = hasSdf;
+                    return hasSdf ? clothKernelHandle : fallbackClothKernelHandle;
+            }
+
+            return clothKernelHandle;
+        }
 
         // Per-bound-character mesh data
         protected class BoundMeshData
@@ -150,18 +280,47 @@ namespace Swole.Modding
             public ComputeBuffer cbBindingWeights;
             public ComputeBuffer cbCollisionTriangles;
             public ComputeBuffer cbWorldSpaceVertexDataBuffer;
+            public ComputeBuffer cbPushbackVertices;
+            public bool pushbackVerticesIsLocal;
             public ComputeBuffer cbFinalDeltas;
 
             public InstanceBuffer<MeshVertexDelta> deltaInstanceBuffer;
             public InstanceBuffer<MeshVertexDelta> prevDeltaInstanceBuffer;
 
-            public SignedDistanceFieldTexture sdfTexture;
+            public Collision3dTexture sdfTexture;
+            public readonly Dictionary<string, int3> shapeIdToLocalDeltaBufferIndexOffsets = new Dictionary<string, int3>(); // x = shape index offset by frames of previous shapes, y = frame index, z = local delta buffer index offset
+
+            public const string shapeIdFrameSuffix = ".frame";
+
+            public bool TryAddShapeIdToLocalDeltaBufferIndexOffset(string shapeId, int frameIndex) => TryAddShapeIdToLocalDeltaBufferIndexOffset(shapeId, frameIndex, out _); 
+            public bool TryAddShapeIdToLocalDeltaBufferIndexOffset(string shapeId, int frameIndex, out int3 offset)
+            {
+                offset = default;
+                if (shapeIdToLocalDeltaBufferIndexOffsets.TryGetValue(shapeId, out offset)) return true;
+
+                string shapeName = shapeId;
+                int shapeIdFrameSuffixIndex = shapeName.IndexOf(shapeIdFrameSuffix);
+                if (shapeIdFrameSuffixIndex >= 0) shapeName = shapeName.Substring(0, shapeIdFrameSuffixIndex); 
+                
+                int shapeIndex = attachedMeshV2.SubData.IndexOfShapeInBuffer(shapeName);
+                if (shapeIndex >= 0)
+                {
+                    shapeIdToLocalDeltaBufferIndexOffsets[shapeId] = new int3(shapeIndex, frameIndex, (shapeIndex + frameIndex) * vertexCount);   
+                    return true;
+                } 
+                //else
+                //{
+                    //shapeIdToLocalDeltaBufferIndexOffsets[shapeId] = new int3(0, 0, 0); 
+                //}
+                
+                return false;
+            }
 
             public UnityAction meshListener;
-            public UnityAction vertexMaskResetListener;
+            public UnityAction vertexMaskRebuildListener;
 
             public bool hasChangedShape;
-            public int iterationsSinceLastShapeChange;
+            public int iterationsSinceLastShapeChange; 
             public void MarkDirty() 
             { 
                 hasChangedShape = true;
@@ -173,18 +332,22 @@ namespace Swole.Modding
                 {
                     iterationsSinceLastShapeChange = 0;
                     hasChangedShape = false;
-                }    
+                } 
+                else
+                {
+                    iterationsSinceLastShapeChange++;
+                }
                 return flag;
             }
 
-            private readonly HashSet<string> evaluatedSdfIds = new HashSet<string>();
-            public bool HasEvaluatedSdfId(string sdfId)
+            private readonly HashSet<string> evaluatedShapeIds = new HashSet<string>();
+            public bool HasEvaluatedShapeId(string shapeId)
             {
-                return evaluatedSdfIds.Contains(sdfId);
+                return evaluatedShapeIds.Contains(shapeId);
             }
-            public void MarkSdfIdEvaluated(string sdfId)
+            public void MarkShapeIdEvaluated(string sdfId)
             {
-                evaluatedSdfIds.Add(sdfId);
+                evaluatedShapeIds.Add(sdfId);
             }
 
             public void Release()
@@ -195,25 +358,30 @@ namespace Swole.Modding
                 //if (cbBindingWeights != null) { cbBindingWeights.Release(); cbBindingWeights = null; }
                 //if (cbCollisionTriangles != null) { cbCollisionTriangles.Release(); cbCollisionTriangles = null; }
                 //if (cbPushbackVertices != null) { cbPushbackVertices.Release(); cbPushbackVertices = null; }
-                
-                if (cbWorldSpaceVertexDataBuffer != null) { cbWorldSpaceVertexDataBuffer.Release(); cbWorldSpaceVertexDataBuffer = null; }
+
+                if (pushbackVerticesIsLocal && cbPushbackVertices != null) { cbPushbackVertices.Release(); cbPushbackVertices = null; } 
+                if (cbWorldSpaceVertexDataBuffer != null) { cbWorldSpaceVertexDataBuffer.Release(); cbWorldSpaceVertexDataBuffer = null; } 
                 if (cbFinalDeltas != null) { cbFinalDeltas.Release(); cbFinalDeltas = null; }
             }
         }
 
         List<BoundMeshData> boundMeshes = new List<BoundMeshData>();
+        List<BoundMeshData> shapeContributingBoundMeshes = new List<BoundMeshData>(); 
 
         public void SetupFromBindings(BodyMoldBindings bindings)
         {
             if (bindings == null) throw new ArgumentNullException(nameof(bindings));
 
             this.bindings = bindings;
+            this.mainMesh = bindings.GetMesh(0);
             // Initialize core buffers (clothing positions/offsets) and kernel
-            Setup(bindings.EditedClothingMesh);
+            Setup();
 
-            stretchBuffer = new ComputeBuffer(bindings.OriginalMesh.vertexCount, sizeof(float));
-            float[] emptyStretch = new float[bindings.OriginalMesh.vertexCount];
-            stretchBuffer.SetData(emptyStretch);
+            stretchBuffer = new ComputeBuffer(mainMesh.vertexCount, sizeof(float));
+            using (var emptyStretch = new NativeArray<float>(mainMesh.vertexCount, Allocator.Temp, NativeArrayOptions.ClearMemory))
+            {
+                stretchBuffer.SetData(emptyStretch);
+            }
 
             if (bindings.dynamicBoneWeights)
             {
@@ -221,7 +389,7 @@ namespace Swole.Modding
                 ComputeBuffer.CopyCount(bindings.BoneWeightsBuffer, dynamicBoneWeightsBuffer, 0);  
             }
 
-            worldSpaceVertexDataBuffer = new ComputeBuffer(bindings.OriginalMesh.vertexCount, UnsafeUtility.SizeOf(typeof(MeshVertexData)));
+            worldSpaceVertexDataBuffer = new ComputeBuffer(mainMesh.vertexCount, UnsafeUtility.SizeOf(typeof(MeshVertexData)));
 
             // Bind per-body binding arrays. This requires runtime CustomizableCharacterMeshV2 instances to exist so we can attach instance delta buffers.
             var runtimeMeshes = RootTransform.GetComponentsInChildren<CustomizableCharacterMeshV2>(true);
@@ -272,59 +440,235 @@ namespace Swole.Modding
                         continue;
                     }
 
-                    BindCharacterMesh(match, i);
+                    BindCharacterMesh(match, i); 
+                }
+            }
+        }
+
+        protected void InitClothingMaterial(Material material, bool asProxy)
+        {
+            if (material == null) return;
+
+            if (asProxy)
+            {
+                material.SetInteger("_MeshProxyVertexCount", mainMesh.vertexCount);
+            } 
+            else
+            {
+                material.SetBuffer(clothingMatProp_skinBindings, bindings == null ? PersistentJobDataTracker.GetEmptyComputeBuffer() : bindings.BoneWeightsBuffer); 
+            }
+
+            material.SetBuffer(clothingMatProp_clothingVertexDeltas, PersistentJobDataTracker.GetEmptyGraphicsBuffer());
+        }
+
+        protected void UpdateClothingMaterial(Material material, bool asProxy, ComputeBuffer currentOffsetsBuffer)
+        {
+            if (material == null) return;
+
+            material.SetBuffer(clothingMatProp_clothingVertexDeltas, currentOffsetsBuffer);
+            material.SetInt("_ClothingFlexShapeIndexInBufferStart", clothingFlexShapeStartIndex);
+        }
+        protected void UpdateClothingMaterials(ComputeBuffer currentOffsetsBuffer)
+        {
+            if (clothingMaterials != null)
+            {
+                foreach (var kvp in clothingMaterials)
+                {
+                    UpdateClothingMaterial(kvp.Value, false, currentOffsetsBuffer);
+                }
+            }
+            if (IsProxy)
+            {
+                foreach (var subMesh in boundToProxy)
+                {
+                    if (subMesh == null) continue;
+
+                    foreach (var mat in subMesh.Materials()) UpdateClothingMaterial(mat, true, currentOffsetsBuffer); 
+                }
+            }
+        }
+
+        public void Prewarm()
+        {
+            if (clothingMaterials != null) return;
+
+            Material[] materialsArray = null; 
+            if (!useTargetRendererMaterials)
+            {
+                if (clothingMaterials == null) clothingMaterials = new Dictionary<Material, Material>();
+                var baseMaterials = bindings.GetMaterials();
+                materialsArray = new Material[baseMaterials.Length];
+                for(int i = 0; i < baseMaterials.Length; i++)
+                {
+                    var origMat = baseMaterials[i];
+
+                    if (origMat != null)
+                    {
+                        if (!clothingMaterials.TryGetValue(origMat, out var mat))
+                        {
+                            mat = Instantiate(origMat);
+                            clothingMaterials[origMat] = mat;
+                        }
+
+                        materialsArray[i] = mat;
+                    }
+                }
+            }
+
+            if (targetClothingRenderers != null && targetClothingRenderers.Length > 0)
+            {
+                if (clothingMaterials == null) clothingMaterials = new Dictionary<Material, Material>();
+
+                if (useTargetRendererMaterials)
+                {
+                    foreach (var rend in targetClothingRenderers)
+                    {
+                        if (rend == null) continue;
+
+                        var origMats = rend.sharedMaterials;
+                        for (int i = 0; i < origMats.Length; i++)
+                        {
+                            var mat = origMats[i];
+                            if (mat == null) continue;
+
+                            if (!clothingMaterials.TryGetValue(mat, out var instMat))
+                            {
+                                instMat = Instantiate(mat);
+                                clothingMaterials[mat] = instMat;
+                            }
+
+                            origMats[i] = instMat;
+                        }
+                        rend.sharedMaterials = origMats;
+                    }
+                }
+                else
+                {
+                    foreach (var rend in targetClothingRenderers)
+                    {
+                        if (rend == null) continue;
+                        rend.sharedMaterials = materialsArray;
+                    }
+                }
+            }
+
+            if (clothingMaterials != null)
+            {
+                foreach (var kvp in clothingMaterials)
+                {
+                    PrewarmMaterialBuffers(kvp.Value, false);
+                }
+            }
+
+            if (IsProxy)
+            {
+                foreach (var subMesh in boundToProxy)
+                {
+                    if (subMesh == null) continue;
+
+                    subMesh.Initialize();
+                    foreach (var mat in subMesh.Materials()) PrewarmMaterialBuffers(mat, true); 
                 }
             }
         }
 
         // Setup with multiple body meshes. bodyTrianglesPerMesh can be null or contain triangle arrays parallel to bodies.
-        public void Setup(Mesh clothing)
+        public void Setup()
         {
             if (computeShader == null) throw new InvalidOperationException("ComputeShader not assigned.");
-            if (clothing == null) throw new ArgumentNullException(nameof(clothing));
 
-            clothingMesh = clothing;
+            if (!dontInstantiateShader && !shaderIsInstantiated)
+            {
+                computeShader = Instantiate(computeShader);
+                shaderIsInstantiated = true;
+            }
+
             if (targetClothingRenderers != null && targetClothingRenderers.Length > 0)
             {
-                clothingMaterials = new List<Material>();
-                foreach (var rend in targetClothingRenderers)
+                var lastTargetRenderer = targetClothingRenderers[targetClothingRenderers.Length - 1];
+                var lodControllerParent = lastTargetRenderer.transform.parent;
+                var lodController = lodControllerParent == null ? null : lodControllerParent.GetComponent<LODGroup>();
+                if (lodController == null)
                 {
-                    if (rend == null) continue;
-                    clothingMaterials.AddRange(rend.materials); 
-                    var meshFilter = rend.gameObject.GetComponent<MeshFilter>();
-                    if (meshFilter != null) meshFilter.sharedMesh = bindings.EditedClothingMesh; 
+                    var lodObj = new GameObject(lastTargetRenderer.name + "_LODGroup");
+                    lodController = lodObj.AddComponent<LODGroup>();
+                    if (lodControllerParent != null) lodObj.transform.SetParent(lodControllerParent, false); else
+                    {
+                        lodObj.transform.SetPositionAndRotation(lastTargetRenderer.transform.position, lastTargetRenderer.transform.rotation);
+                        lodObj.transform.localScale = Vector3.one; 
+                    }
+                }
+
+                LOD[] lods = new LOD[bindings.LodCount];
+                for (int i = 0; i < bindings.LodCount; i++)
+                {
+                    var lodMesh = bindings.GetMeshLOD(i);
+                    if (lodMesh.mesh == null) continue;
+
+                    var lodRenderer = i >= targetClothingRenderers.Length ? Instantiate(lastTargetRenderer) : targetClothingRenderers[i];
+                    if (lodRenderer != null)
+                    {
+                        var lodFilter = lodRenderer.gameObject.GetComponent<MeshFilter>();
+                        if (lodFilter != null) lodFilter.sharedMesh = lodMesh.mesh;
+                    }
+
+                    lodRenderer.transform.SetParent(lodController.transform, true);
+                    var lod = new LOD() { renderers = new Renderer[] { lodRenderer }, screenRelativeTransitionHeight = lodMesh.screenRelativeTransitionHeight  };
+                    lods[i] = lod;
+                }
+
+                lodController.SetLODs(lods);
+                lodController.RecalculateBounds(); 
+            }
+
+            if (clothingMaterials != null)
+            {
+                foreach (var kvp in clothingMaterials)
+                {
+                    InitClothingMaterial(kvp.Value, false);
                 }
             }
 
-            clothingOriginalPositions = clothing.vertices;
-            clothingOriginalNormals = clothing.normals;
-            clothingOriginalTangents = clothing.tangents;
+            if (IsProxy)
+            {
+                foreach (var subMesh in boundToProxy)
+                {
+                    if (subMesh == null) continue;
 
-            vertexCount = clothingOriginalPositions.Length;
+                    subMesh.Initialize();
+                    foreach (var mat in subMesh.Materials()) InitClothingMaterial(mat, true);
+                }
+            }
+
+            vertexCount = mainMesh.vertexCount;
 
             // Release existing buffers if any
             ReleaseBuffers();
 
             // Choose specialized kernel based on selected collision mode to avoid runtime branching inside the shader.
-            string kernelName = "BodyMold_VertexCloud";
             switch (collisionMode)
             {
+                default:
+                    kernelHandle = computeShader.FindKernel("BodyMold_VertexCloud");
+                    fallbackKernelHandle = -1;
+                    break;
+
                 case CollisionMode.Triangle:
-                    kernelName = "BodyMold_Triangle";
+                    kernelHandle = computeShader.FindKernel("BodyMold_Triangle");
+                    fallbackKernelHandle = -1;
                     break;
 
                 case CollisionMode.SDF:
-                    kernelName = "BodyMold_SDF"; 
+                    kernelHandle = computeShader.FindKernel("BodyMold_SDF");
+                    fallbackKernelHandle = -1;
                     break;
 
                 case CollisionMode.TriangleSDF:
-                    kernelName = "BodyMold_TriangleSDF"; 
+                    kernelHandle = computeShader.FindKernel("BodyMold_TriangleSDF"); 
+                    clothKernelHandle = computeShader.FindKernel("BodyMoldCloth_TriangleSDF");
+                    fallbackKernelHandle = computeShader.FindKernel("BodyMold_Triangle");  
                     break;
             }
-            kernelHandle = computeShader.FindKernel(kernelName);
-
-            //computeShader.SetBuffer(kernelHandle, "_ClothingVertexDeltasReadOnly", cbClothingOffsetsA);
-            //computeShader.SetBuffer(kernelHandle, "_ClothingVertexDeltas", cbClothingOffsetsB);
 
             // Set static params
             computeShader.SetFloat("_PenetrationDistance", penetrationDistance);
@@ -365,206 +709,239 @@ namespace Swole.Modding
                 }
             } 
         }
-        protected virtual void PrepareDispatch(out int threadGroupSize)
+        protected virtual void PrepareShader(CommandBuffer cmd)
+        {
+            InitializeShader();
+
+            if (recalculateNormalsAfterMold)
+            {
+                cmd.EnableKeyword(computeShader, cskw_USE_PROXY_NORMAL_DELTAS);
+            } 
+            else
+            {
+                cmd.DisableKeyword(computeShader, cskw_USE_PROXY_NORMAL_DELTAS);
+            }
+        }
+        protected virtual void PrepareDispatch(CommandBuffer cmd, out int threadGroupSize)
         {
             if (kernelHandle < 0) throw new InvalidOperationException("Kernel not initialized");
 
-            PrepareShader(); 
+            PrepareShader(cmd); 
 
             // update dynamic params
-            computeShader.SetFloat("_PenetrationDistance", penetrationDistance);
-            computeShader.SetFloat("_PenetrationRecovery", penetrationRecovery);
-            computeShader.SetFloat("_PreserveFactor", preserveFactor);
-            computeShader.SetFloat("_DeltaMultiplier", deltaMultiplier);
-            computeShader.SetInt("_VertexCount", vertexCount);
-            // _BodyVertexCount and body buffers are set per-bound-character-mesh before dispatching that mesh
-            computeShader.SetInt("_CollisionMode", (int)collisionMode);
+            cmd.SetComputeFloatParam(computeShader, "_PenetrationDistance", penetrationDistance);
+            cmd.SetComputeFloatParam(computeShader, "_PenetrationRecovery", penetrationRecovery);
+            cmd.SetComputeFloatParam(computeShader, "_PreserveFactor", preserveFactor);
+            cmd.SetComputeFloatParam(computeShader, "_DeltaMultiplier", deltaMultiplier);
+            cmd.SetComputeIntParam(computeShader, "_VertexCount", vertexCount);
 
-            computeShader.SetFloat("_FrontPushFactor", forceDepenStrength);
-            computeShader.SetFloat("_CollisionPasses", collisionPasses);
-            computeShader.SetFloat("_CollisionRelaxation", collisionRelaxation); 
+            cmd.SetComputeFloatParam(computeShader, "_FrontPushFactor", forceDepenStrength);
+            cmd.SetComputeFloatParam(computeShader, "_CollisionPasses", collisionPasses);
+            cmd.SetComputeFloatParam(computeShader, "_CollisionRelaxation", collisionRelaxation);
 
             threadGroupSize = 256;
         }
-        public void DispatchIterations(int iterations)
+        public void DispatchIterations(CommandBuffer cmd, int iterations, bool asCloth)
         {
-            PrepareDispatch(out int threadGroupSize);
+            PrepareDispatch(cmd, out int threadGroupSize);
 
             for (int i = 0; i < iterations; i++)
             {
-                foreach (var bm in boundMeshes)
+                for(int j = 0; j < shapeContributingBoundMeshes.Count; j++)
                 {
-                    if (bm == null) continue;
-
-                    DispatchIteration(bm, threadGroupSize);
+                    var bm = shapeContributingBoundMeshes[j];
+                    DispatchIteration(cmd, bm, threadGroupSize, j == shapeContributingBoundMeshes.Count - 1, asCloth); // swap buffers only after last mesh
                 }
             }
         }
-
-        public void DispatchIterations(int boundMeshIndex, int iterations) 
-        { 
-            if (boundMeshIndex < 0 || boundMeshIndex >= boundMeshes.Count) throw new ArgumentOutOfRangeException(nameof(boundMeshIndex));
-            DispatchIterations(boundMeshes[boundMeshIndex], iterations); 
-        }
-        protected void DispatchIterations(BoundMeshData bm, int iterations)
+        public void DispatchIterations(int iteractions, bool asCloth)
         {
-            PrepareDispatch(out int threadGroupSize);
+            var cmd = CommandBufferPool.Get($"{nameof(BodyMoldSystem)}.{nameof(DispatchIterations)}");
+
+            DispatchIterations(cmd, iteractions, asCloth);
+            Graphics.ExecuteCommandBuffer(cmd);
+
+            cmd.Release();
+        }
+
+        public void DispatchIterations(CommandBuffer cmd, int boundMeshIndex, int iterations, bool asCloth) 
+        { 
+            if (boundMeshIndex < 0 || boundMeshIndex >= shapeContributingBoundMeshes.Count) throw new ArgumentOutOfRangeException(nameof(boundMeshIndex));
+            DispatchIterations(cmd, shapeContributingBoundMeshes[boundMeshIndex], iterations, asCloth);
+        }
+        public void DispatchIterations(int boundMeshIndex, int iterations, bool asCloth)
+        {
+            if (boundMeshIndex < 0 || boundMeshIndex >= shapeContributingBoundMeshes.Count) throw new ArgumentOutOfRangeException(nameof(boundMeshIndex));
+            DispatchIterations(shapeContributingBoundMeshes[boundMeshIndex], iterations, asCloth);
+        }
+        protected void DispatchIterations(CommandBuffer cmd, BoundMeshData bm, int iterations, bool asCloth)
+        {
+            PrepareDispatch(cmd, out int threadGroupSize);
 
             for (int i = 0; i < iterations; i++)
             {
-                DispatchIteration(bm, threadGroupSize);
+                DispatchIteration(cmd, bm, threadGroupSize, true, asCloth);
             }
         }
-
-        protected void SetDefaultShaderProperties(BoundMeshData bm, int kernelHandle, ComputeShader computeShader)
+        protected void DispatchIterations(BoundMeshData bm, int iterations, bool asCloth)
         {
-            computeShader.SetBuffer(kernelHandle, "_ClothingBaseVertexData", bindings.VertexDataBuffer);
+            var cmd = CommandBufferPool.Get($"{nameof(BodyMoldSystem)}.{nameof(DispatchIterations)}");
 
-            computeShader.SetBuffer(kernelHandle, "_VertexConnections", bindings.VertexConnectionsBuffer);
-            computeShader.SetBuffer(kernelHandle, "_VertexConnectionCounts", bindings.VertexConnectionCountsBuffer);
-            computeShader.SetBuffer(kernelHandle, "_VertexConnectionStartIndices", bindings.VertexConnectionStartIndicesBuffer); 
+            PrepareDispatch(cmd, out int threadGroupSize);
+
+            for (int i = 0; i < iterations; i++)
+            {
+                DispatchIteration(cmd, bm, threadGroupSize, true, asCloth);
+            }
+
+            Graphics.ExecuteCommandBuffer(cmd);
+            cmd.Release();
+        }
+
+        protected void SetDefaultShaderProperties(CommandBuffer cmd, BoundMeshData bm, int kernelHandle, ComputeShader computeShader, bool asCloth)
+        {
+            cmd.SetComputeBufferParam(computeShader, kernelHandle, "_ClothingBaseVertexData", bindings.VertexDataBuffer);
+
+            cmd.SetComputeBufferParam(computeShader, kernelHandle, "_VertexConnections", bindings.VertexConnectionsBuffer);
+            cmd.SetComputeBufferParam(computeShader, kernelHandle, "_VertexConnectionCounts", bindings.VertexConnectionCountsBuffer);
+            cmd.SetComputeBufferParam(computeShader, kernelHandle, "_VertexConnectionStartIndices", bindings.VertexConnectionStartIndicesBuffer); 
+
+            cmd.SetComputeBufferParam(computeShader, kernelHandle, "_ClothingVertexWeld", bindings.VertexWeldBuffer);
 
             // bind the character mesh vertex/triangle buffers provided by mesh.SubData
             var sub = bm.attachedMeshV2.SubData;
             if (sub != null)
             {
-                computeShader.SetBuffer(kernelHandle, "_BodyVertexPositions", sub.VerticesBuffer);
-                computeShader.SetBuffer(kernelHandle, "_BodyVertexNormals", sub.NormalsBuffer); 
-                computeShader.SetBuffer(kernelHandle, "_TargetTriangles", sub.TrianglesBuffer);
+                cmd.SetComputeBufferParam(computeShader, kernelHandle, "_BodyVertexPositions", sub.VerticesBuffer);
+                cmd.SetComputeBufferParam(computeShader, kernelHandle, "_BodyVertexNormals", sub.NormalsBuffer); 
+                cmd.SetComputeBufferParam(computeShader, kernelHandle, "_TargetTriangles", sub.TrianglesBuffer);
                 // set vertex count for bounds checks
-                computeShader.SetInt("_BodyVertexCount", bm.vertexCount);
+                cmd.SetComputeIntParam(computeShader, "_BodyVertexCount", bm.vertexCount);
             }
 
-            computeShader.SetBuffer(kernelHandle, "_BindingLocalIndices", bm.cbBindingLocalIndices);
-            computeShader.SetInt("_ClothingVertexIndexCount", bm.clothingVertexIndexCount); 
-            computeShader.SetFloat("_ClothThickness", thickness); 
+            cmd.SetComputeBufferParam(computeShader, kernelHandle, "_BindingLocalIndices", bm.cbBindingLocalIndices);
+            cmd.SetComputeIntParam(computeShader, "_ClothingVertexIndexCount", bm.clothingVertexIndexCount); 
+            cmd.SetComputeFloatParam(computeShader, "_ClothThickness", thickness); 
 
             // bind the per-clothing binding arrays for this target mesh
-            computeShader.SetBuffer(kernelHandle, "_BindingIndices", bm.cbBindingIndices);
-            computeShader.SetBuffer(kernelHandle, "_BindingWeights", bm.cbBindingWeights);
-            computeShader.SetBuffer(kernelHandle, "_NearbyTriangles", bm.cbCollisionTriangles);
-            computeShader.SetBuffer(kernelHandle, "_ClothingTriangles", bindings.TrianglesBuffer);
-            computeShader.SetBuffer(kernelHandle, "_ClothingVertexColors", bindings.VertexColorsBuffer);  
+            cmd.SetComputeBufferParam(computeShader, kernelHandle, "_BindingIndices", bm.cbBindingIndices);
+            cmd.SetComputeBufferParam(computeShader, kernelHandle, "_BindingWeights", bm.cbBindingWeights);
+            cmd.SetComputeBufferParam(computeShader, kernelHandle, "_NearbyTriangles", bm.cbCollisionTriangles);
+            cmd.SetComputeBufferParam(computeShader, kernelHandle, "_ClothingTriangles", bindings.TrianglesBuffer);
+            cmd.SetComputeBufferParam(computeShader, kernelHandle, "_ClothingVertexColors", bindings.VertexColorsBuffer);  
 
             // bind the instance buffers for current/previous deltas for this attached mesh (if present)
-            if (bm.deltaInstanceBuffer != null) bm.deltaInstanceBuffer.BindShaderProperty(computeShader, kernelHandle, "_BodyDeltas", false);
-            if (bm.prevDeltaInstanceBuffer != null) bm.prevDeltaInstanceBuffer.BindShaderProperty(computeShader, kernelHandle, "_BodyPreviousDeltas", false);
+            if (bm.deltaInstanceBuffer != null)
+            {
+                cmd.SetComputeBufferParam(computeShader, kernelHandle, "_BodyDeltas", bm.deltaInstanceBuffer.BufferThisFrame);
+            }
+            if (bm.prevDeltaInstanceBuffer != null) 
+            {
+                cmd.SetComputeBufferParam(computeShader, kernelHandle, "_BodyPreviousDeltas", bm.prevDeltaInstanceBuffer.BufferThisFrame);  
+            }
+
+            if (asCloth)
+            {
+                cmd.SetComputeFloatParam(computeShader, "_SDFOuterThicknessStrengthCloth", sdfOuterThicknessStrengthCloth);
+            } 
+            else
+            {
+                cmd.SetComputeFloatParam(computeShader, "_SDFOuterThicknessStrength", sdfOuterThicknessStrength);
+            }
         }
-        protected virtual void DispatchIteration(BoundMeshData bm, int threadGroupSize)
+        protected virtual void DispatchIteration(CommandBuffer cmd, BoundMeshData bm, int threadGroupSize, bool swapBuffers, bool asCloth)
         {
-            SetDefaultShaderProperties(bm, kernelHandle, computeShader);
+            if (bm.binding == null || bm.binding.maskOnly) return;  
+
+            bool hasSdf = bm.sdfTexture != null;
+            bool useSdf;
+            var kernelHandle = asCloth ? GetClothKernelHandle(hasSdf, out useSdf) : GetKernelHandle(hasSdf, out useSdf); 
+            if (kernelHandle < 0) return;
+
+            SetDefaultShaderProperties(cmd, bm, kernelHandle, computeShader, asCloth);
 
             // indicate whether this dispatch is the first after a body update (applies delta diff once)
-            computeShader.SetInt("_BodyDeltasChanged", bm.ConsumeDirtyFlag() ? 1 : 0); 
+            cmd.SetComputeIntParam(computeShader, "_BodyDeltasChanged", bm.ConsumeDirtyFlag() ? 1 : 0);  
 
             ComputeBuffer currentOffsetsBuffer;
             if (bufferSwapFlag)
             {
                 currentOffsetsBuffer = cbClothingOffsetsA;
-                computeShader.SetBuffer(kernelHandle, "_ClothingVertexDeltasReadOnly", cbClothingOffsetsB);
-                computeShader.SetBuffer(kernelHandle, "_ClothingVertexDeltas", currentOffsetsBuffer);
+                cmd.SetComputeBufferParam(computeShader, kernelHandle, "_ClothingVertexDeltasReadOnly", cbClothingOffsetsB);
+                cmd.SetComputeBufferParam(computeShader, kernelHandle, "_ClothingVertexDeltas", currentOffsetsBuffer);
 
-                computeShader.SetBuffer(kernelHandle, "_ClothingProxyNormalDeltasReadOnly", recalculateNormalsAfterMold ? cbClothingProxyDeltasB : PersistentJobDataTracker.GetEmptyBuffer<float3>());
-                computeShader.SetBuffer(kernelHandle, "_ClothingProxyNormalDeltas", recalculateNormalsAfterMold ? cbClothingProxyDeltasA : PersistentJobDataTracker.GetEmptyBuffer<float3>()); 
+                cmd.SetComputeBufferParam(computeShader, kernelHandle, "_ClothingProxyNormalDeltasReadOnly", recalculateNormalsAfterMold ? cbClothingProxyDeltasB : PersistentJobDataTracker.GetEmptyComputeBuffer());
+                cmd.SetComputeBufferParam(computeShader, kernelHandle, "_ClothingProxyNormalDeltas", recalculateNormalsAfterMold ? cbClothingProxyDeltasA : PersistentJobDataTracker.GetEmptyComputeBuffer()); 
 
-                if (bm.index == 0 && clothingMaterials != null && clothingMaterials.Count > 0)
+                if (bm.index == 0)
                 {
-                    foreach(var mat in clothingMaterials)
-                    {
-                        if (mat == null) continue;
-                        mat.SetBuffer("_ClothingVertexDeltas", currentOffsetsBuffer);
-                        mat.SetInt("_ClothingFlexShapeIndexInBufferStart", clothingFlexShapeStartIndex);
-                    }
+                    UpdateClothingMaterials(currentOffsetsBuffer);
                 }
             }
             else
             {
                 currentOffsetsBuffer = cbClothingOffsetsB;
-                computeShader.SetBuffer(kernelHandle, "_ClothingVertexDeltasReadOnly", cbClothingOffsetsA);
-                computeShader.SetBuffer(kernelHandle, "_ClothingVertexDeltas", currentOffsetsBuffer);
+                cmd.SetComputeBufferParam(computeShader, kernelHandle, "_ClothingVertexDeltasReadOnly", cbClothingOffsetsA);
+                cmd.SetComputeBufferParam(computeShader, kernelHandle, "_ClothingVertexDeltas", currentOffsetsBuffer);
 
-                computeShader.SetBuffer(kernelHandle, "_ClothingProxyNormalDeltasReadOnly", recalculateNormalsAfterMold ? cbClothingProxyDeltasA : PersistentJobDataTracker.GetEmptyBuffer<float3>());
-                computeShader.SetBuffer(kernelHandle, "_ClothingProxyNormalDeltas", recalculateNormalsAfterMold ? cbClothingProxyDeltasB : PersistentJobDataTracker.GetEmptyBuffer<float3>());   
+                cmd.SetComputeBufferParam(computeShader, kernelHandle, "_ClothingProxyNormalDeltasReadOnly", recalculateNormalsAfterMold ? cbClothingProxyDeltasA : PersistentJobDataTracker.GetEmptyComputeBuffer());
+                cmd.SetComputeBufferParam(computeShader, kernelHandle, "_ClothingProxyNormalDeltas", recalculateNormalsAfterMold ? cbClothingProxyDeltasB : PersistentJobDataTracker.GetEmptyComputeBuffer());   
 
-                if (bm.index == 0 && clothingMaterials != null && clothingMaterials.Count > 0)
+                if (bm.index == 0)
                 {
-                    foreach (var mat in clothingMaterials)
-                    {
-                        if (mat == null) continue;
-                        mat.SetBuffer("_ClothingVertexDeltas", currentOffsetsBuffer);
-                        mat.SetInt("_ClothingFlexShapeIndexInBufferStart", clothingFlexShapeStartIndex);
-                    }
+                    UpdateClothingMaterials(currentOffsetsBuffer);
                 }
             }
+            
+            cmd.SetComputeBufferParam(computeShader, kernelHandle, "_ClothingStretch", stretchBuffer);
 
-            computeShader.SetBuffer(kernelHandle, "_ClothingStretch", stretchBuffer);
-
-            foreach (var entry in sdfIdToBufferIndexOffsets)
+            foreach (var entry in shapeIdToBufferIndexOffsets)
             {
-                string sdfId = entry.Key;
+                string shapeId = entry.Key;
                 var bufferOffset = entry.Value;
-                computeShader.SetInt($"_IndexOffset", bufferOffset);
-                bool firstRun = !bm.HasEvaluatedSdfId(sdfId);
-                computeShader.SetInt($"_FirstRun", firstRun ? 1 : 0);
-                if (firstRun) bm.MarkSdfIdEvaluated(sdfId);
+                cmd.SetComputeIntParam(computeShader, "_IndexOffset", bufferOffset.z);
+                bool firstRun = !bm.HasEvaluatedShapeId(shapeId);
+                cmd.SetComputeIntParam(computeShader, "_FirstRun", firstRun ? 1 : 0);
+                if (firstRun) bm.MarkShapeIdEvaluated(shapeId);
 
-                if ((collisionMode == CollisionMode.SDF || collisionMode == CollisionMode.TriangleSDF) && bm.sdfTexture != null)
+                if (useSdf)
                 {
-                    bm.sdfTexture.ApplyToShader(sdfId, computeShader, kernelHandle);
+                    bm.sdfTexture.ApplyToShader(shapeId, computeShader, kernelHandle); 
                 }
 
-                int dispatchGroups = Mathf.CeilToInt(bm.clothingVertexIndexCount / (float)threadGroupSize);
-                computeShader.Dispatch(kernelHandle, dispatchGroups, 1, 1); 
+                if (bufferOffset.x > 0 && bm.shapeIdToLocalDeltaBufferIndexOffsets.TryGetValue(shapeId, out int3 localBufferOffset)) 
+                {
+                    cmd.SetComputeBufferParam(computeShader, kernelHandle, "_Deltas", bm.attachedMeshV2.SubData.MeshShapeFrameDeltasBuffer);
+                    cmd.SetComputeIntParam(computeShader, "_DeltasIndexOffset", localBufferOffset.z);
+                }
+                else
+                {
+                    cmd.SetComputeBufferParam(computeShader, kernelHandle, "_Deltas", PersistentJobDataTracker.GetEmptyGraphicsBuffer());
+                    cmd.SetComputeIntParam(computeShader, "_DeltasIndexOffset", -1); 
+                }
+
+                int dispatchGroups = Mathf.CeilToInt(bm.clothingVertexIndexCount / (float)threadGroupSize); 
+                cmd.DispatchCompute(computeShader, kernelHandle, dispatchGroups, 1, 1);
             }
 
-            if (bindings.dynamicBoneWeights)
+            if (bindings.dynamicBoneWeights && bm.index == 0)
             {
-                var recalBwKernel = computeShader.FindKernel("AdjustSkinBindings");
+                var recalBwKernel = computeShader.FindKernel("AdjustSkinBindings"); 
 
-                SetDefaultShaderProperties(bm, recalBwKernel, computeShader);
-                computeShader.SetInt($"_IndexOffset", 0);
-                computeShader.SetBuffer(recalBwKernel, "_ClothingVertexDeltasReadOnly", currentOffsetsBuffer);
-                computeShader.SetBuffer(recalBwKernel, "_SkinBindingsReadOnly", bindings.BoneWeightsBuffer);
-                computeShader.SetBuffer(recalBwKernel, "_SkinBindings", dynamicBoneWeightsBuffer);
-                computeShader.SetBuffer(recalBwKernel, "_BodySkinBindings", bm.attachedMeshV2.SubData.BoneWeightsBuffer);
-                computeShader.SetBuffer(recalBwKernel, "_Deltas", PersistentJobDataTracker.GetEmptyBuffer<MeshVertexDelta>()); 
-                computeShader.SetInt("_DeltasIndexOffset", -1);
+                SetDefaultShaderProperties(cmd, bm, recalBwKernel, computeShader, asCloth);
+                cmd.SetComputeIntParam(computeShader, "_IndexOffset", 0);
+                cmd.SetComputeBufferParam(computeShader, recalBwKernel, "_ClothingVertexDeltasReadOnly", currentOffsetsBuffer); 
+                cmd.SetComputeBufferParam(computeShader, recalBwKernel, "_SkinBindingsReadOnly", bindings.BoneWeightsBuffer);
+                cmd.SetComputeBufferParam(computeShader, recalBwKernel, "_SkinBindings", dynamicBoneWeightsBuffer);
+                cmd.SetComputeBufferParam(computeShader, recalBwKernel, "_BodySkinBindings", bm.attachedMeshV2.SubData.BoneWeightsBuffer);
+                cmd.SetComputeBufferParam(computeShader, recalBwKernel, "_Deltas", PersistentJobDataTracker.GetEmptyGraphicsBuffer()); 
+                cmd.SetComputeIntParam(computeShader, "_DeltasIndexOffset", -1);
 
                 int dispatchGroups = Mathf.CeilToInt(bm.clothingVertexIndexCount / (float)threadGroupSize);
-                computeShader.Dispatch(recalBwKernel, dispatchGroups, 1, 1);
+                cmd.DispatchCompute(computeShader, recalBwKernel, dispatchGroups, 1, 1);
             }
 
-            bufferSwapFlag = !bufferSwapFlag;
-        }
-
-        public void GetDeformedData(int sdfIndex, out Vector3[] outPos, out Vector3[] outNorm, out Vector4[] outTan)
-        {
-            var buffer = bufferSwapFlag ? cbClothingOffsetsB : cbClothingOffsetsA;
-            MeshVertexDelta[] offsets = new MeshVertexDelta[buffer.count];
-            buffer.GetData(offsets);
-            outPos = new Vector3[vertexCount];
-            outNorm = new Vector3[vertexCount];
-            outTan = new Vector4[vertexCount];
-            int indexOffset = sdfIndex * vertexCount;
-            for (int i = 0; i < vertexCount; i++)
-            {
-                var j = indexOffset + i;
-                outPos[i] = clothingOriginalPositions[i] + (Vector3)offsets[j].positionDelta; 
-                outNorm[i] = clothingOriginalNormals[i] + (Vector3)offsets[j].normalDelta;
-                outTan[i] = new float4(((float4)clothingOriginalTangents[i]).xyz + offsets[j].tangentDelta, clothingOriginalTangents[i].w);
-            }
-        }
-
-        // Apply current deformed positions to a mesh (modifies mesh.vertices)
-        public void ApplyToMesh(int sdfIndex, Mesh targetMesh)
-        {
-            if (targetMesh == null) return;
-            GetDeformedData(sdfIndex, out var verts, out var norms, out var tans); 
-            targetMesh.vertices = verts;
-            targetMesh.normals = norms;
-            targetMesh.tangents = tans;
-            targetMesh.RecalculateBounds();
-            // normals/tangents can be recalculated later or supplied if needed
+            if (swapBuffers) bufferSwapFlag = !bufferSwapFlag;
         }
 
         void OnDestroy() 
@@ -573,27 +950,38 @@ namespace Swole.Modding
 
             if (boundMeshes != null && boundMeshes.Count > 0)
             {
-                var bm = boundMeshes[0];
-                if (bm.attachedMeshV2 != null)
+                if (shapeContributingBoundMeshes.Count > 0)
                 {
-                    if (clothingMaterials != null) 
-                    { 
-                        bm.attachedMeshV2.UnbindSkinningMatricesBufferFromMaterials(clothingMaterials);
-                        bm.attachedMeshV2.UnbindStandaloneShapesControlBufferFromMaterials(clothingMaterials);
-                        bm.attachedMeshV2.UnbindMuscleGroupsControlBufferFromMaterials(clothingMaterials);
-                        bm.attachedMeshV2.UnbindFatGroupsControlBufferFromMaterials(clothingMaterials); 
+                    var bm = shapeContributingBoundMeshes[0];
+                    if (bm.attachedMeshV2 != null)
+                    {
+                        var allClothingMaterials = AllClothingMaterials();
+
+                        bm.attachedMeshV2.UnbindSkinningMatricesBufferFromMaterials(allClothingMaterials);
+                        bm.attachedMeshV2.UnbindStandaloneShapesControlBufferFromMaterials(allClothingMaterials);
+                        bm.attachedMeshV2.UnbindMuscleGroupsControlBufferFromMaterials(allClothingMaterials);
+                        bm.attachedMeshV2.UnbindFatGroupsControlBufferFromMaterials(allClothingMaterials);
                     }
                 }
 
                 boundMeshes.Clear();
+                shapeContributingBoundMeshes.Clear();
             }
 
             if (clothingMaterials != null)
             {
-                foreach(var mat in clothingMaterials)
+                foreach(var kvp in clothingMaterials)
                 {
-                    if (mat != null) Destroy(mat);
+                    if (kvp.Value != null) Destroy(kvp.Value);
                 }
+                clothingMaterials.Clear(); 
+                clothingMaterials = null; 
+            }
+
+            if (shaderIsInstantiated)
+            {
+                Destroy(computeShader);
+                computeShader = null; 
             }
         }
 
@@ -604,7 +992,7 @@ namespace Swole.Modding
 
         void ReleaseBuffers()
         {
-            if (cbClothingOffsetsA != null) { cbClothingOffsetsA.Release(); cbClothingOffsetsA = null; }
+            if (cbClothingOffsetsA != null) { cbClothingOffsetsA.Release(); cbClothingOffsetsA = null; } 
             if (cbClothingOffsetsB != null) { cbClothingOffsetsB.Release(); cbClothingOffsetsB = null; }
             if (cbClothingProxyDeltasA != null) { cbClothingProxyDeltasA.Release(); cbClothingProxyDeltasA = null; }
             if (cbClothingProxyDeltasB != null) { cbClothingProxyDeltasB.Release(); cbClothingProxyDeltasB = null; } 
@@ -624,78 +1012,185 @@ namespace Swole.Modding
                 }
                 boundMeshes.Clear();
             }
+            if (shapeContributingBoundMeshes != null) shapeContributingBoundMeshes.Clear();
 
-            sdfIdToBufferIndexOffsets.Clear(); 
+            shapeIdToBufferIndexOffsets.Clear(); 
         }
 
-        public bool BindCharacterMesh(CustomizableCharacterMeshV2 meshV2, int index)
+        protected IEnumerator BindCharacterMeshRoutine(CustomizableCharacterMeshV2 meshV2, int index)
         {
-            if (bindings == null) throw new InvalidOperationException("Call SetupFromBindings(...) before binding character meshes."); 
+            if (bindings == null) throw new InvalidOperationException("Call SetupFromBindings(...) before binding character meshes.");
 
             if (meshV2 == null) throw new ArgumentNullException(nameof(meshV2));
+
+            while (!meshV2.HasValidInstance) yield return null; 
+
+            var subData = meshV2.SubData;
 
             var bm = new BoundMeshData();
             bm.index = index;
             bm.attachedMeshV2 = meshV2;
-            bm.vertexCount = meshV2.SubData != null ? meshV2.SubData.VertexCount : 0;
+            bm.vertexCount = subData != null ? subData.VertexCount : 0;
 
-            var binding = bindings.perBodyBindings[index]; 
+            var binding = bindings.perBodyBindings[index];
             bm.clothingVertexIndexCount = binding.BindingMaskLength;
             bm.binding = binding;
-            bm.cbBindingLocalIndices = binding.LocalIndicesBuffer;
-            bm.cbBindingIndices = binding.IndicesBuffer;
-            bm.cbBindingWeights = binding.WeightsBuffer;
-            bm.cbCollisionTriangles = binding.CollisionTrianglesBuffer;
-
-            if (binding.HasPushBackVertices)
+            bool isMaskOnly = binding.maskOnly;
+            if (!isMaskOnly)
             {
-                bm.cbWorldSpaceVertexDataBuffer = new ComputeBuffer(meshV2.SubData.VertexCount, UnsafeUtility.SizeOf(typeof(MeshVertexData)));
-                bm.cbFinalDeltas = new ComputeBuffer(meshV2.SubData.VertexCount, UnsafeUtility.SizeOf(typeof(MeshVertexDelta)));
-                bm.cbFinalDeltas.SetData(new MeshVertexDelta[meshV2.SubData.VertexCount]);
+                bm.cbBindingLocalIndices = binding.LocalIndicesBuffer;
+                bm.cbBindingIndices = binding.IndicesBuffer;
+                bm.cbBindingWeights = binding.WeightsBuffer;
+                bm.cbCollisionTriangles = binding.CollisionTrianglesBuffer;
+            }
+
+            var maskBinding = binding;
+            if (maskBindings != null && maskBindings.perBodyBindings != null)
+            {
+                foreach(var b in maskBindings.perBodyBindings)
+                {
+                    if (ReferenceEquals(b.mesh, binding.mesh))
+                    {
+                        maskBinding = b;
+                        break;
+                    }
+                }
+            }
+
+            var pushBackBinding = binding;
+            bool pushBackBindingIsDifferent = false;
+            if (pushBackVertexBindings != null && pushBackVertexBindings.perBodyBindings != null)
+            {
+                foreach (var b in pushBackVertexBindings.perBodyBindings)
+                {
+                    if (ReferenceEquals(b.mesh, binding.mesh))
+                    {
+                        pushBackBinding = b;
+                        pushBackBindingIsDifferent = true;
+                        break;
+                    }
+                }
+            }
+
+            if (!isMaskOnly && pushBackBinding.HasPushBackVertices)
+            {
+                if (pushBackBindingIsDifferent)
+                {
+                    bm.pushbackVerticesIsLocal = true;
+                    using (var pushBackVertices = new NativeList<PushBackVertex>(pushBackBinding.pushBackVertices.Length, Allocator.Temp))
+                    {
+                        for(int i = 0; i < bm.binding.pushBackVertices.Length; i++)
+                        {
+                            var pushBackVertex = bm.binding.pushBackVertices[i];
+                            for(int j = 0; j < pushBackBinding.pushBackVertices.Length; j++)
+                            {
+                                var pushBackVertex2 = pushBackBinding.pushBackVertices[j];
+                                if (pushBackVertex.vertexIndex == pushBackVertex2.vertexIndex)
+                                {
+                                    pushBackVertices.Add(pushBackVertex);
+                                    break;
+                                }
+                            }
+                        }
+
+                        bm.cbPushbackVertices = new ComputeBuffer(pushBackVertices.Length, UnsafeUtility.SizeOf(typeof(PushBackVertex)), ComputeBufferType.Structured, ComputeBufferMode.Immutable);
+                        bm.cbPushbackVertices.SetData(pushBackVertices.AsArray()); 
+                    }
+                }
+                else
+                {
+                    bm.pushbackVerticesIsLocal = false;
+                    bm.cbPushbackVertices = pushBackBinding.PushBackVerticesBuffer;
+                }
+
+                bm.cbWorldSpaceVertexDataBuffer = new ComputeBuffer(subData.VertexCount, UnsafeUtility.SizeOf(typeof(MeshVertexData)));
+                bm.cbFinalDeltas = new ComputeBuffer(subData.VertexCount, UnsafeUtility.SizeOf(typeof(MeshVertexDelta)));
+                using (var initData = new NativeArray<MeshVertexDelta>(subData.VertexCount, Allocator.Temp, NativeArrayOptions.ClearMemory))
+                {
+                    bm.cbFinalDeltas.SetData(initData);
+                }
 
                 var mats = meshV2.MaterialInstances;
                 if (mats != null)
                 {
-                    foreach(var mat in mats)
+                    foreach (var mat in mats)
                     {
                         if (mat == null) continue;
                         //mat.EnableKeyword("USE_FINAL_WORLD_DELTAS");
-                        mat.SetBuffer("_FinalWorldDeltas", bm.cbFinalDeltas); 
+                        mat.SetBuffer(bodyMatProp_finalWorldDeltas, bm.cbFinalDeltas);
                     }
                 }
             }
 
-            bm.sdfTexture = meshV2.GetComponent<SignedDistanceFieldTexture>();
-            if (bm.sdfTexture != null)
+            if (!isMaskOnly)
             {
-                foreach(var output in bm.sdfTexture.Outputs())
+                bm.sdfTexture = meshV2.GetComponent<Collision3dTexture>();
+                if (bm.sdfTexture != null)
                 {
-                    if (!sdfIdToBufferIndexOffsets.ContainsKey(output.ID)) 
+                    foreach (var output in bm.sdfTexture.Outputs())
                     {
-                        sdfIdToBufferIndexOffsets[output.ID] = GetOffsetsBufferStartIndexAndGrow();
+                        string shapeId = SdfIdToShapeId(output);
+                        int shapeFrame = output.HasMeshShape ? output.MeshShapeFrame : 0;
+                        if (!shapeIdToBufferIndexOffsets.ContainsKey(shapeId))
+                        {
+                            shapeIdToBufferIndexOffsets[shapeId] = GetOffsetsBufferStartIndexAndGrow(shapeFrame);
+
+                            if (output.HasMeshShape)
+                            {
+                                foreach (var bm2 in shapeContributingBoundMeshes)
+                                {
+                                    if (bm2 == null || ReferenceEquals(bm, bm2)) continue;
+                                    bm2.TryAddShapeIdToLocalDeltaBufferIndexOffset(shapeId, shapeFrame);
+                                }
+                            }
+                        }
+
+                        if (!output.HasMeshShape)
+                        {
+                            bm.shapeIdToLocalDeltaBufferIndexOffsets[shapeId] = new int3(0, 0, 0);
+                        }
                     }
                 }
-            }
 
-            // attach instance buffers if available
-            meshV2.TryGetInstanceBuffer<MeshVertexDelta>(meshV2.SubData.PerVertexDeltaDataPropertyName, out bm.deltaInstanceBuffer);
-            meshV2.TryGetInstanceBuffer<MeshVertexDelta>(meshV2.SubData.PerVertexPreviousDeltaDataPropertyName, out bm.prevDeltaInstanceBuffer);
+
+                foreach (var shapeEntry in shapeIdToBufferIndexOffsets)
+                {
+                    var shapeId = shapeEntry.Key;
+                    var bufferOffset = shapeEntry.Value;
+
+                    if (bufferOffset.x <= 0) continue; // is default shape
+
+                    if (!bm.shapeIdToLocalDeltaBufferIndexOffsets.ContainsKey(shapeId))
+                    {
+                        bm.TryAddShapeIdToLocalDeltaBufferIndexOffset(shapeId, bufferOffset.y);
+                    }
+                }
+
+                // attach instance buffers if available
+                meshV2.TryGetInstanceBuffer<MeshVertexDelta>(subData.PerVertexDeltaDataPropertyName, out bm.deltaInstanceBuffer);
+                meshV2.TryGetInstanceBuffer<MeshVertexDelta>(subData.PerVertexPreviousDeltaDataPropertyName, out bm.prevDeltaInstanceBuffer);
+
+            }
 
             boundMeshes.Add(bm);
+            if (!isMaskOnly) shapeContributingBoundMeshes.Add(bm);
 
-            bm.meshListener = () =>
+            if (!isMaskOnly)
             {
-                bm.MarkDirty();
-                if (!enabled || !gameObject.activeInHierarchy) return;
 
-                StartCoroutine(OnBodyShapeChanged(bm));
-            };
-            meshV2.AddListener(API.Unity.ICustomizableCharacter.ListenableEvent.OnAnyDataChanged, bm.meshListener);
-
-            if (index == 0)
-            {
-                if (clothingMaterials != null)
+                bm.meshListener = () =>
                 {
+                    bm.MarkDirty();
+                    if (!enabled || !gameObject.activeInHierarchy) return;
+
+                    StartCoroutine(OnBodyShapeChanged(bm));
+                };
+                meshV2.AddListener(API.Unity.ICustomizableCharacter.ListenableEvent.OnAnyDataChanged, bm.meshListener);
+
+                if (index == 0)
+                {
+                    var allClothingMaterials = AllClothingMaterials();
+
                     //float cx = math.cos(-bm.eulerOffsetRadians.x);
                     //float sx = math.sin(-bm.eulerOffsetRadians.x);
                     //float cy = math.cos(-bm.eulerOffsetRadians.y);
@@ -703,110 +1198,172 @@ namespace Swole.Modding
                     //float cz = math.cos(-bm.eulerOffsetRadians.z);
                     //float sz = math.sin(-bm.eulerOffsetRadians.z);
 
-                    meshV2.BindSkinningMatricesBufferToMaterials(clothingMaterials);
-                    meshV2.BindStandaloneShapesControlBufferToMaterials(clothingMaterials);
-                    meshV2.BindMuscleGroupsControlBufferToMaterials(clothingMaterials);
-                    meshV2.BindFatGroupsControlBufferToMaterials(clothingMaterials); 
-                    foreach (var mat in clothingMaterials)
+                    meshV2.BindSkinningMatricesBufferToMaterials(allClothingMaterials);
+                    meshV2.BindStandaloneShapesControlBufferToMaterials(allClothingMaterials);
+                    meshV2.BindMuscleGroupsControlBufferToMaterials(allClothingMaterials);
+                    meshV2.BindFatGroupsControlBufferToMaterials(allClothingMaterials);
+                    foreach (var mat in AllClothingMaterialsWithProxyFlag())
                     {
-                        if (mat == null) continue;
+                        if (mat.Item1 == null) continue;
 
-                        meshV2.MeshGroup2.ApplyMainMaterialOverrides(mat);
+                        meshV2.MeshGroup2.ApplyMainMaterialOverrides(mat.Item1, false);
 
-                        mat.SetInt(meshV2.SubData.RigInstanceIDPropertyName, meshV2.RigInstanceID);
-                        mat.SetInt(meshV2.SubData.CharacterInstanceIDPropertyName, meshV2.CharacterInstanceID);
-                        mat.SetFloat(meshV2.SubData.BustMixPropertyName, Mathf.Clamp01(meshV2.BustSize));
-                        mat.SetBuffer(meshV2.SubData.MeshShapeIndicesPropertyName, meshV2.SubData.MeshShapeIndicesBuffer);
-                        mat.SetBuffer(meshV2.SubData.MeshShapeFrameDeltasPropertyName, meshV2.SubData.MeshShapeFrameDeltasBuffer);
-                        mat.SetBuffer(meshV2.SubData.MuscleGroupInfluencesPropertyName, meshV2.SubData.MuscleGroupInfluencesBuffer);
-                        mat.SetBuffer(meshV2.SubData.FatGroupInfluencesPropertyName, meshV2.SubData.FatGroupInfluencesBuffer);
-                        mat.SetInteger(meshV2.SubData.FlexShapeIndexPropertyName, meshV2.SubData.FlexShape);
-                        mat.SetInteger("_CharacterVertexCount", meshV2.SubData.VertexCount);
-                        mat.SetBuffer("_CharacterVertices", meshV2.SubData.VerticesBuffer);
-                        mat.SetBuffer("_BindingIndices", bm.cbBindingIndices);
-                        mat.SetBuffer("_BindingWeights", bm.cbBindingWeights);
-                        mat.SetBuffer("_ClothingStretch", stretchBuffer); 
+                        mat.Item1.SetInt(subData.RigInstanceIDPropertyName, meshV2.RigInstanceID);
+                        mat.Item1.SetInt(subData.CharacterInstanceIDPropertyName, meshV2.CharacterInstanceID);
+                        mat.Item1.SetFloat(subData.BustMixPropertyName, Mathf.Clamp01(meshV2.BustSize));
+                        mat.Item1.SetBuffer(subData.MeshShapeIndicesPropertyName, subData.MeshShapeIndicesBuffer);
+                        mat.Item1.SetBuffer(subData.MeshShapeFrameDeltasPropertyName, subData.MeshShapeFrameDeltasBuffer);
+                        mat.Item1.SetBuffer(subData.MuscleGroupInfluencesPropertyName, subData.MuscleGroupInfluencesBuffer);
+                        mat.Item1.SetBuffer(subData.FatGroupInfluencesPropertyName, subData.FatGroupInfluencesBuffer);
+                        mat.Item1.SetInteger(subData.FlexShapeIndexPropertyName, subData.FlexShape);
+                        mat.Item1.SetInteger("_CharacterVertexCount", subData.VertexCount);
+                        mat.Item1.SetBuffer("_CharacterVertices", subData.VerticesBuffer);
+                        mat.Item1.SetBuffer("_BindingIndices", bm.cbBindingIndices);
+                        mat.Item1.SetBuffer("_BindingWeights", bm.cbBindingWeights);
+                        mat.Item1.SetBuffer("_ClothingStretch", stretchBuffer);
 
-                        mat.SetInt("_VertexCount", vertexCount);
+                        if (!mat.Item2)
+                        {
+                            mat.Item1.SetInt("_VertexCount", vertexCount);
+                            Debug.Log("Binding clothing material to skin bindings buffer: " + mat.Item1.name);
+                            mat.Item1.SetBuffer(clothingMatProp_skinBindings, dynamicBoneWeightsBuffer == null ? bindings.BoneWeightsBuffer : dynamicBoneWeightsBuffer);
+                        }
+                    }
 
-                        mat.SetBuffer(meshV2.SubData.SkinningDataPropertyName, dynamicBoneWeightsBuffer == null ? bindings.BoneWeightsBuffer : dynamicBoneWeightsBuffer);   
+
+                    var referenceRenderer = meshV2.FirstRenderer;
+                    if (referenceRenderer != null)
+                    {
+                        if (targetClothingRenderers != null && targetClothingRenderers.Length > 0)
+                        {
+                            foreach (var rend in targetClothingRenderers)
+                            {
+                                if (rend == null) continue;
+                                rend.localBounds = referenceRenderer.localBounds;
+                            }
+
+                        }
+                        if (boundToProxy != null && boundToProxy.Length > 0)
+                        {
+                            foreach (var subMesh in boundToProxy)
+                            {
+                                foreach (var rend in subMesh.Renderers())
+                                {
+                                    if (rend == null) continue;
+                                    rend.localBounds = referenceRenderer.localBounds;
+                                }
+                            }
+                        }
                     }
                 }
+
             }
 
             if (binding.HasMaskedVertices)
             {
                 bm.attachedMeshV2.MeshGroup2.UseVertexMask = true;
 
-                bm.vertexMaskResetListener = () =>
+                bm.vertexMaskRebuildListener = () =>
                 {
                     if (!enabled || !gameObject.activeInHierarchy) return;
-                    bm.attachedMeshV2.WriteToVertexMask(binding.maskedVertices);
+                    bm.attachedMeshV2.WriteToVertexMask(maskBinding.maskedVertices); 
                     bm.attachedMeshV2.MeshGroup2.ApplyVertexMaskMaterialOverrides(bm.attachedMeshV2.MaterialInstances); 
                 };
 
-                bm.attachedMeshV2.ListenForVertexMaskReset(bm.vertexMaskResetListener);
-                bm.vertexMaskResetListener(); // <- apply the mask immediately
+                bm.attachedMeshV2.ListenForVertexMaskRebuild(bm.vertexMaskRebuildListener); 
+                bm.vertexMaskRebuildListener(); // <- apply the mask immediately
             }
-
-            return true; 
         }
+        public void BindCharacterMesh(CustomizableCharacterMeshV2 meshV2, int index)
+        {
+            StartCoroutine(BindCharacterMeshRoutine(meshV2, index)); 
+        }
+
+        protected void RecalculateNormals()
+        {
+            var cmd = CommandBufferPool.Get($"{nameof(BodyMoldSystem)}.{nameof(RecalculateNormals)}");
+
+            RecalculateNormals(cmd);
+
+            Graphics.ExecuteCommandBuffer(cmd);
+            cmd.Release();
+        }
+        protected void RecalculateNormals(CommandBuffer cmd)
+        {
+            foreach (var bm in shapeContributingBoundMeshes)
+            {
+                if (bm == null) continue; 
+
+                RecalculateNormals(cmd, bm);
+            }
+        } 
 
         protected void RecalculateNormals(BoundMeshData bm)
         {
-            var kernel = computeShader.FindKernel("BodyMold_RecalculateNormals");
+            if (bm.binding == null || bm.binding.maskOnly) return; 
 
-            SetDefaultShaderProperties(bm, kernel, computeShader);
+            var cmd = CommandBufferPool.Get($"{nameof(BodyMoldSystem)}.{nameof(RecalculateNormals)}");
+
+            RecalculateNormals(cmd, bm);
+
+            Graphics.ExecuteCommandBuffer(cmd);
+            cmd.Release();
+        }
+        protected void RecalculateNormals(CommandBuffer cmd, BoundMeshData bm)
+        {
+            if (bm.binding == null || bm.binding.maskOnly) return;
+
+            var kernel = computeShader.FindKernel("BodyMold_RecalculateNormals");  
+
+            SetDefaultShaderProperties(cmd, bm, kernel, computeShader, false); 
+
+            cmd.SetComputeFloatParam(computeShader, "_NormalRecalculationBlend", normalRecalculationBlend); 
 
             ComputeBuffer currentOffsetsBuffer;
             if (bufferSwapFlag)
             {
                 currentOffsetsBuffer = cbClothingOffsetsA;
-                computeShader.SetBuffer(kernel, "_ClothingVertexDeltasReadOnly", cbClothingOffsetsB);
-                computeShader.SetBuffer(kernel, "_ClothingVertexDeltas", currentOffsetsBuffer);
+                cmd.SetComputeBufferParam(computeShader, kernel, "_ClothingVertexDeltasReadOnly", cbClothingOffsetsB);
+                cmd.SetComputeBufferParam(computeShader, kernel, "_ClothingVertexDeltas", currentOffsetsBuffer);
 
-                if (bm.index == 0 && clothingMaterials != null && clothingMaterials.Count > 0)
+                if (bm.index == 0)
                 {
-                    foreach (var mat in clothingMaterials)
-                    {
-                        if (mat == null) continue;
-                        mat.SetBuffer("_ClothingVertexDeltas", currentOffsetsBuffer);
-                        mat.SetInt("_ClothingFlexShapeIndexInBufferStart", clothingFlexShapeStartIndex);
-                    }
+                    UpdateClothingMaterials(currentOffsetsBuffer);
                 }
             }
             else
             {
                 currentOffsetsBuffer = cbClothingOffsetsB;
-                computeShader.SetBuffer(kernel, "_ClothingVertexDeltasReadOnly", cbClothingOffsetsA);
-                computeShader.SetBuffer(kernel, "_ClothingVertexDeltas", currentOffsetsBuffer);
+                cmd.SetComputeBufferParam(computeShader, kernel, "_ClothingVertexDeltasReadOnly", cbClothingOffsetsA); 
+                cmd.SetComputeBufferParam(computeShader, kernel, "_ClothingVertexDeltas", currentOffsetsBuffer);
 
-                if (bm.index == 0 && clothingMaterials != null && clothingMaterials.Count > 0)
+                if (bm.index == 0)
                 {
-                    foreach (var mat in clothingMaterials)
-                    {
-                        if (mat == null) continue;
-                        mat.SetBuffer("_ClothingVertexDeltas", currentOffsetsBuffer);
-                        mat.SetInt("_ClothingFlexShapeIndexInBufferStart", clothingFlexShapeStartIndex);
-                    }
+                    UpdateClothingMaterials(currentOffsetsBuffer);
                 }
             }
 
-            foreach (var entry in sdfIdToBufferIndexOffsets)
+            foreach (var entry in shapeIdToBufferIndexOffsets)
             {
-                string sdfId = entry.Key;
+                string shapeId = entry.Key;
                 var bufferOffset = entry.Value;
-                computeShader.SetInt($"_IndexOffset", bufferOffset);
+                cmd.SetComputeIntParam(computeShader, $"_IndexOffset", bufferOffset.z);
 
-                if ((collisionMode == CollisionMode.SDF || collisionMode == CollisionMode.TriangleSDF) && bm.sdfTexture != null)
+                if (bufferOffset.x > 0 && bm.shapeIdToLocalDeltaBufferIndexOffsets.TryGetValue(shapeId, out int3 localBufferOffset))
                 {
-                    bm.sdfTexture.ApplyToShader(sdfId, computeShader, kernel);
+                    cmd.SetComputeBufferParam(computeShader, kernelHandle, "_Deltas", bm.attachedMeshV2.SubData.MeshShapeFrameDeltasBuffer); 
+                    cmd.SetComputeIntParam(computeShader, "_DeltasIndexOffset", localBufferOffset.z);
+                }
+                else
+                {
+                    cmd.SetComputeBufferParam(computeShader, kernelHandle, "_Deltas", PersistentJobDataTracker.GetEmptyGraphicsBuffer());
+                    cmd.SetComputeIntParam(computeShader, "_DeltasIndexOffset", -1);
                 }
 
-                int dispatchGroups = Mathf.CeilToInt(bm.clothingVertexIndexCount / 256f); 
-                computeShader.Dispatch(kernel, dispatchGroups, 1, 1);  
+                int dispatchGroups = Mathf.CeilToInt(bm.clothingVertexIndexCount / 256f);  
+                cmd.DispatchCompute(computeShader, kernelHandle, dispatchGroups, 1, 1);   
             }
-             
+
             //bufferSwapFlag = !bufferSwapFlag;
             // DO NOT SWAP BUFFER FLAG
             // RecalculateNormals only modifies normals in the main buffer for rendering
@@ -814,25 +1371,23 @@ namespace Swole.Modding
             // The molding kernel controls the buffer swap
         }
 
-        protected IEnumerator OnBodyShapeChanged(BoundMeshData bm)
-        {
-            yield return null; 
+        protected int queuedIterations;
+        protected int queuedClothIterations;
 
-            DispatchIterations(bm, shapeChangeFollowUpIterations);
-            if (recalculateNormalsAfterMold) RecalculateNormals(bm); 
-            //ApplyToMesh(0, tempMesh); 
-            for (int a = 0; a < 30; a++)
-            {
-                yield return null;
-                DispatchIterations(bm, 1);
-                if (recalculateNormalsAfterMold) RecalculateNormals(bm);
-            }
-            //RecalculateNormals(bm);
+        protected IEnumerator OnBodyShapeChanged(BoundMeshData bm) 
+        {
+            yield return null;
+
+            queuedIterations = 1 + shapeChangeFollowUpIterations; 
+            queuedClothIterations = 1 + shapeChangeFollowUpIterations; 
         } 
 
-        protected void PrepareLiveClothingVertexData()
+        protected void PrepareLiveClothingVertexData(CommandBuffer cmd)
         {
-            PrepareShader();
+            bool isLocalCommandBuffer = cmd == null;
+            if (isLocalCommandBuffer) cmd = CommandBufferPool.Get($"{nameof(BodyMoldSystem)}.{nameof(PrepareLiveClothingVertexData)}");
+
+            PrepareShader(cmd);
 
             var kernel = computeShader.FindKernel("PrepareLiveVertexData");
 
@@ -841,64 +1396,89 @@ namespace Swole.Modding
             if (bufferSwapFlag)
             {
                 currentOffsetsBuffer = cbClothingOffsetsB;
-                if (recalculateNormalsAfterMold) proxyNormalOffsetsBuffer = cbClothingProxyDeltasB; else proxyNormalOffsetsBuffer = PersistentJobDataTracker.GetEmptyBuffer<float3>();
+                if (recalculateNormalsAfterMold) proxyNormalOffsetsBuffer = cbClothingProxyDeltasB; else proxyNormalOffsetsBuffer = PersistentJobDataTracker.GetEmptyComputeBuffer(); 
             }
             else
             {
                 currentOffsetsBuffer = cbClothingOffsetsA;
-                if (recalculateNormalsAfterMold) proxyNormalOffsetsBuffer = cbClothingProxyDeltasA; else proxyNormalOffsetsBuffer = PersistentJobDataTracker.GetEmptyBuffer<float3>(); 
+                if (recalculateNormalsAfterMold) proxyNormalOffsetsBuffer = cbClothingProxyDeltasA; else proxyNormalOffsetsBuffer = PersistentJobDataTracker.GetEmptyComputeBuffer(); 
             }
 
-            computeShader.SetBuffer(kernel, "_LiveBodyVertexData", bindings.VertexDataBuffer);
-            computeShader.SetBuffer(kernel, "_Deltas", currentOffsetsBuffer);
-            computeShader.SetBuffer(kernel, "_ClothingProxyNormalDeltasReadOnly", proxyNormalOffsetsBuffer);  
-            computeShader.SetBuffer(kernel, "_SkinBindingsReadOnly", bindings.BoneWeightsBuffer);
-            computeShader.SetBuffer(kernel, "_SkinningMatrices", boundMeshes[0].attachedMeshV2.SkinningMatricesBuffer.BufferThisFrame);
-            computeShader.SetBuffer(kernel, "_OutputVertexData", worldSpaceVertexDataBuffer);
-            computeShader.SetInt("_InstanceID", 0);
-            computeShader.SetInt("_BoneCount", boundMeshes[0].attachedMeshV2.SubData.BoneCount); 
-            computeShader.SetInt("_VertexCount", bindings.OriginalMesh.vertexCount);
+            cmd.SetComputeBufferParam(computeShader, kernel, "_LiveBodyVertexData", bindings.VertexDataBuffer); // <- despite the property name, this is the original clothing vertex data buffer
+            cmd.SetComputeBufferParam(computeShader, kernel, "_Deltas", currentOffsetsBuffer);
+            cmd.SetComputeBufferParam(computeShader, kernel, "_ClothingProxyNormalDeltasReadOnly", proxyNormalOffsetsBuffer);  
+            cmd.SetComputeBufferParam(computeShader, kernel, "_SkinBindingsReadOnly", bindings.BoneWeightsBuffer);
+            cmd.SetComputeBufferParam(computeShader, kernel, "_SkinningMatrices", shapeContributingBoundMeshes[0].attachedMeshV2.SkinningMatricesBuffer.BufferThisFrame);
+            cmd.SetComputeBufferParam(computeShader, kernel, "_OutputVertexData", worldSpaceVertexDataBuffer);
+            cmd.SetComputeIntParam(computeShader, "_InstanceID", 0);
+            cmd.SetComputeIntParam(computeShader, "_BoneCount", shapeContributingBoundMeshes[0].attachedMeshV2.SubData.BoneCount); 
+            cmd.SetComputeIntParam(computeShader, "_VertexCount", mainMesh.vertexCount);
 
-            int dispatchGroups = Mathf.CeilToInt(bindings.OriginalMesh.vertexCount / 256f);
-            computeShader.Dispatch(kernel, dispatchGroups, 1, 1);
+            int dispatchGroups = Mathf.CeilToInt(mainMesh.vertexCount / 256f);
+            cmd.DispatchCompute(computeShader, kernel, dispatchGroups, 1, 1);
+
+            if (isLocalCommandBuffer)
+            {
+                Graphics.ExecuteCommandBuffer(cmd);
+                cmd.Release();
+            }
         }
 
-        protected void PrepareLiveBodyMeshVertexData(BoundMeshData bm)
+        protected void PrepareLiveBodyMeshVertexData(CommandBuffer cmd, BoundMeshData bm)
         {
+            bool isLocalCommandBuffer = cmd == null;
+            if (isLocalCommandBuffer) cmd = CommandBufferPool.Get($"{nameof(BodyMoldSystem)}.{nameof(PrepareLiveBodyMeshVertexData)}");
+
             var kernel = computeShader.FindKernel("PrepareLiveVertexData");
 
-            computeShader.SetBuffer(kernel, "_LiveBodyVertexData", bm.attachedMeshV2.SubData.VertexDataBuffer);
-            computeShader.SetBuffer(kernel, "_Deltas", bm.deltaInstanceBuffer.BufferThisFrame);
-            computeShader.SetBuffer(kernel, "_SkinBindingsReadOnly", bm.attachedMeshV2.SubData.BoneWeightsBuffer);
-            computeShader.SetBuffer(kernel, "_SkinningMatrices", bm.attachedMeshV2.SkinningMatricesBuffer.BufferThisFrame);
-            computeShader.SetBuffer(kernel, "_OutputVertexData", bm.cbWorldSpaceVertexDataBuffer); 
-            computeShader.SetInt("_InstanceID", 0);
-            computeShader.SetInt("_BoneCount", bm.attachedMeshV2.SubData.BoneCount);
-            computeShader.SetInt("_VertexCount", bm.attachedMeshV2.SubData.VertexCount);
+            cmd.SetComputeBufferParam(computeShader, kernel, "_LiveBodyVertexData", bm.attachedMeshV2.SubData.VertexDataBuffer);
+            cmd.SetComputeBufferParam(computeShader, kernel, "_Deltas", bm.deltaInstanceBuffer.BufferThisFrame);
+            cmd.SetComputeBufferParam(computeShader, kernel, "_SkinBindingsReadOnly", bm.attachedMeshV2.SubData.BoneWeightsBuffer);
+            cmd.SetComputeBufferParam(computeShader, kernel, "_SkinningMatrices", bm.attachedMeshV2.SkinningMatricesBuffer.BufferThisFrame);
+            cmd.SetComputeBufferParam(computeShader, kernel, "_OutputVertexData", bm.cbWorldSpaceVertexDataBuffer); 
+            cmd.SetComputeIntParam(computeShader, "_InstanceID", 0);
+            cmd.SetComputeIntParam(computeShader, "_BoneCount", bm.attachedMeshV2.SubData.BoneCount);
+            cmd.SetComputeIntParam(computeShader, "_VertexCount", bm.attachedMeshV2.SubData.VertexCount);
 
             int dispatchGroups = Mathf.CeilToInt(bm.attachedMeshV2.SubData.VertexCount / 256f);
-            computeShader.Dispatch(kernel, dispatchGroups, 1, 1);
+            cmd.DispatchCompute(computeShader, kernel, dispatchGroups, 1, 1);
+
+            if (isLocalCommandBuffer)
+            {
+                Graphics.ExecuteCommandBuffer(cmd);
+                cmd.Release();
+            }
         }
 
-        protected void PushBackBodyVertices(BoundMeshData bm)
+        protected void PushBackBodyVertices(CommandBuffer cmd, BoundMeshData bm)
         {
+            return;
+            bool isLocalCommandBuffer = cmd == null;
+            if (isLocalCommandBuffer) cmd = CommandBufferPool.Get($"{nameof(BodyMoldSystem)}.{nameof(PushBackBodyVertices)}");
+
             var kernel = computeShader.FindKernel("PushBackBodyFromClothing");
 
-            computeShader.SetInt("_InstanceID", 0);
-            computeShader.SetInt("_VertexCount", bm.binding.PushBackVerticesCount);
-            computeShader.SetInt("_BodyVertexCount", bm.attachedMeshV2.SubData.VertexCount);
+            cmd.SetComputeIntParam(computeShader, "_InstanceID", 0);
+            cmd.SetComputeIntParam(computeShader, "_VertexCount", bm.binding.PushBackVerticesCount);
+            cmd.SetComputeIntParam(computeShader, "_BodyVertexCount", bm.attachedMeshV2.SubData.VertexCount);
 
-            computeShader.SetBuffer(kernel, "_TargetTriangles", bindings.TrianglesBuffer);
+            cmd.SetComputeBufferParam(computeShader, kernel, "_TargetTriangles", bindings.TrianglesBuffer);
 
-            computeShader.SetBuffer(kernel, "_LiveBodyVertexData", bm.cbWorldSpaceVertexDataBuffer);
-            computeShader.SetBuffer(kernel, "_LiveClothVertexData", worldSpaceVertexDataBuffer);
+            cmd.SetComputeBufferParam(computeShader, kernel, "_LiveBodyVertexData", bm.cbWorldSpaceVertexDataBuffer);
+            cmd.SetComputeBufferParam(computeShader, kernel, "_LiveClothVertexData", worldSpaceVertexDataBuffer);
 
-            computeShader.SetBuffer(kernel, "_AnchorMap", bm.binding.PushBackVerticesBuffer);
+            cmd.SetComputeBufferParam(computeShader, kernel, "_AnchorMap", bm.cbPushbackVertices);
 
-            computeShader.SetBuffer(kernel, "_PushBackDeltas", bm.cbFinalDeltas); 
+            cmd.SetComputeBufferParam(computeShader, kernel, "_PushBackDeltas", bm.cbFinalDeltas); 
 
             int dispatchGroups = Mathf.CeilToInt(bm.binding.PushBackVerticesCount / 64f);
-            computeShader.Dispatch(kernel, dispatchGroups, 1, 1);
+            cmd.DispatchCompute(computeShader, kernel, dispatchGroups, 1, 1);
+
+            if (isLocalCommandBuffer)
+            {
+                Graphics.ExecuteCommandBuffer(cmd);
+                cmd.Release();
+            }
         }
 
         // Unbind and release buffers associated with a previously bound character mesh
@@ -906,6 +1486,16 @@ namespace Swole.Modding
         {
             if (meshV2 == null) return false;
             if (boundMeshes == null) return false;
+            for(int i = shapeContributingBoundMeshes.Count - 1; i >= 0; --i)
+            {
+                var bm = shapeContributingBoundMeshes[i];
+                if (bm == null) continue;
+                if (bm.attachedMeshV2 == meshV2)
+                {
+                    shapeContributingBoundMeshes.RemoveAt(i);
+                    break;
+                }
+            }
             for (int i = boundMeshes.Count - 1; i >= 0; --i)
             {
                 var bm = boundMeshes[i];
@@ -920,6 +1510,11 @@ namespace Swole.Modding
             return false;
         }
 
+        public void Awake()
+        {
+            Prewarm();
+        }
+
         public void Start()
         {
             if (bindings != null) SetupFromBindings(bindings);
@@ -932,9 +1527,16 @@ namespace Swole.Modding
                 foreach (var bm in boundMeshes)
                 {
                     if (bm == null || bm.attachedMeshV2 == null) continue;
-                    if (bm.meshListener != null) bm.attachedMeshV2.AddListener(API.Unity.ICustomizableCharacter.ListenableEvent.OnAnyDataChanged, bm.meshListener);
-                    if (bm.vertexMaskResetListener != null) bm.attachedMeshV2.ListenForVertexMaskReset(bm.vertexMaskResetListener);
+                    if (bm.meshListener != null && bm.binding != null && !bm.binding.maskOnly) bm.attachedMeshV2.AddListener(API.Unity.ICustomizableCharacter.ListenableEvent.OnAnyDataChanged, bm.meshListener);
+                    if (bm.vertexMaskRebuildListener != null) 
+                    { 
+                        bm.attachedMeshV2.ListenForVertexMaskRebuild(bm.vertexMaskRebuildListener); 
+                        bm.vertexMaskRebuildListener();
+                    }
                 }
+
+                ComputeBufferPoolUploader.ListenPostUpload(UpdateA);
+                ComputeBufferPoolUploader.ListenPostUpload(UpdateB);
             }
         }
 
@@ -944,25 +1546,79 @@ namespace Swole.Modding
             {
                 foreach (var bm in boundMeshes)
                 {
-                    if (bm == null || bm.attachedMeshV2 == null) continue;
-                    if (bm.meshListener != null) bm.attachedMeshV2.RemoveListener(API.Unity.ICustomizableCharacter.ListenableEvent.OnAnyDataChanged, bm.meshListener); 
-                    if (bm.vertexMaskResetListener != null) bm.attachedMeshV2.EndListenForVertexMaskReset(bm.vertexMaskResetListener); 
+                    if (bm == null || bm.attachedMeshV2 == null) continue; 
+                    if (bm.meshListener != null) bm.attachedMeshV2.RemoveListener(API.Unity.ICustomizableCharacter.ListenableEvent.OnAnyDataChanged, bm.meshListener);
+                    if (bm.vertexMaskRebuildListener != null)
+                    {
+                        bm.attachedMeshV2.EndListenForVertexMaskRebuild(bm.vertexMaskRebuildListener); 
+                        bm.attachedMeshV2.RebuildVertexMask();
+                    }
                 }
+            }
+
+            ComputeBufferPoolUploader.EndListenPostUpload(UpdateA);
+            ComputeBufferPoolUploader.EndListenPostUpload(UpdateB); 
+        }
+
+        protected void UpdateA()
+        {
+            if (queuedIterations > 0)
+            {
+                try
+                {
+                    var cmd = CommandBufferPool.Get($"{nameof(BodyMoldSystem)}.{nameof(UpdateA)}");
+
+                    DispatchIterations(cmd, 1, false);
+                    if (recalculateNormalsAfterMold) RecalculateNormals(cmd);
+
+                    Graphics.ExecuteCommandBuffer(cmd);
+                    cmd.Release();
+                }
+                catch (Exception ex)
+                {
+                    Debug.LogException(ex);
+                }
+
+                queuedIterations--;
+            }
+            else if (queuedClothIterations > 0)
+            {
+                try
+                {
+                    var cmd = CommandBufferPool.Get($"{nameof(BodyMoldSystem)}.{nameof(UpdateA)}");
+
+                    DispatchIterations(cmd, 1, true);
+                    if (recalculateNormalsAfterMold) RecalculateNormals(cmd);
+
+                    Graphics.ExecuteCommandBuffer(cmd); 
+                    cmd.Release();
+                }
+                catch (Exception ex)
+                {
+                    Debug.LogException(ex);
+                }
+
+                queuedClothIterations--; 
             }
         }
 
-        protected void LateUpdate()
+        protected void UpdateB()
         {
-            if (boundMeshes != null)
+            if (shapeContributingBoundMeshes != null)
             {
-                foreach (var bm in boundMeshes)
+                foreach (var bm in shapeContributingBoundMeshes)
                 {
-                    if (bm == null || bm.attachedMeshV2 == null) continue;
-                    if (bm.binding.HasPushBackVertices)
+                    if (bm == null || bm.attachedMeshV2 == null || bm.binding == null || bm.binding.maskOnly) continue;
+                    if (bm.cbPushbackVertices != null)
                     {
-                        PrepareLiveClothingVertexData();
-                        PrepareLiveBodyMeshVertexData(bm); 
-                        PushBackBodyVertices(bm);
+                        var cmd = CommandBufferPool.Get($"{nameof(BodyMoldSystem)}.{nameof(UpdateB)}");
+
+                        PrepareLiveClothingVertexData(cmd);
+                        PrepareLiveBodyMeshVertexData(cmd, bm);
+                        PushBackBodyVertices(cmd, bm);
+
+                        Graphics.ExecuteCommandBuffer(cmd);
+                        cmd.Release();
                     }
                 }
             }

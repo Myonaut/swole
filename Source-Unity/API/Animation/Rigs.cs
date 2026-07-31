@@ -741,7 +741,7 @@ namespace Swole.API.Unity.Animation
 
                     var ind = trackingIndices[localIndex];
                     //instance.globalPoseData[ind.x] = value;
-                    instance.globalPoseData[ind.x] = math.mul(value, instance.globalBindPoseData[ind.x]); 
+                    instance.globalPoseData[ind.x] = math.mul(value, instance.globalBindPoseData[ind.x]);
                 }
             } 
 
@@ -1222,7 +1222,7 @@ namespace Swole.API.Unity.Animation
         {
             //UntrackNullTransforms();
             UpdateGlobalPoseData().Complete();
-            PostUpdateGlobalPoseData?.Invoke(); 
+            PostUpdateGlobalPoseData?.Invoke();
         }
 
         public override void OnFixedUpdate() { }

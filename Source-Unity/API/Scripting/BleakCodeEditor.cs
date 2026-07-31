@@ -287,8 +287,12 @@ namespace Swole.API.Unity
                 inputFieldTMP.lineType = TMP_InputField.LineType.MultiLineNewline;
                 if (inputFieldTMP.textComponent != null)
                 {
+#if UNITY_6000_0_OR_NEWER
+                    inputFieldTMP.textComponent.textWrappingMode = TextWrappingModes.NoWrap;
+#else
                     inputFieldTMP.textComponent.enableWordWrapping = false;
-                    inputFieldTMP.textComponent.overflowMode = TextOverflowModes.Overflow;
+#endif
+                    inputFieldTMP.textComponent.overflowMode = TextOverflowModes.Overflow;  
                 }
                 if (inputFieldTMP.verticalScrollbar != null)
                 {

@@ -2831,7 +2831,262 @@ namespace Swole
             }
         }
 
-#endregion
+        public delegate void ParseBindingResultsDelegate(NativeArray<float3> srcVerts, NativeArray<float3> tgtVerts, NativeArray<int> tgtTris, NativeArray<CalculateBindingWeightsJob.BindingOutput> results);
+
+        public static void GenerateBindingData(Mesh sourceMesh, Mesh targetMesh, ParseBindingResultsDelegate callback, float normalPenalty = 0f, Vector3 sourceToTargetEulerRot = default) => GenerateBindingData(sourceMesh.vertices, normalPenalty > 0f ? sourceMesh.normals : null, targetMesh.vertices, normalPenalty > 0f ? targetMesh.normals : null, targetMesh.triangles, callback, normalPenalty, sourceToTargetEulerRot);
+        public static void GenerateBindingData(IEnumerable<Vector3> sourceVertices, IEnumerable<Vector3> targetVertices, IEnumerable<int> targetTriangles, ParseBindingResultsDelegate callback, Vector3 sourceToTargetEulerRot = default) => GenerateBindingData(sourceVertices, null, targetVertices, null, targetTriangles, callback, 0.0f, sourceToTargetEulerRot);
+        public static void GenerateBindingData(IEnumerable<Vector3> sourceVertices, IEnumerable<Vector3> sourceNormals, IEnumerable<Vector3> targetVertices, IEnumerable<Vector3> targetNormals, IEnumerable<int> targetTriangles, ParseBindingResultsDelegate callback, float normalPenalty = 0f, Vector3 sourceToTargetEulerRot = default)
+        {
+            int i;
+
+            Quaternion sourceToTargetRot = Quaternion.Euler(sourceToTargetEulerRot);
+
+            NativeArray<float3> srcVerts = new NativeArray<float3>(sourceVertices.GetCount(), Allocator.TempJob);
+            i = 0;
+            foreach(var v in sourceVertices) srcVerts[i++] = sourceToTargetRot * v;
+
+            NativeArray<float3> tgtVerts = new NativeArray<float3>(targetVertices.GetCount(), Allocator.TempJob);
+            i = 0;
+            foreach(var v in targetVertices) tgtVerts[i++] = v;
+
+            NativeArray<int> tgtTris = new NativeArray<int>(targetTriangles.GetCount(), Allocator.TempJob);
+            i = 0;
+            foreach(var t in targetTriangles) tgtTris[i++] = t;
+
+            NativeArray<float3> srcNormals = default;
+            NativeArray<float3> tgtNormals = default;
+
+            NativeArray<CalculateBindingWeightsJob.BindingOutput> results = new NativeArray<CalculateBindingWeightsJob.BindingOutput>(srcVerts.Length, Allocator.TempJob);
+
+            JobHandle handle;
+            if (normalPenalty > 0f && targetNormals != null)
+            {
+                srcNormals = new NativeArray<float3>(sourceNormals.GetCount(), Allocator.TempJob);
+                i = 0;
+                foreach (var n in sourceNormals) srcNormals[i++] = sourceToTargetRot * n;
+
+                tgtNormals = new NativeArray<float3>(targetNormals.GetCount(), Allocator.TempJob);
+                i = 0;
+                foreach (var n in targetNormals) tgtNormals[i++] = n;
+
+                handle = new CalculateWeightsJobNormalAware
+                {
+                    sourceVertices = srcVerts,
+                    sourceNormals = srcNormals,
+                    targetVertices = tgtVerts,
+                    targetTriangles = tgtTris,
+                    targetNormals = tgtNormals,
+                    results = results,
+                    normalPenalty = normalPenalty
+                }.Schedule(srcVerts.Length, 64);
+            }
+            else
+            {
+                handle = new CalculateBindingWeightsJob
+                {
+                    sourceVertices = srcVerts,
+                    targetVertices = tgtVerts,
+                    targetTriangles = tgtTris,
+                    results = results
+                }.Schedule(srcVerts.Length, 64);
+            }
+            handle.Complete();
+
+            callback?.Invoke(srcVerts, tgtVerts, tgtTris, results);
+
+            srcVerts.Dispose();
+            tgtVerts.Dispose();
+            tgtTris.Dispose();
+            if (srcNormals.IsCreated) srcNormals.Dispose();
+            if (tgtNormals.IsCreated) tgtNormals.Dispose();
+            results.Dispose();
+        }
+
+        public static CalculateBindingWeightsJob.BindingOutput[] GenerateBindingData(Mesh sourceMesh, Mesh targetMesh, float normalPenalty = 0.0f, Vector3 sourceToTargetEulerRot = default) => GenerateBindingData(sourceMesh.vertices, normalPenalty > 0f ? sourceMesh.normals : null, targetMesh.vertices, normalPenalty > 0f ? targetMesh.normals : null, targetMesh.triangles, normalPenalty, sourceToTargetEulerRot);
+        public static CalculateBindingWeightsJob.BindingOutput[] GenerateBindingData(IEnumerable<Vector3> sourceVertices, IEnumerable<Vector3> targetVertices, IEnumerable<int> targetTriangles, Vector3 sourceToTargetEulerRot = default) => GenerateBindingData(sourceVertices, null, targetVertices, null, targetTriangles, 0.0f, sourceToTargetEulerRot);
+        public static CalculateBindingWeightsJob.BindingOutput[] GenerateBindingData(IEnumerable<Vector3> sourceVertices, IEnumerable<Vector3> sourceNormals, IEnumerable<Vector3> targetVertices, IEnumerable<Vector3> targetNormals, IEnumerable<int> targetTriangles, float normalPenalty = 0f, Vector3 sourceToTargetEulerRot = default)
+        {
+            CalculateBindingWeightsJob.BindingOutput[] results_ = null;
+            void callback(NativeArray<float3> srcVerts, NativeArray<float3> tgtVerts, NativeArray<int> tgtTris, NativeArray<CalculateBindingWeightsJob.BindingOutput> results)
+            {
+                results_ = results.ToArray();
+            }
+
+            GenerateBindingData(sourceVertices, sourceNormals, targetVertices, targetNormals, targetTriangles, callback, normalPenalty, sourceToTargetEulerRot);
+
+            return results_;
+        }
+
+        public static MeshBindingData GenerateBindingDataAsset(Mesh sourceMesh, Mesh targetMesh, float normalPenalty = 0.0f, Vector3 sourceToTargetEulerRot = default)
+        {
+            var asset = GenerateBindingDataAsset(sourceMesh.vertices, normalPenalty > 0f ? sourceMesh.normals : null, targetMesh.vertices, normalPenalty > 0f ? targetMesh.normals : null, targetMesh.triangles, normalPenalty, sourceToTargetEulerRot);
+            asset.SetOriginalMesh(sourceMesh);
+
+            return asset;
+        }
+        public static MeshBindingData GenerateBindingDataAsset(IEnumerable<Vector3> sourceVertices, IEnumerable<Vector3> targetVertices, IEnumerable<int> targetTriangles, Vector3 sourceToTargetEulerRot = default) => GenerateBindingDataAsset(sourceVertices, null, targetVertices, null, targetTriangles, 0.0f, sourceToTargetEulerRot);
+        public static MeshBindingData GenerateBindingDataAsset(IEnumerable<Vector3> sourceVertices, IEnumerable<Vector3> sourceNormals, IEnumerable<Vector3> targetVertices, IEnumerable<Vector3> targetNormals, IEnumerable<int> targetTriangles, float normalPenalty = 0f, Vector3 sourceToTargetEulerRot = default)
+        {
+            MeshBindingData asset = ScriptableObject.CreateInstance<MeshBindingData>();
+            asset.eulerOffset = sourceToTargetEulerRot;
+            void callback(NativeArray<float3> srcVerts, NativeArray<float3> tgtVerts, NativeArray<int> tgtTris, NativeArray<CalculateBindingWeightsJob.BindingOutput> results)
+            {
+                asset.bindings = new MeshBindingData.VertexBinding[results.Length];
+
+                for (int i = 0; i < results.Length; i++)
+                {
+                    CalculateBindingWeightsJob.BindingOutput data = results[i];
+
+                    // Calculate a local offset from the closest point (useful if clothing sits off the skin)
+                    int i0 = tgtTris[data.vertexIndices.x * 3 + 0]; // fallback check if needed
+                    float3 closestPoint = tgtVerts[data.vertexIndices.x] * data.weights.x +
+                                          tgtVerts[data.vertexIndices.y] * data.weights.y +
+                                          tgtVerts[data.vertexIndices.z] * data.weights.z;
+
+                    float3 offset = srcVerts[i] - closestPoint;
+
+                    asset.bindings[i] = new MeshBindingData.VertexBinding
+                    {
+                        triangleIndex = data.triangleIndex,
+                        vertexIndices = new Vector3(data.vertexIndices.x, data.vertexIndices.y, data.vertexIndices.z),
+                        weights = new Vector3(data.weights.x, data.weights.y, data.weights.z),
+                        localOffset = new Vector3(offset.x, offset.y, offset.z)
+                    };
+                }
+
+            }
+
+            GenerateBindingData(sourceVertices, sourceNormals, targetVertices, targetNormals, targetTriangles, callback, normalPenalty, sourceToTargetEulerRot);  
+
+            return asset;
+        }
+
+        [BurstCompile(FloatMode = FloatMode.Fast, FloatPrecision = FloatPrecision.Standard, CompileSynchronously = true)]
+        public struct CalculateBindingWeightsJob : IJobParallelFor
+        {
+            [Serializable]
+            public struct BindingOutput
+            {
+                public int triangleIndex;
+                public int3 vertexIndices;
+                public float3 weights;
+            }
+
+            [ReadOnly] public NativeArray<float3> sourceVertices;
+            [ReadOnly] public NativeArray<float3> targetVertices;
+            [ReadOnly] public NativeArray<int> targetTriangles;
+
+            [WriteOnly] public NativeArray<BindingOutput> results;
+
+            public void Execute(int index)
+            {
+                float3 sourcePos = sourceVertices[index];
+                float minDistanceSq = float.MaxValue;
+                BindingOutput bestBinding = new BindingOutput();
+
+                int triangleCount = targetTriangles.Length / 3;
+
+                for (int t = 0; t < triangleCount; t++)
+                {
+                    int i0 = targetTriangles[t * 3 + 0];
+                    int i1 = targetTriangles[t * 3 + 1];
+                    int i2 = targetTriangles[t * 3 + 2];
+
+                    float3 v0 = targetVertices[i0];
+                    float3 v1 = targetVertices[i1];
+                    float3 v2 = targetVertices[i2];
+
+                    float3 closestPoint = Maths.ClosestPointOnTriangle(sourcePos, v0, v1, v2, out float3 barycentric);
+                    float distSq = math.distancesq(sourcePos, closestPoint);
+
+                    if (distSq < minDistanceSq)
+                    {
+                        minDistanceSq = distSq;
+                        bestBinding.triangleIndex = t;
+                        bestBinding.vertexIndices = new int3(i0, i1, i2);
+                        bestBinding.weights = barycentric;
+                    }
+                }
+
+                results[index] = bestBinding;
+            }
+        }
+
+        [BurstCompile(FloatMode = FloatMode.Fast, FloatPrecision = FloatPrecision.Standard, CompileSynchronously = true)]
+        public struct CalculateWeightsJobNormalAware : IJobParallelFor
+        {
+            public float normalPenalty;
+
+            [ReadOnly] public NativeArray<float3> sourceVertices;
+            [ReadOnly] public NativeArray<float3> sourceNormals;     // Added high-res normals
+            [ReadOnly] public NativeArray<float3> targetVertices;
+            [ReadOnly] public NativeArray<float3> targetNormals;      // Added proxy normals
+            [ReadOnly] public NativeArray<int> targetTriangles;
+
+            [WriteOnly] public NativeArray<CalculateBindingWeightsJob.BindingOutput> results;
+
+            public void Execute(int index)
+            {
+                float3 sourcePos = sourceVertices[index];
+                float3 sourceNrm = sourceNormals[index];
+
+                float minScore = float.MaxValue;
+                CalculateBindingWeightsJob.BindingOutput bestBinding = new CalculateBindingWeightsJob.BindingOutput();
+
+                int triangleCount = targetTriangles.Length / 3;
+
+                for (int t = 0; t < triangleCount; t++)
+                {
+                    int i0 = targetTriangles[t * 3 + 0];
+                    int i1 = targetTriangles[t * 3 + 1];
+                    int i2 = targetTriangles[t * 3 + 2];
+
+                    float3 v0 = targetVertices[i0];
+                    float3 v1 = targetVertices[i1];
+                    float3 v2 = targetVertices[i2];
+
+                    // 1. Calculate closest spatial point
+                    float3 closestPoint = Maths.ClosestPointOnTriangle(sourcePos, v0, v1, v2, out float3 barycentric);
+                    float distSq = math.distancesq(sourcePos, closestPoint);
+
+                    // 2. Compute averaged triangle normal
+                    float3 n0 = targetNormals[i0];
+                    float3 n1 = targetNormals[i1];
+                    float3 n2 = targetNormals[i2];
+                    float3 triNormal = math.normalize(n0 * barycentric.x + n1 * barycentric.y + n2 * barycentric.z);
+
+                    // 3. Evaluate alignment (-1 = opposite, 1 = perfectly aligned)
+                    float alignment = math.dot(sourceNrm, triNormal);
+
+                    // 4. Scoring system: Penalize opposite-facing triangles
+                    // If normal alignment is negative, significantly blow up the distance score
+                    float score = distSq;
+                    if (alignment < 0.0f)
+                    {
+                        // Hard penalty: makes conflicting faces highly unfavorable
+                        score += (1000.0f * normalPenalty * math.abs(alignment));
+                    }
+                    else
+                    {
+                        // Soft bonus: slightly prefer triangles with closer alignment
+                        score *= math.lerp(normalPenalty, 1.0f, alignment);
+                    }
+
+                    // 5. Select based on lowest score instead of raw distance
+                    if (score < minScore)
+                    {
+                        minScore = score;
+                        bestBinding.triangleIndex = t;
+                        bestBinding.vertexIndices = new int3(i0, i1, i2);
+                        bestBinding.weights = barycentric;
+                    }
+                }
+
+                results[index] = bestBinding;
+            }
+        }
+
+        #endregion
 
         #region Mesh Editing
 

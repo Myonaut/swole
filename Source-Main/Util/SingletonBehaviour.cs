@@ -15,8 +15,12 @@ namespace Swole
         private static void Create()
         {
             if (!IsCreated) 
-            {
+            { 
+#if UNITY_6000_0_OR_NEWER
+                T existingInstance = FindFirstObjectByType<T>();  
+#else
                 T existingInstance = (T)FindObjectOfType(typeof(T));
+#endif
                 if (existingInstance != null)
                 {
                     SetInstance(existingInstance);
