@@ -1232,43 +1232,49 @@ namespace Swole.Morphing
                             Vector3 localVertex;
 
                             float closestDistance = float.MaxValue;
-                            int closestLocalIndex = 0;//-1;//default to zero
+                            int closestLocalIndex = -1;
                             int closestBaseIndex = 0;
 
-                            for (int d = 0; d < island.vertices.Length; d++)
+                            for (int attempt = 0; attempt < 2; attempt++) // incase all root weights are zero, run a second attempt if closestLocalIndex is still -1
                             {
-                                float distanceWeight = 1f; // TODO: Add possible distance weighting based on position in the mesh island or vertex group or vertex colors
-
-                                int localIndex = island.vertices[d];
-                                localVertex = localVertices[localIndex];
-
-                                meshIslandBindings[localIndex] = c;
-
-                                if (hasRootWeights)
+                                for (int d = 0; d < island.vertices.Length; d++)
                                 {
-                                    float rootWeight = settings.meshIslandRootWeights[localIndex];
-                                    if (rootWeight <= 0.001f) continue;
+                                    float distanceWeight = 1f; // TODO: Add possible distance weighting based on position in the mesh island or vertex group or vertex colors
 
-                                    distanceWeight = distanceWeight + Mathf.Max(0f, (10f * (1f - rootWeight)));
-                                }
-                                for (int e = 0; e < baseDataCount; e++)
-                                {
-                                    var baseData = settings.GetBaseData(e);
-                                    float costWeight = baseData.GetCostWeight(shape);
-                                    foreach (var v in baseData.baseMeshVertices)
+                                    int localIndex = island.vertices[d];
+                                    localVertex = localVertices[localIndex];
+
+                                    meshIslandBindings[localIndex] = c;
+
+                                    if (hasRootWeights && attempt == 0)
                                     {
-                                        float dista = (v - localVertex).sqrMagnitude * distanceWeight * costWeight;
-                                        if (dista < closestDistance)
+                                        float rootWeight = settings.meshIslandRootWeights[localIndex];
+                                        if (rootWeight <= 0.001f) continue;
+
+                                        distanceWeight = distanceWeight + Mathf.Max(0f, (10f * (1f - rootWeight)));
+                                    }
+                                    for (int e = 0; e < baseDataCount; e++)
+                                    {
+                                        var baseData = settings.GetBaseData(e);
+                                        float costWeight = baseData.GetCostWeight(shape);
+                                        foreach (var v in baseData.baseMeshVertices)
                                         {
-                                            closestBaseIndex = e;
-                                            closestLocalIndex = d;
-                                            closestDistance = dista;
+                                            float dista = (v - localVertex).sqrMagnitude * distanceWeight * costWeight;
+                                            if (dista < closestDistance)
+                                            {
+                                                closestBaseIndex = e;
+                                                closestLocalIndex = d;
+                                                closestDistance = dista;
+                                            }
                                         }
                                     }
                                 }
-                            }
 
-                            island.originIndex = closestLocalIndex;
+                                if (closestLocalIndex >= 0) break; // found a valid closest local index, no need to attempt again
+                                //Debug.LogWarning($"No valid closest local index was found for mesh island {c} in shape {shape}. Attempting a second pass without root weight filtering."); 
+                            }  
+
+                            island.originIndex = closestLocalIndex; 
 
                             closestDistance = float.MaxValue;
                             //closestLocalIndex = -1;
@@ -1389,11 +1395,13 @@ namespace Swole.Morphing
                         vertexInfo.closestSecondaryWeight1 = 0;
                         vertexInfo.closestSecondaryWeight2 = 0;
 
+                        bool applyMeshIslandBlend = vertexInfo.meshIslandIndex >= 0;
                         float meshIslandBlend = 1f;
                         if (hasIslandBlendWeights) meshIslandBlend = math.saturate(settings.meshIslandBlendWeights[vIndex]);
                         if (vertexInfo.meshIslandIndex < 0 || meshIslandBlend < 1f)
                         {
                             bool isSecondary = vertexInfo.meshIslandIndex >= 0 && meshIslandBlend > 0f;
+                            applyMeshIslandBlend = isSecondary;
                             float meshIslandInverseBlend = 1f - meshIslandBlend;
 
                             for (int e = 0; e < baseDataCount; e++)
@@ -1426,7 +1434,7 @@ namespace Swole.Morphing
                                                 vertexInfo.closestIndex2 = index2;
                                                 vertexInfo.closestWeight0 = weight0;
                                                 vertexInfo.closestWeight1 = weight1;
-                                                vertexInfo.closestWeight2 = weight2;
+                                                vertexInfo.closestWeight2 = weight2; 
                                             }
                                         }
                                     }
@@ -1441,6 +1449,7 @@ namespace Swole.Morphing
                                             vertexInfo.closestDistance = cost;
                                             if (isSecondary)
                                             {
+                                                vertexInfo.hasSecondaryBinding = true;
                                                 vertexInfo.closestSecondaryBaseIndex = e;
                                                 vertexInfo.closestSecondaryIndex0 = index0;
                                                 vertexInfo.closestSecondaryIndex1 = index1;
@@ -1457,7 +1466,7 @@ namespace Swole.Morphing
                                                 vertexInfo.closestIndex2 = index2;
                                                 vertexInfo.closestWeight0 = weight0;
                                                 vertexInfo.closestWeight1 = weight1;
-                                                vertexInfo.closestWeight2 = weight2;
+                                                vertexInfo.closestWeight2 = weight2; 
                                             }
 
                                         }
@@ -1465,9 +1474,13 @@ namespace Swole.Morphing
                                 }
                             }
 
+                        } 
+                        else
+                        {
+                            meshIslandBlend = 1f;
                         }
                         
-                        if (vertexInfo.meshIslandIndex >= 0 && meshIslandBlend > 0f)
+                        if (applyMeshIslandBlend)
                         {
                             vertexInfo.closestBaseIndex = vertexInfo.meshIslandTri.closestDependency;
                             vertexInfo.closestIndex0 = vertexInfo.meshIslandTri.indexA;
@@ -1476,6 +1489,25 @@ namespace Swole.Morphing
                             vertexInfo.closestWeight0 = vertexInfo.meshIslandTri.weightA * meshIslandBlend;
                             vertexInfo.closestWeight1 = vertexInfo.meshIslandTri.weightB * meshIslandBlend;
                             vertexInfo.closestWeight2 = vertexInfo.meshIslandTri.weightC * meshIslandBlend;
+
+                            float totalWeight = vertexInfo.closestWeight0 + vertexInfo.closestWeight1 + vertexInfo.closestWeight2;
+                            if (vertexInfo.hasSecondaryBinding)
+                            {
+                                totalWeight += vertexInfo.closestSecondaryWeight0 + vertexInfo.closestSecondaryWeight1 + vertexInfo.closestSecondaryWeight2;
+                            }
+
+                            if (totalWeight > 0f)
+                            {
+                                vertexInfo.closestWeight0 /= totalWeight;
+                                vertexInfo.closestWeight1 /= totalWeight;
+                                vertexInfo.closestWeight2 /= totalWeight;
+                                if (vertexInfo.hasSecondaryBinding)
+                                {
+                                    vertexInfo.closestSecondaryWeight0 /= totalWeight;
+                                    vertexInfo.closestSecondaryWeight1 /= totalWeight;
+                                    vertexInfo.closestSecondaryWeight2 /= totalWeight;  
+                                }
+                            }
                         }
 
                         return vertexInfo;

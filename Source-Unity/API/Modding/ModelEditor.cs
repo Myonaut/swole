@@ -38,6 +38,7 @@ namespace Swole
         public bool inEditorMirrorAnims;
 
         public UnityEngine.AnimationClip clipToLoad;
+        public UnityEngine.AnimationClip[] clipsToLoad;
         public GameObject prefabToLoad;
 
         #if UNITY_EDITOR
@@ -47,7 +48,7 @@ namespace Swole
             {
                 loadInEditor = false;
 
-                if (prefabToLoad != null && clipToLoad != null)
+                if (prefabToLoad != null && (clipToLoad != null || (clipsToLoad != null && clipsToLoad.Length > 0)))
                 {
                     var instance = Instantiate(prefabToLoad, Vector3.zero, Quaternion.identity); 
 
@@ -56,14 +57,18 @@ namespace Swole
                     preset.mirrorAnimations = inEditorMirrorAnims;
                     LoadModelAndStartNewSession(preset, instance, (ITransformCurve[] defaultTransformCurves, IPropertyCurve[] defaultPropertyCurves, Transform rootBone, Transform rigContainer, Matrix4x4 rendererL2W, Transform[] bones, Matrix4x4[] bindpose) => 
                     {
-                          
-                        return CustomAnimationConversion.Convert(null, defaultTransformCurves, defaultPropertyCurves, new CustomAnimationConversion.ClipPair[] 
-                        { 
-                            new CustomAnimationConversion.ClipPair()
+
+                        List<CustomAnimationConversion.ClipPair> clipsToLoad_ = new List<CustomAnimationConversion.ClipPair>();
+                        if (clipToLoad != null) clipsToLoad_.Add(new CustomAnimationConversion.ClipPair() { mainClip = clipToLoad });
+                        if (clipsToLoad != null && clipsToLoad.Length > 0)
+                        {
+                            foreach (var clip in clipsToLoad)
                             {
-                                mainClip = clipToLoad
+                                if (clip != null) clipsToLoad_.Add(new CustomAnimationConversion.ClipPair() { mainClip = clip });
                             }
-                        }, 1.0f, rootBone == null ? (rigContainer == null ? preset.rootBoneName : rigContainer.name) : rootBone.name, CustomAnimation.DefaultFrameRate, CustomAnimation.DefaultJobCurveSampleRate, preset.mirrorAnimations, rendererL2W, bones, bindpose);
+                        }
+
+                        return CustomAnimationConversion.Convert(null, defaultTransformCurves, defaultPropertyCurves, clipsToLoad_.ToArray(), 1.0f, rootBone == null ? (rigContainer == null ? preset.rootBoneName : rigContainer.name) : rootBone.name, CustomAnimation.DefaultFrameRate, CustomAnimation.DefaultJobCurveSampleRate, preset.mirrorAnimations, rendererL2W, bones, bindpose);
 
                     }, RegisterSession);
                 }
@@ -260,6 +265,11 @@ namespace Swole
             public quaternion boundParentWorldRotation;
             public quaternion boundParentLocalRotation;
 
+            // Support for unbound target bone offsets (no reference bone required)
+            public bool applyUnboundOffset;
+            public float3 unboundLocalPositionOffset;
+            public quaternion unboundLocalRotationOffset;
+
             public List<WeightedBoneBinding> bindings = new List<WeightedBoneBinding>();
 
             public BoneBindings Duplicate()
@@ -277,6 +287,10 @@ namespace Swole
                 clone.boundParentLocalPosition = boundParentLocalPosition;
                 clone.boundParentWorldRotation = boundParentWorldRotation;
                 clone.boundParentLocalRotation = boundParentLocalRotation;
+
+                clone.applyUnboundOffset = applyUnboundOffset;
+                clone.unboundLocalPositionOffset = unboundLocalPositionOffset;
+                clone.unboundLocalRotationOffset = unboundLocalRotationOffset;
 
                 clone.bindings = new List<WeightedBoneBinding>();
                 foreach (var binding in bindings) clone.bindings.Add(binding.Duplicate());
@@ -604,6 +618,11 @@ namespace Swole
             private ImportedAnimatable remapTarget;
             public ImportedAnimatable RemapTarget => remapTarget;
             private TransformState[] remapDefaultPose;
+            public TransformState GetRemapBoneDefaultPose(int boneIndex)
+            {
+                if (remapDefaultPose == null || boneIndex < 0 || boneIndex >= remapDefaultPose.Length) return default;
+                return remapDefaultPose[boneIndex];
+            }
             public int IndexOfRemapBone(Transform bone)
             {
                 if (remapTarget == null || remapTarget.animator == null || remapTarget.animator.Bones == null) return - 1;
@@ -1272,7 +1291,10 @@ namespace Swole
                         var syncBone_ = syncBone;
                         var binding_ = binding;
 
-                        if (binding.bindings != null && binding.bindings.Count > 0)
+                        bool hasBoundBindings = binding.bindings != null && binding.bindings.Count > 0;
+                        bool hasUnboundOffset = binding.applyUnboundOffset;
+
+                        if (hasBoundBindings || hasUnboundOffset)
                         {
 
                             if (syncBone_.parent != null)
@@ -1286,35 +1308,45 @@ namespace Swole
                             }
 
                             Vector3 offset = Vector3.zero;
-                            Quaternion rotOffset = Quaternion.identity; 
+                            Quaternion rotOffset = Quaternion.identity;
 
-                            foreach (var bindingToReference in binding.bindings)
+                            if (hasBoundBindings)
                             {
-                                foreach (var referenceBone in referenceBones)
+                                foreach (var bindingToReference in binding.bindings)
                                 {
-                                    if (referenceBone.name == bindingToReference.bone)
+                                    foreach (var referenceBone in referenceBones)
                                     {
-                                        Vector3 offset_ = ((Quaternion)bindingToReference.boundParentWorldRotation * (referenceBone.localPosition - (Vector3)bindingToReference.boundLocalPosition));
-                                        offset_ = Quaternion.Inverse(binding.boundParentWorldRotation) * offset_; 
+                                        if (referenceBone.name == bindingToReference.bone)
+                                        {
+                                            Vector3 offset_ = ((Quaternion)bindingToReference.boundParentWorldRotation * (referenceBone.localPosition - (Vector3)bindingToReference.boundLocalPosition));
+                                            offset_ = Quaternion.Inverse(binding.boundParentWorldRotation) * offset_; 
 
-                                        offset = offset + offset_ * bindingToReference.weight;
+                                            offset = offset + offset_ * bindingToReference.weight;
 
-                                        Quaternion rotOffset_ = (((bindingToReference.boundParentWorldRotation * referenceBone.localRotation))) * Quaternion.Inverse(bindingToReference.boundWorldRotation);
-                                        rotOffset_ = Quaternion.Inverse(binding.boundParentWorldRotation) * (rotOffset_ * binding.boundWorldRotation);
-                                        rotOffset_ = Quaternion.Slerp(Quaternion.identity, rotOffset_ * Quaternion.Inverse(binding.boundLocalRotation), bindingToReference.weight);
+                                            Quaternion rotOffset_ = (((bindingToReference.boundParentWorldRotation * referenceBone.localRotation))) * Quaternion.Inverse(bindingToReference.boundWorldRotation);
+                                            rotOffset_ = Quaternion.Inverse(binding.boundParentWorldRotation) * (rotOffset_ * binding.boundWorldRotation);
+                                            rotOffset_ = Quaternion.Slerp(Quaternion.identity, rotOffset_ * Quaternion.Inverse(binding.boundLocalRotation), bindingToReference.weight);
 
-                                        rotOffset = rotOffset_ * rotOffset;
-                                         
-                                        break;
+                                            rotOffset = rotOffset_ * rotOffset;
+
+                                            break;
+                                        }
                                     }
                                 }
+                            }
+                            else if (hasUnboundOffset)
+                            {
+                                // Apply unbound offset directly (no reference bone required)
+                                offset = binding.unboundLocalPositionOffset;
+                                rotOffset = binding.unboundLocalRotationOffset;
                             }
 
                             int boneIndex = session.IndexOfRemapBone(syncBone);
                             void SyncTransform(bool revertToDefaultPosition, bool revertToDefaultRotation) 
                             {
-                                var localPos = (revertToDefaultPosition && boneIndex >= 0 ? session.remapDefaultPose[boneIndex].position : (Vector3)binding_.boundLocalPosition) + offset;
-                                var localRot = rotOffset * (revertToDefaultRotation && boneIndex >= 0 ? session.remapDefaultPose[boneIndex].rotation : (Quaternion)binding_.boundLocalRotation);
+                                var defaultPose = session.GetRemapBoneDefaultPose(boneIndex);
+                                var localPos = (revertToDefaultPosition && boneIndex >= 0 ? defaultPose.position : (Vector3)binding_.boundLocalPosition) + offset;
+                                var localRot = rotOffset * (revertToDefaultRotation && boneIndex >= 0 ? defaultPose.rotation : (Quaternion)binding_.boundLocalRotation);
 
                                 syncBone_.SetLocalPositionAndRotation(localPos, localRot);
                             }
@@ -1799,7 +1831,7 @@ namespace Swole
                             session.animationImports.Add(new AnimationImport(anim.Animation, $"imported/{anim.Name}"));
                         }                       
                     }
-                }
+                } 
 
                 callback?.Invoke(session);
             }
@@ -2262,6 +2294,13 @@ namespace Swole
 
                                             bindings.boundParentLocalPosition = remapParentPosLocal;
                                             bindings.boundParentLocalRotation = remapParentRotLocal;
+
+                                            // Reset unbound offsets to zero when resetting to bind pose
+                                            if (bindings.applyUnboundOffset)
+                                            {
+                                                bindings.unboundLocalPositionOffset = Vector3.zero;
+                                                bindings.unboundLocalRotationOffset = Quaternion.identity;
+                                            }
                                         }
                                     }
                                 }
@@ -3244,12 +3283,12 @@ namespace Swole
                         List<CustomAnimation> bakedAnims = new List<CustomAnimation>();
                         void BakeNext()
                         {
-                            if (toBake.Count <= 0) return;
+                            if (toBake.Count <= 0) return; 
 
                             var next = toBake[0];
                             toBake.RemoveAt(0);
 
-                            var bake = BeginAnimationBake(activeSession.animationImports[next].asset, animName + (activeSession.selectedAnimations.Count > 1 ? $"_{(activeSession.selectedAnimations.Count - toBake.Count)}" : string.Empty), bakeSettings.bakeType, openInNewTabObj && toBake.Count <= 0, (AnimationBake bakeObj) =>
+                            var bake = BeginAnimationBake(activeSession.animationImports[next].asset, animName + (activeSession.selectedAnimations.Count > 1 ? $"_{(activeSession.selectedAnimations.Count - toBake.Count)}" : string.Empty), bakeSettings.bakeType, openInNewTab && toBake.Count <= 0, (AnimationBake bakeObj) =>
                             {
                                 if (bakeObj != null && bakeObj.OutputAnimation != null)
                                 {
@@ -3324,6 +3363,9 @@ namespace Swole
 
             IEnumerator Bake()
             {
+                bool prevRunInBackground = Application.runInBackground;
+                Application.runInBackground = true;
+
                 activeSession.RemapTarget.animator.ResetToPreInitializedBindPose(); 
                 activeSession.RemapTarget.animator.enabled = false;
                 activeSession.animator.enabled = false; 
@@ -3371,6 +3413,8 @@ namespace Swole
 
                 activeSession.animator.enabled = true;
 
+                yield return null;
+
                 while (!cancel && !ProgressAnimationBake())
                 {                 
                     yield return null;
@@ -3388,8 +3432,13 @@ namespace Swole
                     OnComplete?.Invoke(animationBake);  
                 }
 
+                // Clear the animation bake reference to prevent any lingering state from affecting subsequent operations
+                animationBake = null;
+
                 activeSession.RemapTarget.animator.enabled = true;
+                activeSession.RemapTarget.animator.applyRootMotion = false;
                 activeSession.animator.enabled = true;
+                activeSession.animator.applyRootMotion = false;
 
                 if (openInNewSession && !cancel)
                 {
@@ -3414,8 +3463,10 @@ namespace Swole
                     
                     RegisterSession(session);
                 }
-            }
 
+                Application.runInBackground = prevRunInBackground;
+            }
+             
             StartCoroutine(Bake());
 
             return animationBake;
@@ -3728,10 +3779,11 @@ namespace Swole
                     {
                         activeSession.InstantiateRemapPreset();
 
+                        _tempTransforms.Clear();
+                        _tempTransforms.AddRange(affectedTransforms);
+
                         if (activeSession.mirrorPoseEditing)
                         {
-                            _tempTransforms.Clear();
-                            _tempTransforms.AddRange(affectedTransforms);
                             AnimationEditor.GetMirrorTransforms(obj.animator == null ? (obj.instance == null ? null : obj.instance.transform) : obj.animator.RootBoneUnity, affectedTransforms, _tempTransforms, true);
                         }
 
@@ -3814,6 +3866,16 @@ namespace Swole
                         foreach (var remapBone in _tempTransforms)
                         {
                             var bindings = activeSession.GetRemapBindingsForBone(remapBone.name);
+
+                            // Create a new binding entry if it doesn't exist
+                            if (bindings == null)
+                            {
+                                activeSession.InstantiateRemapPreset();
+                                bindings = new BoneBindings();
+                                bindings.targetBone = remapBone.name;
+                                activeSession.RemapData.remapBindings.Add(bindings);
+                            }
+
                             if (bindings != null)
                             {
                                 activeSession.InstantiateRemapPreset();
@@ -3830,17 +3892,47 @@ namespace Swole
                                 remapBone.GetPositionAndRotation(out var remapPos, out var remapRot);
                                 remapBone.GetLocalPositionAndRotation(out var remapPosLocal, out var remapRotLocal);
 
-                                bindings.boundWorldPosition = remapPos;
-                                bindings.boundWorldRotation = remapRot;
+                                // Auto-enable and update unbound offset if no reference bone bindings exist
+                                if (bindings.bindings == null || bindings.bindings.Count == 0)
+                                {
+                                    bindings.applyUnboundOffset = true;
+                                    // Calculate the offset from the default pose
+                                    int boneIndex = activeSession.IndexOfRemapBone(remapBone);
+                                    if (boneIndex >= 0)
+                                    {
+                                        var defaultPose = activeSession.GetRemapBoneDefaultPose(boneIndex);
 
-                                bindings.boundLocalPosition = remapPosLocal;
-                                bindings.boundLocalRotation = remapRotLocal;
+                                        // For unbound offsets, boundLocal should stay at default pose
+                                        // The offset is the delta from default to current user position
+                                        bindings.boundLocalPosition = defaultPose.position;
+                                        bindings.boundLocalRotation = defaultPose.rotation;
+                                        bindings.unboundLocalPositionOffset = remapPosLocal - (Vector3)defaultPose.position;
+                                        bindings.unboundLocalRotationOffset = remapRotLocal * Quaternion.Inverse(defaultPose.rotation);
 
-                                bindings.boundParentWorldPosition = remapParentPos;
-                                bindings.boundParentWorldRotation = remapParentRot;
+                                        // Parent should also be at default for consistency
+                                        bindings.boundWorldPosition = remapPos;
+                                        bindings.boundWorldRotation = remapRot;
+                                        bindings.boundParentWorldPosition = remapParentPos;
+                                        bindings.boundParentWorldRotation = remapParentRot;
+                                        bindings.boundParentLocalPosition = remapParentPosLocal;
+                                        bindings.boundParentLocalRotation = remapParentRotLocal;
+                                    }
+                                }
+                                else
+                                {
+                                    // For bound bindings, capture the current state normally
+                                    bindings.boundWorldPosition = remapPos;
+                                    bindings.boundWorldRotation = remapRot;
 
-                                bindings.boundParentLocalPosition = remapParentPosLocal;
-                                bindings.boundParentLocalRotation = remapParentRotLocal;
+                                    bindings.boundLocalPosition = remapPosLocal;
+                                    bindings.boundLocalRotation = remapRotLocal;
+
+                                    bindings.boundParentWorldPosition = remapParentPos;
+                                    bindings.boundParentWorldRotation = remapParentRot;
+
+                                    bindings.boundParentLocalPosition = remapParentPosLocal;
+                                    bindings.boundParentLocalRotation = remapParentRotLocal;
+                                }
 
                                 if (bindings.bindings != null)
                                 {
@@ -4138,6 +4230,7 @@ namespace Swole
             {
                 if (timeline != null)
                 {
+                    bool foundEntry = false;
                     float closestTime = -1;
                     Quaternion closestRot = Quaternion.identity;
 
@@ -4145,13 +4238,14 @@ namespace Swole
                     {
                         if (entry.Key < time && entry.Key > closestTime)
                         {
+                            foundEntry = true;
                             closestTime = entry.Key;
                             closestRot = entry.Value;
                         }
                     }
 
                     prevRotation = closestRot;
-                    return true;
+                    return foundEntry;
                 }
             }
 
@@ -4170,9 +4264,12 @@ namespace Swole
         private Quaternion CalculateAndStoreBoneRotation(Transform bone, float time)
         {
             var localRot = bone.localRotation;
-            if (TryGetPreviousBoneRotation(bone.name, time, out var prevLocalRot))
+            if (time > 0f)
             {
-                localRot = Maths.EnsureQuaternionContinuity(prevLocalRot, localRot); 
+                if (TryGetPreviousBoneRotation(bone.name, time, out var prevLocalRot))
+                {
+                    localRot = Maths.EnsureQuaternionContinuity(prevLocalRot, localRot);
+                }
             }
 
             StoreBoneRotation(bone.name, time, localRot);
@@ -4229,6 +4326,9 @@ namespace Swole
             this.syncPose = syncPose;
         }
 
+        private int startDelayFrames;
+        private int delayThenSyncFrames;
+
         private static readonly List<CustomAnimation> tempAnims = new List<CustomAnimation>();
         public void Initialize(string animationName, AnimationBakeType bakeType, List<TransformAnimationBakePair> boneBindings, CustomAnimation animationTarget = null, string rootMotionBoneName = null, IEnumerable<string> rootMotionPositionReferenceBones = null, IEnumerable<string> rootMotionRotationReferenceBones = null)
         {
@@ -4246,6 +4346,8 @@ namespace Swole
             }
 
             if (!isComplete) Complete();
+
+            startDelayFrames = 2;
 
             this.isComplete = false;
 
@@ -5353,9 +5455,35 @@ namespace Swole
         {
             if (IsComplete) return true;
 
+            if (startDelayFrames > 0)
+            {
+                startDelayFrames--;
+                return false;
+            }
+
+            if (delayThenSyncFrames > 0) // This was added to try and fix a first frame rotation bug that ended up being related to CalculateAndStoreBoneRotation and fetching a non-existent "previous rotation". We'll leave this here anyway.
+            {
+                delayThenSyncFrames--;
+                if (delayThenSyncFrames <= 0)
+                {
+                    if (animatorTarget != null && !ReferenceEquals(animatorTarget, animatorReference)) animatorTarget.ResetToBindPose();
+
+                    syncPose?.Invoke();
+
+                    if (bakeFkToIk) animatorTarget.SyncIKFK(false, false, false);
+
+                    waiting = true;
+                    lastFrame = Time.frameCount;
+                } 
+                else
+                {
+                    return false;
+                }
+            }
+
             if (insertionLine.Count > 0 && !waiting)
             {
-                lastFrame = Time.frameCount;
+                lastFrame = Time.frameCount; 
 
                 float nextTime = insertionLine[0].time;
 
@@ -5377,239 +5505,259 @@ namespace Swole
                 }
 
                 if (animatorTarget != null && !ReferenceEquals(animatorTarget, animatorReference)) animatorTarget.ResetToBindPose();
+
+                // Wait extra frames on the very first sample to ensure the reference animator has evaluated
+                // This was added to try and fix a first frame rotation bug that ended up being related to CalculateAndStoreBoneRotation and fetching a non-existent "previous rotation". We'll leave this here anyway.
+                if (insertionLine.Count == insertionCount)
+                {
+                    delayThenSyncFrames = 1 + insertionFrameDelay; 
+                    waiting = true;
+                    return false; 
+                }
+
                 syncPose?.Invoke();
 
                 if (bakeFkToIk) animatorTarget.SyncIKFK(false, false, false); 
 
                 waiting = true;
             }
-            
+
             if ((waiting && Time.frameCount - lastFrame >= insertionFrameDelay) || insertionFrameDelay <= 0)
             {
-                waiting = false;
+                waiting = false; 
 
-                float bakeTime = insertionLine[0].time;
-                toInsert.Clear();
-                for (int a = 0; a < insertionLine.Count; a++)
+                if (insertionLine.Count > 0)
                 {
-                    var insertion = insertionLine[a];
-                    if (insertion.time == bakeTime)
+                    float bakeTime = insertionLine[0].time;
+                    toInsert.Clear();
+                    for (int a = 0; a < insertionLine.Count; a++)
                     {
-                        toInsert.Add(insertion);
-                        completionLine.Add(insertion);
-                    }
-                }
-                insertionLine.RemoveAll(i => i.time == bakeTime);
-
-                if (bakeRootMotion)
-                {
-                    if (!rootMotionInitialized)
-                    {
-                        rootMotionInitialized = true; 
-
-                        CalculateRootMotionPositionAndRotation(out var rootPos_, out var rootRot_);
-                        startRootPosition = previousRootPosition = rootPos_;
-                        startRootRotation = previousRootRotation = rootRot_;
-                    }
-
-                    CalculateRootMotionPositionAndRotation(out var rootPos, out var rootRot);
-
-                    if (rootMotionPositionReferenceBones.Count > 0)
-                    {
-                        Vector3 rootTranslation = rootPos - startRootPosition;
-
-                        //Debug.DrawLine(startRootPosition, rootPos, Color.Lerp(Color.red, Color.green, 1 - (insertionLine.Count / (float)insertionCount)), 120); 
-
-                        float3 verticalAxis = math.abs((float3)animatorTarget.transform.TransformDirection(animatorTarget.yawAxis));
-                        float3 forwardAxis = math.abs((float3)animatorTarget.transform.TransformDirection(animatorTarget.forwardAxis));
-                        float3 sidewaysAxis = math.abs(math.cross(forwardAxis, verticalAxis));
-                        switch (rootMotionPositionMode)
+                        var insertion = insertionLine[a];
+                        if (insertion.time == bakeTime)
                         {
-                            case ModelEditor.RootMotionPositionMode.Planar: 
-                                //rootTranslation.y = 0; 
-                                rootTranslation = Vector3.ProjectOnPlane(rootTranslation, verticalAxis); 
-                                break;
-                            case ModelEditor.RootMotionPositionMode.Vertical:
-                                rootTranslation = verticalAxis * Vector3.Dot(rootTranslation, verticalAxis);
-                                break;
-                            case ModelEditor.RootMotionPositionMode.LeftRight:
-                                rootTranslation = sidewaysAxis * Vector3.Dot(rootTranslation, sidewaysAxis);
-                                break;
-                            case ModelEditor.RootMotionPositionMode.ForwardBack:
-                                rootTranslation = forwardAxis * Vector3.Dot(rootTranslation, forwardAxis);
-                                break;
-                            case ModelEditor.RootMotionPositionMode.LeftRightVertical:
-                                rootTranslation = (sidewaysAxis * Vector3.Dot(rootTranslation, sidewaysAxis)) + (verticalAxis * Vector3.Dot(rootTranslation, verticalAxis));  
-                                break;
-                            case ModelEditor.RootMotionPositionMode.ForwardBackVertical:
-                                rootTranslation = (forwardAxis * Vector3.Dot(rootTranslation, forwardAxis)) + (verticalAxis * Vector3.Dot(rootTranslation, verticalAxis));
-                                break;
+                            toInsert.Add(insertion);
+                            completionLine.Add(insertion);
+                        }
+                    }
+                    insertionLine.RemoveAll(i => i.time == bakeTime);
+
+                    if (bakeRootMotion)
+                    {
+                        if (!rootMotionInitialized)
+                        {
+                            rootMotionInitialized = true;
+
+                            CalculateRootMotionPositionAndRotation(out var rootPos_, out var rootRot_);
+                            startRootPosition = previousRootPosition = rootPos_;
+                            startRootRotation = previousRootRotation = rootRot_;
                         }
 
-                        rootMotionBone.position = rootTranslation + (rootMotionBone.parent.rotation * baseRootLocalPosition);
-                        for (int a = 0; a < rootMotionBone.childCount; a++)
+                        CalculateRootMotionPositionAndRotation(out var rootPos, out var rootRot);
+
+                        if (rootMotionPositionReferenceBones.Count > 0)
                         {
-                            var child = rootMotionBone.GetChild(a);
-                            child.position = child.position - rootTranslation; 
-                        }
-                    } 
+                            Vector3 rootTranslation = rootPos - startRootPosition;
 
-                    if (rootMotionRotationReferenceBones.Count > 0)
-                    {
-                        Quaternion rootRotation = rootRot * Quaternion.Inverse(startRootRotation);
-                        float yaw = Vector3.SignedAngle(animatorTarget.forwardAxis, rootRotation * animatorTarget.forwardAxis, animatorTarget.yawAxis);
+                            //Debug.DrawLine(startRootPosition, rootPos, Color.Lerp(Color.red, Color.green, 1 - (insertionLine.Count / (float)insertionCount)), 120); 
 
-                        switch (rootMotionPositionMode)
-                        {
-                            case ModelEditor.RootMotionPositionMode.LeftRight:
-                                yaw = 0;
-                                break;
-                            case ModelEditor.RootMotionPositionMode.ForwardBack: 
-                                yaw = 0;
-                                break;
-                        } 
-
-                        Quaternion yawRot = Quaternion.AngleAxis(yaw, animatorTarget.yawAxis);
-                        Quaternion inverseYawRot = Quaternion.Inverse(yawRot);
-
-                        //Debug.DrawRay(startRootPosition, yawRot * animatorTarget.forwardAxis, Color.Lerp(Color.blue, Color.magenta, 1 - (insertionLine.Count / (float)insertionCount)), 120);
-
-                        rootMotionBone.rotation = yawRot * (rootMotionBone.parent.rotation * baseRootLocalRotation);
-                        for (int a = 0; a < rootMotionBone.childCount; a++)
-                        {
-                            var child = rootMotionBone.GetChild(a);
-                            child.rotation = inverseYawRot * child.rotation;
-                        } 
-                    }
-
-                    previousRootPosition = rootPos;
-                    previousRootRotation = rootRot;
-                }
-
-                if (bakeFkToIk) animatorTarget.SyncIKFK(false, false, false); 
-                
-                List<Transform> insertionBones = new List<Transform>();
-                foreach (var insertion in toInsert)
-                {
-                    if (insertion.bone == null) continue;
-
-                    insertionBones.Clear();
-                    insertionBones.Add(insertion.bone);
-
-                    if (boneRelations.TryGetValue(insertion.bone.name, out List<BoneRelation> relations))
-                    {
-                        foreach (var relation in relations)
-                        {
-                            var relationBone = animatorTarget.GetUnityBone(relation.boneName);
-                            if (relationBone == null) continue;
-
-                            if (relation.applyOffsets)
+                            float3 verticalAxis = math.abs((float3)animatorTarget.transform.TransformDirection(animatorTarget.yawAxis));
+                            float3 forwardAxis = math.abs((float3)animatorTarget.transform.TransformDirection(animatorTarget.forwardAxis));
+                            float3 sidewaysAxis = math.abs(math.cross(forwardAxis, verticalAxis));
+                            switch (rootMotionPositionMode)
                             {
-                                relationBone.SetPositionAndRotation(insertion.bone.TransformPoint(relation.offsetPosition), insertion.bone.rotation * relation.offsetRotation);
+                                case ModelEditor.RootMotionPositionMode.Planar:
+                                    //rootTranslation.y = 0; 
+                                    rootTranslation = Vector3.ProjectOnPlane(rootTranslation, verticalAxis);
+                                    break;
+                                case ModelEditor.RootMotionPositionMode.Vertical:
+                                    rootTranslation = verticalAxis * Vector3.Dot(rootTranslation, verticalAxis);
+                                    break;
+                                case ModelEditor.RootMotionPositionMode.LeftRight:
+                                    rootTranslation = sidewaysAxis * Vector3.Dot(rootTranslation, sidewaysAxis);
+                                    break;
+                                case ModelEditor.RootMotionPositionMode.ForwardBack:
+                                    rootTranslation = forwardAxis * Vector3.Dot(rootTranslation, forwardAxis);
+                                    break;
+                                case ModelEditor.RootMotionPositionMode.LeftRightVertical:
+                                    rootTranslation = (sidewaysAxis * Vector3.Dot(rootTranslation, sidewaysAxis)) + (verticalAxis * Vector3.Dot(rootTranslation, verticalAxis));
+                                    break;
+                                case ModelEditor.RootMotionPositionMode.ForwardBackVertical:
+                                    rootTranslation = (forwardAxis * Vector3.Dot(rootTranslation, forwardAxis)) + (verticalAxis * Vector3.Dot(rootTranslation, verticalAxis));
+                                    break;
                             }
 
-                            insertionBones.Add(relationBone); 
+                            rootMotionBone.position = rootTranslation + (rootMotionBone.parent.rotation * baseRootLocalPosition);
+                            for (int a = 0; a < rootMotionBone.childCount; a++)
+                            {
+                                var child = rootMotionBone.GetChild(a);
+                                child.position = child.position - rootTranslation;
+                            }
+                        }
+
+                        if (rootMotionRotationReferenceBones.Count > 0)
+                        {
+                            Quaternion rootRotation = rootRot * Quaternion.Inverse(startRootRotation);
+                            float yaw = Vector3.SignedAngle(animatorTarget.forwardAxis, rootRotation * animatorTarget.forwardAxis, animatorTarget.yawAxis);
+
+                            switch (rootMotionPositionMode)
+                            {
+                                case ModelEditor.RootMotionPositionMode.LeftRight:
+                                    yaw = 0;
+                                    break;
+                                case ModelEditor.RootMotionPositionMode.ForwardBack:
+                                    yaw = 0;
+                                    break;
+                            }
+
+                            Quaternion yawRot = Quaternion.AngleAxis(yaw, animatorTarget.yawAxis);
+                            Quaternion inverseYawRot = Quaternion.Inverse(yawRot);
+
+                            //Debug.DrawRay(startRootPosition, yawRot * animatorTarget.forwardAxis, Color.Lerp(Color.blue, Color.magenta, 1 - (insertionLine.Count / (float)insertionCount)), 120);
+
+                            rootMotionBone.rotation = yawRot * (rootMotionBone.parent.rotation * baseRootLocalRotation);
+                            for (int a = 0; a < rootMotionBone.childCount; a++)
+                            {
+                                var child = rootMotionBone.GetChild(a);
+                                child.rotation = inverseYawRot * child.rotation;
+                            }
+                        }
+
+                        previousRootPosition = rootPos;
+                        previousRootRotation = rootRot;
+                    }
+
+                    if (bakeFkToIk) animatorTarget.SyncIKFK(false, false, false);
+
+                    List<Transform> insertionBones = new List<Transform>();
+                    foreach (var insertion in toInsert)
+                    {
+                        if (insertion.bone == null) continue;
+
+                        insertionBones.Clear();
+                        insertionBones.Add(insertion.bone);
+
+                        if (boneRelations.TryGetValue(insertion.bone.name, out List<BoneRelation> relations))
+                        {
+                            foreach (var relation in relations)
+                            {
+                                var relationBone = animatorTarget.GetUnityBone(relation.boneName);
+                                if (relationBone == null) continue;
+
+                                if (relation.applyOffsets)
+                                {
+                                    relationBone.SetPositionAndRotation(insertion.bone.TransformPoint(relation.offsetPosition), insertion.bone.rotation * relation.offsetRotation);
+                                }
+
+                                insertionBones.Add(relationBone);
+                            }
+                        }
+
+                        void InsertInChannel(TransformDataChannel channel)
+                        {
+                            switch (channel)
+                            {
+                                case TransformDataChannel.LocalPositionX:
+                                    foreach (var bone in insertionBones) AnimationUtils.Pose.InsertElement(new KeyValuePair<string, float>(AnimationUtils.TransformLocalPositionXKey(bone.name), bone.localPosition.x), animatorTarget.avatar, animationSource.rawAnimation, bakeTime, restPoseTarget, null, false, null, false, true, false, false, insertion.useExistingKeyframe, insertion.keyframe, AnimationUtils.InsertAutoSmoothBehaviour.AlwaysLinear);
+                                    break;
+                                case TransformDataChannel.LocalPositionY:
+                                    foreach (var bone in insertionBones) AnimationUtils.Pose.InsertElement(new KeyValuePair<string, float>(AnimationUtils.TransformLocalPositionYKey(bone.name), bone.localPosition.y), animatorTarget.avatar, animationSource.rawAnimation, bakeTime, restPoseTarget, null, false, null, false, true, false, false, insertion.useExistingKeyframe, insertion.keyframe, AnimationUtils.InsertAutoSmoothBehaviour.AlwaysLinear);
+                                    break;
+                                case TransformDataChannel.LocalPositionZ:
+                                    foreach (var bone in insertionBones) AnimationUtils.Pose.InsertElement(new KeyValuePair<string, float>(AnimationUtils.TransformLocalPositionZKey(bone.name), bone.localPosition.z), animatorTarget.avatar, animationSource.rawAnimation, bakeTime, restPoseTarget, null, false, null, false, true, false, false, insertion.useExistingKeyframe, insertion.keyframe, AnimationUtils.InsertAutoSmoothBehaviour.AlwaysLinear);
+                                    break;
+
+                                case TransformDataChannel.LocalRotationX:
+                                    foreach (var bone in insertionBones) AnimationUtils.Pose.InsertElement(new KeyValuePair<string, float>(AnimationUtils.TransformLocalRotationXKey(bone.name), CalculateAndStoreBoneRotation(bone, bakeTime).x), animatorTarget.avatar, animationSource.rawAnimation, bakeTime, restPoseTarget, null, false, null, false, false, true, false, insertion.useExistingKeyframe, insertion.keyframe, AnimationUtils.InsertAutoSmoothBehaviour.Always);
+                                    break;
+                                case TransformDataChannel.LocalRotationY:
+                                    foreach (var bone in insertionBones) AnimationUtils.Pose.InsertElement(new KeyValuePair<string, float>(AnimationUtils.TransformLocalRotationYKey(bone.name), CalculateAndStoreBoneRotation(bone, bakeTime).y), animatorTarget.avatar, animationSource.rawAnimation, bakeTime, restPoseTarget, null, false, null, false, false, true, false, insertion.useExistingKeyframe, insertion.keyframe, AnimationUtils.InsertAutoSmoothBehaviour.Always);
+                                    break;
+                                case TransformDataChannel.LocalRotationZ:
+                                    foreach (var bone in insertionBones) AnimationUtils.Pose.InsertElement(new KeyValuePair<string, float>(AnimationUtils.TransformLocalRotationZKey(bone.name), CalculateAndStoreBoneRotation(bone, bakeTime).z), animatorTarget.avatar, animationSource.rawAnimation, bakeTime, restPoseTarget, null, false, null, false, false, true, false, insertion.useExistingKeyframe, insertion.keyframe, AnimationUtils.InsertAutoSmoothBehaviour.Always);
+                                    break;
+                                case TransformDataChannel.LocalRotationW:
+                                    foreach (var bone in insertionBones) AnimationUtils.Pose.InsertElement(new KeyValuePair<string, float>(AnimationUtils.TransformLocalRotationWKey(bone.name), CalculateAndStoreBoneRotation(bone, bakeTime).w), animatorTarget.avatar, animationSource.rawAnimation, bakeTime, restPoseTarget, null, false, null, false, false, true, false, insertion.useExistingKeyframe, insertion.keyframe, AnimationUtils.InsertAutoSmoothBehaviour.Always);
+                                    break;
+
+                                case TransformDataChannel.LocalScaleX:
+                                    foreach (var bone in insertionBones) AnimationUtils.Pose.InsertElement(new KeyValuePair<string, float>(AnimationUtils.TransformLocalScaleXKey(bone.name), bone.localScale.x), animatorTarget.avatar, animationSource.rawAnimation, bakeTime, restPoseTarget, null, false, null, false, false, false, true, insertion.useExistingKeyframe, insertion.keyframe, AnimationUtils.InsertAutoSmoothBehaviour.AlwaysLinear);
+                                    break;
+                                case TransformDataChannel.LocalScaleY:
+                                    foreach (var bone in insertionBones) AnimationUtils.Pose.InsertElement(new KeyValuePair<string, float>(AnimationUtils.TransformLocalScaleYKey(bone.name), bone.localScale.y), animatorTarget.avatar, animationSource.rawAnimation, bakeTime, restPoseTarget, null, false, null, false, false, false, true, insertion.useExistingKeyframe, insertion.keyframe, AnimationUtils.InsertAutoSmoothBehaviour.AlwaysLinear);
+                                    break;
+                                case TransformDataChannel.LocalScaleZ:
+                                    foreach (var bone in insertionBones) AnimationUtils.Pose.InsertElement(new KeyValuePair<string, float>(AnimationUtils.TransformLocalScaleZKey(bone.name), bone.localScale.z), animatorTarget.avatar, animationSource.rawAnimation, bakeTime, restPoseTarget, null, false, null, false, false, false, true, insertion.useExistingKeyframe, insertion.keyframe, AnimationUtils.InsertAutoSmoothBehaviour.AlwaysLinear);
+                                    break;
+                            }
+                        }
+
+                        InsertInChannel(insertion.channel);
+
+                        insertionBones.Clear();
+                        if (relations != null) // Force position insertions
+                        {
+                            foreach (var relation in relations)
+                            {
+                                if (!relation.forceInsertPosition) continue;
+
+                                var relationBone = animatorTarget.GetUnityBone(relation.boneName);
+                                if (relationBone == null) continue;
+
+                                insertionBones.Add(relationBone);
+                            }
+                            if (insertionBones.Count > 0)
+                            {
+                                InsertInChannel(TransformDataChannel.LocalPositionX);
+                                InsertInChannel(TransformDataChannel.LocalPositionY);
+                                InsertInChannel(TransformDataChannel.LocalPositionZ);
+                            }
+                        }
+                        insertionBones.Clear();
+                        if (relations != null) // Force rotation insertions
+                        {
+                            foreach (var relation in relations)
+                            {
+                                if (!relation.forceInsertRotation) continue;
+
+                                var relationBone = animatorTarget.GetUnityBone(relation.boneName);
+                                if (relationBone == null) continue;
+
+                                insertionBones.Add(relationBone);
+                            }
+                            if (insertionBones.Count > 0)
+                            {
+                                InsertInChannel(TransformDataChannel.LocalRotationX);
+                                InsertInChannel(TransformDataChannel.LocalRotationY);
+                                InsertInChannel(TransformDataChannel.LocalRotationZ);
+                                InsertInChannel(TransformDataChannel.LocalRotationW);
+                            }
+                        }
+                        insertionBones.Clear();
+                        if (relations != null) // Force scale insertions
+                        {
+                            foreach (var relation in relations)
+                            {
+                                if (!relation.forceInsertScale) continue;
+
+                                var relationBone = animatorTarget.GetUnityBone(relation.boneName);
+                                if (relationBone == null) continue;
+
+                                insertionBones.Add(relationBone);
+                            }
+                            if (insertionBones.Count > 0)
+                            {
+                                InsertInChannel(TransformDataChannel.LocalScaleX);
+                                InsertInChannel(TransformDataChannel.LocalScaleY);
+                                InsertInChannel(TransformDataChannel.LocalScaleZ);
+                            }
                         }
                     }
-                    
-                    void InsertInChannel(TransformDataChannel channel)
+
+                    // After processing the last frame, ensure we wait for any pending sync operations to complete
+                    if (insertionLine.Count <= 0 && !waiting)
                     {
-                        switch (channel)
-                        {
-                            case TransformDataChannel.LocalPositionX:
-                                foreach (var bone in insertionBones) AnimationUtils.Pose.InsertElement(new KeyValuePair<string, float>(AnimationUtils.TransformLocalPositionXKey(bone.name), bone.localPosition.x), animatorTarget.avatar, animationSource.rawAnimation, bakeTime, restPoseTarget, null, false, null, false, true, false, false, insertion.useExistingKeyframe, insertion.keyframe, AnimationUtils.InsertAutoSmoothBehaviour.AlwaysLinear);
-                                break;
-                            case TransformDataChannel.LocalPositionY:
-                                foreach (var bone in insertionBones) AnimationUtils.Pose.InsertElement(new KeyValuePair<string, float>(AnimationUtils.TransformLocalPositionYKey(bone.name), bone.localPosition.y), animatorTarget.avatar, animationSource.rawAnimation, bakeTime, restPoseTarget, null, false, null, false, true, false, false, insertion.useExistingKeyframe, insertion.keyframe, AnimationUtils.InsertAutoSmoothBehaviour.AlwaysLinear);
-                                break;
-                            case TransformDataChannel.LocalPositionZ:
-                                foreach (var bone in insertionBones) AnimationUtils.Pose.InsertElement(new KeyValuePair<string, float>(AnimationUtils.TransformLocalPositionZKey(bone.name), bone.localPosition.z), animatorTarget.avatar, animationSource.rawAnimation, bakeTime, restPoseTarget, null, false, null, false, true, false, false, insertion.useExistingKeyframe, insertion.keyframe, AnimationUtils.InsertAutoSmoothBehaviour.AlwaysLinear);
-                                break;
-                                 
-                            case TransformDataChannel.LocalRotationX:
-                                foreach (var bone in insertionBones) AnimationUtils.Pose.InsertElement(new KeyValuePair<string, float>(AnimationUtils.TransformLocalRotationXKey(bone.name), CalculateAndStoreBoneRotation(bone, bakeTime).x), animatorTarget.avatar, animationSource.rawAnimation, bakeTime, restPoseTarget, null, false, null, false, false, true, false, insertion.useExistingKeyframe, insertion.keyframe, AnimationUtils.InsertAutoSmoothBehaviour.Always);
-                                break; 
-                            case TransformDataChannel.LocalRotationY:
-                                foreach (var bone in insertionBones) AnimationUtils.Pose.InsertElement(new KeyValuePair<string, float>(AnimationUtils.TransformLocalRotationYKey(bone.name), CalculateAndStoreBoneRotation(bone, bakeTime).y), animatorTarget.avatar, animationSource.rawAnimation, bakeTime, restPoseTarget, null, false, null, false, false, true, false, insertion.useExistingKeyframe, insertion.keyframe, AnimationUtils.InsertAutoSmoothBehaviour.Always);
-                                break;
-                            case TransformDataChannel.LocalRotationZ:
-                                foreach (var bone in insertionBones) AnimationUtils.Pose.InsertElement(new KeyValuePair<string, float>(AnimationUtils.TransformLocalRotationZKey(bone.name), CalculateAndStoreBoneRotation(bone, bakeTime).z), animatorTarget.avatar, animationSource.rawAnimation, bakeTime, restPoseTarget, null, false, null, false, false, true, false, insertion.useExistingKeyframe, insertion.keyframe, AnimationUtils.InsertAutoSmoothBehaviour.Always);
-                                break;
-                            case TransformDataChannel.LocalRotationW:
-                                foreach (var bone in insertionBones) AnimationUtils.Pose.InsertElement(new KeyValuePair<string, float>(AnimationUtils.TransformLocalRotationWKey(bone.name), CalculateAndStoreBoneRotation(bone, bakeTime).w), animatorTarget.avatar, animationSource.rawAnimation, bakeTime, restPoseTarget, null, false, null, false, false, true, false, insertion.useExistingKeyframe, insertion.keyframe, AnimationUtils.InsertAutoSmoothBehaviour.Always);
-                                break;
-
-                            case TransformDataChannel.LocalScaleX:
-                                foreach (var bone in insertionBones) AnimationUtils.Pose.InsertElement(new KeyValuePair<string, float>(AnimationUtils.TransformLocalScaleXKey(bone.name), bone.localScale.x), animatorTarget.avatar, animationSource.rawAnimation, bakeTime, restPoseTarget, null, false, null, false, false, false, true, insertion.useExistingKeyframe, insertion.keyframe, AnimationUtils.InsertAutoSmoothBehaviour.AlwaysLinear);
-                                break;
-                            case TransformDataChannel.LocalScaleY:
-                                foreach (var bone in insertionBones) AnimationUtils.Pose.InsertElement(new KeyValuePair<string, float>(AnimationUtils.TransformLocalScaleYKey(bone.name), bone.localScale.y), animatorTarget.avatar, animationSource.rawAnimation, bakeTime, restPoseTarget, null, false, null, false, false, false, true, insertion.useExistingKeyframe, insertion.keyframe, AnimationUtils.InsertAutoSmoothBehaviour.AlwaysLinear);
-                                break;
-                            case TransformDataChannel.LocalScaleZ:
-                                foreach (var bone in insertionBones) AnimationUtils.Pose.InsertElement(new KeyValuePair<string, float>(AnimationUtils.TransformLocalScaleZKey(bone.name), bone.localScale.z), animatorTarget.avatar, animationSource.rawAnimation, bakeTime, restPoseTarget, null, false, null, false, false, false, true, insertion.useExistingKeyframe, insertion.keyframe, AnimationUtils.InsertAutoSmoothBehaviour.AlwaysLinear); 
-                                break;
-                        }
-                    }
-                    
-                    InsertInChannel(insertion.channel);
-
-                    insertionBones.Clear();
-                    if (relations != null) // Force position insertions
-                    {
-                        foreach(var relation in relations)
-                        {
-                            if (!relation.forceInsertPosition) continue; 
-
-                            var relationBone = animatorTarget.GetUnityBone(relation.boneName);
-                            if (relationBone == null) continue;
-
-                            insertionBones.Add(relationBone);
-                        }
-                        if (insertionBones.Count > 0)
-                        {
-                            InsertInChannel(TransformDataChannel.LocalPositionX);
-                            InsertInChannel(TransformDataChannel.LocalPositionY);
-                            InsertInChannel(TransformDataChannel.LocalPositionZ);
-                        }
-                    }
-                    insertionBones.Clear();
-                    if (relations != null) // Force rotation insertions
-                    {
-                        foreach (var relation in relations)
-                        {
-                            if (!relation.forceInsertRotation) continue;
-
-                            var relationBone = animatorTarget.GetUnityBone(relation.boneName);
-                            if (relationBone == null) continue;
-
-                            insertionBones.Add(relationBone);
-                        }
-                        if (insertionBones.Count > 0)
-                        {
-                            InsertInChannel(TransformDataChannel.LocalRotationX);
-                            InsertInChannel(TransformDataChannel.LocalRotationY);
-                            InsertInChannel(TransformDataChannel.LocalRotationZ);
-                            InsertInChannel(TransformDataChannel.LocalRotationW);
-                        }
-                    }
-                    insertionBones.Clear();
-                    if (relations != null) // Force scale insertions
-                    {
-                        foreach (var relation in relations)
-                        {
-                            if (!relation.forceInsertScale) continue;
-
-                            var relationBone = animatorTarget.GetUnityBone(relation.boneName);
-                            if (relationBone == null) continue;
-
-                            insertionBones.Add(relationBone); 
-                        }
-                        if (insertionBones.Count > 0)
-                        {
-                            InsertInChannel(TransformDataChannel.LocalScaleX);
-                            InsertInChannel(TransformDataChannel.LocalScaleY);
-                            InsertInChannel(TransformDataChannel.LocalScaleZ);
-                        }
+                        waiting = true;
+                        lastFrame = Time.frameCount;
                     }
                 }
             }
@@ -5646,7 +5794,7 @@ namespace Swole
                             curve[keyIndex] = key;
                         }
                     }
-
+                    
                     foreach (var completion in completionLine)
                     {
                         if (!completion.useExistingKeyframe || (!completion.hasPreceedingKeyframe && !completion.hasProceedingKeyframe) || completion.referenceAmplitude == 0) continue;
@@ -5692,7 +5840,25 @@ namespace Swole
                 }
 
                 if (optimizeKeys) animationSource.rawAnimation.Optimize(false, 0f, optimizationTolerancePosition > 0f, optimizationTolerancePosition, optimizationToleranceRotation > 0f, optimizationToleranceRotation, optimizationToleranceScale > 0f, optimizationToleranceScale, ModelEditor._defaultBonesToIgnoreForOptimization);
-                
+
+                if (animationSource.rawAnimation.TryGetTransformCurve("root", out var rootCurve))
+                {
+                    Debug.Log("Forcing linear tangents on root motion curves");
+
+                    if (rootCurve.localPositionCurveX != null) AnimationUtils.ForceLinear(rootCurve.localPositionCurveX);
+                    if (rootCurve.localPositionCurveY != null) AnimationUtils.ForceLinear(rootCurve.localPositionCurveY);
+                    if (rootCurve.localPositionCurveZ != null) AnimationUtils.ForceLinear(rootCurve.localPositionCurveZ);
+
+                    if (rootCurve.localRotationCurveX != null) AnimationUtils.ForceLinear(rootCurve.localRotationCurveX);
+                    if (rootCurve.localRotationCurveY != null) AnimationUtils.ForceLinear(rootCurve.localRotationCurveY);
+                    if (rootCurve.localRotationCurveZ != null) AnimationUtils.ForceLinear(rootCurve.localRotationCurveZ);
+                    if (rootCurve.localRotationCurveW != null) AnimationUtils.ForceLinear(rootCurve.localRotationCurveW);
+
+                    if (rootCurve.localScaleCurveX != null) AnimationUtils.ForceLinear(rootCurve.localScaleCurveX);
+                    if (rootCurve.localScaleCurveY != null) AnimationUtils.ForceLinear(rootCurve.localScaleCurveY);
+                    if (rootCurve.localScaleCurveZ != null) AnimationUtils.ForceLinear(rootCurve.localScaleCurveZ);
+                }
+
                 animationSource.MarkForRecompilation();
             }
 

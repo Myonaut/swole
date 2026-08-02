@@ -615,7 +615,8 @@ namespace Swole.API.Unity.Animation
 
             rootMotionBoneStartState.ApplyLocal(rootMotionBone); // force bone back to start pose
         }
-        protected void ApplyRootMotion()
+        protected void ApplyRootMotion() => ApplyRootMotion(1f);
+        protected void ApplyRootMotion(float multiplier)
         {
             var rootTranslation = currentRootTranslation;  
             var rootRotation = currentRootRotation;
@@ -634,7 +635,7 @@ namespace Swole.API.Unity.Animation
                 listener?.Invoke(transform, rootTranslation, rootRotation, out rootTranslation, out rootRotation); 
             }
 
-            ApplyRootMotion(rootTranslation, rootRotation);
+            ApplyRootMotion(rootTranslation * multiplier, Quaternion.SlerpUnclamped(Quaternion.identity, rootRotation, multiplier));
 
             //Debug.DrawRay(position, rootTranslation * 100, Color.magenta, 2);
 
@@ -3598,7 +3599,7 @@ namespace Swole.API.Unity.Animation
             fixedDeltaTime += skipTimeFixed;
             skipTimeFixed = 0;
 
-            if (applyRootMotion && rootMotionMode == RootMotionMode.Physics) ApplyRootMotion();
+            if (applyRootMotion && rootMotionMode == RootMotionMode.Physics) ApplyRootMotion(Time.fixedDeltaTime / Time.deltaTime); 
             if (finalizeAnimationsBeforePhysics) FinalizeAnimations();            
         }
         public virtual void UpdateStep(float deltaTime) => UpdateStep(deltaTime, true, false, applyRootMotion);

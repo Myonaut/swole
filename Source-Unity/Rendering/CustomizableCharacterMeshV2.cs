@@ -4932,7 +4932,7 @@ namespace Swole.Morphing
                         {
                             meshShapeFrameDeltasBuffer = new ComputeBuffer(precache_meshShapeFrameDeltas.Length, UnsafeUtility.SizeOf(typeof(MorphShapeVertex)), ComputeBufferType.Structured, ComputeBufferMode.Immutable);
                             meshShapeFrameDeltasBuffer.SetData(precache_meshShapeFrameDeltas);
-                        }
+                        } 
 
                         TrackDisposables();
                     }
@@ -5188,7 +5188,7 @@ namespace Swole.Morphing
 
             public bool PrecacheMeshShapeFrameDeltas()
             {
-                if (precache_meshShapeFrameDeltas != null && precache_meshShapeFrameDeltas.Length > 0) return false;
+                if (precache_meshShapeFrameDeltas != null && (precache_meshShapeFrameDeltas.Length > 0 || (meshShapes == null || meshShapes.Length <= 0))) return false;
 
                 Debug.Log("Pre-caching mesh shape frame deltas..."); 
 
@@ -5217,7 +5217,7 @@ namespace Swole.Morphing
 
             public bool PrecacheVertexColorDeltas()
             {
-                if (precache_vertexColorDeltas != null && precache_vertexColorDeltas.Length > 0) return false;
+                if (precache_vertexColorDeltas != null && (precache_vertexColorDeltas.Length > 0 || (vertexColorDeltas == null || vertexColorDeltas.Length <= 0))) return false;
 
                 Debug.Log("Pre-caching vertex color deltas...");
 
@@ -5237,7 +5237,7 @@ namespace Swole.Morphing
 
                 tempColorDeltas.Clear();
 
-                return false;
+                return true;
             }
 
             public override bool IsPrecached => (precache_meshShapeDeltas != null && precache_meshShapeDeltas.Length != 0)

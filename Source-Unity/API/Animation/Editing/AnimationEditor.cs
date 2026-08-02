@@ -8436,7 +8436,8 @@ namespace Swole.API.Unity.Animation
                         }, true, true, false);
 
                         animatable.SetVisibility(editor, animatable.Visible, animatable.IsLocked, false);
-
+                         
+                        if (animatable.animator != null) animatable.animator.applyRootMotion = false; // ensure root motion is not being evaluated.
                         if (setAsActiveObject) SetActiveObject(editor, animatable.index, true, false);
                         editor.RefreshAnimatableListUI();
                     }
@@ -8778,6 +8779,8 @@ namespace Swole.API.Unity.Animation
 
                 targetObj.animator.enabled = true;
                 targetObj.animator.SetOverrideUpdateCalls(false);
+
+                yield return null;
 
                 while (!cancel && !ProgressAnimationBake())
                 {

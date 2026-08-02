@@ -34,7 +34,7 @@ namespace Swole.Animation
     }
 
     [Serializable]
-    public struct AnimationParameterIdentifier
+    public struct AnimationParameterIdentifier : IEquatable<AnimationParameterIdentifier>
     {
 
         public AnimationParameterValueType type;
@@ -46,6 +46,11 @@ namespace Swole.Animation
             this.index = index;
         }
 
+        public bool Equals(AnimationParameterIdentifier other)
+        {
+            return type == other.type && index == other.index;
+        }
+
     }
 
     [Serializable]
@@ -55,11 +60,15 @@ namespace Swole.Animation
         public MotionControllerType type;
         public int index;
 
+        public MotionControllerIdentifier(MotionControllerType type, int index)
+        {
+            this.type = type;
+            this.index = index;
+        }
+
         public bool Equals(MotionControllerIdentifier other)
         {
-
             return type == other.type && index == other.index;
-
         }
 
     }

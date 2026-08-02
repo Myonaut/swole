@@ -860,6 +860,16 @@ namespace Swole.Morphing
 
                         PreMeshObjectSetup(objectIndex, objectSetup, meshObject, ref mainMesh, lodMeshes);
 
+                        if (objectSetup.useUVsForBaseDataTransfers)
+                        {
+                            if (Mathf.Approximately(objectSetup.uvDistanceWeightForTransfers, 0f) && Mathf.Approximately(objectSetup.normalDotWeightForTransfers, 0f)) objectSetup.uvDistanceWeightForTransfers = 1f;
+                        } 
+                        else
+                        {
+                            if (Mathf.Approximately(objectSetup.positionDistanceWeightForTransfers, 0f) && Mathf.Approximately(objectSetup.normalDotWeightForTransfers, 0f)) objectSetup.positionDistanceWeightForTransfers = 1f;
+                        } 
+                        
+
                         if (objectSetup.mainMeshEdits != null && objectSetup.mainMeshEdits.Length > 0)
                         {
                             string meshName = mainMesh.name;
@@ -867,7 +877,7 @@ namespace Swole.Morphing
                             mainMesh.name = meshName;
                             foreach (var edit in objectSetup.mainMeshEdits)
                             {
-                                mainMesh = edit.Apply(mainMesh, false); 
+                                mainMesh = edit.Apply(mainMesh, false);  
                             }
                         }
 
