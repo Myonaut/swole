@@ -283,6 +283,8 @@ namespace Swole.Cloth
                     aocvSurfaceNormalTexture.Release();
                     aocvSurfaceNormalTexture = null;
                 }
+
+                ReleaseSpatialBuffers();
             }
 
             /*[NonSerialized]
@@ -682,6 +684,7 @@ namespace Swole.Cloth
                     cmd.SetComputeBufferParam(sdfComputeShader, kPopulate, "_BoundsMin", boundsMinBuffer);
                     cmd.SetComputeBufferParam(sdfComputeShader, kPopulate, "_BoundsMax", boundsMaxBuffer);
                     cmd.SetComputeBufferParam(sdfComputeShader, kPopulate, "_MaxDistance", maxDistanceBuffer);
+                    cmd.SetComputeIntParam(sdfComputeShader, "_GridTriangleListSize", listBuffer.count);
                     cmd.DispatchCompute(sdfComputeShader, kPopulate, Mathf.CeilToInt(triCount / 64f), 1, 1);
 
                     // Reset start indices back to baseline before Pass 4 reads them
@@ -727,6 +730,7 @@ namespace Swole.Cloth
 
                     // Set max negative distance to prevent artifacts from open meshes
                     cmd.SetComputeFloatParam(sdfComputeShader, "_MaxNegativeDistance", manager.maxNegativeDistance);
+                    cmd.SetComputeIntParam(sdfComputeShader, "_SliceOffset", 0);
 
                     int groups = Mathf.CeilToInt(textureResolution / 8f);
                     cmd.DispatchCompute(sdfComputeShader, kSDF, groups, groups, groups);
@@ -741,6 +745,199 @@ namespace Swole.Cloth
 
                 //SmoothSDFVolume(5);
             }
+
+            #region Incremental (time-sliced) Fast Spatial bake
+
+            // Persistent work buffers (no per-bake allocation). The grid/SDF passes read the pre-deformed vertices
+            // written by the bounds pass, so the pooled per-frame delta buffers only need to be valid on the first frame.
+            [NonSerialized] private GraphicsBuffer spDeformed, spPartialBounds, spBoundsMin, spBoundsMax, spMaxDistance;
+            [NonSerialized] private GraphicsBuffer spCellCount, spCellStart, spCellOffset, spTriangleList, spCounter;
+            [NonSerialized] private ComputeBuffer spTriangles;
+            [NonSerialized] private int spNextSlice = -1;
+            [NonSerialized] private int spStartFrame = -1;
+
+            public bool IsSpatialBakeInProgress => spNextSlice >= 0;
+            public int SpatialBakeStartFrame => spStartFrame;
+
+            private static GraphicsBuffer EnsureBuffer(ref GraphicsBuffer buffer, int count, int stride)
+            {
+                count = Mathf.Max(1, count);
+                if (buffer != null && buffer.IsValid() && buffer.count >= count && buffer.stride == stride) return buffer;
+                buffer?.Release();
+                buffer = new GraphicsBuffer(GraphicsBuffer.Target.Structured, count, stride);
+                return buffer;
+            }
+
+            private void ReleaseSpatialBuffers()
+            {
+                spDeformed?.Release(); spDeformed = null;
+                spPartialBounds?.Release(); spPartialBounds = null;
+                spBoundsMin?.Release(); spBoundsMin = null;
+                spBoundsMax?.Release(); spBoundsMax = null;
+                spMaxDistance?.Release(); spMaxDistance = null;
+                spCellCount?.Release(); spCellCount = null;
+                spCellStart?.Release(); spCellStart = null;
+                spCellOffset?.Release(); spCellOffset = null;
+                spTriangleList?.Release(); spTriangleList = null;
+                spCounter?.Release(); spCounter = null;
+                spTriangles = null;
+                spNextSlice = -1;
+            }
+
+            /// <summary>
+            /// Frame 0 of a time-sliced Fast Spatial bake: deforms vertices, computes bounds and builds the spatial grid (all cheap).
+            /// The expensive per-voxel SDF pass is then spread across frames by <see cref="StepIncrementalSpatialBakeSDF"/> into a back buffer,
+            /// which is copied to the live texture only once complete. Returns false if unsupported (caller should fall back to a synchronous bake).
+            /// </summary>
+            public bool BeginIncrementalSpatialBakeSDF()
+            {
+                var characterMesh = manager.characterMesh;
+                var sdfComputeShader = manager.SdfShader;
+                var boundsShader = manager.BoundsShader;
+                if (characterMesh == null || sdfComputeShader == null || boundsShader == null) return false;
+
+                var subData = characterMesh.SubData;
+                var vertexBuffer = subData.VerticesBuffer;
+                var triangleBuffer = subData.TrianglesBuffer;
+                if (vertexBuffer == null || triangleBuffer == null) return false;
+                if (!characterMesh.TryGetInstanceBuffer<MeshVertexDelta>(subData.PerVertexDeltaDataPropertyName, out var deltaInstanceBuffer)) return false;
+
+                int textureResolution = manager.textureResolution;
+                InitializeSdfTexture(textureResolution);
+                InitializeTemporarySdfTexture(textureResolution);
+
+                characterMesh.Instance2.OwnerGroup.ActiveJob.Complete();
+
+                int vertexCount = subData.vertexCount;
+                int deltasOffset = characterMesh.Instance2.localID * vertexCount;
+
+                ComputeBuffer shapeDeltasBuffer = null;
+                int shapeDeltasOffset = 0;
+                if (meshShapeIndex >= 0)
+                {
+                    shapeDeltasBuffer = subData.MeshShapeFrameDeltasBuffer;
+                    shapeDeltasOffset = (meshShapeFrame + meshShapeIndex) * vertexCount;
+                }
+
+                const int cellCount = 16 * 16 * 16;
+                int indexCount = triangleBuffer.count;
+                int bufferVertexCount = Mathf.Max(vertexCount, vertexBuffer.count);
+
+                EnsureBuffer(ref spDeformed, bufferVertexCount, sizeof(float) * 3);
+                EnsureBuffer(ref spPartialBounds, (bufferVertexCount + 255) / 256, sizeof(float) * 6);
+                EnsureBuffer(ref spBoundsMin, 1, sizeof(float) * 3);
+                EnsureBuffer(ref spBoundsMax, 1, sizeof(float) * 3);
+                EnsureBuffer(ref spMaxDistance, 1, sizeof(float));
+                EnsureBuffer(ref spCellCount, cellCount, sizeof(uint));
+                EnsureBuffer(ref spCellStart, cellCount, sizeof(uint));
+                EnsureBuffer(ref spCellOffset, cellCount, sizeof(uint));
+                EnsureBuffer(ref spTriangleList, indexCount * 8, sizeof(uint));
+                EnsureBuffer(ref spCounter, 1, sizeof(uint));
+                spTriangles = triangleBuffer;
+
+                CommandBuffer cmd = CommandBufferPool.Get("FastSpatialBakeSDF_Begin");
+
+                // Deform once + bounds (writes spDeformed, which every later pass reads instead of re-sampling deltas)
+                manager.CalculateDeformedBoundsGPU_NoReadback(cmd, spDeformed, spPartialBounds, spBoundsMin, spBoundsMax, spMaxDistance,
+                    boundsShader, vertexBuffer, deltaInstanceBuffer.BufferThisFrame, deltasOffset, shapeDeltasBuffer, shapeDeltasOffset, vertexCount, manager.boundsPaddingScale);
+
+                cmd.SetComputeIntParam(sdfComputeShader, "_VertexCount", vertexCount);
+                cmd.SetComputeIntParam(sdfComputeShader, "_TriangleCount", indexCount);
+                cmd.SetComputeIntParam(sdfComputeShader, "_Resolution", textureResolution);
+                cmd.SetComputeIntParam(sdfComputeShader, "_GridTriangleListSize", spTriangleList.count);
+
+                int kClear = sdfComputeShader.FindKernel("CS_ClearGrid");
+                cmd.SetComputeBufferParam(sdfComputeShader, kClear, "_CellTriangleCount", spCellCount);
+                cmd.SetComputeBufferParam(sdfComputeShader, kClear, "_CellPopulateOffsets", spCellOffset);
+                cmd.SetComputeBufferParam(sdfComputeShader, kClear, "_GlobalCounter", spCounter);
+                cmd.DispatchCompute(sdfComputeShader, kClear, Mathf.CeilToInt(cellCount / 64f), 1, 1);
+
+                int kCount = sdfComputeShader.FindKernel("CS_CountTriangles");
+                cmd.SetComputeBufferParam(sdfComputeShader, kCount, "_CellTriangleCount", spCellCount);
+                cmd.SetComputeBufferParam(sdfComputeShader, kCount, "_Vertices", spDeformed);
+                cmd.SetComputeBufferParam(sdfComputeShader, kCount, "_Triangles", triangleBuffer);
+                cmd.SetComputeBufferParam(sdfComputeShader, kCount, "_BoundsMin", spBoundsMin);
+                cmd.SetComputeBufferParam(sdfComputeShader, kCount, "_BoundsMax", spBoundsMax);
+                cmd.SetComputeBufferParam(sdfComputeShader, kCount, "_MaxDistance", spMaxDistance);
+                cmd.DispatchCompute(sdfComputeShader, kCount, Mathf.CeilToInt(indexCount / 64f), 1, 1);
+
+                int kSum = sdfComputeShader.FindKernel("CS_PrefixSum");
+                cmd.SetComputeBufferParam(sdfComputeShader, kSum, "_CellTriangleCount", spCellCount);
+                cmd.SetComputeBufferParam(sdfComputeShader, kSum, "_CellStartIndices", spCellStart);
+                cmd.DispatchCompute(sdfComputeShader, kSum, 1, 1, 1);
+
+                int kPopulate = sdfComputeShader.FindKernel("CS_PopulateGrid");
+                cmd.SetComputeBufferParam(sdfComputeShader, kPopulate, "_CellStartIndices", spCellStart);
+                cmd.SetComputeBufferParam(sdfComputeShader, kPopulate, "_CellPopulateOffsets", spCellOffset);
+                cmd.SetComputeBufferParam(sdfComputeShader, kPopulate, "_GridTriangleList", spTriangleList);
+                cmd.SetComputeBufferParam(sdfComputeShader, kPopulate, "_Vertices", spDeformed);
+                cmd.SetComputeBufferParam(sdfComputeShader, kPopulate, "_Triangles", triangleBuffer);
+                cmd.SetComputeBufferParam(sdfComputeShader, kPopulate, "_BoundsMin", spBoundsMin);
+                cmd.SetComputeBufferParam(sdfComputeShader, kPopulate, "_BoundsMax", spBoundsMax);
+                cmd.SetComputeBufferParam(sdfComputeShader, kPopulate, "_MaxDistance", spMaxDistance);
+                cmd.DispatchCompute(sdfComputeShader, kPopulate, Mathf.CeilToInt(indexCount / 64f), 1, 1);
+
+                Graphics.ExecuteCommandBuffer(cmd);
+                CommandBufferPool.Release(cmd);
+
+                spNextSlice = 0;
+                spStartFrame = Time.frameCount;
+                return true;
+            }
+
+            /// <summary>
+            /// Builds the next block of Z voxel slices of the SDF into the back buffer. When the volume is complete it is copied to the live texture.
+            /// Returns true when the bake is finished (or was not in progress).
+            /// </summary>
+            public bool StepIncrementalSpatialBakeSDF(int voxelSlicesPerStep)
+            {
+                if (spNextSlice < 0) return true;
+
+                var sdfComputeShader = manager.SdfShader;
+                int textureResolution = manager.textureResolution;
+                if (sdfComputeShader == null || spDeformed == null || spTriangles == null || !spTriangles.IsValid() || sdf3DTextureTemp == null || sdf3DTexture == null 
+                    || sdf3DTextureTemp.width != textureResolution || sdf3DTexture.width != textureResolution)
+                {
+                    spNextSlice = -1;
+                    return true;
+                }
+
+                int zGroups = Mathf.Max(1, Mathf.CeilToInt(Mathf.Max(1, voxelSlicesPerStep) / 8f));
+                int xyGroups = Mathf.CeilToInt(textureResolution / 8f);
+
+                CommandBuffer cmd = CommandBufferPool.Get("FastSpatialBakeSDF_Step");
+
+                int kSDF = sdfComputeShader.FindKernel("CS_BuildHighDetailSDF");
+                cmd.SetComputeBufferParam(sdfComputeShader, kSDF, "_CellTriangleCount", spCellCount);
+                cmd.SetComputeBufferParam(sdfComputeShader, kSDF, "_CellStartIndices", spCellStart);
+                cmd.SetComputeBufferParam(sdfComputeShader, kSDF, "_GridTriangleList", spTriangleList);
+                cmd.SetComputeTextureParam(sdfComputeShader, kSDF, "_Result", sdf3DTextureTemp);
+                cmd.SetComputeBufferParam(sdfComputeShader, kSDF, "_Vertices", spDeformed);
+                cmd.SetComputeBufferParam(sdfComputeShader, kSDF, "_Triangles", spTriangles);
+                cmd.SetComputeBufferParam(sdfComputeShader, kSDF, "_BoundsMin", spBoundsMin);
+                cmd.SetComputeBufferParam(sdfComputeShader, kSDF, "_BoundsMax", spBoundsMax);
+                cmd.SetComputeBufferParam(sdfComputeShader, kSDF, "_MaxDistance", spMaxDistance);
+                cmd.SetComputeIntParam(sdfComputeShader, "_TriangleCount", spTriangles.count);
+                cmd.SetComputeIntParam(sdfComputeShader, "_Resolution", textureResolution);
+                cmd.SetComputeIntParam(sdfComputeShader, "_SliceOffset", spNextSlice);
+                cmd.SetComputeFloatParam(sdfComputeShader, "_MaxNegativeDistance", manager.maxNegativeDistance);
+                cmd.DispatchCompute(sdfComputeShader, kSDF, xyGroups, xyGroups, zGroups);
+
+                spNextSlice += zGroups * 8;
+                bool finished = spNextSlice >= textureResolution;
+                if (finished)
+                {
+                    cmd.CopyTexture(sdf3DTextureTemp, sdf3DTexture);
+                    spNextSlice = -1;
+                }
+
+                Graphics.ExecuteCommandBuffer(cmd);
+                CommandBufferPool.Release(cmd);
+
+                return finished;
+            }
+
+            #endregion
 
             public void SimplifySDFVolume() 
             {
@@ -832,6 +1029,9 @@ namespace Swole.Cloth
             public void ApplyToMaterialSDF(Material material) => ApplyToMaterialSDF(material, "_BodySDFTex", "_SDFBoundsMin", "_SDFBoundsMax", "_Deltas", "_DeltasIndexOffset");
             public void ApplyToMaterialSDF(Material material, string textureProperty, string boundsMinProperty, string boundsMaxProperty, string shapeDeltasProperty, string shapeDeltasIndexOffsetProperty)
             {
+                var textureResolution = manager.textureResolution;
+                InitializeSdfTexture(textureResolution);
+
                 material.SetTexture(textureProperty, sdf3DTexture);
                 if (sdf3DTextureSimplified != null) material.SetTexture(textureProperty + "Simplified", sdf3DTextureSimplified);
                 //material.SetVector(boundsMinProperty, boundsMin);
@@ -852,6 +1052,9 @@ namespace Swole.Cloth
             public void ApplyToShaderSDF(ComputeShader shader, int kernelIndex) => ApplyToShaderSDF(shader, kernelIndex, "_BodySDFTex", "_SDFBoundsMin", "_SDFBoundsMax", "_SDFResolution", "_Deltas", "_DeltasIndexOffset");
             public void ApplyToShaderSDF(ComputeShader shader, int kernelIndex, string textureProperty, string boundsMinProperty, string boundsMaxProperty, string resolutionProperty, string shapeDeltasProperty, string shapeDeltasIndexOffsetProperty)
             {
+                var textureResolution = manager.textureResolution;
+                InitializeSdfTexture(textureResolution);
+
                 shader.SetTexture(kernelIndex, textureProperty, sdf3DTexture);
                 if (sdf3DTextureSimplified != null) shader.SetTexture(kernelIndex, textureProperty + "Simplified", sdf3DTextureSimplified);
                 //shader.SetVector(boundsMinProperty, boundsMin);
@@ -873,6 +1076,9 @@ namespace Swole.Cloth
             public void ApplyToCommandBufferSDF(CommandBuffer cmd, ComputeShader shader, int kernelIndex) => ApplyToCommandBufferSDF(cmd, shader, kernelIndex, "_BodySDFTex", "_SDFBoundsMin", "_SDFBoundsMax", "_SDFResolution", "_Deltas", "_DeltasIndexOffset");
             public void ApplyToCommandBufferSDF(CommandBuffer cmd, ComputeShader shader, int kernelIndex, string textureProperty, string boundsMinProperty, string boundsMaxProperty, string resolutionProperty, string shapeDeltasProperty, string shapeDeltasIndexOffsetProperty)
             {
+                var textureResolution = manager.textureResolution;
+                InitializeSdfTexture(textureResolution);
+
                 cmd.SetComputeTextureParam(shader, kernelIndex, textureProperty, sdf3DTexture);
                 if (sdf3DTextureSimplified != null) cmd.SetComputeTextureParam(shader, kernelIndex, textureProperty + "Simplified", sdf3DTextureSimplified);
                 //cmd.SetComputeVectorParam(shader, boundsMinProperty, boundsMin);
@@ -959,6 +1165,9 @@ namespace Swole.Cloth
             public void ApplyToMaterialAOCV(Material material) => ApplyToMaterialAOCV(material, "_BodyCoreTexture", "_BodySurfaceNormalTexture", "_SDFBoundsMin", "_SDFBoundsMax", "_Deltas", "_DeltasIndexOffset");
             public void ApplyToMaterialAOCV(Material material, string coreTextureProperty, string surfaceNormalTextureProperty, string boundsMinProperty, string boundsMaxProperty, string shapeDeltasProperty, string shapeDeltasIndexOffsetProperty)
             {
+                var textureResolution = manager.textureResolution;
+                InitializeAocvTextures(textureResolution);
+
                 material.SetTexture(coreTextureProperty, aocvCoreTexture);
                 material.SetTexture(surfaceNormalTextureProperty, aocvSurfaceNormalTexture);
                 //material.SetVector(boundsMinProperty, boundsMin);
@@ -979,6 +1188,9 @@ namespace Swole.Cloth
             public void ApplyToShaderAOCV(ComputeShader shader, int kernelIndex) => ApplyToShaderAOCV(shader, kernelIndex, "_BodyCoreTexture", "_BodySurfaceNormalTexture", "_SDFBoundsMin", "_SDFBoundsMax", "_SDFResolution", "_Deltas", "_DeltasIndexOffset");
             public void ApplyToShaderAOCV(ComputeShader shader, int kernelIndex, string coreTextureProperty, string surfaceNormalTextureProperty, string boundsMinProperty, string boundsMaxProperty, string resolutionProperty, string shapeDeltasProperty, string shapeDeltasIndexOffsetProperty)
             {
+                var textureResolution = manager.textureResolution;
+                InitializeAocvTextures(textureResolution);
+
                 shader.SetTexture(kernelIndex, coreTextureProperty, aocvCoreTexture);
                 shader.SetTexture(kernelIndex, surfaceNormalTextureProperty, aocvSurfaceNormalTexture);
                 //shader.SetVector(boundsMinProperty, boundsMin);
@@ -1000,6 +1212,9 @@ namespace Swole.Cloth
             public void ApplyToCommandBufferAOCV(CommandBuffer cmd, ComputeShader shader, int kernelIndex) => ApplyToCommandBufferAOCV(cmd, shader, kernelIndex, "_BodyCoreTexture", "_BodySurfaceNormalTexture", "_SDFBoundsMin", "_SDFBoundsMax", "_SDFResolution", "_Deltas", "_DeltasIndexOffset");
             public void ApplyToCommandBufferAOCV(CommandBuffer cmd, ComputeShader shader, int kernelIndex, string coreTextureProperty, string surfaceNormalTextureProperty, string boundsMinProperty, string boundsMaxProperty, string resolutionProperty, string shapeDeltasProperty, string shapeDeltasIndexOffsetProperty)
             {
+                var textureResolution = manager.textureResolution;
+                InitializeAocvTextures(textureResolution);
+
                 cmd.SetComputeTextureParam(shader, kernelIndex, coreTextureProperty, aocvCoreTexture);
                 cmd.SetComputeTextureParam(shader, kernelIndex, surfaceNormalTextureProperty, aocvSurfaceNormalTexture); 
                 //cmd.SetComputeVectorParam(shader, boundsMinProperty, boundsMin);
@@ -1103,7 +1318,84 @@ namespace Swole.Cloth
         }
         private void AutoBakeAfterBufferUploads()
         {
-            ComputeBufferPoolUploader.QueuePostUploadAction(AutoBake);   
+            // Coalesce: any number of change events per frame results in at most one queued bake.
+            autoBakeDirty = true;
+            if (autoBakeQueued) return;
+            autoBakeQueued = true;
+            ComputeBufferPoolUploader.QueuePostUploadAction(RunQueuedAutoBake);
+        }
+
+        [Tooltip("Spread FastSpatial auto-bakes across several frames (collision lags a few frames behind shape changes, but avoids frame spikes).")]
+        public bool timeSliceFastSpatial = true;
+        [Tooltip("Number of Z voxel slices of the SDF built per frame during a time-sliced FastSpatial bake (rounded up to a multiple of 8).")]
+        public int fastSpatialVoxelSlicesPerFrame = 16;
+
+        [NonSerialized] private bool autoBakeDirty;
+        [NonSerialized] private bool autoBakeQueued;
+
+        /// <summary>Raised after an auto-bake has fully completed (for time-sliced bakes: once the finished volume is copied to the live texture).</summary>
+        public event Action OnBakeCompleted;
+
+        private bool UseTimeSlicedSpatialBake => autoBakeMode == AutoBakeMode.FastSpatial && timeSliceFastSpatial && characterMesh != null;
+
+        public bool IsAnySpatialBakeInProgress
+        {
+            get
+            {
+                if (outputs == null) return false;
+                foreach (var output in outputs) if (output != null && output.IsSpatialBakeInProgress) return true;
+                return false;
+            }
+        }
+
+        private void RunQueuedAutoBake()
+        {
+            autoBakeQueued = false;
+            if (!autoBakeDirty) return;
+
+            if (UseTimeSlicedSpatialBake)
+            {
+                // Let an in-flight bake finish; the dirty flag stays set and LateUpdate re-queues afterwards (latest data always wins).
+                if (IsAnySpatialBakeInProgress) return;
+
+                autoBakeDirty = false;
+                if (outputs != null)
+                {
+                    foreach (var output in outputs)
+                    {
+                        if (output == null) continue;
+                        if (!output.BeginIncrementalSpatialBakeSDF()) output.FastSpatialBakeSDF();
+                    }
+                }
+                return;
+            }
+
+            autoBakeDirty = false;
+            AutoBake();
+            OnBakeCompleted?.Invoke();
+        }
+
+        protected virtual void LateUpdate()
+        {
+            if (outputs == null) return;
+
+            bool anyInProgress = false;
+            bool anyFinished = false;
+            int frame = Time.frameCount;
+            foreach (var output in outputs)
+            {
+                if (output == null || !output.IsSpatialBakeInProgress) continue;
+                if (output.SpatialBakeStartFrame != frame && output.StepIncrementalSpatialBakeSDF(fastSpatialVoxelSlicesPerFrame)) anyFinished = true;
+                anyInProgress |= output.IsSpatialBakeInProgress;
+            }
+
+            if (anyFinished && !anyInProgress) OnBakeCompleted?.Invoke();
+
+            if (!anyInProgress && autoBakeDirty && !autoBakeQueued)
+            {
+                autoBakeQueued = true;
+                ComputeBufferPoolUploader.QueuePostUploadAction(RunQueuedAutoBake);
+            }
         }
         protected virtual void OnEnable()
         {

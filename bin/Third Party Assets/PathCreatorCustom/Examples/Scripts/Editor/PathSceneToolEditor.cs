@@ -1,4 +1,6 @@
-﻿using UnityEngine;
+﻿#if UNITY_EDITOR
+
+using UnityEngine;
 using UnityEditor;
 using PathCreation;
 
@@ -111,3 +113,5 @@ namespace PathCreation.Examples
         }
     }
 }
+
+#endif

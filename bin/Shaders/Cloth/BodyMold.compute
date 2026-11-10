@@ -11,6 +11,7 @@
 #pragma kernel AdjustSkinBindings
 #pragma kernel PrepareLiveVertexData
 #pragma kernel PushBackBodyFromClothing
+#pragma kernel BodyMold_CopyDeltas
 
 #pragma multi_compile_local _ USE_PROXY_NORMAL_DELTAS
 
@@ -72,6 +73,7 @@ int _ShapeDeltasIndexOffset; // offset into _ShapeDeltas buffer (if used)
     float _CollisionRelaxation; // 0..1 relaxation factor applied to each correction (lower -> softer)
     float _SDFOuterThicknessStrength;
     float _SDFOuterThicknessStrengthCloth;
+    float _ClothBlend; // 0 = legacy behaviour, 1 = full cloth bridging in loose (low vertex color G) areas
     float _NormalRecalculationBlend; // 0..1 how much to blend between original and recalculated normals
     int _InstanceID;
     int _CollisionPasses; // number of internal collision resolve passes
@@ -1968,6 +1970,131 @@ void CollideWithSDF_Precombined2(Texture3D<float> sdfTexture, SamplerState sdfSa
 
 void CollideWithSDF_Precombined3(Texture3D<float> sdfTexture, SamplerState sdfSampler, float thickness, float3 combinedVertex, float innerPushStrength, float outerPushStrength, inout MeshVertexDelta finalOffset, float3 localBaseNormal)
 {
+    float3 uvw = (combinedVertex - _SDFBoundsMin) / (_SDFBoundsMax - _SDFBoundsMin);
+    if (!(all(uvw >= 0.0) && all(uvw <= 1.0)))
+        return;
+
+    float distanceToSkin = sdfTexture.SampleLevel(sdfSampler, uvw, 0).r;
+    if (distanceToSkin >= thickness)
+        return;
+
+    // Single central-difference gradient; widen the stencil when deep inside to see past local voxel noise.
+    float baseStep = 1.0 / (float) _SDFResolution;
+    float stepSize = baseStep * (distanceToSkin < 0.0 ? (1.0 + min(abs(distanceToSkin) * 10.0, 3.0)) : 1.0);
+    float3 gradient = float3(
+        sdfTexture.SampleLevel(sdfSampler, uvw + float3(stepSize, 0, 0), 0).r - sdfTexture.SampleLevel(sdfSampler, uvw - float3(stepSize, 0, 0), 0).r,
+        sdfTexture.SampleLevel(sdfSampler, uvw + float3(0, stepSize, 0), 0).r - sdfTexture.SampleLevel(sdfSampler, uvw - float3(0, stepSize, 0), 0).r,
+        sdfTexture.SampleLevel(sdfSampler, uvw + float3(0, 0, stepSize), 0).r - sdfTexture.SampleLevel(sdfSampler, uvw - float3(0, 0, stepSize), 0).r);
+
+    float gradLen = length(gradient);
+    float3 outwardDirection = gradLen > 1e-5 ? gradient / gradLen : localBaseNormal;
+
+    // Strip any inward motion so the solver can't fight the correction.
+    float inward = dot(finalOffset.positionDelta, outwardDirection);
+    if (inward < 0.0 && distanceToSkin < 0.0)
+        finalOffset.positionDelta -= outwardDirection * inward;
+
+    // Hard projection: land exactly on the thickness shell (no fractional creep, no fixed escape jumps).
+    // outerPushStrength now only softens corrections for vertices that are outside the skin but inside the shell.
+    float penetrationDepth = thickness - distanceToSkin;
+    float strength = distanceToSkin < 0.0 ? 1.0 : saturate(outerPushStrength * 10.0);
+    finalOffset.positionDelta += outwardDirection * penetrationDepth * strength;
+}
+
+// Spike suppression: a vertex's delta may not deviate from its neighbors' average delta by more than a multiple of its rest edge length.
+// Scale-independent, so it keeps working as the body (and the legitimate deltas) grow.
+void LimitDeltaOutlier(uint clothingId, float3 basePosition, float maxEdgeRatio, float3 motionBias, inout MeshVertexDelta finalOffset)
+{
+    int connCount = _VertexConnectionCounts[clothingId];
+    if (connCount <= 0) return;
+    int connStart = _VertexConnectionStartIndices[clothingId];
+
+    float3 sumDelta = float3(0, 0, 0);
+    float sumRest = 0.0;
+    int valid = 0;
+    for (int i = 0; i < connCount; i++)
+    {
+        int n = _VertexConnections[connStart + i].index;
+        if (n < 0 || (uint) n == clothingId) continue;
+        sumDelta += SampleClothingVertexPositionDelta((uint) n, _IndexOffset);
+        sumRest += length(SampleClothingVertexData((uint) n).position - basePosition);
+        valid++;
+    }
+    if (valid <= 0) return;
+
+    // Neighbor deltas are from the previous pass; shift them by this vertex's shape-driven motion this pass
+    // so whole-patch movement is never throttled, only local deviation is.
+    float3 avgDelta = sumDelta / valid + motionBias;
+    float maxDeviation = (sumRest / valid) * maxEdgeRatio;
+    float3 deviation = finalOffset.positionDelta - avgDelta;
+    float devLen = length(deviation);
+    if (devLen > maxDeviation && devLen > 1e-6)
+        finalOffset.positionDelta = avgDelta + deviation * (maxDeviation / devLen);
+}
+
+// Removes outward spikes:
+void LimitSpikesSDF(Texture3D<float> sdfTexture, SamplerState sdfSampler, float3 basePosition, float3 referenceDelta, float margin, inout MeshVertexDelta finalOffset)
+{
+    float3 boundsSize = _SDFBoundsMax - _SDFBoundsMin;
+    float3 uvwRef = (basePosition + referenceDelta - _SDFBoundsMin) / boundsSize;
+    float3 uvwCur = (basePosition + finalOffset.positionDelta - _SDFBoundsMin) / boundsSize;
+    if (!(all(uvwRef >= 0.0) && all(uvwRef <= 1.0) && all(uvwCur >= 0.0) && all(uvwCur <= 1.0)))
+        return;
+
+    float dRef = sdfTexture.SampleLevel(sdfSampler, uvwRef, 0).r;
+    float dCur = sdfTexture.SampleLevel(sdfSampler, uvwCur, 0).r;
+    float allowed = max(dRef, 0.0) + margin;
+    if (dCur <= allowed)
+        return;
+
+    float stepSize = 1.0 / (float) _SDFResolution;
+    float3 gradient = float3(
+        sdfTexture.SampleLevel(sdfSampler, uvwCur + float3(stepSize, 0, 0), 0).r - sdfTexture.SampleLevel(sdfSampler, uvwCur - float3(stepSize, 0, 0), 0).r,
+        sdfTexture.SampleLevel(sdfSampler, uvwCur + float3(0, stepSize, 0), 0).r - sdfTexture.SampleLevel(sdfSampler, uvwCur - float3(0, stepSize, 0), 0).r,
+        sdfTexture.SampleLevel(sdfSampler, uvwCur + float3(0, 0, stepSize), 0).r - sdfTexture.SampleLevel(sdfSampler, uvwCur - float3(0, 0, stepSize), 0).r);
+    float gradLen = length(gradient);
+    if (gradLen > 1e-5)
+    {
+        finalOffset.positionDelta -= (gradient / gradLen) * (dCur - allowed);
+    }
+    else
+    {
+        // No usable direction (e.g. far outside the narrow band): fall back to the pre-collision position.
+        finalOffset.positionDelta = referenceDelta;
+    }
+}
+
+// Final non-negotiable clamp:
+void ClampOutsideSDF(Texture3D<float> sdfTexture, SamplerState sdfSampler, float minDistance, float3 basePosition, float3 fallbackNormal, inout MeshVertexDelta finalOffset)
+{
+    // Iterate: a single gradient projection can under-correct in curved/deep regions (e.g. traps on huge bodies).
+    float3 boundsSize = _SDFBoundsMax - _SDFBoundsMin;
+    float targetDistance = max(minDistance, 0.002);
+    [unroll]
+    for (int i = 0; i < 4; i++)
+    {
+        float3 uvw = (basePosition + finalOffset.positionDelta - _SDFBoundsMin) / boundsSize;
+        if (!(all(uvw >= 0.0) && all(uvw <= 1.0)))
+            return;
+        if (sdfTexture.SampleLevel(sdfSampler, uvw, 0).r >= targetDistance * 0.5)
+            return;
+        MeshVertexDelta clamped = finalOffset;
+        CollideWithSDF_Precombined3(sdfTexture, sdfSampler, targetDistance, basePosition + finalOffset.positionDelta, 1.0, 1.0, clamped, fallbackNormal);
+        finalOffset.positionDelta = clamped.positionDelta;
+    }
+}
+
+void ClampOutsideSDF_Legacy(Texture3D<float> sdfTexture, SamplerState sdfSampler, float minDistance, float3 basePosition, float3 fallbackNormal, inout MeshVertexDelta finalOffset)
+{
+    MeshVertexDelta clamped = finalOffset;
+    CollideWithSDF_Precombined3(sdfTexture, sdfSampler, minDistance, basePosition + finalOffset.positionDelta, 1.0, 1.0, clamped, fallbackNormal);
+    float3 uvw = (basePosition + finalOffset.positionDelta - _SDFBoundsMin) / (_SDFBoundsMax - _SDFBoundsMin);
+    if (all(uvw >= 0.0) && all(uvw <= 1.0) && sdfTexture.SampleLevel(sdfSampler, uvw, 0).r < 0.0)
+        finalOffset.positionDelta = clamped.positionDelta;
+}
+
+void CollideWithSDF_Precombined3_Legacy(Texture3D<float> sdfTexture, SamplerState sdfSampler, float thickness, float3 combinedVertex, float innerPushStrength, float outerPushStrength, inout MeshVertexDelta finalOffset, float3 localBaseNormal)
+{
     float3 pos = combinedVertex;
 
     // 1. Calculate UVW
@@ -2349,9 +2476,20 @@ void BodyMold_TriangleSDF(uint3 dtid : SV_DispatchThreadID)
     float3 thicknessVector;
     if (!CalculateShapePreservingClothingVertexOffset(tid, id, idInBuffer, bindIdx, bindW, 0.01, localBaseVertex, prevRawOffset, rawOffset, origOffset, finalOffset, avgStretch, tightness, thicknessVector))
         return;
-    
+
+    // Cloth bridging: in loose painted areas, relax toward the neighbor surface so fabric spans concavities (e.g. under the pecs)
+    // instead of following the body into them. Collision below keeps the result outside the body.
+    float clothAmount = saturate((1.0 - tightness) * _ClothBlend);
+    if (clothAmount > 1e-4)
+    {
+        MeshVertexDelta pulled = finalOffset;
+        ApplyClothPullPass(id, localBaseVertex, pulled, 0.0, 1.0, avgStretch);
+        finalOffset.positionDelta = lerp(finalOffset.positionDelta, pulled.positionDelta, clothAmount);
+    }
+
     localBaseVertex.position = localBaseVertex.position - thicknessVector;   
-    
+    float3 preCollisionDelta = finalOffset.positionDelta;
+
     bool foundTri;
     bool anyFront;
     float3 worldPos = CollideWithBodyTriangles_TriangleBased(tid, id, 0.0, localBaseVertex, origOffset, finalOffset, foundTri, anyFront);
@@ -2382,8 +2520,20 @@ void BodyMold_TriangleSDF(uint3 dtid : SV_DispatchThreadID)
         finalOffset = finalOffset2;
     }
 
+    LimitSpikesSDF(_BodySDFTex, sampler_BodySDFTex, localBaseVertex.position, preCollisionDelta, 0.01 * avgStretch, finalOffset);
+    LimitDeltaOutlier(id, SampleClothingVertexData(id).position, 1.5 * max(1.0, avgStretch) * (1.0 + clothAmount * 2.0), preCollisionDelta - SampleClothingVertexPositionDelta(id, _IndexOffset), finalOffset);
+    ClampOutsideSDF(_BodySDFTex, sampler_BodySDFTex, 0.0, localBaseVertex.position, localBaseVertex.normal, finalOffset);
+
     WriteToClothingVertexDeltas(idInBuffer, finalOffset);
     _ClothingStretch[id] = avgStretch;
+}
+
+[numthreads(256, 1, 1)]
+void BodyMold_CopyDeltas(uint3 dtid : SV_DispatchThreadID)
+{
+    if (dtid.x >= _VertexCount)
+        return;
+    _ClothingVertexDeltas[dtid.x] = _Deltas[dtid.x];
 }
 
 [numthreads(256, 1, 1)]
@@ -2418,8 +2568,9 @@ void BodyMoldCloth_TriangleSDF(uint3 dtid : SV_DispatchThreadID)
     //localBaseVertex.position = localBaseVertex.position + thicknessVector;
     
     float3 worldPos = localBaseVertex.position + finalOffset.positionDelta;
+    float3 preCollisionDelta = finalOffset.positionDelta;
     MeshVertexDelta finalOffset2 = finalOffset;
-    //CollideWithAnisotropicCoreVolume(origWorldPos, worldPos, 0.001 * stretch, finalOffset2, localBaseVertex.normal);
+    //CollideWithAnisotropicCoreVolume(origWorldPos, worldPos, 0.001 * stretch
     CollideWithSDF_Precombined3(_BodySDFTex, sampler_BodySDFTex, thickness, worldPos, 1.0, _SDFOuterThicknessStrengthCloth, finalOffset2, currentNormal);
 
     finalOffset2.positionDelta = finalOffset2.positionDelta - thicknessVector; 
@@ -2432,7 +2583,11 @@ void BodyMoldCloth_TriangleSDF(uint3 dtid : SV_DispatchThreadID)
     finalOffset2.positionDelta = finalOffset2.positionDelta + thicknessVector; 
     
     finalOffset = MVD_Lerp(finalOffset2, origOffset, tightness); 
-     
+
+    LimitSpikesSDF(_BodySDFTex, sampler_BodySDFTex, localBaseVertex.position, preCollisionDelta, thickness + 0.01 * stretch, finalOffset);
+    LimitDeltaOutlier(id, localBaseVertex.position, 1.5 * max(1.0, stretch), preCollisionDelta - origOffset.positionDelta, finalOffset);
+    ClampOutsideSDF(_BodySDFTex, sampler_BodySDFTex, 0.0, localBaseVertex.position, currentNormal, finalOffset);
+
     WriteToClothingVertexDeltas(idInBuffer, finalOffset);
 }
 
@@ -2448,44 +2603,84 @@ void BodyMold_RecalculateNormals(uint3 dtid : SV_DispatchThreadID)
     if (id >= _VertexCount)
         return;
     
+    MeshVertexDelta finalOffset = SampleClothingVertexDelta(id, _IndexOffset);
+
     int connCount = _VertexConnectionCounts[id];
     int connStart = _VertexConnectionStartIndices[id];
     if (connCount <= 0)
-        return;
-
-    MeshVertexDelta finalOffset = SampleClothingVertexDelta(id, _IndexOffset);
-    
-    VertexData localBaseVertex = SampleClothingVertexData(id);
-    float3 localPos = localBaseVertex.position + finalOffset.positionDelta; 
-    float3 localNormal = localBaseVertex.normal;
-    
-    float3 normalDelta = float3(0,0,0);
-    float w = 0.0;
-    for (int ci = 0; ci < connCount; ci += 2)
     {
-        int neighborA = _VertexConnections[connStart + ci].index;
-        int neighborB = _VertexConnections[connStart + ci + 1].index;
-        if (neighborA < 0 || neighborB < 0)
+        // Still pass through so the output buffer never holds stale data for this vertex.
+        _ClothingVertexDeltas[idInBuffer] = finalOffset;
+        return;
+    }
+
+    VertexData localBaseVertex = SampleClothingVertexData(id);
+    float3 localNormal = normalize(localBaseVertex.normal);
+
+    // Area-weighted normal from the real clothing triangles touching this vertex.
+    // Each face's orientation is fixed by comparing its REST normal to the rest vertex normal, so faces can tilt/fold
+    // correctly when deformed instead of being force-flipped toward the rest normal (which caused the blotchy artefacts).
+    uint seenTris[16];
+    uint seenCount = 0;
+    float3 accum = float3(0, 0, 0);
+    for (int ci = 0; ci < connCount; ci++)
+    {
+        int triBase = _VertexConnections[connStart + ci].triIndex;
+        if (triBase < 0)
             continue;
 
-        VertexData nbBaseA = SampleClothingVertexData(neighborA);
-        MeshVertexDelta nbDeltaA = SampleClothingVertexDelta(neighborA, _IndexOffset);
-        float3 nbPosA = nbBaseA.position + nbDeltaA.positionDelta;
-        
-        VertexData nbBaseB = SampleClothingVertexData(neighborB);
-        MeshVertexDelta nbDeltaB = SampleClothingVertexDelta(neighborB, _IndexOffset);
-        float3 nbPosB = nbBaseB.position + nbDeltaB.positionDelta;
-        
-        float3 n = cross(nbPosA - localPos, nbPosB - localPos); 
-        if (dot(n, localNormal) < 0.0)
-            n = -n;
-        
-        normalDelta += n;
-        
-        w += 1.0;
+        bool seen = false;
+        for (uint s = 0; s < seenCount; s++)
+        {
+            if (seenTris[s] == (uint) triBase) { seen = true; break; }
+        }
+        if (seen)
+            continue;
+        if (seenCount < 16)
+            seenTris[seenCount++] = (uint) triBase;
+
+        int i0 = _ClothingTriangles[triBase + 0];
+        int i1 = _ClothingTriangles[triBase + 1];
+        int i2 = _ClothingTriangles[triBase + 2];
+
+        VertexData b0 = SampleClothingVertexData(i0);
+        VertexData b1 = SampleClothingVertexData(i1);
+        VertexData b2 = SampleClothingVertexData(i2);
+
+        float3 restN = cross(b1.position - b0.position, b2.position - b0.position);
+        float orientation = dot(restN, localNormal) < 0.0 ? -1.0 : 1.0;
+
+        float3 p0 = b0.position + SampleClothingVertexPositionDelta(i0, _IndexOffset);
+        float3 p1 = b1.position + SampleClothingVertexPositionDelta(i1, _IndexOffset);
+        float3 p2 = b2.position + SampleClothingVertexPositionDelta(i2, _IndexOffset);
+
+        accum += cross(p1 - p0, p2 - p0) * orientation;
     }
-    
-    normalDelta = normalize(normalDelta / max(w, 1.0)) - localNormal;
+
+    if (dot(accum, accum) < 1e-20)
+    {
+        _ClothingVertexDeltas[idInBuffer] = finalOffset;
+        return;
+    }
+
+    float3 faceNormal = normalize(accum);
+
+    // Laplacian-smooth with neighbors' current normals (from the previous pass) to remove per-vertex faceting/noise.
+    // Repeated each iteration, this converges toward a smooth field without losing large-scale shape.
+    float3 neighborSum = float3(0, 0, 0);
+    for (int nj = 0; nj < connCount; nj++)
+    {
+        int n = _VertexConnections[connStart + nj].index;
+        if (n < 0 || (uint) n == id)
+            continue;
+        MeshVertexDelta nd = SampleClothingVertexDelta((uint) n, _IndexOffset);
+        float3 nn = SampleClothingVertexData((uint) n).normal + nd.normalDelta;
+        if (dot(nn, nn) > 1e-12 && dot(nn, faceNormal) > 0.0)
+            neighborSum += normalize(nn);
+    }
+    float3 smoothedNormal = dot(neighborSum, neighborSum) > 1e-12 ? normalize(faceNormal + normalize(neighborSum)) : faceNormal;
+
+    float3 normalDelta = smoothedNormal - localNormal;
     finalOffset.normalDelta = lerp(finalOffset.normalDelta, normalDelta, _NormalRecalculationBlend);
     
     _ClothingVertexDeltas[idInBuffer] = finalOffset; // raw write into buffer to avoid writing into proxy normals

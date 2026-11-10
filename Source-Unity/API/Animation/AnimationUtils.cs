@@ -931,6 +931,8 @@ namespace Swole.API.Unity.Animation
 
             foreach (var component in root.GetComponentsInChildren<Component>(true))
             {
+                if (component == null) continue;
+
                 bool isRoot = component.gameObject == root;
                 if (component is DynamicAnimationProperties dap)
                 {
@@ -2770,6 +2772,8 @@ namespace Swole.API.Unity.Animation
 
                 foreach (var component in root.GetComponentsInChildren<Component>(true))
                 {
+                    if (component == null) continue;
+
                     var isRoot = component.gameObject == root;
                     if (component is DynamicAnimationProperties dap)
                     {

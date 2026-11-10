@@ -1,6 +1,8 @@
 #ifndef CUSTOM_SKINNING
 #define CUSTOM_SKINNING
 
+#pragma target 4.5
+
 struct SkinInfluence
 {
 	
@@ -276,24 +278,40 @@ uniform int _PrecalculatedSkinningVertexCount;
 
 uniform int2 _RangeStandaloneShapes; 
 
-//#if defined(SHADER_API_D3D11) || defined(SHADER_API_GLCORE) || defined(SHADER_API_GLES3) || defined(SHADER_API_VULKAN) || defined(SHADER_API_METAL) || defined(SHADER_API_PSSL)
-StructuredBuffer<SkinInfluence> _SkinBindings;
-StructuredBuffer<float4x4> _SkinningMatrices;
-
-StructuredBuffer<BlendShapeDelta> _MeshShapeFrameDeltas;
-StructuredBuffer<float> _MeshShapeFrameWeights;
-StructuredBuffer<int2> _MeshShapeIndices;
-
-StructuredBuffer<float> _ControlStandaloneShapes;
-
-StructuredBuffer<BlendShapeDelta> _FinalWorldDeltas;
-
-StructuredBuffer<float> _VertexMask;
-
-StructuredBuffer<VertexBinding> _MeshProxyBindings;
 uniform int _MeshProxyVertexCount;
-//#else
-//#endif
+
+#if defined(UNITY_COMPILER_HLSL) || defined(SHADER_API_D3D11) || defined(SHADER_API_D3D12) || defined(SHADER_API_GLES3) || defined(SHADER_API_GLCORE)
+	StructuredBuffer<SkinInfluence> _SkinBindings;
+	StructuredBuffer<float4x4> _SkinningMatrices;
+
+	StructuredBuffer<BlendShapeDelta> _MeshShapeFrameDeltas;
+	StructuredBuffer<float> _MeshShapeFrameWeights;
+	StructuredBuffer<int2> _MeshShapeIndices;
+
+	StructuredBuffer<float> _ControlStandaloneShapes;
+
+	StructuredBuffer<BlendShapeDelta> _FinalWorldDeltas;
+
+	StructuredBuffer<float> _VertexMask;
+
+	StructuredBuffer<VertexBinding> _MeshProxyBindings;
+#else
+	// Safe fallback layout for Vulkan and Metal cross-compilation
+	uniform StructuredBuffer<SkinInfluence> _SkinBindings;
+	uniform StructuredBuffer<float4x4> _SkinningMatrices;
+
+	uniform StructuredBuffer<BlendShapeDelta> _MeshShapeFrameDeltas;
+	uniform StructuredBuffer<float> _MeshShapeFrameWeights;
+	uniform StructuredBuffer<int2> _MeshShapeIndices;
+
+	uniform StructuredBuffer<float> _ControlStandaloneShapes;
+
+	uniform StructuredBuffer<BlendShapeDelta> _FinalWorldDeltas;
+
+	uniform StructuredBuffer<float> _VertexMask;
+
+	uniform StructuredBuffer<VertexBinding> _MeshProxyBindings;
+#endif
 
 void SkinNoShapesOutMatrix_float(int instanceID, int vertexIndex, float3 inPosition, float3 inNormal, float3 inTangent, out float3 outPosition, out float3 outNormal, out float3 outTangent, out float4x4 blendedMatrix)
 {

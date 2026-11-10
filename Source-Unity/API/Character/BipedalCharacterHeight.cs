@@ -11,6 +11,7 @@ using Unity.Mathematics;
 using Swole.API.Unity.Animation;
 using Swole.DataStructures;
 using Swole.Morphing;
+using UnityEngine.Events;
 
 namespace Swole.API.Unity
 {
@@ -156,6 +157,20 @@ namespace Swole.API.Unity
 
 #endif
 
+        [SerializeField]
+        protected UnityEvent OnProportionsChanged;
+        public void ListenForProportionsChange(UnityAction listener)
+        {
+            if (OnProportionsChanged == null) OnProportionsChanged = new UnityEvent();
+            OnProportionsChanged.AddListener(listener);
+        }
+        public void EndListenForProportionsChange(UnityAction listener)
+        {
+            if (OnProportionsChanged == null) return;
+            OnProportionsChanged.RemoveListener(listener);
+        }
+        public void NotifyProportionsChanged() => OnProportionsChanged?.Invoke();
+
         public Transform pelvis;
 
         public Transform spine1;
@@ -234,6 +249,36 @@ namespace Swole.API.Unity
             }
         }
 
+        public void ScaleIkBendGoal(CustomIKManager.IKController controller, float scale)
+        {
+            if (controller == null || controller.BendGoal == null) return;
+
+            var midBone = controller.GetBone(1);
+            if (midBone == null) return;
+
+            var posBG = controller.BendGoal.position; 
+            controller.BendGoal.position = posBG + (posBG - midBone.position) * scale; 
+        }
+
+        public void ScaleArmIkBendGoal(CustomIKManager.IKController controller)
+        {
+            ScaleIkBendGoal(controller, RealTotalArmLength / DefaultTotalArmLength);
+        }
+
+        public void ScaleLegIkBendGoal(CustomIKManager.IKController controller)
+        {
+            ScaleIkBendGoal(controller, RealTotalLegLength / DefaultTotalLegLength);   
+        }
+
+        public void ScaleLimbIkBendGoals(CustomIKManager.IKController leftArmIk, CustomIKManager.IKController rightArmIk, CustomIKManager.IKController leftLegIk, CustomIKManager.IKController rightLegIk)
+        {
+            ScaleArmIkBendGoal(leftArmIk);
+            ScaleArmIkBendGoal(rightArmIk);
+
+            ScaleLegIkBendGoal(leftLegIk);
+            ScaleLegIkBendGoal(rightLegIk);
+        }
+
         [SerializeField, Range(0.5f, 2f)]
         protected float spineLength = 1f;
         [SerializeField, Range(0.5f, 2f)]
@@ -248,6 +293,8 @@ namespace Swole.API.Unity
 
             if (jobReference != null && jobReference.IsValid) jobReference.SetSpineLength(RealSpineLength);
             ApplySpineComponentEdits();
+
+            NotifyProportionsChanged();
         }
         public void SetPreviousSpineLength(float length)
         {
@@ -260,6 +307,8 @@ namespace Swole.API.Unity
 
             if (jobReference != null && jobReference.IsValid) jobReference.SetNeckLength(RealNeckLength);
             ApplyNeckComponentEdits();
+
+            NotifyProportionsChanged();
         }
         public void SetPreviousNeckLength(float length)
         {
@@ -312,6 +361,7 @@ namespace Swole.API.Unity
         public float RealShoulderWidth => shoulderWidth * defaultShoulderWidth;
         public float RealArmLength => armLength * defaultArmLength;
         public float RealForearmLength => forearmLength * defaultForearmLength;
+        public float RealTotalArmLength => RealArmLength + RealForearmLength;
 
         public void SetShoulderWidth(float width)
         {
@@ -327,6 +377,7 @@ namespace Swole.API.Unity
             }
 
             ApplyShoulderComponentEdits();
+            NotifyProportionsChanged();
         }
         public void SetPreviousShoulderWidth(float width)
         {
@@ -354,6 +405,7 @@ namespace Swole.API.Unity
             }
 
             ApplyArmComponentEdits();
+            NotifyProportionsChanged();
         }
         public void SetPreviousArmLength(float length)
         {
@@ -381,6 +433,7 @@ namespace Swole.API.Unity
             }
 
             ApplyForearmComponentEdits();
+            NotifyProportionsChanged();
         }
         public void SetPreviousForearmLength(float length)
         {
@@ -403,6 +456,7 @@ namespace Swole.API.Unity
         [NonSerialized]
         protected float defaultForearmLength;
         public float DefaultForearmLength => defaultForearmLength;
+        public float DefaultTotalArmLength => defaultArmLength + defaultForearmLength;
 
         [SerializeField, Range(0, 1), AnimatableProperty(true, 0f)]
         protected float heightPreserveFootPositionLeft = 0f;
@@ -474,6 +528,7 @@ namespace Swole.API.Unity
         public float RealHipWidth => hipWidth * defaultHipWidth;
         public float RealLegLength => legLength * defaultLegLength;
         public float RealCalfLength => calfLength * defaultCalfLength;
+        public float RealTotalLegLength => RealLegLength + RealCalfLength;
 
         public void SetHipWidth(float width)
         {
@@ -489,6 +544,7 @@ namespace Swole.API.Unity
             }
 
             ApplyHipComponentEdits();
+            NotifyProportionsChanged();
         }
         public void SetPreviousHipWidth(float width)
         {
@@ -516,6 +572,7 @@ namespace Swole.API.Unity
             }
 
             ApplyThighComponentEdits();
+            NotifyProportionsChanged();
         }
         public void SetPreviousLegLength(float length)
         {
@@ -543,6 +600,7 @@ namespace Swole.API.Unity
             }
 
             ApplyCalfComponentEdits();
+            NotifyProportionsChanged();
         }
         public void SetPreviousCalfLength(float length)
         {
@@ -572,6 +630,8 @@ namespace Swole.API.Unity
                 weights.x = weight;
                 jobReference.SetSocketLimbSplits(weights);
             }
+
+            NotifyProportionsChanged();
         }
         public void SetHipThighWidthSplit(float weight)
         {
@@ -583,6 +643,8 @@ namespace Swole.API.Unity
                 weights.y = weight;
                 jobReference.SetSocketLimbSplits(weights);
             }
+
+            NotifyProportionsChanged();
         }
 
 
@@ -595,6 +657,7 @@ namespace Swole.API.Unity
         [NonSerialized]
         protected float defaultCalfLength;
         public float DefaultCalfLength => defaultCalfLength;
+        public float DefaultTotalLegLength => defaultLegLength + defaultCalfLength;
 
         public bool flipHipAxisForMirror = true;
         public bool flipLegWidthAxisForMirror = false;
@@ -622,8 +685,8 @@ namespace Swole.API.Unity
         {
             //Quaternion toAxis = Quaternion.FromToRotation(transformA.TransformDirection(extensionAxis), Vector3.up);
             //return (toAxis * (transformB.position - transformA.position)).y; 
-            var worldAxis = transformA.TransformDirection(extensionAxis);
-            return math.abs(math.dot(transformB.position - transformA.position, worldAxis)); 
+            var worldAxis = transformA.TransformDirection(extensionAxis).normalized;
+            return math.abs(math.dot(transformB.position - transformA.position, worldAxis));  
         }
 
         [SerializeField]

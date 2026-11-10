@@ -1,17 +1,35 @@
+#if UNITY_2017_1_OR_NEWER
+
 using System;
 using System.Collections;
 using System.Collections.Generic;
 
 using UnityEngine;
 
+using Swole.User;
+using Swole.Store;
+
 namespace Swole.API.Unity.Store
 {
 
     [CreateAssetMenu(fileName = "product", menuName = "Swole/Store", order = 0)]
-    public class CashShopProduct : ScriptableObject
+    public class CashShopProduct : ScriptableObject, IRealWorldPurchasable
     {
 
+        [SerializeField]
+        protected string storeId;
+        public string StoreID => storeId; 
+
         public string ID => name;
+
+        public string ProductID => $"{StoreID}.{ID}";
+
+        public bool IsOwnedByUser() => IsOwnedByUser(SwoleUserAccount.ActiveAccount);
+        public bool IsOwnedByUser(ISwoleUser user)
+        {
+            if (user == null) return false;
+            return user.DoesOwnCashShopProduct(ProductID);
+        }
 
         [SerializeField]
         protected string displayName;
@@ -28,6 +46,48 @@ namespace Swole.API.Unity.Store
         [SerializeField]
         protected string group;
         public virtual string Group => group;
+
+        public void FetchPrice(Action<float> callback, Action<string> errorCallback)
+        {
+            if (callback == null) return;
+
+            var user = SwoleUserAccount.ActiveAccount;
+            if (user == null)
+            {
+                errorCallback?.Invoke("User not logged in.");
+                return;
+            }
+
+            user.FetchCashShopProductPrice(ProductID, callback, errorCallback);
+        }
+
+        public void FetchCurrencyID(Action<string> callback, Action<string> errorCallback)
+        {
+            if (callback == null) return;
+
+            var user = SwoleUserAccount.ActiveAccount;
+            if (user == null)
+            {
+                errorCallback?.Invoke("User not logged in.");
+                return;
+            }
+
+            user.FetchCashShopProductCurrencyID(ProductID, callback, errorCallback);
+        }
+
+        public void FetchPriceString(Action<string> callback, Action<string> errorCallback)
+        {
+            if (callback == null) return;
+
+            var user = SwoleUserAccount.ActiveAccount; 
+            if (user == null)
+            {
+                errorCallback?.Invoke("User not logged in.");
+                return;
+            }
+
+            user.FetchCashShopProductPriceString(ProductID, callback, errorCallback); 
+        }
 
         [SerializeField]
         protected Sprite previewSmall;
@@ -70,3 +130,5 @@ namespace Swole.API.Unity.Store
     }
 
 }
+
+#endif

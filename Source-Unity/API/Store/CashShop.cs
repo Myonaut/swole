@@ -33,13 +33,19 @@ namespace Swole.API.Unity.Store
 
         public virtual int Balance => SwoleUserAccount.ActiveAccount == null ? 0 : SwoleUserAccount.ActiveAccount.SwoleBucks;
 
+        protected readonly Dictionary<string, CashShopProductInfo> productInfo = new Dictionary<string, CashShopProductInfo>();
+
+        /// <summary>Whether the server currently sells the product. Only valid after a fetch.</summary>
+        public virtual bool IsAvailable(CashShopProduct product) => product != null && productInfo.ContainsKey(product.ProductID);
+        public virtual bool TryGetProductInfo(CashShopProduct product, out CashShopProductInfo info)
+        {
+            info = default;
+            return product != null && productInfo.TryGetValue(product.ProductID, out info);
+        }
+
         public virtual void FetchStoreBase()
         {
             FetchStore();
-
-            OnStoreFetch?.Invoke();
-
-            RefreshGUIBase();
         }
 
         public virtual void FetchStore()
@@ -47,27 +53,35 @@ namespace Swole.API.Unity.Store
             var userAccount = SwoleUserAccount.ActiveAccount;
             if (userAccount == null || !userAccount.HasUser) return;
 
-            if (products == null) products = new List<CashShopProduct>();
-            products.Clear();
-
-            var storejson = userAccount.FetchCashShop(storeId);
-            CashShopInfo storeInfo = default;
+            userAccount.FetchCashShop(StoreId, FetchStoreCallback, (error) => Debug.LogError($"Failed to fetch cashshop '{StoreId}': {error}"));
+        }
+        protected virtual void FetchStoreCallback(string storeJson)
+        {
             try
             {
-                storeInfo = swole.FromJson<CashShopInfo>(storejson);
-                if (string.IsNullOrWhiteSpace(storeInfo.storeId))
+                var storeInfo = swole.FromJson<CashShopInfo>(storeJson);
+                if (storeInfo.storeId != StoreId)
                 {
-                    Debug.LogError($"Returned storeId was invalid for cashshop '{storeId}'");
+                    Debug.LogError($"Returned storeId '{storeInfo.storeId}' did not match cashshop '{StoreId}'");
                     return;
+                }
+
+                productInfo.Clear();
+                if (storeInfo.products != null)
+                {
+                    foreach (var info in storeInfo.products) productInfo[info.productId] = info;
                 }
             }
             catch (Exception ex)
             {
-                Debug.LogError($"Failed to parse cashshop info for store '{storeId}'");
+                Debug.LogError($"Failed to parse cashshop info for store '{StoreId}'");
                 Debug.LogException(ex);
 
                 return;
             }
+
+            OnStoreFetch?.Invoke();
+            RefreshGUIBase();
         }
 
         private void RefreshGUIBase()
@@ -82,36 +96,39 @@ namespace Swole.API.Unity.Store
         }
     }
 
+    /// <summary>Response of GET /cashshop. <see cref="ownedProductIds"/> is only filled when logged in.</summary>
     [Serializable]
     public struct CashShopInfo
     {
-
         public string storeId;
-
-        public string[] productIds;
-
-        public CashShopProductInfo[] dynamicProductInfo;
-
+        public CashShopProductInfo[] products;
+        public string[] ownedProductIds;
     }
 
     [Serializable]
     public struct CashShopProductInfo
     {
-
+        /// <summary>'storeId.itemId', matching <see cref="CashShopProduct.ProductID"/></summary>
         public string productId;
-
-        public CashShopProductAttribute[] attributes;
-
+        public int price;
+        public string currencyId;
     }
 
     [Serializable]
-    public struct CashShopProductAttribute
+    public struct CashShopPurchaseRequest
     {
+        public string productId;
+        public int price;
+        public string currencyId;
+    }
 
-        public string attribute;
-
-        public string attributeValue;
-
+    [Serializable]
+    public struct CashShopPurchaseResponse
+    {
+        public bool wasSuccessful;
+        public string info;
+        /// <summary>New balance of the purchase currency, or -1 if unknown</summary>
+        public int balance;
     }
 
 }

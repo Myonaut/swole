@@ -54,6 +54,8 @@ namespace Swole
         }
         public void Swap(string sceneName) => SwapToScene(sceneName);
 
+        public void Quit() => Application.Quit();
+
     }
 }
 

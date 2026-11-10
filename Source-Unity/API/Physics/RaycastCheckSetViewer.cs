@@ -13,7 +13,7 @@ namespace Swole
         private RaycastCheckSetHandler handler;
 
         public bool drawHandlerResults;
-        public bool drawHandlerPositions;
+        public bool drawHandlerVectors;
 
         public void OnDrawGizmos()
         {
@@ -25,7 +25,7 @@ namespace Swole
             if (handler != null) 
             {
                 if (drawHandlerResults) handler.DrawResults(transform.localToWorldMatrix, Color.green);
-                if (drawHandlerPositions) handler.DrawPositions(transform.localToWorldMatrix, Color.cyan);  
+                if (drawHandlerVectors) handler.DrawVectors(transform.localToWorldMatrix, Color.cyan);  
             }
         }
 

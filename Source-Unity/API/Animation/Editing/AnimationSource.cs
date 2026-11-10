@@ -1,4 +1,4 @@
-#if (UNITY_STANDALONE || UNITY_EDITOR)
+﻿#if (UNITY_STANDALONE || UNITY_EDITOR)
 
 using System;
 using System.Collections;
@@ -168,17 +168,24 @@ namespace Swole.API.Unity.Animation
                 if (!IsCompiledWithTimeCurve) Compile(); // force recompilation if time curve has been removed
 
                 SwolePackage editPkg = SwolePackage.Create(pkg); 
+                var packagedAnimation = CompiledAnimation.Duplicate(); // The package must not share curve objects with the editable source
+                string oldFilePath = null;
                 if (pkg.Content.TryFind<CustomAnimation>(out var toReplace, syncedName))
                 {
-                    editPkg.Replace(toReplace, CompiledAnimation);
+                    if (pkg.workingDirectory != null) oldFilePath = System.IO.Path.Combine(pkg.workingDirectory.FullName, $"{toReplace.SerializedName}.{ContentManager.swoleFileExtension_Animation}");
+                    editPkg.Replace(toReplace, packagedAnimation);
                 }
                 else
                 {
-                    editPkg.Add(CompiledAnimation);
+                    editPkg.Add(packagedAnimation);
                 }
 
                 pkg.Content = editPkg; 
-                if (ContentManager.SavePackage(pkg, logger))  
+
+                // Only write the animation that changed (plus the manifest) rather than rewriting every item in the package.
+                string newFilePath = pkg.workingDirectory == null ? null : System.IO.Path.Combine(pkg.workingDirectory.FullName, $"{packagedAnimation.SerializedName}.{ContentManager.swoleFileExtension_Animation}");
+                var stale = (oldFilePath != null && !string.Equals(oldFilePath, newFilePath, StringComparison.OrdinalIgnoreCase)) ? new string[] { oldFilePath } : null;
+                if (pkg.workingDirectory != null ? ContentManager.SavePackageContent(pkg.workingDirectory.FullName, pkg.Content, new IContent[] { packagedAnimation }, stale, logger) : ContentManager.SavePackage(pkg, logger))  
                 {
                     syncedName = DisplayName;
                     isDirty = false;
@@ -1232,6 +1239,8 @@ namespace Swole.API.Unity.Animation
 
         public List<AnimationUtils.LoopPoint> GetLoopPoints(string id, List<AnimationUtils.LoopPoint> outputList = null)
         {
+            if (loopPoints == null || loopPoints.Count == 0) return outputList ?? new List<AnimationUtils.LoopPoint>();
+
             if (outputList == null) outputList = new List<AnimationUtils.LoopPoint>();
             if (loopPoints == null) return outputList;
 
@@ -1259,6 +1268,104 @@ namespace Swole.API.Unity.Animation
         private readonly List<AnimationCurveEditor.KeyframeStateRaw> tempKeyframes = new List<AnimationCurveEditor.KeyframeStateRaw>();
         private readonly List<ITransformCurve.Frame> tempTransformFrames = new List<ITransformCurve.Frame>();
         private readonly List<IPropertyCurve.Frame> tempPropertyFrames = new List<IPropertyCurve.Frame>();
+        /// <summary>
+        /// Removes empty curves and curves that nothing references, in a single linear pass. Rules match the previous incremental implementation:
+        /// a curve is a removal candidate if it is empty or unreferenced (linear curves are visited first, then non-linear curves, in index order); a candidate is kept if it is the base of a pair whose main curve is not empty;
+        /// removing a curve also removes every pair that references it. Remaining curve indices are compacted once at the end.
+        /// </summary>
+        private static void RemoveEmptyAndUnusedCurves<TLinear, TCurve>(List<TLinear> linearCurves, List<TCurve> curves, List<CustomAnimation.CurveInfoPair> infos, Func<TLinear, bool> isEmptyLinear, Func<TCurve, bool> isEmptyCurve) where TLinear : class where TCurve : class
+        {
+            int linearCount = linearCurves.Count;
+            int curveCount = curves.Count;
+            int total = linearCount + curveCount;
+            if (total <= 0) return;
+
+            var empty = new bool[total];
+            for (int a = 0; a < linearCount; a++) empty[a] = linearCurves[a] == null || isEmptyLinear(linearCurves[a]);
+            for (int a = 0; a < curveCount; a++) empty[linearCount + a] = curves[a] == null || isEmptyCurve(curves[a]);
+
+            int Slot(CustomAnimation.CurveInfo c)
+            {
+                if (c.curveIndex < 0) return -1;
+                if (c.isLinear) return c.curveIndex < linearCount ? c.curveIndex : -1;
+                return c.curveIndex < curveCount ? linearCount + c.curveIndex : -1;
+            }
+
+            int infoCount = infos.Count;
+            var mainSlot = new int[infoCount];
+            var baseSlot = new int[infoCount];
+            var alive = new bool[infoCount];
+            var refCount = new int[total];
+            var mainRefs = new List<int>[total];
+            var baseRefs = new List<int>[total];
+            for (int a = 0; a < infoCount; a++)
+            {
+                alive[a] = true;
+                var info = infos[a];
+                int m = mainSlot[a] = Slot(info.infoMain);
+                int b = baseSlot[a] = Slot(info.infoBase);
+                if (m >= 0) { refCount[m]++; (mainRefs[m] ??= new List<int>()).Add(a); }
+                if (b >= 0) { refCount[b]++; (baseRefs[b] ??= new List<int>()).Add(a); }
+            }
+
+            var removed = new bool[total];
+            bool anyRemoved = false;
+            for (int s = 0; s < total; s++)
+            {
+                if (!empty[s] && refCount[s] > 0) continue;
+
+                bool cancel = false;
+                var asBase = baseRefs[s];
+                if (asBase != null)
+                {
+                    foreach (int ii in asBase)
+                    {
+                        if (!alive[ii]) continue;
+                        int m = mainSlot[ii];
+                        if (m >= 0 && !empty[m]) { cancel = true; break; } // Main part of pair is not empty, so cancel deletion
+                    }
+                }
+                if (cancel) continue;
+
+                removed[s] = true;
+                anyRemoved = true;
+                for (int pass = 0; pass < 2; pass++)
+                {
+                    var list = pass == 0 ? mainRefs[s] : baseRefs[s];
+                    if (list == null) continue;
+                    foreach (int ii in list)
+                    {
+                        if (!alive[ii]) continue;
+                        alive[ii] = false;
+                        if (mainSlot[ii] >= 0) refCount[mainSlot[ii]]--;
+                        if (baseSlot[ii] >= 0) refCount[baseSlot[ii]]--;
+                    }
+                }
+            }
+
+            if (!anyRemoved) return;
+
+            var newIndex = new int[total];
+            var newLinear = new List<TLinear>(linearCount);
+            var newCurves = new List<TCurve>(curveCount);
+            for (int a = 0; a < linearCount; a++) { if (removed[a]) continue; newIndex[a] = newLinear.Count; newLinear.Add(linearCurves[a]); }
+            for (int a = 0; a < curveCount; a++) { if (removed[linearCount + a]) continue; newIndex[linearCount + a] = newCurves.Count; newCurves.Add(curves[a]); }
+
+            var newInfos = new List<CustomAnimation.CurveInfoPair>(infoCount);
+            for (int a = 0; a < infoCount; a++)
+            {
+                if (!alive[a]) continue;
+                var info = infos[a];
+                if (mainSlot[a] >= 0) { var im = info.infoMain; im.curveIndex = newIndex[mainSlot[a]]; info.infoMain = im; }
+                if (baseSlot[a] >= 0) { var ib = info.infoBase; ib.curveIndex = newIndex[baseSlot[a]]; info.infoBase = ib; }
+                newInfos.Add(info);
+            }
+
+            linearCurves.Clear(); linearCurves.AddRange(newLinear);
+            curves.Clear(); curves.AddRange(newCurves);
+            infos.Clear(); infos.AddRange(newInfos);
+        }
+
         public CustomAnimation Compile(bool removeEmptyCurves=true)
         {
             if (rawAnimation != null)
@@ -1645,278 +1752,8 @@ namespace Swole.API.Unity.Animation
                 if (removeEmptyCurves)
                 {
                     #region Remove Empty & Unused Curves
-                    bool IsEmptyTransformCurve(CustomAnimation.CurveInfo info)
-                    {
-                        if (info.isLinear && info.curveIndex >= 0 && info.curveIndex < transformLinearCurves.Count)
-                        {
-                            var curve = transformLinearCurves[info.curveIndex];
-                            if (curve == null || curve.frames == null || curve.frames.Length <= 0) return true; else return false;
-                        }
-                        else if (!info.isLinear && info.curveIndex >= 0 && info.curveIndex < transformCurves.Count)
-                        {
-                            var curve = transformCurves[info.curveIndex];
-                            if (curve == null || (!math.any(curve.ValidityPosition) && !math.any(curve.ValidityRotation) && !math.any(curve.ValidityScale))) return true; else return false;
-                        }
-
-                        return true;
-                    }
-                    bool IsEmptyPropertyCurve(CustomAnimation.CurveInfo info)
-                    {
-                        if (info.isLinear && info.curveIndex >= 0 && info.curveIndex < propertyLinearCurves.Count)
-                        {
-                            var curve = propertyLinearCurves[info.curveIndex];
-                            if (curve == null || curve.frames == null || curve.frames.Length <= 0) return true; else return false;
-                        }
-                        else if (!info.isLinear && info.curveIndex >= 0 && info.curveIndex < propertyCurves.Count)
-                        {
-                            var curve = propertyCurves[info.curveIndex];
-                            if (curve == null || (curve.propertyValueCurve == null || curve.propertyValueCurve.length <= 0)) return true; else return false;
-                        }
-
-                        return true;
-                    }
-
-                    bool DeleteTransformLinearCurve(int index)
-                    {
-                        foreach (var info in transformCurveInfo)
-                        {
-                            if (info.infoBase.isLinear && info.infoBase.curveIndex == index)
-                            {
-                                if (!IsEmptyTransformCurve(info.infoMain)) return false; // Main part of pair is not empty, so cancel deletion
-                            }
-                            //else if (info.infoMain.isLinear && info.infoMain.curveIndex == index) Empty main curves paired with non-empty base curves should still be deleted
-                            //{
-                            //if (!IsEmptyTransformCurve(info.infoBase)) return false;  // Base part of pair is not empty, so cancel deletion
-                            //}
-                        }
-                        transformCurveInfo.RemoveAll(i => (i.infoBase.isLinear && i.infoBase.curveIndex == index) || (i.infoMain.isLinear && i.infoMain.curveIndex == index));
-                        for (int a = 0; a < transformCurveInfo.Count; a++)
-                        {
-                            var info = transformCurveInfo[a];
-                            var infoBase = info.infoBase;
-                            var infoMain = info.infoMain;
-
-                            if (infoBase.isLinear && infoBase.curveIndex >= index) infoBase.curveIndex = infoBase.curveIndex - 1;
-                            if (infoMain.isLinear && infoMain.curveIndex >= index) infoMain.curveIndex = infoMain.curveIndex - 1;
-
-                            info.infoBase = infoBase;
-                            info.infoMain = infoMain;
-                            transformCurveInfo[a] = info;
-                        }
-                        transformLinearCurves.RemoveAt(index);
-                        return true;
-                    }
-                    bool DeleteTransformCurve(int index)
-                    {
-                        foreach (var info in transformCurveInfo)
-                        {
-                            if (!info.infoBase.isLinear && info.infoBase.curveIndex == index)
-                            {
-                                if (!IsEmptyTransformCurve(info.infoMain)) return false; // Main part of pair is not empty, so cancel deletion
-                            }
-                            //else if (!info.infoMain.isLinear && info.infoMain.curveIndex == index) Empty main curves paired with non-empty base curves should still be deleted
-                            //{
-                            //if (!IsEmptyTransformCurve(info.infoBase)) return false;  // Base part of pair is not empty, so cancel deletion
-                            //}
-                        }
-                        transformCurveInfo.RemoveAll(i => (!i.infoBase.isLinear && i.infoBase.curveIndex == index) || (!i.infoMain.isLinear && i.infoMain.curveIndex == index));
-                        for (int a = 0; a < transformCurveInfo.Count; a++)
-                        {
-                            var info = transformCurveInfo[a];
-                            var infoBase = info.infoBase;
-                            var infoMain = info.infoMain;
-
-                            if (!infoBase.isLinear && infoBase.curveIndex >= index) infoBase.curveIndex = infoBase.curveIndex - 1;
-                            if (!infoMain.isLinear && infoMain.curveIndex >= index) infoMain.curveIndex = infoMain.curveIndex - 1;
-
-                            info.infoBase = infoBase;
-                            info.infoMain = infoMain;
-                            transformCurveInfo[a] = info;
-                        }
-                        transformCurves.RemoveAt(index);
-                        return true;
-                    }
-
-                    bool DeletePropertyLinearCurve(int index)
-                    {
-                        foreach (var info in propertyCurveInfo)
-                        {
-                            if (info.infoBase.isLinear && info.infoBase.curveIndex == index)
-                            {
-                                if (!IsEmptyPropertyCurve(info.infoMain)) return false; // Main part of pair is not empty, so cancel deletion
-                            }
-                            //else if (info.infoMain.isLinear && info.infoMain.curveIndex == index) Empty main curves paired with non-empty base curves should still be deleted
-                            //{
-                            //if (!IsEmptyPropertyCurve(info.infoBase)) return false;  // Base part of pair is not empty, so cancel deletion
-                            //}
-                        }
-                        propertyCurveInfo.RemoveAll(i => (i.infoBase.isLinear && i.infoBase.curveIndex == index) || (i.infoMain.isLinear && i.infoMain.curveIndex == index));
-                        for (int a = 0; a < propertyCurveInfo.Count; a++)
-                        {
-                            var info = propertyCurveInfo[a];
-                            var infoBase = info.infoBase;
-                            var infoMain = info.infoMain;
-
-                            if (infoBase.isLinear && infoBase.curveIndex >= index) infoBase.curveIndex = infoBase.curveIndex - 1;
-                            if (infoMain.isLinear && infoMain.curveIndex >= index) infoMain.curveIndex = infoMain.curveIndex - 1;
-
-                            info.infoBase = infoBase;
-                            info.infoMain = infoMain;
-                            propertyCurveInfo[a] = info;
-                        }
-                        propertyLinearCurves.RemoveAt(index);
-                        return true;
-                    }
-                    bool DeletePropertyCurve(int index)
-                    {
-                        foreach (var info in propertyCurveInfo)
-                        {
-                            if (!info.infoBase.isLinear && info.infoBase.curveIndex == index)
-                            {
-                                if (!IsEmptyPropertyCurve(info.infoMain)) return false; // Main part of pair is not empty, so cancel deletion
-                            }
-                            //else if (!info.infoMain.isLinear && info.infoMain.curveIndex == index) Empty main curves paired with non-empty base curves should still be deleted
-                            //{
-                            //if (!IsEmptyPropertyCurve(info.infoBase)) return false;  // Base part of pair is not empty, so cancel deletion
-                            //}
-                        }
-                        propertyCurveInfo.RemoveAll(i => (!i.infoBase.isLinear && i.infoBase.curveIndex == index) || (!i.infoMain.isLinear && i.infoMain.curveIndex == index));
-                        for (int a = 0; a < propertyCurveInfo.Count; a++)
-                        {
-                            var info = propertyCurveInfo[a];
-                            var infoBase = info.infoBase;
-                            var infoMain = info.infoMain;
-
-                            if (!infoBase.isLinear && infoBase.curveIndex >= index) infoBase.curveIndex = infoBase.curveIndex - 1;
-                            if (!infoMain.isLinear && infoMain.curveIndex >= index) infoMain.curveIndex = infoMain.curveIndex - 1;
-
-                            info.infoBase = infoBase;
-                            info.infoMain = infoMain;
-                            propertyCurveInfo[a] = info;
-                        }
-                        propertyCurves.RemoveAt(index);
-                        return true;
-                    }
-
-                    int i;
-
-                    i = 0;
-                    while (i < transformLinearCurves.Count)
-                    {
-                        bool flag = true;
-                        var curve = transformLinearCurves[i];
-                        if (curve.frames == null || curve.frames.Length <= 0) // Check if curve is empty
-                        {
-                            flag = false;
-                        }
-                        else
-                        {
-                            flag = false; // Remains false if not referenced
-                            foreach (var info in transformCurveInfo) // Check for references
-                            {
-                                if (info.infoBase.isLinear && info.infoBase.curveIndex == i)
-                                {
-                                    flag = true;
-                                    break;
-                                }
-                                else if (info.infoMain.isLinear && info.infoMain.curveIndex == i)
-                                {
-                                    flag = true;
-                                    break;
-                                }
-                            }
-                        }
-                        if (!flag) flag = !DeleteTransformLinearCurve(i);
-                        if (flag) i++;
-                    }
-                    i = 0;
-                    while (i < transformCurves.Count)
-                    {
-                        bool flag = true;
-                        var curve = transformCurves[i];
-                        if (!math.any(curve.ValidityPosition) && !math.any(curve.ValidityRotation) && !math.any(curve.ValidityScale)) // Check if curve is empty
-                        {
-                            flag = false;
-                        }
-                        else
-                        {
-                            flag = false; // Remains false if not referenced
-                            foreach (var info in transformCurveInfo) // Check for references
-                            {
-                                if (!info.infoBase.isLinear && info.infoBase.curveIndex == i)
-                                {
-                                    flag = true;
-                                    break;
-                                }
-                                else if (!info.infoMain.isLinear && info.infoMain.curveIndex == i)
-                                {
-                                    flag = true;
-                                    break;
-                                }
-                            }
-                        }
-                        if (!flag) flag = !DeleteTransformCurve(i);
-                        if (flag) i++;
-                    }
-
-                    i = 0;
-                    while (i < propertyLinearCurves.Count)
-                    {
-                        bool flag = true;
-                        var curve = propertyLinearCurves[i];
-                        if (curve.frames == null || curve.frames.Length <= 0) // Check if curve is empty
-                        {
-                            flag = false;
-                        }
-                        else
-                        {
-                            flag = false; // Remains false if not referenced
-                            foreach (var info in propertyCurveInfo) // Check for references
-                            {
-                                if (info.infoBase.isLinear && info.infoBase.curveIndex == i)
-                                {
-                                    flag = true;
-                                    break;
-                                }
-                                else if (info.infoMain.isLinear && info.infoMain.curveIndex == i)
-                                {
-                                    flag = true;
-                                    break;
-                                }
-                            }
-                        }
-                        if (!flag) flag = !DeletePropertyLinearCurve(i);
-                        if (flag) i++;
-                    }
-                    i = 0;
-                    while (i < propertyCurves.Count)
-                    {
-                        bool flag = true;
-                        var curve = propertyCurves[i];
-                        if (curve.propertyValueCurve == null || curve.propertyValueCurve.length <= 0) // Check if curve is empty
-                        {
-                            flag = false;
-                        }
-                        else
-                        {
-                            flag = false; // Remains false if not referenced
-                            foreach (var info in propertyCurveInfo) // Check for references
-                            {
-                                if (!info.infoBase.isLinear && info.infoBase.curveIndex == i)
-                                {
-                                    flag = true;
-                                    break;
-                                }
-                                else if (!info.infoMain.isLinear && info.infoMain.curveIndex == i)
-                                {
-                                    flag = true;
-                                    break;
-                                }
-                            }
-                        }
-                        if (!flag) flag = !DeletePropertyCurve(i);
-                        if (flag) i++;
-                    }
+                    RemoveEmptyAndUnusedCurves(transformLinearCurves, transformCurves, transformCurveInfo, c => c.frames == null || c.frames.Length <= 0, c => !math.any(c.ValidityPosition) && !math.any(c.ValidityRotation) && !math.any(c.ValidityScale));
+                    RemoveEmptyAndUnusedCurves(propertyLinearCurves, propertyCurves, propertyCurveInfo, c => c.frames == null || c.frames.Length <= 0, c => c.propertyValueCurve == null || c.propertyValueCurve.length <= 0);
                     #endregion
                 }
 
@@ -1970,6 +1807,7 @@ namespace Swole.API.Unity.Animation
                 TransformCurve LoopTransformCurve(TransformCurve curve)
                 {
                     if (curve == null) return null;
+                    if (loopPoints == null || loopPoints.Count == 0) return curve;
 
                     bool cloned = false;
                     EditableAnimationCurve LoopInnerCurve(EditableAnimationCurve innerCurve, string suffix)

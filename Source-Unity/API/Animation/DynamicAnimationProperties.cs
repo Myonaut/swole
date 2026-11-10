@@ -16,6 +16,8 @@ namespace Swole.API.Unity.Animation
         public struct PropertyCreator
         {
             public string name;
+            [Tooltip("Optional group. Grouped properties are sorted to the front of the list, together with the other properties of the same group.")]
+            public string group;
             public UnityEngine.Object objectReference;
             public string propertyName;
 
@@ -66,7 +68,7 @@ namespace Swole.API.Unity.Animation
                 {
                     setValue.Invoke(value);
                 }
-                OnValueChange?.Invoke(value);
+                OnValueChange?.Invoke(value); 
 
                 if (listeners != null)
                 {
@@ -119,8 +121,102 @@ namespace Swole.API.Unity.Animation
             }
         }
 
+#if UNITY_EDITOR
+        [SerializeField]
+#endif
+        protected bool sortCreatorsByGroup;
+
+        protected void OnValidate()
+        {
+            if (sortCreatorsByGroup)
+            {
+                sortCreatorsByGroup = false;
+                SortPropertyCreatorsByGroup(); 
+            }
+
+        }
+
         [SerializeField]
         protected PropertyCreator[] creators;
+        public void AddPropertyCreator(PropertyCreator creator)
+        {
+            creators = (PropertyCreator[])creators.Add(creator);
+        }
+
+        protected const int MinGroupNameLength = 3;
+
+        private static int GetCommonPrefixLength(string a, string b)
+        {
+            if (string.IsNullOrEmpty(a) || string.IsNullOrEmpty(b)) return 0;
+
+            int maxLength = Math.Min(a.Length, b.Length);
+            int length = 0;
+            while (length < maxLength && a[length] == b[length]) length++;
+
+            return length;
+        }
+
+        /// <summary>
+        /// Sorts the property creators array so that properties sharing a common starting sequence of at least
+        /// <see cref="MinGroupNameLength"/> characters are grouped together sequentially. The shared starting
+        /// sequence between two properties is determined by comparing them character by character, adding matching
+        /// characters until a mismatch is found; the matched portion becomes the group name for that pair.
+        /// </summary>
+        public void SortPropertyCreatorsByGroup()
+        {
+            if (creators == null || creators.Length <= 1) return; 
+
+            var grouped = new List<PropertyCreator>();
+            var sorted = new List<PropertyCreator>();
+            foreach (var creator in creators)
+            {
+                if (string.IsNullOrWhiteSpace(creator.group)) sorted.Add(creator);
+                else grouped.Add(creator);
+            }
+
+            grouped.Sort((a, b) =>
+            {
+                int groupCompare = string.CompareOrdinal(a.group.Trim(), b.group.Trim());
+                return groupCompare != 0 ? groupCompare : string.CompareOrdinal(a.name ?? string.Empty, b.name ?? string.Empty);
+            });
+            sorted.Sort((a, b) => string.CompareOrdinal(a.name ?? string.Empty, b.name ?? string.Empty));
+
+            string currentGroupName = null;
+            for (int i = 0; i < sorted.Count; i++)
+            {
+                string name = sorted[i].name ?? string.Empty;
+
+                if (currentGroupName != null && name.StartsWith(currentGroupName, StringComparison.Ordinal))
+                {
+                    // still part of the current group
+                }
+                else
+                {
+                    currentGroupName = null;
+                }
+
+                if (i < sorted.Count - 1)
+                {
+                    string nextName = sorted[i + 1].name ?? string.Empty;
+                    int commonPrefixLength = GetCommonPrefixLength(name, nextName);
+
+                    if (currentGroupName != null) commonPrefixLength = Math.Min(commonPrefixLength, currentGroupName.Length);
+
+                    if (commonPrefixLength >= MinGroupNameLength)
+                    {
+                        currentGroupName = name.Substring(0, commonPrefixLength);
+                    }
+                    else
+                    {
+                        currentGroupName = null;
+                    }
+                }
+            }
+
+            sorted.InsertRange(0, grouped);
+            creators = sorted.ToArray();
+        }
+
         [NonSerialized]
         protected List<Property> properties = new List<Property>();
         public int PropertyCount => properties.Count;
@@ -454,6 +550,8 @@ namespace Swole.API.Unity.Animation
             var index = properties.Count;
             properties.Add(prop);
             propertiesLookup[prop.name] = index; 
+
+            Debug.Log("Created dynamic animation property: " + name + " at index " + index); 
 
             return prop;
         }

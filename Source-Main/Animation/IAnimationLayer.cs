@@ -4,7 +4,7 @@ using System.Collections.Generic;
 namespace Swole.Animation
 {
     public delegate void IterateAnimationPlayerDelegate(IAnimationPlayer player);
-    public interface IAnimationLayer : IDisposable
+    public interface IAnimationLayer : IDisposable, ICloneable
     {
 
         public bool Valid { get; }
@@ -16,13 +16,15 @@ namespace Swole.Animation
         public bool IsFromSource(IAnimationController source);
         public bool DisposeIfIsFromSource(IAnimationController source);
 
-        public IAnimationLayer NewInstance(IAnimator animator, IAnimationController animationController = null);
+        public IAnimationLayer NewInstance(IAnimator animator, IAnimationController animationController = null, bool performSafetyChecks = false);
 
         public IAnimator Animator { get; }
 
         public string Name { get; set; }
 
         public int IndexInAnimator { get; set; }
+
+        public int OrderPriority { get; set; }
         /// <summary>
         /// Swap the position of this layer in the animator's layer list with another layer.
         /// </summary>
@@ -43,6 +45,8 @@ namespace Swole.Animation
 
         public void SetAdditive(bool isAdditiveLayer);
         public bool IsAdditive { get; set; }
+        public bool ModifyAllStates { get; set; }
+        public bool AffectsRootMotion { get; set; }
 
         public float Mix { get; set; }
         public bool Deactivate { get; set; }
@@ -111,9 +115,16 @@ namespace Swole.Animation
 
         public float GetCurrentBoneHeight(string boneName);
         public float GetBoneHeight(string boneName, float timeOffset);
+        public float GetBoneHeight(string boneName, float timeOffset, out bool foundCurve);
         public float GetBoneHeightAtTime(string boneName, float time);
+        public float GetBoneHeightAtTime(string boneName, float time, out bool foundCurve);
+
+        public bool AffectsTransform(string transformName);
 
         public void NonAdditivePrepass(bool useMultithreading);
+
+        public bool ApplyPropertyStatesEarly { get; set; }
+        public void ApplyPropertyStates();
 
     }
 }

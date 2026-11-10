@@ -669,16 +669,16 @@ namespace Swole
 
             if (!Directory.Exists(target.FullName)) Directory.CreateDirectory(target.FullName);
            
-            foreach (FileInfo fi in source.GetFiles())
+            foreach (FileInfo fi in source.EnumerateFiles())
             {
-                if (extensionFilter != null)
+                if (extensionFilter != null && extensionFilter.Count > 0)
                 {
-                    var ext = Path.GetExtension(fi.Name);
+                    var ext = fi.Extension;
                     if (extensionFilter.Contains(ext)) continue;
+                    var extNoDot = ext.Length > 0 && ext[0] == '.' ? ext.Substring(1) : ext;
+                    if (extensionFilter.Contains(extNoDot)) continue;
                     if (extensionFilter.Contains(ext.AsID())) continue;
-                    ext = ext.Replace(".", string.Empty);
-                    if (extensionFilter.Contains(ext)) continue;
-                    if (extensionFilter.Contains(ext.AsID())) continue;
+                    if (extensionFilter.Contains(extNoDot.AsID())) continue;
                 }
                 try
                 {

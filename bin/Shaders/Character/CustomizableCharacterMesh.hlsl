@@ -3,6 +3,8 @@
 
 #include "CustomMeshSkinning.hlsl"
 
+#pragma target 4.5
+
 struct MuscleData
 {
 
@@ -357,28 +359,46 @@ uniform float _PulseMassAdd;
 uniform float _PulseMassAddMax;
 uniform float _PulseRate;
 
-//#if defined(SHADER_API_D3D11) || defined(SHADER_API_GLCORE) || defined(SHADER_API_GLES3) || defined(SHADER_API_VULKAN) || defined(SHADER_API_METAL) || defined(SHADER_API_PSSL)
+#if defined(UNITY_COMPILER_HLSL) || defined(SHADER_API_D3D11) || defined(SHADER_API_D3D12) || defined(SHADER_API_GLES3) || defined(SHADER_API_GLCORE)
+	StructuredBuffer<float> _VertexGroups;
 
-StructuredBuffer<float> _VertexGroups;
+	StructuredBuffer<MuscleData> _ControlMuscleGroups;
+	StructuredBuffer<float4> _ControlFatGroups; 
 
-StructuredBuffer<MuscleData> _ControlMuscleGroups;
-StructuredBuffer<float4> _ControlFatGroups; 
+	StructuredBuffer<float2> _ControlVariationShapes;
+	StructuredBuffer<int> _VariationGroups;
 
-StructuredBuffer<float2> _ControlVariationShapes;
-StructuredBuffer<int> _VariationGroups;
+	StructuredBuffer<VertexGroupInfluence> _MuscleGroupInfluences;
+	StructuredBuffer<VertexGroupInfluence> _FatGroupInfluences;
+	StructuredBuffer<DeltaData> _PerVertexDeltaData;
 
-StructuredBuffer<VertexGroupInfluence> _MuscleGroupInfluences;
-StructuredBuffer<VertexGroupInfluence> _FatGroupInfluences;
-StructuredBuffer<DeltaData> _PerVertexDeltaData;
+	StructuredBuffer<float4> _VertexColorDeltas;
 
-StructuredBuffer<float4> _VertexColorDeltas;
+	//#ifdef USE_LEFTRIGHT_BUFFER
+	StructuredBuffer<bool> _LeftRightFlags;
+	//#endif
+#else
+    // Safe fallback layout for Vulkan and Metal cross-compilation
+	uniform StructuredBuffer<float> _VertexGroups;
 
-//#ifdef USE_LEFTRIGHT_BUFFER
-StructuredBuffer<bool> _LeftRightFlags;
-//#endif
+	uniform StructuredBuffer<MuscleData> _ControlMuscleGroups;
+	uniform StructuredBuffer<float4> _ControlFatGroups;
 
-//#else
-//#endif
+	uniform StructuredBuffer<float2> _ControlVariationShapes;
+	uniform StructuredBuffer<int> _VariationGroups;
+
+	uniform StructuredBuffer<VertexGroupInfluence> _MuscleGroupInfluences;
+	uniform StructuredBuffer<VertexGroupInfluence> _FatGroupInfluences;
+	uniform StructuredBuffer<DeltaData> _PerVertexDeltaData;
+
+	uniform StructuredBuffer<float4> _VertexColorDeltas;
+
+	//#ifdef USE_LEFTRIGHT_BUFFER
+	uniform StructuredBuffer<bool> _LeftRightFlags;
+	//#endif
+#endif
+
+
 
 void CalculateLeftRightMaskingFromFlag_float(bool isRightSide, float midlineWeight, out float2 maskingLR)
 {
@@ -596,8 +616,15 @@ void CalculateMuscleDataPreCalculated_float(int instanceID, int vertexIndex, int
 	muscleData = ApplyPreCalculatedMuscleData(controlIndexOffset, int(influences.indicesB.z), influences.weightsB.z, muscleData, maskLeft, maskRight);
 	muscleData = ApplyPreCalculatedMuscleData(controlIndexOffset, int(influences.indicesB.w), influences.weightsB.w, muscleData, maskLeft, maskRight);	
 
+    muscleData.y = muscleData.y / 1.3; // temp fix for final flex shapes being too strong. The 1.3 should become a variable at some point
 	muscleData.y = muscleData.y * saturate(muscleData.x / 0.35); // nerf flex for smaller masses
-}
+	
+    float pumpFlx = saturate(muscleData.y / 0.7);
+    float pumpFlxMul = saturate(muscleData.x / 0.5);
+    float pumpFlxVaricoseMul = saturate(muscleData.x / 0.8); 
+    muscleData.z = muscleData.z + (pumpFlx * 0.01) * pumpFlxMul; // add pump when flexing
+    muscleData.w = muscleData.w + (pumpFlx * 0.4) * pumpFlxVaricoseMul; // add varicose when flexing
+} 
 
 void CalculateMuscleShapeAffectors(float4 muscleData, float4 fatData, float bustFactor, out float nerf, out float fatClamped)
 {
@@ -938,13 +965,13 @@ void SkinPreCalculatedTorso_float(int localID, int shapesID, int rigID, int char
 
 void SkinPreCalculatedVeins_float(int shrinkShapeIndex, int growShapeIndex, int flattenShapeIndex, int varicoseShapeIndex, float4 vertexColors, int localID, int shapesID, int rigID, int characterID, int vertexIndex, int vertexCount, float2 mainUV, float bustMix, bool hideNipples, bool hideGenitals, float3 inPosition, float3 inNormal, float3 inTangent, out float3 outPosition, out float3 outNormal, out float3 outTangent, out float4 muscleData, out float4 fatData, out float bustFactor, out float bustNerfFactor, out float alpha, out float midlineWeight)
 {
-
-	alpha = 1;
+	
+	//alpha = 1;
 
     CalculateBustFactors_float(vertexIndex, vertexCount, bustMix, bustFactor, bustNerfFactor);
 
     float2 maskingLR;
-    BuildPhysiqueDataPreCalculated_float(characterID, vertexIndex, vertexCount, mainUV, inPosition, muscleData, fatData, midlineWeight, maskingLR);
+    BuildPhysiqueDataPreCalculated_float(characterID, vertexIndex, vertexCount, mainUV, inPosition, muscleData, fatData, midlineWeight, maskingLR); 
 
 	int vertexIndexOffset = localID * vertexCount;
 	int globalVertexIndex = vertexIndexOffset + vertexIndex;
@@ -952,14 +979,21 @@ void SkinPreCalculatedVeins_float(int shrinkShapeIndex, int growShapeIndex, int 
 
 	outPosition = inPosition + vertexDelta.positionDelta;
 	outNormal = inNormal + vertexDelta.normalDelta;
-	outTangent = inTangent + vertexDelta.tangentDelta;
+	outTangent = inTangent + vertexDelta.tangentDelta; 
 	
     float3 startNormal = outNormal;
     float3 startTangent = outTangent;
 
+    float currentMuscleX = muscleData.x;
+    float currentMuscleY = muscleData.y;
+    float currentMuscleZ = muscleData.z;
+    float currentMuscleW = muscleData.w; 
 	float l2 = vertexColors.r;
-	float visibility = lerp(saturate(muscleData.z / 0.25), saturate((muscleData.z - 0.25) / 0.25), l2);
-	alpha = saturate(visibility / 0.55);
+    float vs1 = saturate(currentMuscleZ * 4.0); // changed from / 0.25 to * 4.0
+    float vs2 = saturate((currentMuscleZ - 0.25) * 4.0); // changed from / 0.25 to * 4.0
+    float visibility = lerp(vs1, vs2, l2);   
+	//alpha = saturate(visibility / 0.55);
+    alpha = saturate(visibility * 1.81); // changed from / 0.55 to * 1.81
 
 	float veinsShrink = ((1.0 - visibility) * 0.95); 
 	float veinsShrink1M = 1.0 - veinsShrink;
@@ -967,15 +1001,16 @@ void SkinPreCalculatedVeins_float(int shrinkShapeIndex, int growShapeIndex, int 
 
     float veinNerf;
     CalculateVeinNerf_float(muscleData, fatData, veinNerf);
-	float veinMass = max(_DefaultShapeMuscleWeight, muscleData.x);
-	float veinsVaricose = muscleData.w + (0.2 * saturate((muscleData.x - 0.5) / 1.5)) + (0.25 * saturate(muscleData.z - 0.95) * saturate(muscleData.x));
-	float veinsGrow = ((max(0, muscleData.z - 0.95) + lerp(0.0, 0.05, muscleData.x)) + (veinsVaricose * 0.4)) * visibility; 
+	float veinMass = max(_DefaultShapeMuscleWeight, currentMuscleX);
+	float veinsVaricose = min(1.25, currentMuscleW + (0.2 * saturate((currentMuscleX - 0.5) / 1.5)) + (0.25 * saturate(currentMuscleZ - 0.95) * saturate(currentMuscleX)));
+    float veinsGrow = ((max(0, currentMuscleZ - 0.95) + lerp(0.0, 0.05, min(2.0, currentMuscleX + (saturate(currentMuscleY / 0.4) * 0.5)))) + (veinsVaricose * 0.4)) * visibility;
 	ApplyMultiShape_float(growShapeIndex, veinMass, veinsGrow * veinsShrink1M, vertexIndex, vertexCount, outPosition, outNormal, outTangent, outPosition, outNormal, outTangent); 
     float3 tempNormal = outNormal;
     float3 tempTangent = outTangent;
     ApplySingleFrameShape_float(flattenShapeIndex, ((veinsGrow * -0.1) + max(veinNerf * 0.8, saturate((1.0 - alpha) / 0.3))) * veinsShrink1M, vertexIndex, vertexCount, outPosition, outNormal, outTangent, outPosition, tempNormal, tempTangent); // ignore normal and tangent delta when flattening
 	ApplyMultiShape_float(varicoseShapeIndex, veinMass, veinsVaricose * veinsShrink1M, vertexIndex, vertexCount, outPosition, outNormal, outTangent, outPosition, outNormal, outTangent); 
-
+	 
+    veinNerf = veinNerf - (max(0.0, currentMuscleY) * saturate(1.0 - fatData.x) * saturate(muscleData.x / 0.5)); // reduce and even invert vein nerf when flexing, but only when fat is low and muscle mass is high. When vein nerf is inverted, veins will be more pronounced.
     BlendShapeDelta veinNerfDelta = _MeshShapeFrameDeltas[((_MeshShapeIndices[shrinkShapeIndex].x + (_MeshShapeIndices[shrinkShapeIndex].y - 1)) * vertexCount) + vertexIndex]; 
     outNormal = SlerpNormalsShortestPath(normalize(outNormal), normalize(startNormal + veinNerfDelta.deltaNormal), veinNerf);
     outTangent = SlerpNormalsShortestPath(normalize(outTangent), normalize(startTangent + veinNerfDelta.deltaTangent), veinNerf);  

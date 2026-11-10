@@ -11,10 +11,100 @@ namespace Swole
     public class RaycastCheckSet : ScriptableObject 
     {
 
-        private const string suffix_rayOrigin = "_rayOrigin";
-        private const string suffix_rayDir = "_rayDir";
-        private const string suffix_rayOffset = "_rayOffset";
-        private const string suffix_rayMaxDistance = "_rayMaxDistance";
+        public const string suffix_rayOrigin = "_rayOrigin";
+        public const string suffix_rayDir = "_rayDir";
+        public const string suffix_rayOffset = "_rayOffset";
+        public const string suffix_rayMaxDistance = "_rayMaxDistance";
+
+        public const string suffix_hitPoint = "_hitPoint";
+        public const string suffix_hitNormal = "_hitNormal";
+
+        public const string suffix_worldSpace = "@world";
+
+        [Serializable]
+        public enum CastType
+        {
+            Ray, Sphere, Box
+        } 
+
+        [Serializable]
+        public enum ExternalParameterSourceType
+        {
+            DynamicAnimationProperty
+        }
+
+        [Serializable]
+        public class ExternalFloatParameterSource
+        {
+            [Tooltip("The id used to reference this parameter source from a check.")]
+            public string id;
+
+            [Tooltip("The kind of runtime object this source resolves values from.")]
+            public ExternalParameterSourceType sourceType;
+        }
+
+        [Header("External Parameters")]
+        public ExternalFloatParameterSource[] externalParameters;
+
+        public bool TryFindExternalParameterSource(string id, out ExternalFloatParameterSource source)
+        {
+            source = null;
+            if (externalParameters == null) return false;
+
+            foreach (var src in externalParameters)
+            {
+                if (src != null && src.id == id)
+                {
+                    source = src;
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        public bool TryFindCheckById(string id, out Check check)
+        {
+            check = default;
+            if (iterations == null) return false;
+
+            foreach (var it in iterations)
+            {
+                if (it.TryGetCheck(id, out check)) return true;
+            }
+            return false;
+        }
+
+        public static void DrawCheckShapeGizmo(Matrix4x4 rootToWorld, Check check, Vector3 originInRoot, Vector3 offsetInRoot)
+        {
+            Vector3 worldOrigin = rootToWorld.MultiplyPoint(originInRoot);
+            Vector3 worldOffset = rootToWorld.MultiplyVector(offsetInRoot);
+            Vector3 worldEnd = worldOrigin + worldOffset;
+
+            switch (check.castType)
+            {
+                case CastType.Sphere:
+                    Gizmos.DrawWireSphere(worldOrigin, check.radius);
+                    Gizmos.DrawWireSphere(worldEnd, check.radius);
+                    Gizmos.DrawLine(worldOrigin, worldEnd);
+                    break;
+
+                case CastType.Box:
+                    var orientation = rootToWorld.rotation * Quaternion.Euler(check.boxOrientationEuler);
+                    var prevMatrix = Gizmos.matrix;
+                    Gizmos.matrix = Matrix4x4.TRS(worldOrigin, orientation, Vector3.one);
+                    Gizmos.DrawWireCube(Vector3.zero, check.halfExtents * 2f);
+                    Gizmos.matrix = Matrix4x4.TRS(worldEnd, orientation, Vector3.one);
+                    Gizmos.DrawWireCube(Vector3.zero, check.halfExtents * 2f);
+                    Gizmos.matrix = prevMatrix;
+                    Gizmos.DrawLine(worldOrigin, worldEnd);
+                    break;
+
+                default:
+                    Gizmos.DrawSphere(worldOrigin, 0.005f);
+                    Gizmos.DrawRay(worldOrigin, worldOffset);
+                    break;
+            }
+        }
 
         public void DrawGizmos(Matrix4x4 rootToWorld)
         {          
@@ -91,8 +181,7 @@ namespace Swole
                             }
                         }
 
-                        Gizmos.DrawSphere(rootToWorld.MultiplyPoint(originInRoot), 0.005f);
-                        Gizmos.DrawRay(rootToWorld.MultiplyPoint(originInRoot), rootToWorld.MultiplyVector(offsetInRoot));  
+                        DrawCheckShapeGizmo(rootToWorld, check, originInRoot, offsetInRoot);
                     }
                 }
             }
@@ -147,7 +236,7 @@ namespace Swole
                 return false;
             }
 
-            public bool TryToComplete(Matrix4x4 rootToWorld, LayerMask defaultLayerMask, RaycastCheckSetHandler handler)
+            public bool TryToComplete(Matrix4x4 rootToWorld, LayerMask defaultLayerMask, RaycastCheckSetHandler handler, RaycastCheckSet checkSet)
             {
                 if (checks == null || checks.Length <= 0) return true;
 
@@ -186,22 +275,68 @@ namespace Swole
                     var mask = useLocalLayerMask ? layerMask : defaultLayerMask;
                     if (check.useLocalLayerMask) mask = check.layerMask;
 
+                    originInRoot = check.externalOriginMultiplier.Apply(originInRoot, checkSet, handler);
+                    offsetInRoot = check.externalOffsetMultiplier.Apply(offsetInRoot, checkSet, handler);
+                    float radius = check.externalRadiusMultiplier.Apply(check.radius, checkSet, handler);
+                    Vector3 halfExtents = check.externalHalfExtentsMultiplier.Apply(check.halfExtents, checkSet, handler);
+                    Vector3 boxOrientationEuler = check.externalBoxOrientationMultiplier.Apply(check.boxOrientationEuler, checkSet, handler);
+
                     float maxDistance = offsetInRoot.magnitude;
                     Vector3 dir = maxDistance > 0f ? (offsetInRoot / maxDistance) : offsetInRoot;
 
                     RaycastHit hit = default;
                     bool isSatisfied = false;
-                    Vector3 rayOrigin = rootToWorld.MultiplyPoint(originInRoot);
-                    Vector3 rayDir = rootToWorld.MultiplyVector(dir);
+
+                    Vector3 rayOrigin = originInRoot;
+                    Vector3 rayDir = dir;
                     Vector3 rayOffset = rayDir * maxDistance;
                     handler.SetVector($"{check.id}{suffix_rayOrigin}", rayOrigin);
                     handler.SetVector($"{check.id}{suffix_rayDir}", rayDir);
+                    handler.MarkAsDirectionVector($"{check.id}{suffix_rayDir}");
                     handler.SetVector($"{check.id}{suffix_rayOffset}", rayOffset);
+                    handler.MarkAsDirectionVector($"{check.id}{suffix_rayOffset}");
                     handler.SetFloat($"{check.id}{suffix_rayMaxDistance}", maxDistance);
-                    if (Physics.Raycast(rayOrigin, rayDir, out hit, maxDistance, mask, QueryTriggerInteraction.Ignore))
+                    ;
+                    rayOrigin = rootToWorld.MultiplyPoint(rayOrigin);
+                    rayDir = rootToWorld.MultiplyVector(rayDir).normalized;
+                    rayOffset = rayDir * maxDistance;
+                    handler.SetVector($"{check.id}{suffix_rayOrigin}{suffix_worldSpace}", rayOrigin);
+                    handler.SetVector($"{check.id}{suffix_rayDir}{suffix_worldSpace}", rayDir);
+                    handler.MarkAsDirectionVector($"{check.id}{suffix_rayDir}{suffix_worldSpace}");
+                    handler.SetVector($"{check.id}{suffix_rayOffset}{suffix_worldSpace}", rayOffset);
+                    handler.MarkAsDirectionVector($"{check.id}{suffix_rayOffset}{suffix_worldSpace}");
+                    handler.SetFloat($"{check.id}{suffix_rayMaxDistance}{suffix_worldSpace}", maxDistance); 
+
+                    bool didHit;
+                    switch (check.castType)
                     {
+                        case CastType.Sphere:
+                            didHit = Physics.SphereCast(rayOrigin, radius, rayDir, out hit, maxDistance, mask, QueryTriggerInteraction.Ignore);
+                            break;
+
+                        case CastType.Box:
+                            var boxOrientation = rootToWorld.rotation * Quaternion.Euler(boxOrientationEuler);
+                            didHit = Physics.BoxCast(rayOrigin, halfExtents, rayDir, out hit, boxOrientation, maxDistance, mask, QueryTriggerInteraction.Ignore);
+                            break;
+
+                        default:
+                            didHit = Physics.Raycast(rayOrigin, rayDir, out hit, maxDistance, mask, QueryTriggerInteraction.Ignore);
+                            break;
+                    }
+
+#if UNITY_EDITOR
+                    Debug.DrawLine(rayOrigin, rayOrigin + rayDir * (didHit ? hit.distance : maxDistance), didHit ? Color.red : Color.green, 60f);
+#endif
+
+                    Vector3 worldHitPoint = Vector3.zero;
+                    Vector3 worldHitNormal = Vector3.up;
+                    if (didHit)
+                    {
+                        worldHitPoint = hit.point;
+                        worldHitNormal = hit.normal;
+
                         hit.point = worldToRoot.MultiplyPoint(hit.point);
-                        hit.normal = worldToRoot.MultiplyVector(hit.normal).normalized;
+                        hit.normal = worldToRoot.MultiplyVector(hit.normal).normalized;         
 
                         if (check.flags.HasFlag(CheckFlags.SatisfiedOnHit)) isSatisfied = true;
 
@@ -227,9 +362,15 @@ namespace Swole
                     if (isSatisfied)
                     {
                         if (check.flags.HasFlag(CheckFlags.StoreResultWhenSatisfied)) 
-                        { 
-                            handler.SetResult(check.id, hit);
-                            handler.SetVector(check.id, hit.point);
+                        {
+                            string resultId = string.IsNullOrWhiteSpace(check.resultId) ? check.id : check.resultId;
+                            handler.SetResult(resultId, hit);
+
+                            string positionResultId = string.IsNullOrWhiteSpace(check.resultPositionId) ? resultId : check.resultPositionId;
+                            handler.SetVector(positionResultId + suffix_hitPoint + suffix_worldSpace, worldHitPoint);
+                            string normalResultId = positionResultId + suffix_hitNormal + suffix_worldSpace;
+                            handler.SetVector(normalResultId, worldHitNormal); 
+                            handler.MarkAsDirectionVector(normalResultId);
                         }
 
                         if (check.floatsOnSatisfy != null)
@@ -246,9 +387,15 @@ namespace Swole
                         if (check.flags.HasFlag(CheckFlags.MustBeSatisfied)) return false;
 
                         if (check.flags.HasFlag(CheckFlags.StoreResultWhenNotSatisfied)) 
-                        { 
-                            handler.SetResult(check.id, hit);
-                            handler.SetVector(check.id, hit.point);
+                        {
+                            string resultId = string.IsNullOrWhiteSpace(check.resultId) ? check.id : check.resultId;
+                            handler.SetResult(resultId, hit);
+
+                            string positionResultId = string.IsNullOrWhiteSpace(check.resultPositionId) ? resultId : check.resultPositionId;
+                            handler.SetVector(positionResultId + suffix_hitPoint + suffix_worldSpace, worldHitPoint);
+                            string normalResultId = positionResultId + suffix_hitNormal + suffix_worldSpace;
+                            handler.SetVector(normalResultId, worldHitNormal);
+                            handler.MarkAsDirectionVector(normalResultId);
                         }
 
                         if (check.floatsOnFail != null)
@@ -311,6 +458,84 @@ namespace Swole
         }
 
         [Serializable]
+        public enum ExternalParameterApplicationMode
+        {
+            MultiplyTarget, MultiplyValue
+        }
+
+        [Serializable]
+        public struct ExternalFloatParameterRef
+        {
+            public string sourceId;
+            public string parameterName;
+
+            [Tooltip("MultiplyTarget: target *= fetchedValue. MultiplyValue: target += (value * fetchedValue)")]
+            public ExternalParameterApplicationMode mode;
+            [Tooltip("Used as the multiplied operand when mode is MultiplyValue")]
+            public float value;
+
+            [Tooltip("Added to the final result regardless of mode")]
+            public float addValue;
+
+            public bool HasReference => !string.IsNullOrWhiteSpace(sourceId) && !string.IsNullOrWhiteSpace(parameterName);
+
+            public bool TryGetSourceValue(RaycastCheckSet checkSet, RaycastCheckSetHandler handler, out float fetchedValue)
+            {
+                fetchedValue = 0f;
+                if (!HasReference || checkSet == null || handler == null) return false;
+                if (!checkSet.TryFindExternalParameterSource(sourceId, out var source)) return false;
+
+                switch (source.sourceType)
+                {
+                    case ExternalParameterSourceType.DynamicAnimationProperty:
+                        var properties = handler.dynamicAnimationProperties;
+                        if (properties == null) return false;
+
+                        int index = properties.IndexOf(parameterName);
+                        if (index < 0) return false;
+
+                        fetchedValue = properties.GetValue(index);
+                        return true;
+                }
+
+                return false;
+            }
+
+            public float Apply(float target, RaycastCheckSet checkSet, RaycastCheckSetHandler handler)
+            {
+                float result = target;
+                if (TryGetSourceValue(checkSet, handler, out var fetchedValue))
+                {
+                    switch (mode)
+                    {
+                        case ExternalParameterApplicationMode.MultiplyValue:
+                            result = target + (value * fetchedValue);
+                            break;
+
+                        default:
+                            result = target * fetchedValue;
+                            break;
+                    }
+                }
+
+                return result + addValue;
+            }
+        }
+
+        [Serializable]
+        public struct ExternalVectorParameterRef
+        {
+            public ExternalFloatParameterRef x;
+            public ExternalFloatParameterRef y;
+            public ExternalFloatParameterRef z;
+
+            public Vector3 Apply(Vector3 target, RaycastCheckSet checkSet, RaycastCheckSetHandler handler)
+            {
+                return new Vector3(x.Apply(target.x, checkSet, handler), y.Apply(target.y, checkSet, handler), z.Apply(target.z, checkSet, handler));
+            }
+        }
+
+        [Serializable]
         public struct Check
         {
             [Header("Check Main")]
@@ -325,6 +550,27 @@ namespace Swole
 
             [Tooltip("The direction * distance of the raycast")]
             public Vector3 offset;
+
+            [Header("Cast Shape")]
+            public CastType castType;
+            [Tooltip("Radius used when castType is Sphere")]
+            public float radius;
+            [Tooltip("Half extents used when castType is Box")]
+            public Vector3 halfExtents;
+            [Tooltip("Local orientation of the box used when castType is Box")]
+            public Vector3 boxOrientationEuler;
+
+            [Header("External Parameter Multipliers")]
+            [Tooltip("Multiplies the components of origin using values fetched from external parameter sources")]
+            public ExternalVectorParameterRef externalOriginMultiplier;
+            [Tooltip("Multiplies the components of offset using values fetched from external parameter sources")]
+            public ExternalVectorParameterRef externalOffsetMultiplier;
+            [Tooltip("Multiplies radius using a value fetched from an external parameter source")]
+            public ExternalFloatParameterRef externalRadiusMultiplier;
+            [Tooltip("Multiplies the components of halfExtents using values fetched from external parameter sources")]
+            public ExternalVectorParameterRef externalHalfExtentsMultiplier;
+            [Tooltip("Multiplies the components of boxOrientationEuler using values fetched from external parameter sources")]
+            public ExternalVectorParameterRef externalBoxOrientationMultiplier;
 
             public bool useLocalLayerMask;
             public LayerMask layerMask;
@@ -505,13 +751,13 @@ namespace Swole
         [Serializable]
         public enum VectorSource
         {
-            Custom, ID, HitNormal, HitPoint, RayOrigin, RayDirection, RayOffset
+            Custom, ID, HitNormal, HitPoint, RayOrigin, RayDirection, RayOffset, HitNormalWorld, HitPointWorld, RayOriginWorld, RayDirectionWorld, RayOffsetWorld
         }
 
         [Serializable]
         public enum FloatOperation
         {
-            Add, Subtract, Multiply, Divide
+            Add, Subtract, Multiply, Divide, AbsoluteValue, Min, Max
         }
         [Serializable]
         public enum VectorToVectorOperation
@@ -592,6 +838,18 @@ namespace Swole
                     case FloatOperation.Divide:
                         result = valA / valB;
                         break;
+
+                    case FloatOperation.AbsoluteValue:
+                        result = Mathf.Abs(valA); 
+                        break;
+
+                    case FloatOperation.Min:
+                        result = Mathf.Min(valA, valB);
+                        break;
+
+                    case FloatOperation.Max:
+                        result = Mathf.Max(valA, valB);
+                        break;
                 }
 
                 handler.SetFloat(resultId, result);
@@ -667,19 +925,51 @@ namespace Swole
                         break;
 
                     case VectorSource.HitNormal:
-                        if (handler.TryGetResult(id, out var hit1)) return hit1.normal;
+                        {
+                            if (handler.TryGetResult(id, out var hit1)) return hit1.normal;
+                        }
                         break;
 
                     case VectorSource.HitPoint:
-                        if (handler.TryGetResult(id, out var hit2)) return hit2.point;
+                        {
+                            if (handler.TryGetResult(id, out var hit2)) return hit2.point; 
+                        }
                         break;
 
                     case VectorSource.RayDirection:
-                        if (handler.TryGetVector($"{id}{suffix_rayDir}", out var rayDir)) return rayDir;
+                        {
+                            if (handler.TryGetVector($"{id}{suffix_rayDir}", out var rayDir)) return rayDir;
+                        }
                         break;
 
                     case VectorSource.RayOffset:
-                        if (handler.TryGetVector($"{id}{suffix_rayOffset}", out var rayOffset)) return rayOffset;
+                        {
+                            if (handler.TryGetVector($"{id}{suffix_rayOffset}", out var rayOffset)) return rayOffset;
+                        }
+                        break;
+
+                    case VectorSource.HitNormalWorld:
+                        {
+                            if (handler.TryGetVector($"{id}{suffix_hitNormal}{suffix_worldSpace}", out var hitNormal)) return hitNormal;
+                        }
+                        break;
+
+                    case VectorSource.HitPointWorld:
+                        {
+                            if (handler.TryGetVector($"{id}{suffix_hitPoint}{suffix_worldSpace}", out var hitPoint)) return hitPoint;
+                        }
+                        break;
+
+                    case VectorSource.RayDirectionWorld:
+                        {
+                            if (handler.TryGetVector($"{id}{suffix_rayDir}{suffix_worldSpace}", out var rayDir)) return rayDir;
+                        }
+                        break;
+
+                    case VectorSource.RayOffsetWorld:
+                        {
+                            if (handler.TryGetVector($"{id}{suffix_rayOffset}{suffix_worldSpace}", out var rayOffset)) return rayOffset;
+                        }
                         break;
                 }
 
@@ -694,6 +984,8 @@ namespace Swole
             public OpVector vecB;
 
             public string resultId;
+            public bool resultIsDirection;
+            public bool resultIsInWorldSpace;
 
             public void Execute(RaycastCheckSetHandler handler)
             {
@@ -728,7 +1020,11 @@ namespace Swole
                         break;
                 }
 
-                handler.SetVector(resultId, result);
+                handler.SetVector(resultId, result); 
+#if UNITY_EDITOR
+                if (resultIsDirection) handler.MarkAsDirectionVector(resultId); else handler.UnmarkAsDirectionVector(resultId);
+                if (resultIsInWorldSpace) handler.MarkAsWorldSpaceVector(resultId); else handler.UnmarkAsWorldSpaceVector(resultId);
+#endif
             }
         }
         [Serializable]
@@ -809,6 +1105,14 @@ namespace Swole
         private readonly Dictionary<string, RaycastHit> results = new Dictionary<string, RaycastHit>();
 
         private readonly Dictionary<string, Vector3> vectors = new Dictionary<string, Vector3>();
+        /// <summary>
+        /// Stores the ids of vectors that should be interpreted as a direction. Mainly used for debugging and should not be relied upon for gameplay logic.
+        /// </summary>
+        private List<string> directionVectors;
+        /// <summary>
+        /// Stores the ids of vectors that should be interpreted in world space. Mainly used for debugging and should not be relied upon for gameplay logic.
+        /// </summary>
+        private List<string> worldSpaceVectors;
 
         private readonly Dictionary<string, float> floats = new Dictionary<string, float>();
         private readonly Dictionary<string, bool> flags = new Dictionary<string, bool>();
@@ -824,6 +1128,8 @@ namespace Swole
         {
             results.Clear();
             vectors.Clear();
+            directionVectors?.Clear();
+            worldSpaceVectors?.Clear();
 
             floats.Clear();
             flags.Clear();
@@ -849,6 +1155,26 @@ namespace Swole
 
         public void SetResult(string id, RaycastHit result) => results[id] = result;
         public void SetVector(string id, Vector3 vector) => vectors[id] = vector;
+        public void MarkAsDirectionVector(string id)
+        {
+            if (directionVectors == null) directionVectors = new List<string>();
+            if (!directionVectors.Contains(id)) directionVectors.Add(id);
+        }
+        public void UnmarkAsDirectionVector(string id)
+        {
+            if (directionVectors == null) return;
+            directionVectors.Remove(id);
+        }
+        public void MarkAsWorldSpaceVector(string id)
+        {
+            if (worldSpaceVectors == null) worldSpaceVectors = new List<string>();
+            if (!worldSpaceVectors.Contains(id)) worldSpaceVectors.Add(id);
+        }
+        public void UnmarkAsWorldSpaceVector(string id)
+        {
+            if (worldSpaceVectors == null) return;
+            worldSpaceVectors.Remove(id);
+        }
 
         public bool HasFloat(string id) => floats.ContainsKey(id);
         public bool HasFlag(string id) => flags.ContainsKey(id);
@@ -875,13 +1201,15 @@ namespace Swole
             Reset();
         }
 
+        public Swole.API.Unity.Animation.DynamicAnimationProperties dynamicAnimationProperties;
+
         public bool ExecuteNext() => ExecuteNext(Matrix4x4.identity);
         public bool ExecuteNext(Matrix4x4 rootToWorld)
         {
             if (checkSet == null || iteration >= checkSet.IterationCount) return false;
 
             var iteration_ = checkSet.iterations[iteration];
-            if (!iteration_.TryToComplete(rootToWorld, checkSet.layerMask, this))
+            if (!iteration_.TryToComplete(rootToWorld, checkSet.layerMask, this, checkSet))
             {
                 failed = true;
                 return false;
@@ -907,23 +1235,61 @@ namespace Swole
             {
                 string id = entry.Key;
                 var result = entry.Value;
+                Vector3 worldPoint = rootToWorld.MultiplyPoint(result.point);
 #if UNITY_EDITOR
-                UnityEditor.Handles.Label(rootToWorld.MultiplyPoint(result.point), id);
+                UnityEditor.Handles.Label(worldPoint, id);
 #endif
-                Gizmos.DrawRay(rootToWorld.MultiplyPoint(result.point), rootToWorld.MultiplyVector(result.normal) * 0.1f);
+                Gizmos.DrawRay(worldPoint, rootToWorld.MultiplyVector(result.normal) * 0.1f);
+
+                if (checkSet != null && checkSet.TryFindCheckById(id, out var check))
+                {
+                    switch (check.castType)
+                    {
+                        case RaycastCheckSet.CastType.Sphere:
+                            Gizmos.DrawWireSphere(worldPoint, check.radius);
+                            break;
+
+                        case RaycastCheckSet.CastType.Box:
+                            var orientation = rootToWorld.rotation * Quaternion.Euler(check.boxOrientationEuler);
+                            var prevMatrix = Gizmos.matrix;
+                            Gizmos.matrix = Matrix4x4.TRS(worldPoint, orientation, Vector3.one);
+                            Gizmos.DrawWireCube(Vector3.zero, check.halfExtents * 2f);
+                            Gizmos.matrix = prevMatrix;
+                            break;
+                    }
+                }
             }
         }
-        public void DrawPositions(Matrix4x4 rootToWorld, Color color)
+        public void DrawVectors(Matrix4x4 rootToWorld, Color color)
         {
+            int dirIndex = 0;
             Gizmos.color = color;
             foreach (var entry in vectors)
             {
                 string id = entry.Key;
-                var result = rootToWorld.MultiplyPoint(entry.Value);
+                bool isDirection = directionVectors != null && directionVectors.Contains(id);
+                bool isWorldSpace = id.EndsWith(RaycastCheckSet.suffix_worldSpace) || (worldSpaceVectors != null && worldSpaceVectors.Contains(id));  
+                if (isDirection)
+                {
+                    dirIndex++;
+
+                    var result = isWorldSpace ? entry.Value : rootToWorld.MultiplyVector(entry.Value);
+                    var drawOrigin = new Vector3(entry.Value.z, entry.Value.x, entry.Value.y).normalized * dirIndex * 0.1f;
+                    if (!isWorldSpace) drawOrigin = rootToWorld.MultiplyPoint(drawOrigin); else drawOrigin = drawOrigin + rootToWorld.MultiplyPoint(Vector3.zero); 
 #if UNITY_EDITOR
-                UnityEditor.Handles.Label(result + Vector3.up * 0.007f, id); 
+                    UnityEditor.Handles.Label(drawOrigin + Vector3.up * 0.01f, id);
 #endif
-                Gizmos.DrawWireSphere(result, 0.01f);
+                    Gizmos.DrawRay(drawOrigin, result); 
+                } 
+                else
+                {
+                    var result = entry.Value;
+                    if (!isWorldSpace) result = isDirection ? rootToWorld.MultiplyVector(result) : rootToWorld.MultiplyPoint(result);  
+#if UNITY_EDITOR
+                    UnityEditor.Handles.Label(result + Vector3.up * 0.007f, id);
+#endif
+                    Gizmos.DrawWireSphere(result, 0.01f);
+                }
             }
         }
     }

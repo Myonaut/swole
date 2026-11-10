@@ -83,7 +83,7 @@ public class JigglePhysics : MonoBehaviour, IExecutableBehaviour
             {
                 listener = (int groupIndex) =>
                 {
-                    if (characterMesh == null) return;
+                    if (characterMesh == null || !characterMesh.IsInitialized) return;
 
                     switch(target)
                     {
@@ -244,29 +244,32 @@ public class JigglePhysics : MonoBehaviour, IExecutableBehaviour
             {
                 float mult = 1.0f;
 
-                switch(target)
+                if (characterMesh != null && characterMesh.IsInitialized)
                 {
-                    case CharacterGroupTarget.MuscleGroupL:
-                        if (!Mathf.Approximately(muscleFlexStiffnessMultiplierAdd, 0f) && characterMesh != null && groupIndex >= 0)
-                        {
-                            mult += characterMesh.GetMuscleDataUnsafe(groupIndex).valuesLeft.flex * muscleFlexStiffnessMultiplierAdd;
-                        }
-                        break;
+                    switch (target)
+                    {
+                        case CharacterGroupTarget.MuscleGroupL:
+                            if (!Mathf.Approximately(muscleFlexStiffnessMultiplierAdd, 0f) && characterMesh != null && groupIndex >= 0)
+                            {
+                                mult += characterMesh.GetMuscleDataUnsafe(groupIndex).valuesLeft.flex * muscleFlexStiffnessMultiplierAdd;
+                            }
+                            break;
 
-                    case CharacterGroupTarget.MuscleGroupR:
-                        if (!Mathf.Approximately(muscleFlexStiffnessMultiplierAdd, 0f) && characterMesh != null && groupIndex >= 0)
-                        {
-                            mult += characterMesh.GetMuscleDataUnsafe(groupIndex).valuesRight.flex * muscleFlexStiffnessMultiplierAdd;
-                        }
-                        break;
+                        case CharacterGroupTarget.MuscleGroupR:
+                            if (!Mathf.Approximately(muscleFlexStiffnessMultiplierAdd, 0f) && characterMesh != null && groupIndex >= 0)
+                            {
+                                mult += characterMesh.GetMuscleDataUnsafe(groupIndex).valuesRight.flex * muscleFlexStiffnessMultiplierAdd;
+                            }
+                            break;
 
-                    case CharacterGroupTarget.MuscleGroup:
-                        if (!Mathf.Approximately(muscleFlexStiffnessMultiplierAdd, 0f) && characterMesh != null && groupIndex >= 0)
-                        {
-                            var muscleData = characterMesh.GetMuscleDataUnsafe(groupIndex);
-                            mult += (((muscleData.valuesLeft.flex + muscleData.valuesRight.flex)) * 0.5f) * muscleFlexStiffnessMultiplierAdd;  
-                        }
-                        break;
+                        case CharacterGroupTarget.MuscleGroup:
+                            if (!Mathf.Approximately(muscleFlexStiffnessMultiplierAdd, 0f) && characterMesh != null && groupIndex >= 0)
+                            {
+                                var muscleData = characterMesh.GetMuscleDataUnsafe(groupIndex);
+                                mult += (((muscleData.valuesLeft.flex + muscleData.valuesRight.flex)) * 0.5f) * muscleFlexStiffnessMultiplierAdd;
+                            }
+                            break;
+                    }
                 }
 
                 return mult;
@@ -279,29 +282,32 @@ public class JigglePhysics : MonoBehaviour, IExecutableBehaviour
             {
                 float mult = 1.0f;
 
-                switch (target)
+                if (characterMesh != null && characterMesh.IsInitialized)
                 {
-                    case CharacterGroupTarget.MuscleGroupL: 
-                        if (!Mathf.Approximately(muscleFlexMixMultiplierAdd, 0f) && characterMesh != null && groupIndex >= 0)
-                        {
-                            mult += characterMesh.GetMuscleDataUnsafe(groupIndex).valuesLeft.flex * muscleFlexMixMultiplierAdd;
-                        }
-                        break;
+                    switch (target)
+                    {
+                        case CharacterGroupTarget.MuscleGroupL:
+                            if (!Mathf.Approximately(muscleFlexMixMultiplierAdd, 0f) && characterMesh != null && groupIndex >= 0)
+                            {
+                                mult += characterMesh.GetMuscleDataUnsafe(groupIndex).valuesLeft.flex * muscleFlexMixMultiplierAdd;
+                            }
+                            break;
 
-                    case CharacterGroupTarget.MuscleGroupR:
-                        if (!Mathf.Approximately(muscleFlexMixMultiplierAdd, 0f) && characterMesh != null && groupIndex >= 0)
-                        {
-                            mult += characterMesh.GetMuscleDataUnsafe(groupIndex).valuesRight.flex * muscleFlexMixMultiplierAdd;
-                        }
-                        break;
+                        case CharacterGroupTarget.MuscleGroupR:
+                            if (!Mathf.Approximately(muscleFlexMixMultiplierAdd, 0f) && characterMesh != null && groupIndex >= 0)
+                            {
+                                mult += characterMesh.GetMuscleDataUnsafe(groupIndex).valuesRight.flex * muscleFlexMixMultiplierAdd;
+                            }
+                            break;
 
-                    case CharacterGroupTarget.MuscleGroup:
-                        if (!Mathf.Approximately(muscleFlexMixMultiplierAdd, 0f) && characterMesh != null && groupIndex >= 0)
-                        {
-                            var muscleData = characterMesh.GetMuscleDataUnsafe(groupIndex);
-                            mult += (((muscleData.valuesLeft.flex + muscleData.valuesRight.flex)) * 0.5f) * muscleFlexMixMultiplierAdd; 
-                        }
-                        break;
+                        case CharacterGroupTarget.MuscleGroup:
+                            if (!Mathf.Approximately(muscleFlexMixMultiplierAdd, 0f) && characterMesh != null && groupIndex >= 0)
+                            {
+                                var muscleData = characterMesh.GetMuscleDataUnsafe(groupIndex);
+                                mult += (((muscleData.valuesLeft.flex + muscleData.valuesRight.flex)) * 0.5f) * muscleFlexMixMultiplierAdd;
+                            }
+                            break;
+                    }
                 }
 
                 return mult;
@@ -662,8 +668,21 @@ public class JigglePhysics : MonoBehaviour, IExecutableBehaviour
 
             Vector3 tipAcceleration = tipSpringForce + tipDampingForce;
 
-            tipVelocity += tipAcceleration * Time.deltaTime * velocityMix;
-            tipBone.position += tipVelocity * Time.deltaTime;
+            // Clamp delta time to prevent instability at low frame rates
+            float clampedDeltaTime = Mathf.Min(Time.deltaTime, 0.033f); // Cap at ~30 FPS worth of delta
+
+            tipVelocity += tipAcceleration * clampedDeltaTime * velocityMix;
+            tipVelocity = Vector3.ClampMagnitude(tipVelocity, maxVelocity); // Apply same velocity limit as main bone
+            tipBone.position += tipVelocity * clampedDeltaTime;
+
+            // Apply distance constraint to tip bone relative to target position
+            Vector3 tipOffset = tipBone.position - targetTipWorldPos;
+            float tipDist = tipOffset.magnitude;
+            float tipMaxDistance = maxDistance * 0.5f; // Tip has tighter constraint
+            if (tipDist > 0 && tipDist >= tipMaxDistance)
+            {
+                tipBone.position = targetTipWorldPos + (tipOffset / tipDist) * tipMaxDistance; 
+            }
 
             Quaternion alignmentCorrection = Quaternion.Inverse(Quaternion.LookRotation(boneForwardAxis, boneUpAxis));
 

@@ -1,4 +1,4 @@
-#if (UNITY_STANDALONE || UNITY_EDITOR)
+ï»¿#if (UNITY_STANDALONE || UNITY_EDITOR)
 
 using System;
 using System.IO;
@@ -16,6 +16,7 @@ using Unity.Mathematics;
 
 using TMPro;
 
+using Swole;
 using Swole.UI;
 using Swole.Animation;
 using Swole.API.Unity.Animation.Curves;
@@ -624,6 +625,69 @@ namespace Swole.API.Unity.Animation
                 originalPose.Add(new PoseTransformState() { transform = transform, state = new TransformState(transform, false) });
             }
 
+            public struct CurveStructure
+            {
+                public TransformCurve[] transformCurves;
+                public TransformLinearCurve[] transformLinearCurves;
+                public PropertyCurve[] propertyCurves;
+                public PropertyLinearCurve[] propertyLinearCurves;
+                public CustomAnimation.CurveInfoPair[] transformAnimationCurves;
+                public CustomAnimation.CurveInfoPair[] propertyAnimationCurves;
+                public string[] propertyCurveNames;
+                public string[] propertyLinearCurveNames;
+
+                private static T[] CloneArray<T>(T[] array) => array == null ? null : (T[])array.Clone();
+
+                public static CurveStructure Capture(CustomAnimation animation)
+                {
+                    if (animation == null) return default;
+                    return new CurveStructure()
+                    {
+                        transformCurves = CloneArray(animation.transformCurves),
+                        transformLinearCurves = CloneArray(animation.transformLinearCurves),
+                        propertyCurves = CloneArray(animation.propertyCurves),
+                        propertyLinearCurves = CloneArray(animation.propertyLinearCurves),
+                        transformAnimationCurves = CloneArray(animation.transformAnimationCurves),
+                        propertyAnimationCurves = CloneArray(animation.propertyAnimationCurves),
+                        propertyCurveNames = animation.propertyCurves == null ? null : Array.ConvertAll(animation.propertyCurves, c => c?.name),
+                        propertyLinearCurveNames = animation.propertyLinearCurves == null ? null : Array.ConvertAll(animation.propertyLinearCurves, c => c?.name)
+                    };
+                }
+
+                public void ApplyTo(CustomAnimation animation)
+                {
+                    if (animation == null) return;
+                    animation.transformCurves = CloneArray(transformCurves);
+                    animation.transformLinearCurves = CloneArray(transformLinearCurves);
+                    animation.propertyCurves = CloneArray(propertyCurves);
+                    animation.propertyLinearCurves = CloneArray(propertyLinearCurves);
+                    animation.transformAnimationCurves = CloneArray(transformAnimationCurves);
+                    animation.propertyAnimationCurves = CloneArray(propertyAnimationCurves);
+                    if (animation.propertyCurves != null && propertyCurveNames != null && propertyCurveNames.Length == animation.propertyCurves.Length)
+                    {
+                        for (int a = 0; a < propertyCurveNames.Length; a++) if (animation.propertyCurves[a] != null) animation.propertyCurves[a].name = propertyCurveNames[a];
+                    }
+                    if (animation.propertyLinearCurves != null && propertyLinearCurveNames != null && propertyLinearCurveNames.Length == animation.propertyLinearCurves.Length)
+                    {
+                        for (int a = 0; a < propertyLinearCurveNames.Length; a++) if (animation.propertyLinearCurves[a] != null) animation.propertyLinearCurves[a].name = propertyLinearCurveNames[a];
+                    }
+                }
+            }
+
+            private bool hasOriginalCurveStructure;
+            private CurveStructure originalCurveStructure;
+            /// <summary>
+            /// Records which curves exist in the animation so that curve creation/removal can be undone. Pass a structure captured earlier if curves were already added before the record began.
+            /// </summary>
+            public void SetOriginalCurveStructure(CurveStructure? structure = null)
+            {
+                if (hasOriginalCurveStructure) return;
+                if (source == null || source.rawAnimation == null) return;
+
+                originalCurveStructure = structure.HasValue ? structure.Value : CurveStructure.Capture(source.rawAnimation);
+                hasOriginalCurveStructure = true;
+            }
+
             private CustomAnimation.Event[] originalEvents;
             public void SetOriginalEvents(CustomAnimation.Event[] events)
             {
@@ -865,6 +929,16 @@ namespace Swole.API.Unity.Animation
                 }
 
                 if (flag) newPose.Add(state); 
+            }
+
+            private bool hasNewCurveStructure;
+            private CurveStructure newCurveStructure;
+            public void RecordCurveStructure()
+            {
+                if (!hasOriginalCurveStructure || source == null || source.rawAnimation == null) return;
+
+                newCurveStructure = CurveStructure.Capture(source.rawAnimation);
+                hasNewCurveStructure = true;
             }
 
             private CustomAnimation.Event[] editedEvents;
@@ -1187,6 +1261,8 @@ namespace Swole.API.Unity.Animation
 
                 if (source != null && source.rawAnimation != null)
                 {
+                    if (hasNewCurveStructure) newCurveStructure.ApplyTo(source.rawAnimation);
+
                     if (editedEvents != null)
                     {
                         //if (editor.animationEventsWindow != null) editor.animationEventsWindow.gameObject.SetActive(false);
@@ -1349,6 +1425,8 @@ namespace Swole.API.Unity.Animation
 
                 if (source != null && source.rawAnimation != null)
                 {
+                    if (hasOriginalCurveStructure) originalCurveStructure.ApplyTo(source.rawAnimation);
+
                     if (originalEvents != null)
                     {
                         //if (editor.animationEventsWindow != null) editor.animationEventsWindow.gameObject.SetActive(false); 
@@ -3931,6 +4009,701 @@ namespace Swole.API.Unity.Animation
             }
         }
 
+        public RectTransform offsetAnimationWindow;
+
+        [Serializable]
+        public class OffsetAnimationModule
+        {
+            public RootRotationBehaviour rootBehaviour = RootRotationBehaviour.None;
+
+            public Vector3 worldOffset;
+            public Vector3 worldRotationEuler;
+
+            public Quaternion WorldRotation => Quaternion.Euler(worldRotationEuler);
+        }
+
+        public void OpenOffsetAnimationWindow() => OpenOffsetAnimationWindow(null, null);
+        public void OpenOffsetAnimationWindow(VoidParameterlessDelegate onApply, VoidParameterlessDelegate onCancel) => OpenOffsetAnimationWindow(offsetAnimationWindow, CurrentSource, onApply, onCancel);
+        public void OpenOffsetAnimationWindow(RectTransform offsetAnimationWindow, AnimationSource source, VoidParameterlessDelegate onApply, VoidParameterlessDelegate onCancel)
+        {
+            if (offsetAnimationWindow == null) return;
+
+            offsetAnimationWindow.gameObject.SetActive(source != null);
+            if (source == null) return;
+            offsetAnimationWindow.SetAsLastSibling();
+
+            RefreshOffsetAnimationWindow(offsetAnimationWindow, source, onApply, onCancel);
+        }
+
+        private readonly OffsetAnimationModule offsetAnimationModule = new OffsetAnimationModule();
+        public void RefreshOffsetAnimationWindow(VoidParameterlessDelegate onApply, VoidParameterlessDelegate onCancel) => RefreshOffsetAnimationWindow(offsetAnimationWindow, CurrentSource, onApply, onCancel);
+        public void RefreshOffsetAnimationWindow(RectTransform offsetAnimationWindow, AnimationSource source, VoidParameterlessDelegate onApply, VoidParameterlessDelegate onCancel)
+        {
+            if (offsetAnimationWindow == null || source == null || source.rawAnimation == null || !offsetAnimationWindow.gameObject.activeSelf) return;
+
+            CustomEditorUtils.SetComponentTextByName(offsetAnimationWindow, str_title, $"OFFSET/ROTATE {source.DisplayName}");
+
+            Transform optionsObj = offsetAnimationWindow.FindDeepChildLiberal("options");
+            if (optionsObj != null)
+            {
+                // The root behaviour enum is edited via three toggles that together map onto its five values:
+                // - offsetRoot: root owns position (Position / PositionRotated / PositionRotation)
+                // - rotateRootRotation: root owns rotation (Rotation / PositionRotation); if false, children own rotation instead
+                // - rotateRootPosition: only meaningful when the root owns position but not rotation - rotates the root's
+                //   existing position data in place (Position -> PositionRotated)
+                bool IncludesPosition(RootRotationBehaviour b) => b == RootRotationBehaviour.Position ||  b == RootRotationBehaviour.PositionOffsetAndRotated;
+                bool IncludesRotation(RootRotationBehaviour b) => b == RootRotationBehaviour.Rotation || b == RootRotationBehaviour.PositionRotation;
+                bool RotatesPositionData(RootRotationBehaviour b) => b == RootRotationBehaviour.PositionRotated || b == RootRotationBehaviour.PositionRotation || b == RootRotationBehaviour.PositionOffsetAndRotated;
+
+                RootRotationBehaviour ComposeBehaviour(bool includesPosition, bool includesRotation, bool rotatesPositionData)
+                {
+                    if (includesPosition && includesRotation) return RootRotationBehaviour.PositionRotation;
+                    if (includesRotation) return RootRotationBehaviour.Rotation;
+                    if (includesPosition) return rotatesPositionData ? RootRotationBehaviour.PositionOffsetAndRotated : RootRotationBehaviour.Position;
+                    return rotatesPositionData ? RootRotationBehaviour.PositionRotated : RootRotationBehaviour.None; 
+                }
+
+                void RefreshRootBehaviourToggle(string fieldName, Func<RootRotationBehaviour, bool> getValue, Func<RootRotationBehaviour, bool, RootRotationBehaviour> withValue) 
+                {
+                    var toggleObj = optionsObj.FindDeepChildLiberal(fieldName);
+                    if (toggleObj == null) return;
+
+                    var toggle = toggleObj.gameObject.GetComponentInChildren<Toggle>(true);
+                    if (toggle == null) return;
+
+                    toggle.isOn = getValue(offsetAnimationModule.rootBehaviour);
+                    if (toggle.onValueChanged == null) toggle.onValueChanged = new Toggle.ToggleEvent(); 
+                    toggle.onValueChanged.RemoveAllListeners();
+                    toggle.onValueChanged.AddListener((bool value) => offsetAnimationModule.rootBehaviour = withValue(offsetAnimationModule.rootBehaviour, value));
+                }
+
+                RefreshRootBehaviourToggle("offsetRoot", IncludesPosition, (b, v) => ComposeBehaviour(v, IncludesRotation(b), RotatesPositionData(b)));
+                RefreshRootBehaviourToggle("rotateRootRotation", IncludesRotation, (b, v) => ComposeBehaviour(IncludesPosition(b), v, RotatesPositionData(b)));
+                RefreshRootBehaviourToggle("rotateRootPosition", RotatesPositionData, (b, v) => ComposeBehaviour(IncludesPosition(b), IncludesRotation(b), v));  
+
+
+                void RefreshFloatField(string fieldName, float value, Action<float> setter)
+                {
+                    CustomEditorUtils.SetInputFieldOnEndEditActionByName(optionsObj, fieldName, (string val) =>
+                    {
+                        if (float.TryParse(val, out var res)) setter(res);
+                        //RefreshFloatField(fieldName, value, setter);
+                    });
+                    //CustomEditorUtils.SetInputFieldTextByName(optionsObj, fieldName, value.ToString("0.0000"));  
+                }
+
+                RefreshFloatField("offsetX", offsetAnimationModule.worldOffset.x, (float v) => { var o = offsetAnimationModule.worldOffset; o.x = v; offsetAnimationModule.worldOffset = o; });
+                RefreshFloatField("offsetY", offsetAnimationModule.worldOffset.y, (float v) => { var o = offsetAnimationModule.worldOffset; o.y = v; offsetAnimationModule.worldOffset = o; });
+                RefreshFloatField("offsetZ", offsetAnimationModule.worldOffset.z, (float v) => { var o = offsetAnimationModule.worldOffset; o.z = v; offsetAnimationModule.worldOffset = o; });
+
+                RefreshFloatField("rotationX", offsetAnimationModule.worldRotationEuler.x, (float v) => { var o = offsetAnimationModule.worldRotationEuler; o.x = v; offsetAnimationModule.worldRotationEuler = o; });
+                RefreshFloatField("rotationY", offsetAnimationModule.worldRotationEuler.y, (float v) => { var o = offsetAnimationModule.worldRotationEuler; o.y = v; offsetAnimationModule.worldRotationEuler = o; });
+                RefreshFloatField("rotationZ", offsetAnimationModule.worldRotationEuler.z, (float v) => { var o = offsetAnimationModule.worldRotationEuler; o.z = v; offsetAnimationModule.worldRotationEuler = o; });
+                
+                CustomEditorUtils.SetButtonOnClickActionByName(optionsObj, "apply", () =>
+                {
+                    OffsetAnimation(offsetAnimationModule.worldOffset, offsetAnimationModule.WorldRotation, offsetAnimationModule.rootBehaviour);
+                    offsetAnimationWindow.gameObject.SetActive(false);
+                    onApply?.Invoke();
+                });
+
+                CustomEditorUtils.SetButtonOnClickActionByName(optionsObj, "cancel", () =>
+                {
+                    offsetAnimationWindow.gameObject.SetActive(false);
+                    onCancel?.Invoke();
+                });
+            }
+        }
+
+        #region Bake Root Motion
+
+        public RectTransform bakeRootMotionWindow;
+        public RectTransform boneSelectWindow;
+
+        [Serializable]
+        public class BakeRootMotionModule
+        {
+            public string targetRootBone;
+            public Swole.ModelEditor.RootMotionPositionMode rootMotionPositionMode;
+            public bool additive = false; // When false, the root bone's existing curves are discarded and replaced by the bake
+
+            public List<string> referencePositionBones = new List<string>();
+            public List<string> referenceRotationBones = new List<string>();
+        }
+
+        private readonly BakeRootMotionModule bakeRootMotionModule = new BakeRootMotionModule();
+
+        public void OpenBoneSelectWindow(IEnumerable<string> bones, Action<string> callback) => OpenBoneSelectWindow(boneSelectWindow, bones, callback);
+        public void OpenBoneSelectWindow(RectTransform boneSelectWindow, IEnumerable<string> bones, Action<string> callback)
+        {
+            if (boneSelectWindow == null) return;
+
+            UIPopup popup = boneSelectWindow.GetComponentInChildren<UIPopup>(true);
+
+            boneSelectWindow.gameObject.SetActive(true);
+            boneSelectWindow.SetAsLastSibling();
+            if (popup != null) popup.Elevate();
+
+            var list = boneSelectWindow.gameObject.GetComponentInChildren<UIRecyclingList>(true);
+            if (list == null) return;
+
+            list.Clear();
+
+            if (bones != null)
+            {
+                foreach (var bone in bones)
+                {
+                    if (string.IsNullOrWhiteSpace(bone)) continue;
+
+                    list.AddNewMember(bone, () =>
+                    {
+                        boneSelectWindow.gameObject.SetActive(false);
+                        callback?.Invoke(bone);
+                    });
+                }
+
+                list.Refresh();
+            }
+        }
+
+        public void OpenBakeRootMotionWindow() => OpenBakeRootMotionWindow(null, null);
+        public void OpenBakeRootMotionWindow(VoidParameterlessDelegate onApply, VoidParameterlessDelegate onCancel) => OpenBakeRootMotionWindow(bakeRootMotionWindow, CurrentSource, onApply, onCancel);
+        public void OpenBakeRootMotionWindow(RectTransform bakeRootMotionWindow, AnimationSource source, VoidParameterlessDelegate onApply, VoidParameterlessDelegate onCancel)
+        {
+            if (bakeRootMotionWindow == null) return;
+
+            bakeRootMotionWindow.gameObject.SetActive(source != null);
+            if (source == null) return;
+            bakeRootMotionWindow.SetAsLastSibling();
+
+            RefreshBakeRootMotionWindow(bakeRootMotionWindow, source, onApply, onCancel);
+        }
+
+        public void RefreshBakeRootMotionWindow(VoidParameterlessDelegate onApply, VoidParameterlessDelegate onCancel) => RefreshBakeRootMotionWindow(bakeRootMotionWindow, CurrentSource, onApply, onCancel);
+        public void RefreshBakeRootMotionWindow(RectTransform bakeRootMotionWindow, AnimationSource source, VoidParameterlessDelegate onApply, VoidParameterlessDelegate onCancel)
+        {
+            if (bakeRootMotionWindow == null || source == null || source.rawAnimation == null || !bakeRootMotionWindow.gameObject.activeSelf) return;
+
+            CustomEditorUtils.SetComponentTextByName(bakeRootMotionWindow, str_title, $"BAKE ROOT MOTION {source.DisplayName}");
+
+            var animator = ActiveAnimator;
+
+            var targetRootBoneObj = bakeRootMotionWindow.FindDeepChildLiberal("rootBone");
+            if (targetRootBoneObj != null)
+            {
+                CustomEditorUtils.SetComponentText(targetRootBoneObj, string.IsNullOrWhiteSpace(bakeRootMotionModule.targetRootBone) && animator != null && animator.RootBoneUnity != null ? animator.RootBoneUnity.name : bakeRootMotionModule.targetRootBone);
+                CustomEditorUtils.SetButtonOnClickAction(targetRootBoneObj, () =>
+                {
+                    if (animator != null && animator.Bones != null && animator.Bones.bones != null)
+                    {
+                        OpenBoneSelectWindow(BonesToNames(animator.Bones.bones), (string boneName) =>
+                        {
+                            bakeRootMotionModule.targetRootBone = boneName;
+                            RefreshBakeRootMotionWindow(bakeRootMotionWindow, source, onApply, onCancel);
+                        });
+                    }
+                });
+            }
+
+            var rootPositionModeObj = bakeRootMotionWindow.FindDeepChildLiberal("rootPositionMode");
+            if (rootPositionModeObj != null)
+            {
+                var dropdown = rootPositionModeObj.GetComponentInChildren<UIDynamicDropdown>(true);
+                if (dropdown != null)
+                {
+                    dropdown.ClearMenuItems();
+                    foreach (var mode in Enum.GetNames(typeof(Swole.ModelEditor.RootMotionPositionMode)))
+                    {
+                        dropdown.CreateNewMenuItem(mode);
+                    }
+
+                    if (dropdown.OnSelectionChanged == null) dropdown.OnSelectionChanged = new UnityEvent<string>();
+                    dropdown.OnSelectionChanged.RemoveAllListeners();
+                    dropdown.SetSelectionText(bakeRootMotionModule.rootMotionPositionMode.ToString(), false);
+                    dropdown.OnSelectionChanged.AddListener((string selection) =>
+                    {
+                        if (Enum.TryParse<Swole.ModelEditor.RootMotionPositionMode>(selection, true, out var result))
+                        {
+                            bakeRootMotionModule.rootMotionPositionMode = result;
+                        }
+                    });
+                }
+            }
+
+            var additiveObj = bakeRootMotionWindow.FindDeepChildLiberal("additive");
+            if (additiveObj != null)
+            {
+                var toggle = additiveObj.GetComponentInChildren<Toggle>(true);
+                if (toggle != null)
+                {
+                    toggle.onValueChanged.RemoveAllListeners();
+                    toggle.SetIsOnWithoutNotify(bakeRootMotionModule.additive);
+                    toggle.onValueChanged.AddListener((bool value) => bakeRootMotionModule.additive = value);
+                }
+            }
+
+            void RefreshBoneList(string childName, List<string> bonesList)
+            {
+                var boneListObj = bakeRootMotionWindow.FindDeepChildLiberal(childName);
+                if (boneListObj == null) return;
+
+                var list = boneListObj.GetComponentInChildren<UIRecyclingList>(true);
+                if (list == null) return;
+
+                list.Clear();
+
+                CustomEditorUtils.SetButtonOnClickActionByName(boneListObj, "addBone", () =>
+                {
+                    if (animator != null && animator.Bones != null && animator.Bones.bones != null)
+                    {
+                        OpenBoneSelectWindow(BonesToNames(animator.Bones.bones), (string boneName) =>
+                        {
+                            if (bonesList == null) return;
+                            bonesList.Add(boneName);
+                            RefreshBakeRootMotionWindow(bakeRootMotionWindow, source, onApply, onCancel);
+                        });
+                    }
+                });
+
+                if (bonesList != null)
+                {
+                    foreach (var bone in bonesList)
+                    {
+                        if (string.IsNullOrWhiteSpace(bone)) continue;
+
+                        list.AddNewMember(bone, null, false, (UIRecyclingList.MemberData memberData, GameObject instance) =>
+                        {
+                            CustomEditorUtils.SetButtonOnClickActionByName(instance, "remove", () =>
+                            {
+                                bonesList.Remove(bone);
+                                RefreshBakeRootMotionWindow(bakeRootMotionWindow, source, onApply, onCancel);
+                            });
+                        });
+                    }
+
+                    list.Refresh();
+                }
+            }
+
+            RefreshBoneList("rootPositionBones", bakeRootMotionModule.referencePositionBones);
+            RefreshBoneList("rootRotationBones", bakeRootMotionModule.referenceRotationBones);
+
+            CustomEditorUtils.SetButtonOnClickActionByName(bakeRootMotionWindow, "apply", () =>
+            {
+                BakeRootMotion(bakeRootMotionModule.targetRootBone, bakeRootMotionModule.rootMotionPositionMode, bakeRootMotionModule.referencePositionBones, bakeRootMotionModule.referenceRotationBones, bakeRootMotionModule.additive);
+                bakeRootMotionWindow.gameObject.SetActive(false);
+                onApply?.Invoke();
+            });
+
+            CustomEditorUtils.SetButtonOnClickActionByName(bakeRootMotionWindow, "cancel", () =>
+            {
+                bakeRootMotionWindow.gameObject.SetActive(false);
+                onCancel?.Invoke();
+            });
+        }
+
+        private static IEnumerable<string> BonesToNames(IEnumerable<Transform> bones)
+        {
+            if (bones == null) yield break;
+            foreach (var bone in bones) if (bone != null) yield return bone.name;
+        }
+
+        /// <summary>
+        /// Bakes root motion directly into the animation's raw curves by reading the reference bones' animated local
+        /// transforms (composed up the hierarchy through their animated ancestors) at every keyframe time they define,
+        /// then writing the resulting masked world position/rotation into the root motion bone's own curves - all in a
+        /// single pass, rather than sampling the animation frame-by-frame like ModelEditor's retargeting bake does.
+        /// </summary>
+        public void BakeRootMotion(string rootBoneName, Swole.ModelEditor.RootMotionPositionMode positionMode, List<string> referencePositionBones, List<string> referenceRotationBones, bool additive = false) =>
+            BakeRootMotion(ActiveAnimator, CurrentSource, rootBoneName, positionMode, referencePositionBones, referenceRotationBones, additive);
+        public void BakeRootMotion(CustomAnimator animator, AnimationSource source, string rootBoneName, Swole.ModelEditor.RootMotionPositionMode positionMode, List<string> referencePositionBones, List<string> referenceRotationBones, bool additive = false)
+        {
+            if (animator == null || source == null || source.rawAnimation == null) return;
+
+            Transform rootBone = string.IsNullOrWhiteSpace(rootBoneName) ? animator.RootBoneUnity : animator.GetUnityBone(rootBoneName);
+            if (rootBone == null || rootBone.parent == null) return;
+
+            bool hasPositionRefs = referencePositionBones != null && referencePositionBones.Count > 0;
+            bool hasRotationRefs = referenceRotationBones != null && referenceRotationBones.Count > 0;
+            if (!hasPositionRefs && !hasRotationRefs) return;
+
+            Pause();
+
+            var animatable = ActiveAnimatable;
+            var restPose = animatable == null ? null : animatable.RestPose;
+
+            // Real (non-animated) world rotation of the root bone's parent - fixed reference frame used to convert
+            // between the root's local space and world space.
+            Quaternion rootParentWorldRotation = rootBone.parent.rotation;
+
+            Vector3 verticalAxis = math.abs((float3)animator.transform.TransformDirection(animator.yawAxis));
+            Vector3 forwardAxisWorld = math.abs((float3)animator.transform.TransformDirection(animator.forwardAxis));
+            Vector3 sidewaysAxis = math.abs((float3)math.cross((float3)forwardAxisWorld, (float3)verticalAxis));
+
+            Vector3 MaskWorldDelta(Vector3 delta)
+            {
+                switch (positionMode)
+                {
+                    case Swole.ModelEditor.RootMotionPositionMode.Planar:
+                        return Vector3.ProjectOnPlane(delta, verticalAxis);
+                    case Swole.ModelEditor.RootMotionPositionMode.Vertical:
+                        return verticalAxis * Vector3.Dot(delta, verticalAxis);
+                    case Swole.ModelEditor.RootMotionPositionMode.LeftRight:
+                        return sidewaysAxis * Vector3.Dot(delta, sidewaysAxis);
+                    case Swole.ModelEditor.RootMotionPositionMode.ForwardBack:
+                        return forwardAxisWorld * Vector3.Dot(delta, forwardAxisWorld);
+                    case Swole.ModelEditor.RootMotionPositionMode.LeftRightVertical:
+                        return (sidewaysAxis * Vector3.Dot(delta, sidewaysAxis)) + (verticalAxis * Vector3.Dot(delta, verticalAxis));
+                    case Swole.ModelEditor.RootMotionPositionMode.ForwardBackVertical:
+                        return (forwardAxisWorld * Vector3.Dot(delta, forwardAxisWorld)) + (verticalAxis * Vector3.Dot(delta, verticalAxis));
+                    default:
+                        return delta;
+                }
+            }
+
+            // Resolves a bone's local position/rotation at a given time from its raw transform curve, falling back to
+            // its rest pose value when no curve/keyframes exist for that channel.
+            bool ignoreRootCurves = false; // Only true while sampling the root's own base transform for a non-additive bake
+            (Vector3 pos, Quaternion rot) SampleLocal(Transform bone, float time)
+            {
+                Vector3 defaultPos = Vector3.zero;
+                Quaternion defaultRot = Quaternion.identity;
+                var restFrame = AnimationUtils.GetPoseTransformFrame(bone.name, restPose);
+                if (restFrame != null)
+                {
+                    defaultPos = restFrame.data.localPosition;
+                    defaultRot = restFrame.data.localRotation;
+                }
+
+                Vector3 pos = defaultPos;
+                Quaternion rot = defaultRot;
+                if (source.rawAnimation.TryGetTransformCurve(bone.name, out var curve) && curve != null)
+                {
+                    if (ignoreRootCurves && bone == rootBone) return (pos, rot);
+
+                    if (curve.localPositionCurveX != null && curve.localPositionCurveX.length > 0) pos.x = curve.localPositionCurveX.Evaluate(time);
+                    if (curve.localPositionCurveY != null && curve.localPositionCurveY.length > 0) pos.y = curve.localPositionCurveY.Evaluate(time);
+                    if (curve.localPositionCurveZ != null && curve.localPositionCurveZ.length > 0) pos.z = curve.localPositionCurveZ.Evaluate(time);
+
+                    if (curve.localRotationCurveX != null && curve.localRotationCurveX.length > 0) rot.x = curve.localRotationCurveX.Evaluate(time);
+                    if (curve.localRotationCurveY != null && curve.localRotationCurveY.length > 0) rot.y = curve.localRotationCurveY.Evaluate(time);
+                    if (curve.localRotationCurveZ != null && curve.localRotationCurveZ.length > 0) rot.z = curve.localRotationCurveZ.Evaluate(time);
+                    if (curve.localRotationCurveW != null && curve.localRotationCurveW.length > 0) rot.w = curve.localRotationCurveW.Evaluate(time);
+                }
+
+                return (pos, rot);
+            }
+
+            // Walks from the given bone up to (but not including) the root bone's parent, composing each ancestor's
+            // sampled local transform into world space. The root bone's own baked motion is intentionally excluded
+            // here - reference bones are read as if the root motion bone were still at its base (un-baked) transform,
+            // exactly like ModelEditor resets the target to bind pose before evaluating reference bones each frame.
+            (Vector3 pos, Quaternion rot) EvaluateWorldTransform(Transform bone, float time)
+            {
+                List<Transform> chain = new List<Transform>();
+                Transform current = bone;
+                while (current != null)
+                {
+                    chain.Add(current);
+                    if (current == rootBone) break;
+                    current = current.parent;
+                }
+
+                Vector3 worldPos = rootBone.parent.position;
+                Quaternion worldRot = rootParentWorldRotation;
+                for (int a = chain.Count - 1; a >= 0; a--)
+                {
+                    var (localPos, localRot) = SampleLocal(chain[a], time);
+                    worldPos += worldRot * localPos;
+                    worldRot = worldRot * localRot;
+                }
+
+                return (worldPos, worldRot);
+            }
+
+            List<Transform> positionRefTransforms = new List<Transform>();
+            if (referencePositionBones != null)
+            {
+                foreach (var boneName in referencePositionBones)
+                {
+                    if (string.IsNullOrWhiteSpace(boneName)) continue;
+                    var bone = animator.GetUnityBone(boneName);
+                    if (bone != null) positionRefTransforms.Add(bone);
+                }
+            }
+
+            List<Transform> rotationRefTransforms = new List<Transform>();
+            if (referenceRotationBones != null)
+            {
+                foreach (var boneName in referenceRotationBones)
+                {
+                    if (string.IsNullOrWhiteSpace(boneName)) continue;
+                    var bone = animator.GetUnityBone(boneName);
+                    if (bone != null) rotationRefTransforms.Add(bone);
+                }
+            }
+
+            if (positionRefTransforms.Count == 0 && rotationRefTransforms.Count == 0) return;
+
+            // Gather the union of keyframe times across all reference bones' transform curves - these are the only
+            // moments at which the baked root motion needs new keyframes.
+            HashSet<float> times = new HashSet<float>();
+            void CollectTimesForBone(Transform bone)
+            {
+                if (!source.rawAnimation.TryGetTransformCurve(bone.name, out var curve) || curve == null) return;
+
+                void Collect(EditableAnimationCurve c) { if (c != null) for (int a = 0; a < c.length; a++) times.Add(c[a].time); }
+                Collect(curve.localPositionCurveX); Collect(curve.localPositionCurveY); Collect(curve.localPositionCurveZ);
+                Collect(curve.localRotationCurveX); Collect(curve.localRotationCurveY); Collect(curve.localRotationCurveZ); Collect(curve.localRotationCurveW);
+            }
+            foreach (var bone in positionRefTransforms) CollectTimesForBone(bone);
+            foreach (var bone in rotationRefTransforms) CollectTimesForBone(bone);
+
+            if (times.Count == 0) times.Add(0f);
+
+            var sortedTimes = new List<float>(times);
+            sortedTimes.Sort();
+
+            // Child bones directly parented to the root - their world pose is preserved (except on the masked axes)
+            // by compensating their local curves inversely to whatever gets baked onto the root. Only actual
+            // poseable/IK bones are included here - other transforms parented to the root bone (e.g. mesh/visual
+            // objects used purely for display) must not get animation curves created for them.
+            List<Transform> rootChildren = new List<Transform>();
+            for (int a = 0; a < rootBone.childCount; a++)
+            {
+                var child = rootBone.GetChild(a);
+                if (child == null) continue;
+                if (!animator.avatar.IsPoseableBone(child.name, animator.FindBoneTransform) && !animator.avatar.IsIkBone(child.name)) continue;
+
+                rootChildren.Add(child);
+            } 
+
+            // The children's own key times must be baked too. Any child key left at a time we don't rewrite would keep its old local
+            // value, which is no longer correct relative to the root's new transform. (The root's own keys matter only when its curves are kept.)
+            foreach (var child in rootChildren) CollectTimesForBone(child);
+            if (additive) CollectTimesForBone(rootBone);
+            sortedTimes = new List<float>(times);
+            sortedTimes.Sort();
+
+            // --- Read pass: evaluate every bone we need at every time BEFORE any curve is modified. Reading and
+            // writing in the same pass would let already-baked keyframes leak into later Evaluate() samples (via
+            // interpolation), causing drift/motion at times where the reference bones never actually moved.
+            int timeCount = sortedTimes.Count;
+            var originalRootPos = new Vector3[timeCount];
+            var originalRootRot = new Quaternion[timeCount];
+            var refPositions = new Vector3[timeCount];
+            var refRotations = new Quaternion[timeCount];
+            var originalChildPos = new Vector3[rootChildren.Count][];
+            var originalChildRot = new Quaternion[rootChildren.Count][];
+            for (int c = 0; c < rootChildren.Count; c++)
+            {
+                originalChildPos[c] = new Vector3[timeCount];
+                originalChildRot[c] = new Quaternion[timeCount];
+            }
+
+            for (int t = 0; t < timeCount; t++)
+            {
+                float time = sortedTimes[t];
+
+                ignoreRootCurves = !additive;
+                (originalRootPos[t], originalRootRot[t]) = EvaluateWorldTransform(rootBone, time);
+                ignoreRootCurves = false;
+
+                Vector3 refPosition = Vector3.zero;
+                if (positionRefTransforms.Count > 0)
+                {
+                    float weight = 1f / positionRefTransforms.Count;
+                    foreach (var bone in positionRefTransforms)
+                    {
+                        var (pos, _) = EvaluateWorldTransform(bone, time);
+                        refPosition += pos * weight;
+                    }
+                }
+                refPositions[t] = refPosition;
+
+                Quaternion refRotation = Quaternion.identity;
+                if (rotationRefTransforms.Count > 0)
+                {
+                    float weight = 1f / rotationRefTransforms.Count;
+                    foreach (var bone in rotationRefTransforms)
+                    {
+                        var (_, rot) = EvaluateWorldTransform(bone, time);
+                        refRotation = Quaternion.Slerp(Quaternion.identity, rot, weight) * refRotation;
+                    }
+                }
+                refRotations[t] = refRotation;
+
+                for (int c = 0; c < rootChildren.Count; c++)
+                {
+                    (originalChildPos[c][t], originalChildRot[c][t]) = EvaluateWorldTransform(rootChildren[c], time);
+                }
+            }
+
+            // The root must remain at its own default position/rotation at the first sampled frame - only the
+            // reference's own delta motion (relative to this first frame) is ever applied on top of the root's
+            // original transform. The root is never snapped to the reference's actual position/orientation.
+            bool doRotation = rotationRefTransforms.Count > 0 &&
+                positionMode != Swole.ModelEditor.RootMotionPositionMode.LeftRight &&
+                positionMode != Swole.ModelEditor.RootMotionPositionMode.ForwardBack;
+
+            var editRecord = BeginNewAnimationEditRecord();
+            bool changed = false;
+
+            AnimationUtils.GetOrCreateTransformCurve(out ITransformCurve rootCurveIface, rootBone.name, source.rawAnimation, restPose); 
+            if (!(rootCurveIface is TransformCurve rootCurve))
+            {
+                CommitAnimationEditRecord();
+                return;
+            }
+
+            editRecord.SetOriginalRawTransformCurveState(rootCurve);
+
+            var childCurves = new List<TransformCurve>();
+            foreach (var child in rootChildren)
+            {
+                AnimationUtils.GetOrCreateTransformCurve(out ITransformCurve childCurveIface, child.name, source.rawAnimation, restPose);
+                if (childCurveIface is TransformCurve childCurve)
+                {
+                    editRecord.SetOriginalRawTransformCurveState(childCurve);
+                    childCurves.Add(childCurve);
+                }
+                else
+                {
+                    childCurves.Add(null);
+                }
+            }
+
+            if (!additive)
+            {
+                // Replace mode: discard the root bone's existing curves so the bake fully defines them.
+                rootCurve.localPositionCurveX?.ClearKeys(); rootCurve.localPositionCurveY?.ClearKeys(); rootCurve.localPositionCurveZ?.ClearKeys();
+                rootCurve.localRotationCurveX?.ClearKeys(); rootCurve.localRotationCurveY?.ClearKeys(); rootCurve.localRotationCurveZ?.ClearKeys(); rootCurve.localRotationCurveW?.ClearKeys();
+            }
+
+            // --- Write pass: compute and write the new root/child keyframes using only the cached original data.
+            Quaternion prevRootLocalRot = Quaternion.identity;
+            var prevChildLocalRot = new Quaternion[rootChildren.Count];
+
+            // Heading (yaw direction) of the rotation reference at each time. Bones in these rigs run head to tail along local +Y, so a bone's
+            // heading is found by tilting it upright (the minimal rotation taking its +Y onto the vertical axis) and flattening its +Z.
+            // This stays accurate when the bone is lying down, where simply flattening +Z degenerates (e.g. lying on the back points +Z straight up).
+            // Near upside down the upright tilt is ill-defined, so blend towards the flattened +Z there instead (which is horizontal in that pose).
+            Vector3[] refHeadings = null;
+            if (doRotation)
+            {
+                refHeadings = new Vector3[timeCount];
+                Vector3 vertical = verticalAxis.normalized;
+                Vector3 lastHeading = Vector3.zero;
+                for (int t = 0; t < timeCount; t++)
+                {
+                    Quaternion r = refRotations[t];
+                    Vector3 up = r * Vector3.up;
+                    Vector3 fwd = r * Vector3.forward;
+                    float upDot = Vector3.Dot(up, vertical);
+
+                    Vector3 uprightHeading = upDot > -0.99f ? Vector3.ProjectOnPlane(Quaternion.FromToRotation(up, vertical) * fwd, vertical) : Vector3.zero;
+                    Vector3 flatHeading = Vector3.ProjectOnPlane(fwd, vertical);
+
+                    float w = Mathf.SmoothStep(0f, 1f, Mathf.InverseLerp(-0.85f, -0.4f, upDot)); // 1 = upright method, 0 = flattened forward
+                    Vector3 heading = (uprightHeading.normalized * w) + (flatHeading.normalized * (1f - w));
+                    if (heading.sqrMagnitude < 1e-6f) heading = lastHeading; // Degenerate this frame; hold the previous heading
+                    heading = heading.normalized;
+
+                    refHeadings[t] = heading;
+                    if (heading.sqrMagnitude > 0f) lastHeading = heading;
+                }
+                // Fill any leading degenerate frames with the first valid heading
+                Vector3 firstValid = Vector3.zero;
+                foreach (var h in refHeadings) if (h.sqrMagnitude > 0f) { firstValid = h; break; }
+                for (int t = 0; t < timeCount && refHeadings[t].sqrMagnitude <= 0f; t++) refHeadings[t] = firstValid;
+            }
+
+            for (int t = 0; t < timeCount; t++)
+            {
+                float time = sortedTimes[t];
+
+                Vector3 trackedPosDelta = positionRefTransforms.Count > 0 ? MaskWorldDelta(refPositions[t] - refPositions[0]) : Vector3.zero;
+                Vector3 newRootWorldPos = originalRootPos[t] + trackedPosDelta;
+
+                Quaternion newRootWorldRot = originalRootRot[t];
+                if (doRotation)
+                {
+                    float trackedYaw = Vector3.SignedAngle(refHeadings[0], refHeadings[t], verticalAxis); // Pure rotation about the vertical axis; stays well defined at 180 degrees, unlike FromToRotation which picks an arbitrary axis for opposing vectors
+                    Quaternion trackedRotDelta = Quaternion.AngleAxis(trackedYaw, verticalAxis);
+                    newRootWorldRot = trackedRotDelta * originalRootRot[t];
+                }
+
+                Vector3 newRootLocalPos = Quaternion.Inverse(rootParentWorldRotation) * (newRootWorldPos - rootBone.parent.position);
+                Quaternion newRootLocalRot = Quaternion.Inverse(rootParentWorldRotation) * newRootWorldRot;
+                if (t > 0 && Quaternion.Dot(prevRootLocalRot, newRootLocalRot) < 0f) newRootLocalRot = new Quaternion(-newRootLocalRot.x, -newRootLocalRot.y, -newRootLocalRot.z, -newRootLocalRot.w); // Keep keys in the same hemisphere so per-component curves interpolate along the short path
+                prevRootLocalRot = newRootLocalRot;
+                if (rootCurve.localPositionCurveX == null) rootCurve.localPositionCurveX = new EditableAnimationCurve();
+                if (rootCurve.localPositionCurveY == null) rootCurve.localPositionCurveY = new EditableAnimationCurve();
+                if (rootCurve.localPositionCurveZ == null) rootCurve.localPositionCurveZ = new EditableAnimationCurve();
+                if (rootCurve.localRotationCurveX == null) rootCurve.localRotationCurveX = new EditableAnimationCurve();
+                if (rootCurve.localRotationCurveY == null) rootCurve.localRotationCurveY = new EditableAnimationCurve();
+                if (rootCurve.localRotationCurveZ == null) rootCurve.localRotationCurveZ = new EditableAnimationCurve();
+                if (rootCurve.localRotationCurveW == null) rootCurve.localRotationCurveW = new EditableAnimationCurve();
+
+                rootCurve.localPositionCurveX.AddOrReplaceKey(time, newRootLocalPos.x, true, true, newRootLocalPos.x, AnimationUtils.InsertAutoSmoothBehaviour.LinearIfNew);
+                rootCurve.localPositionCurveY.AddOrReplaceKey(time, newRootLocalPos.y, true, true, newRootLocalPos.y, AnimationUtils.InsertAutoSmoothBehaviour.LinearIfNew);
+                rootCurve.localPositionCurveZ.AddOrReplaceKey(time, newRootLocalPos.z, true, true, newRootLocalPos.z, AnimationUtils.InsertAutoSmoothBehaviour.LinearIfNew);
+
+                rootCurve.localRotationCurveX.AddOrReplaceKey(time, newRootLocalRot.x, true, true, newRootLocalRot.x, AnimationUtils.InsertAutoSmoothBehaviour.LinearIfNew);
+                rootCurve.localRotationCurveY.AddOrReplaceKey(time, newRootLocalRot.y, true, true, newRootLocalRot.y, AnimationUtils.InsertAutoSmoothBehaviour.LinearIfNew);
+                rootCurve.localRotationCurveZ.AddOrReplaceKey(time, newRootLocalRot.z, true, true, newRootLocalRot.z, AnimationUtils.InsertAutoSmoothBehaviour.LinearIfNew);
+                rootCurve.localRotationCurveW.AddOrReplaceKey(time, newRootLocalRot.w, true, true, newRootLocalRot.w, AnimationUtils.InsertAutoSmoothBehaviour.LinearIfNew);
+
+                // Compensate each direct child of the root so its world pose is unaffected by the root's new transform,
+                // except on the masked axes (where the child is meant to move along with the newly-baked root motion).
+                for (int c = 0; c < rootChildren.Count; c++)
+                {
+                    var childCurve = childCurves[c];
+                    if (childCurve == null) continue;
+
+                    Vector3 childWorldPos = originalChildPos[c][t];
+                    Quaternion childWorldRot = originalChildRot[c][t];
+
+                    Vector3 newChildLocalPos = Quaternion.Inverse(newRootWorldRot) * (childWorldPos - newRootWorldPos);
+                    Quaternion newChildLocalRot = Quaternion.Inverse(newRootWorldRot) * childWorldRot;
+                    if (t > 0 && Quaternion.Dot(prevChildLocalRot[c], newChildLocalRot) < 0f) newChildLocalRot = new Quaternion(-newChildLocalRot.x, -newChildLocalRot.y, -newChildLocalRot.z, -newChildLocalRot.w);
+                    prevChildLocalRot[c] = newChildLocalRot;
+
+                    if (childCurve.localPositionCurveX == null) childCurve.localPositionCurveX = new EditableAnimationCurve();
+                    if (childCurve.localPositionCurveY == null) childCurve.localPositionCurveY = new EditableAnimationCurve();
+                    if (childCurve.localPositionCurveZ == null) childCurve.localPositionCurveZ = new EditableAnimationCurve();
+                    if (childCurve.localRotationCurveX == null) childCurve.localRotationCurveX = new EditableAnimationCurve();
+                    if (childCurve.localRotationCurveY == null) childCurve.localRotationCurveY = new EditableAnimationCurve();
+                    if (childCurve.localRotationCurveZ == null) childCurve.localRotationCurveZ = new EditableAnimationCurve();
+                    if (childCurve.localRotationCurveW == null) childCurve.localRotationCurveW = new EditableAnimationCurve();
+
+                    childCurve.localPositionCurveX.AddOrReplaceKey(time, newChildLocalPos.x, true, true, newChildLocalPos.x, AnimationUtils.InsertAutoSmoothBehaviour.LinearIfNew);
+                    childCurve.localPositionCurveY.AddOrReplaceKey(time, newChildLocalPos.y, true, true, newChildLocalPos.y, AnimationUtils.InsertAutoSmoothBehaviour.LinearIfNew);
+                    childCurve.localPositionCurveZ.AddOrReplaceKey(time, newChildLocalPos.z, true, true, newChildLocalPos.z, AnimationUtils.InsertAutoSmoothBehaviour.LinearIfNew);
+
+                    childCurve.localRotationCurveX.AddOrReplaceKey(time, newChildLocalRot.x, true, true, newChildLocalRot.x, AnimationUtils.InsertAutoSmoothBehaviour.LinearIfNew);
+                    childCurve.localRotationCurveY.AddOrReplaceKey(time, newChildLocalRot.y, true, true, newChildLocalRot.y, AnimationUtils.InsertAutoSmoothBehaviour.LinearIfNew);
+                    childCurve.localRotationCurveZ.AddOrReplaceKey(time, newChildLocalRot.z, true, true, newChildLocalRot.z, AnimationUtils.InsertAutoSmoothBehaviour.LinearIfNew);
+                    childCurve.localRotationCurveW.AddOrReplaceKey(time, newChildLocalRot.w, true, true, newChildLocalRot.w, AnimationUtils.InsertAutoSmoothBehaviour.LinearIfNew);
+                }
+
+                changed = true;
+            }
+
+            editRecord.RecordRawTransformCurveEdit(rootCurve);
+            foreach (var childCurve in childCurves) if (childCurve != null) editRecord.RecordRawTransformCurveEdit(childCurve); 
+
+            if (changed)
+            {
+                source.MarkAsDirty();
+                RedrawAllCurves();
+            }
+
+            CommitAnimationEditRecord();
+        }
+
+        #endregion
+
         public GameObject promptMessageYesNo;
         public GameObject promptMessageYesNoCancel;
         public RectTransform confirmationMessageWindow; 
@@ -4206,7 +4979,7 @@ namespace Swole.API.Unity.Animation
                         }
                         if (target.IsDirty)
                         {
-                            ShowPopupConfirmation($"This pull will overwrite your current changes to '{target.DisplayName}' — are you sure?", DoIt);
+                            ShowPopupConfirmation($"This pull will overwrite your current changes to '{target.DisplayName}' ï¿½ are you sure?", DoIt);
                         }
                         else 
                         { 
@@ -4428,16 +5201,16 @@ namespace Swole.API.Unity.Animation
             if (saveButton == null) return;
 
             bool savedBefore = !(session == null || string.IsNullOrWhiteSpace(session.name) || !CheckIfSessionFileExists(session.name));
-            if (!savedBefore) session.IsDirty = true; // set raw to avoid calling other methods 
+            if (session != null && !savedBefore) session.IsDirty = true; // set raw to avoid calling other methods 
 
             var notSaved = saveButton.FindDeepChildLiberal("NotSaved");
-            if (notSaved != null) notSaved.gameObject.SetActive(!savedBefore);
+            if (notSaved != null) notSaved.gameObject.SetActive(!savedBefore); 
 
             var unSaved = saveButton.FindDeepChildLiberal("Unsaved");
-            if (unSaved != null) unSaved.gameObject.SetActive(savedBefore && session.IsDirty);
+            if (unSaved != null) unSaved.gameObject.SetActive(savedBefore && (session == null || session.IsDirty));
 
             var saved = saveButton.FindDeepChildLiberal("Saved");
-            if (saved != null) saved.gameObject.SetActive(savedBefore && !session.IsDirty);
+            if (saved != null) saved.gameObject.SetActive(savedBefore && !(session == null || session.IsDirty)); 
         }
 
         public RectTransform loadSessionWindow;
@@ -6817,9 +7590,142 @@ namespace Swole.API.Unity.Animation
             undoSystem.OnChangeHistoryPosition += (int a, int b) => RefreshUndoButtons();
             RefreshUndoButtons();  
         }
+        // Transient/modal windows that should never be tracked in session files.
+        protected static readonly HashSet<string> untrackedWindows = new HashSet<string> { nameof(confirmationMessageWindow), nameof(animationEventEditWindow), nameof(saveSessionWindow), nameof(loadSessionWindow), nameof(boneSelectWindow) };
+
+        protected List<(string name, RectTransform window)> trackedWindowFields;
+        protected readonly ResizableWindowStateCollection windowStates = new ResizableWindowStateCollection();
+        protected readonly ResizableWindowStateCollection defaultWindowStates = new ResizableWindowStateCollection();
+
+        protected void GatherTrackedWindows()
+        {
+            if (trackedWindowFields != null) return;
+            trackedWindowFields = new List<(string, RectTransform)>();
+            var ids = new HashSet<string>();
+            void AddWindow(string id, RectTransform window)
+            {
+                if (window == null || string.IsNullOrWhiteSpace(id) || untrackedWindows.Contains(id) || !ids.Add(id)) return;
+                trackedWindowFields.Add((id, window));
+            }
+
+            foreach (var field in typeof(AnimationEditor).GetFields(System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance))
+            {
+                if (field.FieldType == typeof(RectTransform) && field.Name.EndsWith("Window")) AddWindow(field.Name, field.GetValue(this) as RectTransform);
+            }
+
+
+            // Any other window can opt in by having a UITrackedWindow component on its root
+            foreach (var tag in FindObjectsOfType<UITrackedWindow>(true)) AddWindow(tag.ID, tag.GetComponent<RectTransform>());
+        }
+
+        /// <summary>
+        /// Windows that fill themselves with data when opened. Restoring one as visible does not run its open logic, so it is run here.
+        /// </summary>
+        protected void RefreshRestoredWindows()
+        {
+            GatherTrackedWindows();
+            foreach (var (name, window) in trackedWindowFields)
+            {
+                if (window == null || !window.gameObject.activeSelf) continue;
+
+                if (name == nameof(boneGroupWindow)) OpenBoneGroupWindow();
+                else if (name == nameof(ikGroupWindow)) OpenIKGroupWindow();
+                else if (name == nameof(animationEventsWindow)) OpenAnimationEventsWindow();
+                else if (name == nameof(audioSyncingWindow)) OpenAudioSyncingWindow();
+            }
+        }
+
+        /// <summary>
+        /// Open methods bring their window to the front, which scrambles the restored order. Re-applies the saved order afterwards.
+        /// </summary>
+        protected void ReapplyWindowOrder()
+        {
+            GatherTrackedWindows();
+            UIWindowStateTracker.ApplyOrder(windowStates, trackedWindowFields);
+        }
+
+        protected void ApplyWindowStates(Session session)
+        {
+            GatherTrackedWindows();
+            var sessionStates = new ResizableWindowStateCollection();
+            if (session != null) sessionStates.SetAll(session.windowStates);
+
+            UIWindowStateTracker.BeginRestore();
+            try
+            {
+                foreach (var (fieldName, window) in trackedWindowFields)
+                {
+                    if (window == null) continue;
+
+                    if (!sessionStates.TryGet(fieldName, out var state) && !defaultWindowStates.TryGet(fieldName, out state)) continue; // Windows missing from the session fall back to their defaults
+
+                    state.ApplyWindowState(window);
+                    windowStates.Set(fieldName, state);
+                }
+
+                UIWindowStateTracker.ApplyOrder(windowStates, trackedWindowFields);
+            }
+            finally { UIWindowStateTracker.EndRestore(); }
+
+            foreach (var (fieldName, window) in trackedWindowFields)
+            {
+                if (window == null || !windowStates.TryGet(fieldName, out var state)) continue;
+
+                var tag = window.GetComponent<UITrackedWindow>();
+                if (tag != null) tag.NotifyStateLoaded(state.visible);
+            }
+        }
+
+        /// <summary>
+        /// Restores every
+        /// </summary>
+        public void ResetWindowsToDefault()
+        {
+            GatherTrackedWindows();
+            UIWindowStateTracker.BeginRestore();
+            try
+            {
+                foreach (var (fieldName, window) in trackedWindowFields)
+                {
+                    if (window == null || !defaultWindowStates.TryGet(fieldName, out var state)) continue;
+
+                    state.ApplyWindowState(window);
+                    windowStates.Set(fieldName, state);
+                }
+                UIWindowStateTracker.ApplyOrder(windowStates, trackedWindowFields);
+            }
+            finally { UIWindowStateTracker.EndRestore(); }
+            SyncWindowStatesToSession();
+        }
+
+        protected void SyncWindowStatesToSession()
+        {
+            if (currentSession != null) currentSession.windowStates = windowStates.ToArray(); // Not marked dirty; the layout is saved along with the next save
+        }
+
+        protected void SetupWindowStateTracking()
+        {
+            GatherTrackedWindows();
+            foreach (var (fieldName, window) in trackedWindowFields)
+            {
+                if (window == null) continue;
+
+                defaultWindowStates.Set(fieldName, window.AsResizableWindowState()); // Captured before any session is loaded
+            }
+            UIWindowStateTracker.RecordOrder(defaultWindowStates, trackedWindowFields);
+            foreach (var (fieldName, window) in trackedWindowFields)
+            {
+                if (window == null) continue;
+
+                UIWindowStateTracker.Track(window, fieldName, windowStates, null, false, SyncWindowStatesToSession, () => this != null);
+            }
+        }
+
         protected virtual void Start()
         {
             PlaybackPosition = 0;
+
+            SetupWindowStateTracking();
 
             RefreshRootObjects();
 
@@ -7861,6 +8767,8 @@ namespace Swole.API.Unity.Animation
             var components = gameObject.GetComponentsInChildren<MonoBehaviour>();
             foreach (var component in components)
             {
+                if (component == null) continue;
+
                 var type = component.GetType();
                 while (type != null)
                 {
@@ -7974,6 +8882,8 @@ namespace Swole.API.Unity.Animation
                 public MirroringMode mirroringMode;
                 public ImportedAnimatable.Serialized[] importedObjects;
 
+                public ResizableWindowState[] windowStates;
+
                 public Session AsOriginalType(PackageInfo packageInfo = default) => new Session(this, packageInfo);
 
                 public object AsNonserializableObject(PackageInfo packageInfo = default) => AsOriginalType(packageInfo);
@@ -7992,6 +8902,7 @@ namespace Swole.API.Unity.Animation
                 s.cameraSettings = source.cameraSettings;
                 s.activeObjectIndex = source.activeObjectIndex;
                 s.mirroringMode = source.mirroringMode;
+                s.windowStates = source.windowStates;
 
                 if (source.importedObjects != null)
                 {
@@ -8009,6 +8920,7 @@ namespace Swole.API.Unity.Animation
                 this.cameraSettings = serializable.cameraSettings;
                 this.activeObjectIndex = serializable.activeObjectIndex;
                 this.mirroringMode = serializable.mirroringMode;
+                this.windowStates = serializable.windowStates;
 
                 if (serializable.importedObjects != null)
                 {
@@ -8039,6 +8951,8 @@ namespace Swole.API.Unity.Animation
             }
 
             public PlayMode playbackMode;
+
+            public ResizableWindowState[] windowStates;
 
             [Serializable]
             public struct MiscSettings
@@ -8651,9 +9565,19 @@ namespace Swole.API.Unity.Animation
             
             RefreshRootObjects();
 
+            ApplyWindowStates(currentSession);
+
             SetPlaybackMode(currentSession.playbackMode, false); 
-            SetActiveObject(currentSession.activeObjectIndex, false);
-            
+            UIWindowStateTracker.BeginRestore(); // Open methods called below bring windows to the front; that must not overwrite the saved order
+            try
+            {
+                SetActiveObject(currentSession.activeObjectIndex, false);
+                RefreshRestoredWindows();
+                ReapplyWindowOrder();
+            }
+            finally { UIWindowStateTracker.EndRestore(); }
+
+
             ClearUndoHistory();
 
             SyncSaveButton(currentSession);
@@ -9221,6 +10145,7 @@ namespace Swole.API.Unity.Animation
                 currentSession = value;
                 if (currentSession != null)
                 {
+                    if (currentSession.windowStates == null) SyncWindowStatesToSession(); // Fresh sessions adopt the current layout
                     SetMirroringMode(currentSession.mirroringMode);
                     SetMiscSettings(currentSession.Settings);
                     SetCameraSettings(currentSession.CameraSettings);
@@ -9240,6 +10165,8 @@ namespace Swole.API.Unity.Animation
         /// </summary>
         protected void OnSetActiveObject(ImportedAnimatable activeObj) 
         {
+            if (boneGroupWindow != null && boneGroupWindow.gameObject.activeSelf) OpenBoneGroupWindow();
+            if (ikGroupWindow != null && ikGroupWindow.gameObject.activeSelf) OpenIKGroupWindow();
             if (physiqueEditorWindow != null)
             {
                 if (activeObj == null || activeObj.instance == null)
@@ -12026,14 +12953,14 @@ namespace Swole.API.Unity.Animation
             if (absolute)
             {
                 AppendProxyBoneTargets(tempMirrorTransforms);
-                FlipPose(null, root, tempMirrorTransforms, true, true, true, false, false);
+                FlipPose(null, root, tempMirrorTransforms, true, true, true, false, false, true, null, true); // Local space so mirrored bones stay attached to their own parents
             }
             else
             {
                 Matrix4x4 rootL2W = Matrix4x4.identity;
                 Matrix4x4 rootW2L = Matrix4x4.identity;
                 Quaternion rootRot = Quaternion.identity;
-                Quaternion iRootRot = Quaternion.identity;
+                Quaternion iRootRot = Quaternion.identity; 
 
                 if (root != null)
                 {
@@ -12780,20 +13707,113 @@ namespace Swole.API.Unity.Animation
         /// <summary>
         /// Will append mirrored transform equivalents to the given list
         /// </summary>
-        public static void FlipPose(UndoableEditAnimationSourceData editRecord, Transform root, List<Transform> transforms, bool includeLeft = true, bool includeRight = true, bool ignoreUnmirrorableBones = false, bool useWorldSpace = false, bool appendMirrorTransforms = true)
+        public static void FlipPose(UndoableEditAnimationSourceData editRecord, Transform root, List<Transform> transforms, bool includeLeft = true, bool includeRight = true, bool ignoreUnmirrorableBones = false, bool useWorldSpace = false, bool appendMirrorTransforms = true, bool mirrorRootPosition = true, AnimationUtils.Pose restPoseOverride = null, bool useLocalSpace = false)
         {
             _tempTransforms.Clear();
             _tempTransformStates.Clear();
 
-            Matrix4x4 rootL2W = Matrix4x4.identity;
-            Matrix4x4 rootW2L = Matrix4x4.identity;
-            Quaternion rootRot = Quaternion.identity;
+            // The mirror plane is defined by the static frame the root bone lives in (the root bone's parent), never by the root bone's own
+            // (possibly rotated) axes. All states are snapshotted and mirrored in world space, then applied parent-first in world space, so
+            // no bone depends on a stale or virtual parent transform.
+            Transform frame = root == null ? null : root.parent;
+            Matrix4x4 frameL2W = frame == null ? Matrix4x4.identity : frame.localToWorldMatrix;
+            Matrix4x4 frameW2L = frame == null ? Matrix4x4.identity : frame.worldToLocalMatrix;
+            Quaternion frameRot = frame == null ? Quaternion.identity : frame.rotation;
+            Quaternion iFrameRot = Quaternion.Inverse(frameRot);
 
-            if (root != null)
+            var restAnimator = root == null ? null : root.GetComponentInParent<CustomAnimator>();
+
+            // The mirror plane passes through the frame's origin (scene center) when the root position is mirrored, otherwise through the root's own position so it stays put.
+            float centerX = 0f;
+            if (!mirrorRootPosition && root != null) centerX = frameW2L.MultiplyPoint(root.position).x;
+
+            Quaternion GetRestLocalRotation(Transform t)
             {
-                rootL2W = root.localToWorldMatrix;
-                rootW2L = root.worldToLocalMatrix;
-                rootRot = root.rotation;
+                if (restPoseOverride != null && restPoseOverride.TryGetValue(AnimationUtils.TransformLocalRotationWKey(t.name), out _)) 
+                {
+                    var frameData = AnimationUtils.GetPoseTransformFrame(t.name, restPoseOverride);
+                    if (frameData != null) return frameData.data.localRotation;
+                }
+                if (restAnimator != null && restAnimator.TryGetPreInitializedBindState(t, out var bind)) return bind.localRotation;
+                return t.localRotation;
+            }
+
+            // World-space rotation of a bone in its rest pose, composed up to the static frame.
+            Quaternion GetRestWorldRotation(Transform t)
+            {
+                Quaternion rot = Quaternion.identity;
+                var current = t;
+                while (current != null && current != frame)
+                {
+                    rot = GetRestLocalRotation(current) * rot;
+                    current = current.parent;
+                }
+                return frameRot * rot;
+            }
+
+            // Mirrors the world rotation delta from rest of the source bone, then applies it to the target bone's rest rotation.
+            Quaternion MirrorRotation(Quaternion sourceRot, Quaternion sourceRest, Quaternion targetRest)
+            {
+                Quaternion delta = sourceRot * Quaternion.Inverse(sourceRest);
+                Quaternion deltaFrame = iFrameRot * delta * frameRot;
+                Maths.MirrorPositionAndRotationX(Vector3.zero, deltaFrame, out _, out var mirroredFrame);
+                return (frameRot * mirroredFrame * iFrameRot) * targetRest;
+            }
+
+            void MirrorWorld(ref TransformState state, Quaternion sourceRest, Quaternion targetRest)
+            {
+                var p = frameW2L.MultiplyPoint(state.pos);
+                p.x = 2f * centerX - p.x;
+                state.pos = frameL2W.MultiplyPoint(p);
+                state.rot = MirrorRotation(state.rot, sourceRest, targetRest);
+            }
+
+            Quaternion MirrorDeltaWorld(Quaternion deltaWorld)
+            {
+                Quaternion deltaFrame = iFrameRot * deltaWorld * frameRot;
+                Maths.MirrorPositionAndRotationX(Vector3.zero, deltaFrame, out _, out var mirroredFrame);
+                return frameRot * mirroredFrame * iFrameRot;
+            }
+
+            Vector3 MirrorDirectionFrame(Vector3 direction)
+            {
+                Vector3 d = iFrameRot * direction;
+                d.x = -d.x;
+                return frameRot * d;
+            }
+
+            // Local space variant: mirrors the source bone's transform relative to its own parent and expresses it relative to the target's parent,
+            // so the result stays attached to the target's parent regardless of whether that parent was mirrored/moved.
+            bool TryMirrorLocal(Transform source, TransformState sourceState, Transform target, out Vector3 localPos, out Quaternion localRot)
+            {
+                localPos = default;
+                localRot = Quaternion.identity;
+
+                var sourceParent = source.parent;
+                var targetParent = target.parent;
+                if (sourceParent == null || targetParent == null) return false;
+
+                sourceParent.GetPositionAndRotation(out var parentPos, out var parentRot);
+                Quaternion iParentRot = Quaternion.Inverse(parentRot);
+
+                Quaternion restSourceParent = GetRestWorldRotation(sourceParent);
+                Quaternion restTargetParent = GetRestWorldRotation(targetParent);
+                Quaternion iRestTargetParent = Quaternion.Inverse(restTargetParent);
+                Quaternion restSource = GetRestWorldRotation(source);
+                Quaternion restTarget = GetRestWorldRotation(target);
+
+                // Position: parent-local offset -> rest-aligned world axes -> mirror -> target parent's local axes
+                Vector3 offsetRestAligned = restSourceParent * (iParentRot * (sourceState.pos - parentPos));
+                localPos = iRestTargetParent * MirrorDirectionFrame(offsetRestAligned);
+
+                // Rotation: mirror the parent-local rotation delta from rest, then apply it to the target's parent-local rest rotation
+                Quaternion rel = iParentRot * sourceState.rot;
+                Quaternion relRest = Quaternion.Inverse(restSourceParent) * restSource;
+                Quaternion relDelta = rel * Quaternion.Inverse(relRest);
+                Quaternion worldDelta = restSourceParent * relDelta * Quaternion.Inverse(restSourceParent);
+                Quaternion targetRelDelta = iRestTargetParent * MirrorDeltaWorld(worldDelta) * restTargetParent;
+                localRot = targetRelDelta * (iRestTargetParent * restTarget);
+                return true;
             }
 
             void AddTransformState(Transform transform)
@@ -12801,10 +13821,14 @@ namespace Swole.API.Unity.Animation
                 var state = new TransformState();
                 transform.GetPositionAndRotation(out state.pos, out state.rot);
                 state.localScale = transform.localScale;
-                
-                if (root != null && transform != root) state = state.WorldToRootSpace(rootW2L, rootRot);
-                
                 _tempTransformStates[transform] = state;
+            }
+
+            Transform FindMirror(Transform transform)
+            {
+                if (root == null) return null;
+                string mirroredName = Utils.GetMirroredName(transform.name, includeLeft, includeRight);
+                return mirroredName != transform.name ? root.FindDeepChild(mirroredName) : null;
             }
 
             foreach (var transform in transforms)
@@ -12812,96 +13836,68 @@ namespace Swole.API.Unity.Animation
                 if (transform == null || _tempTransformStates.ContainsKey(transform)) continue;
 
                 AddTransformState(transform);
-                if (!useWorldSpace && transform.parent != null && transform.parent != root) AddTransformState(transform.parent);
-                string mirroredName = Utils.GetMirroredName(transform.name, includeLeft, includeRight);
-                if (mirroredName != transform.name)
+                var mirrorTransform = FindMirror(transform);
+                if (mirrorTransform != null)
                 {
-                    var mirrorTransform = root.FindDeepChild(mirroredName);
-                    if (mirrorTransform != null) 
-                    {
-                        AddTransformState(mirrorTransform);
-                        if (!useWorldSpace && mirrorTransform.parent != null && mirrorTransform.parent != root) AddTransformState(mirrorTransform.parent);  
-                        if (appendMirrorTransforms && !transforms.Contains(mirrorTransform)) _tempTransforms.Add(mirrorTransform); 
-                    }
+                    if (!_tempTransformStates.ContainsKey(mirrorTransform)) AddTransformState(mirrorTransform);
+                    if (appendMirrorTransforms && !transforms.Contains(mirrorTransform)) _tempTransforms.Add(mirrorTransform);
                 }
             }
             if (appendMirrorTransforms) foreach (var append in _tempTransforms) if (!transforms.Contains(append)) transforms.Add(append);
 
-            bool TryGetMirrorState(string name, out TransformState mirrorState)
+            int Depth(Transform t)
             {
-                mirrorState = default;
-
-                string mirroredName = Utils.GetMirroredName(name, includeLeft, includeRight); 
-                if (mirroredName != name)
-                {
-                    var mirrorTransform = root.FindDeepChild(mirroredName);
-                    if (mirrorTransform != null && _tempTransformStates.TryGetValue(mirrorTransform, out mirrorState)) return true;
-                }
-
-                return false;
+                int d = 0;
+                while (t != null) { d++; t = t.parent; }
+                return d;
             }
 
+            var ordered = new List<(Transform transform, TransformState state, bool isLocal, Vector3 localPos, Quaternion localRot)>();
             foreach (var transform in transforms)
             {
                 if (transform == null) continue;
 
                 var state = _tempTransformStates[transform];
-                if (TryGetMirrorState(transform.name, out var mirrorState))
-                {
-                    state = mirrorState;
-                } 
-                else if (ignoreUnmirrorableBones) continue;             
+                var sourceTransform = transform;
+                var mirrorTransform = FindMirror(transform);
+                if (mirrorTransform != null && _tempTransformStates.TryGetValue(mirrorTransform, out var mirrorState)) { state = mirrorState; sourceTransform = mirrorTransform; }
+                else if (ignoreUnmirrorableBones) continue;
 
-                TransformState parentState = default;  
-                //bool parentHasMirror = false;
-                bool hasParent = !useWorldSpace && transform.parent != null && transform.parent != root;
-                if (hasParent)
+                if (useLocalSpace && TryMirrorLocal(sourceTransform, state, transform, out var mirroredLocalPos, out var mirroredLocalRot))
                 {
-                    if (TryGetMirrorState(transform.parent.name, out var parentMirrorState))
-                    {
-                        parentState = parentMirrorState;
-                        //parentHasMirror = true;
-                    } 
-                    else if (!_tempTransformStates.TryGetValue(transform.parent, out parentState)) 
-                    {
-                        hasParent = false;     
-                    }
+                    ordered.Add((transform, state, true, mirroredLocalPos, mirroredLocalRot));
+                    continue;
                 }
 
-                if (!hasParent)
+                MirrorWorld(ref state, GetRestWorldRotation(sourceTransform), GetRestWorldRotation(transform));
+                ordered.Add((transform, state, false, default, default));
+            }
+            ordered.Sort((a, b) => Depth(a.transform).CompareTo(Depth(b.transform)));
+
+            foreach (var (transform, state, isLocal, localPos, localRot) in ordered)
+            {
+                editRecord?.SetOriginalPoseTransformState(transform);
+
+                if (isLocal)
                 {
-                    Maths.MirrorPositionAndRotationX(state.pos, state.rot, out state.pos, out state.rot);
-                    if (root != null && transform != root) state = state.RootToWorldSpace(rootL2W, rootRot);
-
-                    editRecord?.SetOriginalPoseTransformState(transform);
-
-                    transform.SetPositionAndRotation(state.pos, state.rot); 
-                    transform.localScale = state.localScale;
-
-                    editRecord?.RecordPoseTransformState(transform);
-                } 
+                    // Parents are applied first, so the parent's transform is already final here
+                    transform.parent.GetPositionAndRotation(out var parentPos, out var parentRot);
+                    transform.SetPositionAndRotation(parentPos + parentRot * localPos, parentRot * localRot);
+                }
                 else
                 {
-                    /*if (parentHasMirror || !ignoreUnmirrorableBones)*/ Maths.MirrorPositionAndRotationX(parentState.pos, parentState.rot, out parentState.pos, out parentState.rot);
-                    Maths.MirrorPositionAndRotationX(state.pos, state.rot, out state.pos, out state.rot);
-
-                    editRecord?.SetOriginalPoseTransformState(transform);
-
-                    Quaternion iParentRot = Quaternion.Inverse(parentState.rot);
-                    state.pos = iParentRot * (state.pos - parentState.pos);
-                    state.rot = iParentRot * state.rot;
-                    transform.SetLocalPositionAndRotation(state.pos, state.rot);
-                    transform.localScale = state.localScale;
-
-                    editRecord?.RecordPoseTransformState(transform);
+                    transform.SetPositionAndRotation(state.pos, state.rot);
                 }
+                transform.localScale = state.localScale;
+
+                editRecord?.RecordPoseTransformState(transform);
             }
 
-            _tempTransforms.Clear();
+            _tempTransforms.Clear(); 
             _tempTransformStates.Clear();
         }
         public void FlipPose() => FlipPose(true, true);
-        public void FlipPose(bool includeLeft, bool includeRight, bool ignoreUnmirrorableBones = false, bool useWorldSpace = false)
+        public void FlipPose(bool includeLeft, bool includeRight, bool ignoreUnmirrorableBones = false, bool useWorldSpace = false, bool mirrorRootPosition = true)
         {
             var animatable = ActiveAnimatable;
             if (animatable == null || animatable.animator == null) return;
@@ -12913,13 +13909,19 @@ namespace Swole.API.Unity.Animation
 
             Transform root = animatable.instance.transform;
             if (animatable.animator != null) root = animatable.animator.RootBoneUnity;
-            FlipPose(editRecord, root, _tempTransforms2, includeLeft, includeRight, ignoreUnmirrorableBones);
+            FlipPose(editRecord, root, _tempTransforms2, includeLeft, includeRight, ignoreUnmirrorableBones, false, true, mirrorRootPosition, animatable.RestPose);
 
             if (CanRecord) RecordPose(_tempTransforms2, true, true);
             CommitAnimationEditRecord();
         }
         public void FlipPoseSelected() => FlipPoseSelected(true, true);
-        public void FlipPoseSelected(bool includeLeft, bool includeRight, bool ignoreUnmirrorableBones = false, bool useWorldSpace = false)
+        public void FlipPoseKeepRootPosition() => FlipPose(true, true, false, false, false);
+        public void FlipPoseSelectedKeepRootPosition() => FlipPoseSelected(true, true, false, false, false);
+        public void MirrorPoseLRKeepRootPosition() => FlipPose(false, true, true, false, false);
+        public void MirrorPoseLRSelectedKeepRootPosition() => FlipPoseSelected(false, true, true, false, false);
+        public void MirrorPoseRLKeepRootPosition() => FlipPose(true, false, true, false, false);
+        public void MirrorPoseRLSelectedKeepRootPosition() => FlipPoseSelected(true, false, true, false, false);
+        public void FlipPoseSelected(bool includeLeft, bool includeRight, bool ignoreUnmirrorableBones = false, bool useWorldSpace = false, bool mirrorRootPosition = true)
         {
             if (runtimeEditor == null) return;
 
@@ -12933,12 +13935,527 @@ namespace Swole.API.Unity.Animation
 
             Transform root = animatable.instance.transform;
             if (animatable.animator != null) root = animatable.animator.RootBoneUnity;
-            
-            FlipPose(editRecord, root, _tempTransforms2, includeLeft, includeRight, ignoreUnmirrorableBones);
+
+            FlipPose(editRecord, root, _tempTransforms2, includeLeft, includeRight, ignoreUnmirrorableBones, false, true, mirrorRootPosition, animatable.RestPose, true); // Partial selections are mirrored in local space so bones stay attached to their parents
 
             if (CanRecord) RecordPose(_tempTransforms2, true, true);
             CommitAnimationEditRecord();
         }
+        #endregion
+
+        #region Flip Animation
+
+        protected struct FlipAnimationSample
+        {
+            public Vector3 pos;
+            public Quaternion rot;
+            public Vector3 scale;
+        }
+
+        protected static EditableAnimationCurve GetTransformCurveChannel(TransformCurve curve, int channel)
+        {
+            if (curve == null) return null;
+            switch (channel)
+            {
+                case 0: return curve.localPositionCurveX;
+                case 1: return curve.localPositionCurveY;
+                case 2: return curve.localPositionCurveZ;
+                case 3: return curve.localRotationCurveX;
+                case 4: return curve.localRotationCurveY;
+                case 5: return curve.localRotationCurveZ;
+                case 6: return curve.localRotationCurveW;
+                case 7: return curve.localScaleCurveX;
+                case 8: return curve.localScaleCurveY;
+                default: return curve.localScaleCurveZ;
+            }
+        }
+        protected static void SetTransformCurveChannel(TransformCurve curve, int channel, EditableAnimationCurve value)
+        {
+            switch (channel)
+            {
+                case 0: curve.localPositionCurveX = value; break;
+                case 1: curve.localPositionCurveY = value; break;
+                case 2: curve.localPositionCurveZ = value; break;
+                case 3: curve.localRotationCurveX = value; break;
+                case 4: curve.localRotationCurveY = value; break;
+                case 5: curve.localRotationCurveZ = value; break;
+                case 6: curve.localRotationCurveW = value; break;
+                case 7: curve.localScaleCurveX = value; break;
+                case 8: curve.localScaleCurveY = value; break;
+                default: curve.localScaleCurveZ = value; break;
+            }
+        }
+        protected static float GetFlipAnimationSampleComponent(FlipAnimationSample sample, int channel)
+        {
+            switch (channel)
+            {
+                case 0: return sample.pos.x;
+                case 1: return sample.pos.y;
+                case 2: return sample.pos.z;
+                case 3: return sample.rot.x;
+                case 4: return sample.rot.y;
+                case 5: return sample.rot.z;
+                case 6: return sample.rot.w;
+                case 7: return sample.scale.x;
+                case 8: return sample.scale.y;
+                default: return sample.scale.z;
+            }
+        }
+        protected static Quaternion AlignQuaternion(Quaternion q, Quaternion reference) => Quaternion.Dot(q, reference) < 0f ? new Quaternion(-q.x, -q.y, -q.z, -q.w) : q;
+
+        public void FlipAnimation() => FlipAnimation(true, true, false, true);
+        public void FlipAnimationKeepRootPosition() => FlipAnimation(true, true, false, false);
+        public void FlipAnimationLR() => FlipAnimation(false, true, true, true);
+        public void FlipAnimationLRKeepRootPosition() => FlipAnimation(false, true, true, false);
+        public void FlipAnimationRL() => FlipAnimation(true, false, true, true);
+        public void FlipAnimationRLKeepRootPosition() => FlipAnimation(true, false, true, false);
+
+        public void FlipAnimationProperties() => FlipAnimation(true, true, false, true, true);
+        public void FlipAnimationPropertiesKeepRootPosition() => FlipAnimation(true, true, false, false, true);
+
+        public void ExportFlipAnimation() => ExportFlippedAnimation(false, true);
+        public void ExportFlipAnimationKeepRootPosition() => ExportFlippedAnimation(false, false);
+        public void ExportFlipAnimationProperties() => ExportFlippedAnimation(true, true);
+        public void ExportFlipAnimationPropertiesKeepRootPosition() => ExportFlippedAnimation(true, false);
+
+        /// <summary>
+        /// Flips the entire animation at the keyframe level. Every key keeps its time and tangent settings; only values (and tangent slopes) are replaced.
+        /// Values are produced by sampling the full pose at each key time and running it through <see cref="FlipPose(UndoableEditAnimationSourceData, Transform, List{Transform}, bool, bool, bool, bool, bool, bool, AnimationUtils.Pose)"/>,
+        /// so the result matches mirroring key pose by key pose. Mirrored bone pairs swap key layouts, since a bone receives the motion of its mirror counterpart.
+        /// </summary>
+        public void FlipAnimation(bool includeLeft, bool includeRight, bool ignoreUnmirrorableBones, bool mirrorRootPosition) => FlipAnimation(includeLeft, includeRight, ignoreUnmirrorableBones, mirrorRootPosition, false);
+        public bool FlipAnimation(bool includeLeft, bool includeRight, bool ignoreUnmirrorableBones, bool mirrorRootPosition, bool flipProperties)
+        {
+            var source = CurrentSource;
+            if (source == null || source.rawAnimation == null) return false;
+
+            var animatable = ActiveAnimatable;
+            if (animatable == null || animatable.animator == null) return false;
+
+            var animation = source.rawAnimation;
+            if (animation.transformAnimationCurves == null) return false;
+
+            var animator = animatable.animator;
+            Transform root = animator.RootBoneUnity;
+            if (root == null) root = animatable.instance.transform;
+
+            var curveStructureBefore = UndoableEditAnimationSourceData.CurveStructure.Capture(animation);
+
+            var restPose = animatable.RestPose;
+            int fps = animation.framesPerSecond;
+            const float epsilon = 0.001f;
+
+            var bones = new List<Transform>();
+            GetAllAnimatingBones(bones);
+
+            var originalStates = new Dictionary<Transform, FlipAnimationSample>();
+            foreach (var bone in bones) if (bone != null && !originalStates.ContainsKey(bone)) originalStates[bone] = new FlipAnimationSample() { pos = bone.localPosition, rot = bone.localRotation, scale = bone.localScale };
+
+            var curveTransforms = new List<(ITransformCurve curve, Transform transform)>();
+            var curvesByTransform = new Dictionary<Transform, ITransformCurve>();
+            foreach (var info in animation.transformAnimationCurves)
+            {
+                if (info.infoMain.curveIndex < 0) continue;
+
+                ITransformCurve curve = info.infoMain.isLinear ? (ITransformCurve)animation.transformLinearCurves[info.infoMain.curveIndex] : animation.transformCurves[info.infoMain.curveIndex];
+                if (curve == null) continue;
+
+                var transform = animator.FindTransformInHierarchy(curve.TransformName);
+                if (transform == null || curvesByTransform.ContainsKey(transform)) continue;
+
+                curveTransforms.Add((curve, transform));
+                curvesByTransform[transform] = curve;
+                if (!originalStates.ContainsKey(transform))
+                {
+                    bones.Add(transform);
+                    originalStates[transform] = new FlipAnimationSample() { pos = transform.localPosition, rot = transform.localRotation, scale = transform.localScale };
+                }
+            }
+
+            // Bones that receive mirrored motion but have no curve of their own get a new curve (created empty, then filled using the counterpart's key layout).
+            var curveSnapshot = new List<(ITransformCurve curve, Transform transform)>(curveTransforms);
+            foreach (var (curve, transform) in curveSnapshot)
+            {
+                if (!(curve is TransformCurve)) continue;
+
+                string targetName = Utils.GetMirroredName(transform.name);
+                if (targetName == transform.name) continue;
+
+                var target = root.FindDeepChild(targetName);
+                if (target == null || curvesByTransform.ContainsKey(target)) continue;
+                if (Utils.GetMirroredName(target.name, includeLeft, includeRight) == target.name) continue; // Target is outside of the mirrored side(s)
+
+                string curveName = animator.avatar == null ? target.name : animator.avatar.Remap(target.name);
+                AnimationUtils.InsertIntoTransformCurve(curveName, animation, (ITransformCurve newCurve) => { }, restPose);
+                if (!animation.TryGetTransformCurve(curveName, out var createdCurve)) continue;
+
+                curveTransforms.Add((createdCurve, target));
+                curvesByTransform[target] = createdCurve;
+                if (!originalStates.ContainsKey(target))
+                {
+                    bones.Add(target);
+                    originalStates[target] = new FlipAnimationSample() { pos = target.localPosition, rot = target.localRotation, scale = target.localScale };
+                }
+            }
+
+            var sampleCache = new Dictionary<float, Dictionary<Transform, FlipAnimationSample>>();
+            Dictionary<Transform, FlipAnimationSample> Sample(float time)
+            {
+                if (sampleCache.TryGetValue(time, out var result)) return result;
+
+                foreach (var pair in originalStates) pair.Key.SetLocalPositionAndRotation(pair.Value.pos, pair.Value.rot);
+                if (restPose != null) restPose.ApplyTo(animator);
+
+                foreach (var (curve, transform) in curveTransforms)
+                {
+                    if (curve is TransformCurve tc)
+                    {
+                        Vector3 p = transform.localPosition;
+                        if (TransformCurve.Validate(tc.localPositionCurveX)) p.x = tc.localPositionCurveX.Evaluate(time);
+                        if (TransformCurve.Validate(tc.localPositionCurveY)) p.y = tc.localPositionCurveY.Evaluate(time);
+                        if (TransformCurve.Validate(tc.localPositionCurveZ)) p.z = tc.localPositionCurveZ.Evaluate(time);
+
+                        Quaternion r = transform.localRotation;
+                        bool rotationAnimated = false;
+                        if (TransformCurve.Validate(tc.localRotationCurveX)) { r.x = tc.localRotationCurveX.Evaluate(time); rotationAnimated = true; }
+                        if (TransformCurve.Validate(tc.localRotationCurveY)) { r.y = tc.localRotationCurveY.Evaluate(time); rotationAnimated = true; }
+                        if (TransformCurve.Validate(tc.localRotationCurveZ)) { r.z = tc.localRotationCurveZ.Evaluate(time); rotationAnimated = true; }
+                        if (TransformCurve.Validate(tc.localRotationCurveW)) { r.w = tc.localRotationCurveW.Evaluate(time); rotationAnimated = true; }
+                        if (rotationAnimated) r = Quaternion.Normalize(r);
+
+                        Vector3 s = transform.localScale;
+                        if (TransformCurve.Validate(tc.localScaleCurveX)) s.x = tc.localScaleCurveX.Evaluate(time);
+                        if (TransformCurve.Validate(tc.localScaleCurveY)) s.y = tc.localScaleCurveY.Evaluate(time);
+                        if (TransformCurve.Validate(tc.localScaleCurveZ)) s.z = tc.localScaleCurveZ.Evaluate(time);
+
+                        transform.SetLocalPositionAndRotation(p, r);
+                        transform.localScale = s;
+                    }
+                    else if (curve is TransformLinearCurve tlc)
+                    {
+                        if (tlc.frames == null || tlc.frames.Length == 0) continue;
+
+                        float length = tlc.GetLengthInSeconds(fps);
+                        var data = tlc.Evaluate(length <= 0f ? 0f : Mathf.Clamp01(time / length));
+                        transform.SetLocalPositionAndRotation(data.localPosition, Quaternion.Normalize(data.localRotation));
+                        transform.localScale = data.localScale;
+                    }
+                }
+
+                FlipPose(null, root, bones, includeLeft, includeRight, ignoreUnmirrorableBones, false, false, mirrorRootPosition, restPose);
+
+                result = new Dictionary<Transform, FlipAnimationSample>();
+                foreach (var bone in bones) if (bone != null) result[bone] = new FlipAnimationSample() { pos = bone.localPosition, rot = bone.localRotation, scale = bone.localScale };
+                sampleCache[time] = result;
+                return result;
+            }
+
+            var pendingEdits = new List<Action>();
+            var editedCurves = new List<ITransformCurve>();
+            var missingCurveWarnings = new List<string>();
+
+            try
+            {
+                foreach (var (curve, transform) in curveTransforms)
+                {
+                    // The bone receives the motion of its mirror counterpart, so it also takes on the counterpart's key layout.
+                    ITransformCurve layout = curve;
+                    string mirroredName = Utils.GetMirroredName(transform.name, includeLeft, includeRight);
+                    if (mirroredName != transform.name)
+                    {
+                        var mirrorTransform = root.FindDeepChild(mirroredName);
+                        if (mirrorTransform != null)
+                        {
+                            if (curvesByTransform.TryGetValue(mirrorTransform, out var mirrorCurve) && mirrorCurve.GetType() == curve.GetType()) layout = mirrorCurve;
+                        }
+                    }
+
+                    string counterpartName = Utils.GetMirroredName(transform.name);
+                    if (counterpartName != transform.name)
+                    {
+                        var counterpart = root.FindDeepChild(counterpartName);
+                        if (counterpart != null && !curvesByTransform.ContainsKey(counterpart)) missingCurveWarnings.Add(counterpartName);
+                    }
+
+                    if (curve is TransformCurve tc && layout is TransformCurve layoutTc)
+                    {
+                        var rotationTimes = new SortedSet<float>();
+                        for (int ch = 3; ch <= 6; ch++)
+                        {
+                            var channel = GetTransformCurveChannel(layoutTc, ch);
+                            if (!TransformCurve.Validate(channel)) continue;
+                            foreach (var key in channel.Keys) rotationTimes.Add(key.time);
+                        }
+
+                        var alignedRotations = new Dictionary<float, Quaternion>();
+                        bool hasPrev = false;
+                        Quaternion prev = Quaternion.identity;
+                        foreach (var t in rotationTimes)
+                        {
+                            var q = Sample(t)[transform].rot;
+                            if (hasPrev) q = AlignQuaternion(q, prev);
+                            alignedRotations[t] = q;
+                            prev = q;
+                            hasPrev = true;
+                        }
+
+                        var newKeys = new AnimationCurveEditor.KeyframeStateRaw[10][];
+                        var layoutChannels = new EditableAnimationCurve[10];
+                        for (int ch = 0; ch < 10; ch++)
+                        {
+                            var layoutChannel = GetTransformCurveChannel(layoutTc, ch);
+                            if (!TransformCurve.Validate(layoutChannel)) continue;
+
+                            bool isRotation = ch >= 3 && ch <= 6;
+                            layoutChannels[ch] = layoutChannel;
+                            var keys = (AnimationCurveEditor.KeyframeStateRaw[])layoutChannel.Keys.Clone();
+                            for (int k = 0; k < keys.Length; k++)
+                            {
+                                var key = keys[k];
+                                float t = key.time;
+
+                                var sample = Sample(t)[transform];
+                                if (isRotation) sample.rot = alignedRotations[t];
+                                float value = GetFlipAnimationSampleComponent(sample, ch);
+
+                                float ValueAt(float time)
+                                {
+                                    var s = Sample(time)[transform];
+                                    if (isRotation) s.rot = AlignQuaternion(s.rot, sample.rot);
+                                    return GetFlipAnimationSampleComponent(s, ch);
+                                }
+
+                                if (!float.IsInfinity(key.inTangent)) key.inTangent = (value - ValueAt(t - epsilon)) / epsilon;
+                                if (!float.IsInfinity(key.outTangent)) key.outTangent = (ValueAt(t + epsilon) - value) / epsilon;
+                                key.value = value;
+
+                                keys[k] = key;
+                            }
+                            newKeys[ch] = keys;
+                        }
+
+                        editedCurves.Add(tc);
+                        pendingEdits.Add(() =>
+                        {
+                            for (int ch = 0; ch < 10; ch++)
+                            {
+                                var existing = GetTransformCurveChannel(tc, ch);
+                                if (newKeys[ch] != null)
+                                {
+                                    if (existing != null)
+                                    {
+                                        existing.Keys = newKeys[ch];
+                                    }
+                                    else
+                                    {
+                                        var created = layoutChannels[ch].Duplicate();
+                                        created.Keys = newKeys[ch];
+                                        SetTransformCurveChannel(tc, ch, created);
+                                    }
+                                }
+                                else if (existing != null)
+                                {
+                                    existing.Keys = new AnimationCurveEditor.KeyframeStateRaw[0];
+                                }
+                            }
+                            tc.RefreshCachedLength(fps);
+                        });
+                    }
+                    else if (curve is TransformLinearCurve tlc && layout is TransformLinearCurve layoutTlc)
+                    {
+                        if (layoutTlc.frames == null) continue;
+
+                        var frames = new ITransformCurve.Frame[layoutTlc.frames.Length];
+                        bool hasPrev = false;
+                        Quaternion prev = Quaternion.identity;
+                        for (int i = 0; i < frames.Length; i++)
+                        {
+                            var frame = layoutTlc.frames[i].Duplicate();
+                            var sample = Sample(frame.GetTime(fps))[transform];
+                            if (hasPrev) sample.rot = AlignQuaternion(sample.rot, prev);
+                            prev = sample.rot;
+                            hasPrev = true;
+
+                            frame.data = new ITransformCurve.Data() { localPosition = sample.pos, localRotation = sample.rot, localScale = sample.scale };
+                            frames[i] = frame;
+                        }
+
+                        editedCurves.Add(tlc);
+                        pendingEdits.Add(() =>
+                        {
+                            tlc.frames = frames;
+                            tlc.RefreshCachedLength(fps);
+                        });
+                    }
+                }
+            }
+            finally
+            {
+                foreach (var pair in originalStates)
+                {
+                    pair.Key.SetLocalPositionAndRotation(pair.Value.pos, pair.Value.rot); 
+                    pair.Key.localScale = pair.Value.scale;
+                }
+            }
+
+            if (missingCurveWarnings.Count > 0) swole.LogWarning($"[{nameof(FlipAnimation)}] Could not create curves for the following bones (only non-linear transform curves can be mirrored onto bones without curves), so motion mirrored onto them was skipped: {string.Join(", ", missingCurveWarnings)}");
+
+            if (flipProperties && includeLeft && includeRight)
+            {
+                var propertyFlip = BuildPropertyFlip(animation);
+                if (propertyFlip != null) pendingEdits.Add(propertyFlip);
+            }
+
+            if (pendingEdits.Count <= 0) return false;
+
+            var editRecord = BeginNewAnimationEditRecord();
+            editRecord.SetOriginalCurveStructure(curveStructureBefore);
+
+            foreach (var curve in editedCurves)
+            {
+                if (curve is TransformCurve tc) editRecord.SetOriginalRawTransformCurveState(tc);
+                else if (curve is TransformLinearCurve tlc) editRecord.SetOriginalRawTransformLinearCurveState(tlc);
+            }
+
+            foreach (var edit in pendingEdits) edit.Invoke();
+
+            editRecord.RecordCurveStructure();
+
+            foreach (var curve in editedCurves)
+            {
+                if (curve is TransformCurve tc) editRecord.RecordRawTransformCurveEdit(tc);
+                else if (curve is TransformLinearCurve tlc) editRecord.RecordRawTransformLinearCurveEdit(tlc);
+            }
+
+            source.MarkAsDirty();
+            RedrawAllCurves();
+            RefreshTimeline();
+
+            animatable.setNextPoseAsReference = true; 
+            RefreshFlaggedReferencePoses();
+
+            CommitAnimationEditRecord();
+            return true;
+        }
+
+        #region Property Flipping
+
+        protected static IPropertyCurve GetPropertyCurveObj(CustomAnimation animation, CustomAnimation.CurveInfo info)
+        {
+            if (info.curveIndex < 0) return null;
+            if (info.isLinear) return animation.propertyLinearCurves != null && info.curveIndex < animation.propertyLinearCurves.Length ? animation.propertyLinearCurves[info.curveIndex] : null;
+            return animation.propertyCurves != null && info.curveIndex < animation.propertyCurves.Length ? animation.propertyCurves[info.curveIndex] : null;
+        }
+
+        protected static void SetPropertyCurveName(IPropertyCurve curve, string name)
+        {
+            if (curve is PropertyCurve pc) pc.name = name;
+            else if (curve is PropertyLinearCurve plc) plc.name = name;
+        }
+
+        /// <summary>
+        /// Returns an action that trades the curves of mirrored properties by swapping their names. A property whose counterpart has no curve is moved onto the counterpart's name.
+        /// </summary>
+        protected Action BuildPropertyFlip(CustomAnimation animation)
+        {
+            if (animation.propertyAnimationCurves == null || animation.propertyAnimationCurves.Length == 0) return null;
+
+            var pairs = animation.propertyAnimationCurves;
+            var names = new List<string>();
+            var indexByName = new Dictionary<string, int>();
+            for (int a = 0; a < pairs.Length; a++)
+            {
+                var curve = GetPropertyCurveObj(animation, pairs[a].infoMain) ?? GetPropertyCurveObj(animation, pairs[a].infoBase);
+                string n = curve?.PropertyString;
+                if (string.IsNullOrEmpty(n) || indexByName.ContainsKey(n)) continue;
+                indexByName[n] = a;
+                names.Add(n);
+            }
+
+            var counterparts = Utils.BuildMirroredNameMap(names);
+
+            if (counterparts.Count == 0) return null;
+
+            return () =>
+            {
+                var newNames = new Dictionary<IPropertyCurve, string>();
+                foreach (var pair in counterparts)
+                {
+                    if (!indexByName.TryGetValue(pair.Key, out int idx)) continue;
+                    var info = pairs[idx];
+                    var main = GetPropertyCurveObj(animation, info.infoMain);
+                    var baseCurve = GetPropertyCurveObj(animation, info.infoBase);
+                    if (main != null) newNames[main] = pair.Value;
+                    if (baseCurve != null) newNames[baseCurve] = pair.Value;
+                }
+                foreach (var pair in newNames) SetPropertyCurveName(pair.Key, pair.Value);
+            };
+        }
+
+        /// <summary>
+        /// Exports a flipped version of the selected animation to its linked package under the mirrored name. Requires a package link.
+        /// </summary>
+        public void ExportFlippedAnimation(bool flipProperties, bool mirrorRootPosition)
+        {
+            var source = CurrentSource;
+            if (source == null || source.rawAnimation == null) return;
+
+            if (!ContentManager.TryFindLocalPackage(source.package, out ContentManager.LocalPackage pkg))
+            {
+                swole.LogWarning($"[{nameof(ExportFlippedAnimation)}] The selected animation has no valid package link.");
+                return;
+            }
+
+            string flippedName = Utils.GetMirroredName(source.DisplayName);
+            if (flippedName == source.DisplayName)
+            {
+                swole.LogWarning($"[{nameof(ExportFlippedAnimation)}] Could not determine a mirrored name for '{source.DisplayName}'.");
+                return;
+            }
+
+            if (!FlipAnimation(true, true, false, mirrorRootPosition, flipProperties))
+            {
+                swole.LogWarning($"[{nameof(ExportFlippedAnimation)}] Flipping produced no changes; nothing was exported.");
+                return;
+            }
+
+            try
+            {
+                var compiled = source.CompiledAnimation.Duplicate(); // Deep copy; compiled data shares curve objects with the source, which Undo() reverts in place
+                var info = compiled.ContentInfo;
+                info.name = flippedName;
+                var flipped = (CustomAnimation)compiled.CreateCopyAndReplaceContentInfo(info);
+
+                SwolePackage editPkg = SwolePackage.Create(pkg);
+                string oldFilePath = null;
+                if (pkg.Content.TryFind<CustomAnimation>(out var toReplace, flippedName))
+                {
+                    if (pkg.workingDirectory != null) oldFilePath = System.IO.Path.Combine(pkg.workingDirectory.FullName, $"{toReplace.SerializedName}.{ContentManager.swoleFileExtension_Animation}");
+                    editPkg.Replace(toReplace, flipped);
+                }
+                else editPkg.Add(flipped); 
+                pkg.Content = editPkg;
+                if (pkg.workingDirectory != null)
+                {
+                    string newFilePath = System.IO.Path.Combine(pkg.workingDirectory.FullName, $"{flipped.SerializedName}.{ContentManager.swoleFileExtension_Animation}");
+                    var stale = (oldFilePath != null && !string.Equals(oldFilePath, newFilePath, StringComparison.OrdinalIgnoreCase)) ? new string[] { oldFilePath } : null; // A previous export may have been saved under a different file name
+                    ContentManager.SavePackageContent(pkg.workingDirectory.FullName, pkg.Content, new IContent[] { flipped }, stale, null); // Only writes the flipped animation instead of the whole package
+                }
+                else ContentManager.SavePackage(pkg, null); 
+            }
+            catch (Exception ex)
+            {
+                swole.LogError($"Encountered exception while exporting flipped animation '{flippedName}'");
+                swole.LogError(ex);
+            }
+            finally
+            {
+                Undo(); // restore the selected animation
+            }
+        }
+
+        #endregion
+
         #endregion
 
         #region Mirror Pose
@@ -13609,6 +15126,302 @@ namespace Swole.API.Unity.Animation
             RebuildBasePropertyCurves(record, editRecord);
 
             if (record) CommitAnimationEditRecord();
+        }
+
+        #endregion
+
+        #region Offset/Rotate Animation
+
+        /// <summary>
+        /// Determines which aspects (if any) of the root bone itself are affected by an OffsetAnimation call.
+        /// Whenever an aspect is NOT included for the root, that aspect is instead applied to the root's top level children.
+        /// </summary>
+        public enum RootRotationBehaviour
+        {
+            /// <summary>
+            /// Neither the root's position nor rotation curves are touched - both are applied to the root's top level children instead.
+            /// </summary>
+            None,
+            /// <summary>
+            /// The root owns position (translated in place); its rotation curve is untouched and applied to its children instead.
+            /// The root's existing position curve data is NOT rotated.
+            /// </summary>
+            Position,
+            /// <summary>
+            /// Same as <see cref="Position"/>, except the root's existing position curve data is also rotated in place,
+            /// without affecting the root's own rotation curve.
+            /// </summary>
+            PositionRotated,
+            /// <summary>
+            /// The root owns position (translated in place) and its existing position curve data is also rotated in place,
+            /// without affecting the root's own rotation curve.
+            /// </summary>
+            PositionOffsetAndRotated,
+            /// <summary>
+            /// The root owns rotation (rotated in place); its position curve is untouched and applied to its children instead.
+            /// </summary>
+            Rotation,
+            /// <summary>
+            /// The root owns both position and rotation - both curves are rotated/translated in place and none of it is applied to its children.
+            /// </summary>
+            PositionRotation
+        }
+
+        public void OffsetAnimation(Vector3 worldOffset, Quaternion worldRotation, RootRotationBehaviour rootBehaviour = RootRotationBehaviour.None)
+        {
+            OffsetAnimation(ActiveAnimator, CurrentSource, worldOffset, worldRotation, rootBehaviour);
+        }
+        public void OffsetAnimation(CustomAnimator animator, AnimationSource source, Vector3 worldOffset, Quaternion worldRotation, RootRotationBehaviour rootBehaviour = RootRotationBehaviour.None)
+        {
+            if (animator == null || source == null || source.rawAnimation == null) return;
+
+            Transform rootBone = animator.RootBoneUnity;
+            if (rootBone == null) return;
+
+            Pause();
+
+            bool rootIncludesPosition = rootBehaviour == RootRotationBehaviour.Position || rootBehaviour == RootRotationBehaviour.PositionOffsetAndRotated || rootBehaviour == RootRotationBehaviour.PositionRotation;
+            bool rootIncludesRotation = rootBehaviour == RootRotationBehaviour.Rotation || rootBehaviour == RootRotationBehaviour.PositionRotation;
+            // When the root only owns position, its existing position curve data can still be rotated in place (without
+            // affecting its rotation curve) by using RootRotationBehaviour.PositionRotated instead of Position.
+            bool rootRotatesPositionData = rootIncludesRotation || rootBehaviour == RootRotationBehaviour.PositionRotated || rootBehaviour == RootRotationBehaviour.PositionOffsetAndRotated;
+
+            // If the root's rotation is affected by this operation but its position is not, the root will end up rotated
+            // in place. Since the root's children are parented to it, their world positions would otherwise shift with it -
+            // so the world offset applied to the children needs to be corrected by rotating it by the inverse of the
+            // rotation being applied to the root.
+            Vector3 childWorldOffset = (rootIncludesRotation && !rootIncludesPosition) ? (Quaternion.Inverse(worldRotation) * worldOffset) : worldOffset;
+
+            var animatable = ActiveAnimatable;
+            var restPose = animatable == null ? null : animatable.RestPose;
+
+            // Bones that are not covered by the root itself (position and/or rotation) have those respective aspects
+            // applied to the root's top level children instead.
+            bool anyRootAspectExcluded = !rootIncludesPosition || !rootIncludesRotation;
+
+            List<Transform> boneTargets = new List<Transform>();
+            if (rootIncludesPosition || rootIncludesRotation || rootRotatesPositionData)
+            {
+                boneTargets.Add(rootBone);
+            }
+            
+            if (!rootIncludesPosition && !rootIncludesRotation)
+            {
+                for (int a = 0; a < rootBone.childCount; a++)
+                {
+                    var b = rootBone.GetChild(a);
+                    if (boneTargets.Contains(b)) continue;
+
+                    boneTargets.Add(b);
+                }
+
+                var bones_ = animator.Bones;
+                if (bones_.ikBones != null)
+                {
+                    foreach(var ik in bones_.ikBones)
+                    {
+                        if (ik == null || ik.boneIndex < 0) continue;
+
+                        var bone = UnityEngineHook.AsUnityTransform(animator.GetBone(ik.boneIndex));
+                        if (boneTargets.Contains(bone)) continue;
+
+                        boneTargets.Add(bone); 
+                    }
+                }
+            }
+
+            var editRecord = BeginNewAnimationEditRecord();
+
+            bool changed = false;
+
+            // The parent of the root bone is a real (non-animated) transform - its current world rotation is used as the
+            // "to world" rotation basis for the root bone itself.
+            Quaternion rootParentWorldRotation = rootBone.parent == null ? Quaternion.identity : rootBone.parent.rotation;
+
+            // When operating on the root's top level children, each child's parent (the root bone) is itself animated, so
+            // its world rotation needs to be resolved per-sample-time from the root's animation data (falling back to the
+            // rest pose) composed with the root's parent's real world rotation.
+            TransformCurve rootCurveForSampling = null;
+            Quaternion rootDefaultRotation = Quaternion.identity;
+            if (anyRootAspectExcluded)
+            {
+                source.rawAnimation.TryGetTransformCurve(rootBone.name, out rootCurveForSampling);
+                var rootRestFrame = AnimationUtils.GetPoseTransformFrame(rootBone.name, restPose);
+                rootDefaultRotation = rootRestFrame == null ? Quaternion.identity : (Quaternion)rootRestFrame.data.localRotation;
+            }
+
+            Quaternion SampleRootLocalRotation(float time)
+            {
+                if (rootCurveForSampling == null) return rootDefaultRotation;
+
+                Quaternion rot = Quaternion.identity;
+                rot.x = (rootCurveForSampling.localRotationCurveX != null && rootCurveForSampling.localRotationCurveX.length > 0) ? rootCurveForSampling.localRotationCurveX.Evaluate(time) : rootDefaultRotation.x;
+                rot.y = (rootCurveForSampling.localRotationCurveY != null && rootCurveForSampling.localRotationCurveY.length > 0) ? rootCurveForSampling.localRotationCurveY.Evaluate(time) : rootDefaultRotation.y;
+                rot.z = (rootCurveForSampling.localRotationCurveZ != null && rootCurveForSampling.localRotationCurveZ.length > 0) ? rootCurveForSampling.localRotationCurveZ.Evaluate(time) : rootDefaultRotation.z;
+                rot.w = (rootCurveForSampling.localRotationCurveW != null && rootCurveForSampling.localRotationCurveW.length > 0) ? rootCurveForSampling.localRotationCurveW.Evaluate(time) : rootDefaultRotation.w;
+                return rot;
+            }
+
+            // Resolves the world rotation of the bone's parent at a given time - used to convert the bone's local
+            // rotation/position data into world space (and back) around the correct pivot.
+            Quaternion GetParentWorldRotation(bool isRoot, float time)
+            {
+                if (isRoot) return rootParentWorldRotation; // processing the root bone itself
+                return rootParentWorldRotation * SampleRootLocalRotation(time); // processing a top level child of the root
+            } 
+
+            void ApplyOffsetToCurveGroup(ref EditableAnimationCurve curveX, ref EditableAnimationCurve curveY, ref EditableAnimationCurve curveZ, ref EditableAnimationCurve curveW, bool isRotation, bool rotate, bool isRoot, Vector3 offset, Vector3 defaultPosition, Quaternion defaultRotation, bool isInRootHierarchy, Quaternion customParentRotation)
+            {
+                bool hasAnyKeyframes = (curveX != null && curveX.length > 0) || (curveY != null && curveY.length > 0) || (curveZ != null && curveZ.length > 0) || (isRotation && curveW != null && curveW.length > 0);
+
+                // If none of the sub-curves have keyframes, create a single keyframe at time zero using the rest pose value with the offset/rotation applied
+                if (!hasAnyKeyframes)
+                {
+                    Quaternion parentWorldRotation = isInRootHierarchy ? GetParentWorldRotation(isRoot, 0f) : customParentRotation;
+                    Quaternion invParentWorldRotation = Quaternion.Inverse(parentWorldRotation);
+
+                    if (isRotation)
+                    {
+                        Quaternion worldRot = parentWorldRotation * defaultRotation;
+                        Quaternion resultWorld = rotate ? (worldRotation * worldRot) : worldRot;
+                        Quaternion result = invParentWorldRotation * resultWorld;
+
+                        if (curveX == null) curveX = new EditableAnimationCurve();
+                        if (curveY == null) curveY = new EditableAnimationCurve();
+                        if (curveZ == null) curveZ = new EditableAnimationCurve();
+                        if (curveW == null) curveW = new EditableAnimationCurve();
+
+                        curveX.AddKey(0, result.x);
+                        curveY.AddKey(0, result.y);
+                        curveZ.AddKey(0, result.z);
+                        curveW.AddKey(0, result.w);
+                    }
+                    else
+                    {
+                        Vector3 worldPos = parentWorldRotation * defaultPosition;
+                        Vector3 resultWorld = (rotate ? (worldRotation * worldPos) : worldPos) + offset;
+                        Vector3 result = invParentWorldRotation * resultWorld;
+
+                        if (curveX == null) curveX = new EditableAnimationCurve();
+                        if (curveY == null) curveY = new EditableAnimationCurve();
+                        if (curveZ == null) curveZ = new EditableAnimationCurve();
+
+                        curveX.AddKey(0, result.x);
+                        curveY.AddKey(0, result.y);
+                        curveZ.AddKey(0, result.z);
+                    }
+
+                    changed = true;
+                    return;
+                } 
+
+                // Gather union of keyframe times across all sub-curves in this group
+                HashSet<float> times = new HashSet<float>();
+                void CollectTimes(EditableAnimationCurve curve)
+                {
+                    if (curve == null) return;
+                    for (int a = 0; a < curve.length; a++) times.Add(curve[a].time);
+                }
+                CollectTimes(curveX);
+                CollectTimes(curveY);
+                CollectTimes(curveZ);
+                if (isRotation) CollectTimes(curveW);
+
+                float SampleOrDefault(EditableAnimationCurve curve, float time, float defaultValue) => (curve != null && curve.length > 0) ? curve.Evaluate(time) : defaultValue;
+
+                foreach (var time in times)
+                {
+                    Quaternion parentWorldRotation = isInRootHierarchy ? GetParentWorldRotation(isRoot, time) : customParentRotation;
+                    Quaternion invParentWorldRotation = Quaternion.Inverse(parentWorldRotation);
+
+                    if (isRotation)
+                    {
+                        Quaternion localRot = Quaternion.identity;
+                        localRot.x = SampleOrDefault(curveX, time, defaultRotation.x);
+                        localRot.y = SampleOrDefault(curveY, time, defaultRotation.y);
+                        localRot.z = SampleOrDefault(curveZ, time, defaultRotation.z);
+                        localRot.w = SampleOrDefault(curveW, time, defaultRotation.w);
+
+                        Quaternion worldRot = parentWorldRotation * localRot;
+                        Quaternion resultWorld = rotate ? (worldRotation * worldRot) : worldRot;
+                        Quaternion result = invParentWorldRotation * resultWorld;
+
+                        if (curveX != null && curveX.HasKeyAtTime(time)) { curveX.AddOrReplaceKey(time, result.x, false, false, 0, AnimationUtils.InsertAutoSmoothBehaviour.LinearIfNew); changed = true; }
+                        if (curveY != null && curveY.HasKeyAtTime(time)) { curveY.AddOrReplaceKey(time, result.y, false, false, 0, AnimationUtils.InsertAutoSmoothBehaviour.LinearIfNew); changed = true; }
+                        if (curveZ != null && curveZ.HasKeyAtTime(time)) { curveZ.AddOrReplaceKey(time, result.z, false, false, 0, AnimationUtils.InsertAutoSmoothBehaviour.LinearIfNew); changed = true; }
+                        if (curveW != null && curveW.HasKeyAtTime(time)) { curveW.AddOrReplaceKey(time, result.w, false, false, 0, AnimationUtils.InsertAutoSmoothBehaviour.LinearIfNew); changed = true; }
+                    }
+                    else
+                    {
+                        Vector3 localPos = new Vector3(SampleOrDefault(curveX, time, defaultPosition.x), SampleOrDefault(curveY, time, defaultPosition.y), SampleOrDefault(curveZ, time, defaultPosition.z));
+
+                        Vector3 worldPos = parentWorldRotation * localPos;
+                        Vector3 resultWorld = (rotate ? (worldRotation * worldPos) : worldPos) + offset;
+                        Vector3 result = invParentWorldRotation * resultWorld;
+
+                        if (curveX != null && curveX.HasKeyAtTime(time)) { curveX.AddOrReplaceKey(time, result.x, false, false, 0, AnimationUtils.InsertAutoSmoothBehaviour.LinearIfNew); changed = true; }
+                        if (curveY != null && curveY.HasKeyAtTime(time)) { curveY.AddOrReplaceKey(time, result.y, false, false, 0, AnimationUtils.InsertAutoSmoothBehaviour.LinearIfNew); changed = true; }
+                        if (curveZ != null && curveZ.HasKeyAtTime(time)) { curveZ.AddOrReplaceKey(time, result.z, false, false, 0, AnimationUtils.InsertAutoSmoothBehaviour.LinearIfNew); changed = true; }
+                    }
+                }
+            }
+
+            foreach (var bone in boneTargets)
+            {
+                if (bone == null || (!animator.avatar.IsPoseableBone(bone.name, animator.FindBoneTransform) && !animator.avatar.IsIkBone(bone.name))) continue; 
+
+                bool isRoot = ReferenceEquals(bone, rootBone);
+                // If the root includes rotation, the root itself is rotated; otherwise its children are rotated instead.
+                bool rotateRotationOfThisBone = isRoot ? rootIncludesRotation : !rootIncludesRotation;
+                // The root's position curve data can be rotated independently of its rotation curve data via
+                // RootRotationBehaviour.PositionRotated - it lets the recorded position values be spun in place without
+                // touching the root's own rotation curve.
+                bool rotatePositionOfThisBone = isRoot ? rootRotatesPositionData : !rootIncludesRotation; 
+                // If the root includes position, the root itself is offset; otherwise its children are offset instead.
+                Vector3 offsetForThisBone = isRoot ? (rootIncludesPosition ? worldOffset : Vector3.zero) : (!rootIncludesPosition ? childWorldOffset : Vector3.zero); 
+
+                AnimationUtils.GetOrCreateTransformCurve(out ITransformCurve mainCurveIface, bone.name, source.rawAnimation, restPose);
+                if (!(mainCurveIface is TransformCurve curve)) continue; // linear (frame-based) curves are not supported by this operation
+
+                editRecord.SetOriginalRawTransformCurveState(curve);
+
+                var restFrame = AnimationUtils.GetPoseTransformFrame(bone.name, restPose);
+                Vector3 defaultPosition = restFrame == null ? Vector3.zero : (Vector3)restFrame.data.localPosition;
+                Quaternion defaultRotation = restFrame == null ? Quaternion.identity : (Quaternion)restFrame.data.localRotation;  
+
+                //if (rotateRotationOfThisBone) Debug.Log($"Rotating the rotation of bone {bone.name}");    
+                var curveRotX = curve.localRotationCurveX;
+                var curveRotY = curve.localRotationCurveY;
+                var curveRotZ = curve.localRotationCurveZ;
+                var curveRotW = curve.localRotationCurveW;
+                ApplyOffsetToCurveGroup(ref curveRotX, ref curveRotY, ref curveRotZ, ref curveRotW, true, rotateRotationOfThisBone, isRoot, Vector3.zero, defaultPosition, defaultRotation, isRoot || ReferenceEquals(bone.parent, rootBone), bone.parent.rotation);
+                curve.localRotationCurveX = curveRotX;
+                curve.localRotationCurveY = curveRotY;
+                curve.localRotationCurveZ = curveRotZ;
+                curve.localRotationCurveW = curveRotW; 
+
+                //if (rotatePositionOfThisBone) Debug.Log($"Rotating the position of bone {bone.name}");
+                var curvePosX = curve.localPositionCurveX;
+                var curvePosY = curve.localPositionCurveY;
+                var curvePosZ = curve.localPositionCurveZ;
+                EditableAnimationCurve unusedW = null;
+                ApplyOffsetToCurveGroup(ref curvePosX, ref curvePosY, ref curvePosZ, ref unusedW, false, rotatePositionOfThisBone, isRoot, offsetForThisBone, defaultPosition, defaultRotation, isRoot || ReferenceEquals(bone.parent, rootBone), bone.parent.rotation);  
+                curve.localPositionCurveX = curvePosX;
+                curve.localPositionCurveY = curvePosY;
+                curve.localPositionCurveZ = curvePosZ;
+
+                curve.RefreshCachedLength(source.rawAnimation.framesPerSecond);
+
+                editRecord.RecordRawTransformCurveEdit(curve);
+            }
+
+            if (changed)
+            {
+                source.MarkAsDirty();
+                RedrawAllCurves();
+            }
+
+            CommitAnimationEditRecord();
         }
 
         #endregion

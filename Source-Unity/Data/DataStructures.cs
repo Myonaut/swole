@@ -54,6 +54,19 @@ namespace Swole.DataStructures
 
     }
 
+    [Serializable]
+    public struct NamedFloat
+    {
+        public string name;
+        public float value;
+    }
+    [Serializable]
+    public struct NamedFloat2
+    {
+        public string name;
+        public float2 value;
+    }
+
     [Serializable, StructLayout(LayoutKind.Sequential)]
     public struct WeightIndexPair
     {

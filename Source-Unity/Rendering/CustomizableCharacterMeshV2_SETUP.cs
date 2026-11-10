@@ -3010,7 +3010,7 @@ namespace Swole.Morphing
                                 outputMeshMain.name = mainMesh.name;
                             }
 
-                            List<Vector4> uv3 = outputMeshMain.GetUVsByChannelAsListV4(3);
+                            List<Vector4> uv3 = outputMeshMain.GetUVsByChannelAsListV4((int)nearestVertexIndexUVChannel);
                             if (uv3 == null || uv3.Count < outputMeshMain.vertexCount)
                             {
                                 uv3 = new List<Vector4>();
@@ -3019,7 +3019,7 @@ namespace Swole.Morphing
 
                             for (int b = 0; b < uv3.Count; b++) uv3[b] = StoreIndexInUV(uv3[b], b);
 
-                            outputMeshMain.SetUVs(3, uv3);
+                            outputMeshMain.SetUVs((int)nearestVertexIndexUVChannel, uv3);
                         }
 
                         if (outputMeshMain == null && !ReferenceEquals(mainMesh, objectSetup.mainMesh)) outputMeshMain = mainMesh;
@@ -3144,7 +3144,7 @@ namespace Swole.Morphing
                                         outputMesh.name = lodMesh.name;
                                     }
 
-                                    List<Vector4> uv3 = outputMesh.GetUVsByChannelAsListV4(3);
+                                    List<Vector4> uv3 = outputMesh.GetUVsByChannelAsListV4((int)nearestVertexIndexUVChannel);
                                     if (uv3 == null || uv3.Count < outputMesh.vertexCount)
                                     {
                                         uv3 = new List<Vector4>();
@@ -3172,7 +3172,7 @@ namespace Swole.Morphing
                                         }
                                     }
 
-                                    outputMesh.SetUVs(3, uv3);
+                                    outputMesh.SetUVs((int)nearestVertexIndexUVChannel, uv3);
 
                                     if ((!lodMesh.HasVertexAttribute(UnityEngine.Rendering.VertexAttribute.Color) || !objectSetup.preserveLodMeshVertexColors) && (baseColors != null && baseColors.Length > 0))
                                     {
@@ -3297,6 +3297,7 @@ namespace Swole.Morphing
                         TrySetSerializedDataField(nameof(serializedDataV2.meshLODs), meshLODs.ToArray());
 
                         TrySetSerializedDataField(nameof(serializedDataV2.nearestVertexUVChannel), nearestVertexUVChannel);
+                        TrySetSerializedDataField(nameof(serializedDataV2.nearestVertexIndexUVChannel), nearestVertexIndexUVChannel);
                         TrySetSerializedDataField(nameof(serializedDataV2.nearestVertexIndexElement), nearestVertexIndexElement);
 
                         TrySetSerializedDataField(nameof(serializedDataV2.defaultMuscleGroupConversions), basicMuscleGroupConversions == null ? null : ((ICustomizableCharacter.DefaultMuscleGroupConversion[])basicMuscleGroupConversions.Clone()));
@@ -3367,7 +3368,7 @@ namespace Swole.Morphing
                                 var isMainMesh = ReferenceEquals(mesh_, outputMeshMain);
                                 if (mesh_ == null || (!storeNearestVertexInUV && !isMainMesh)) continue;
 
-                                var indexUVs = isMainMesh ? null : mesh_.GetUVsByChannelV4(3);
+                                var indexUVs = isMainMesh ? null : mesh_.GetUVsByChannelV4((int)nearestVertexIndexUVChannel);
 
                                 List<BlendShape> blendShapes = new List<BlendShape>();
                                 for (int a = 0; a < serializedDataSkinned.StandaloneShapesCount; a++)

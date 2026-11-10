@@ -22,6 +22,9 @@ namespace Swole.UI
 
         public static float MainRightJoystickHorizontal => Handler.MainRightJoystickHorizontal;
         public static float MainRightJoystickVertical => Handler.MainRightJoystickVertical; 
+
+        public static float CursorHorizontal => Handler.CursorHorizontal;
+        public static float CursorVertical => Handler.CursorVertical;
     }
 
     public class DefaultUIInputHandler : IUIInputHandler
@@ -31,6 +34,9 @@ namespace Swole.UI
 
         public float MainRightJoystickHorizontal => InputProxy.MainRightJoystickHorizontal;
         public float MainRightJoystickVertical => InputProxy.MainRightJoystickVertical;
+
+        public float CursorHorizontal => InputProxy.CursorAxisX;
+        public float CursorVertical => InputProxy.CursorAxisY;
     }
 
     public interface IUIInputHandler
@@ -40,6 +46,9 @@ namespace Swole.UI
 
         public float MainRightJoystickHorizontal { get; }
         public float MainRightJoystickVertical { get; }
+
+        public float CursorHorizontal { get; }
+        public float CursorVertical { get; }
     }
 
 }

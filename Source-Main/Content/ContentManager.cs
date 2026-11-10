@@ -1251,6 +1251,53 @@ namespace Swole
         public static bool SavePackage(ContentPackage package, SwoleLogger logger = null) => SavePackage(Path.Combine(LocalPackageDirectoryPath, package == null ? "null" : package.GetIdentityString()), package, logger);
         public static bool SavePackage(string path, ContentPackage package, SwoleLogger logger = null) => SavePackageInternal(true, path, package, logger).GetAwaiter().GetResult();
 
+        /// <summary>
+        /// Saves only the given content objects (and the manifest) into an existing package directory, instead of rewriting every file in the package.
+        /// Files in 'staleFilePaths' (e.g. the old file of a renamed or removed content object) are deleted after the new files are written.
+        /// Falls back to a full package save if the package directory does not exist yet.
+        /// </summary>
+        public static bool SavePackageContent(string path, ContentPackage package, IEnumerable<IContent> changedContent, IEnumerable<string> staleFilePaths = null, SwoleLogger logger = null)
+        {
+            try
+            {
+                if (package == null || string.IsNullOrEmpty(path)) return false;
+                if (!Directory.Exists(path)) return SavePackage(path, package, logger);
+
+                File.WriteAllBytes(Path.Combine(path, commonFiles_Manifest), DefaultJsonSerializer.StringEncoder.GetBytes(swole.Engine.ToJson(package.Manifest, true)));
+
+                bool success = true;
+                if (changedContent != null)
+                {
+                    foreach (var content in changedContent)
+                    {
+                        if (content == null) continue;
+                        if (!SaveContent(path, content, logger))
+                        {
+                            success = false;
+                            logger?.LogWarning($"Failed to save content object '{content.Name}' of type '{content.GetType().FullName}' in package '{package.GetIdentityString()}'.");
+                        }
+                    }
+                }
+
+                if (success && staleFilePaths != null)
+                {
+                    foreach (var stalePath in staleFilePaths)
+                    {
+                        if (string.IsNullOrEmpty(stalePath) || !File.Exists(stalePath)) continue;
+                        File.Delete(stalePath);
+                    }
+                }
+
+                if (success) package.DisposeOrphanedContent();
+                return success;
+            }
+            catch (Exception ex)
+            {
+                logger?.LogError($"[{ex.GetType().Name}]: {ex.Message}");
+                return false;
+            }
+        }
+
         public static Task<bool> SavePackageAsync(LocalPackage package, SwoleLogger logger = null) => SavePackageAsync(package.workingDirectory, package.Content, logger);
         public static Task<bool> SavePackageAsync(DirectoryInfo dir, ContentPackage package, SwoleLogger logger = null) => SavePackageAsync(dir == null ? "" : dir.FullName, package, logger);
         public static Task<bool> SavePackageAsync(ContentPackage package, SwoleLogger logger = null) => SavePackageAsync(Path.Combine(LocalPackageDirectoryPath, package == null ? "null" : package.GetIdentityString()), package, logger);

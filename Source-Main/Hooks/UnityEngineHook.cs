@@ -92,7 +92,8 @@ namespace Swole
             {
                 var b = new GameObject($"~{nameof(swole)}").AddComponent<PersistentBehaviour>();
                 DontDestroyOnLoad(b.gameObject);
-                b.hook = hook; 
+                b.hook = hook;
+                DontDestroyOnLoad(InputSystemProxy.Instance.gameObject); 
                 return b;
             }
 
@@ -614,6 +615,17 @@ namespace Swole
         }
 
         #endregion
+
+        #endregion
+
+
+        #region Time
+
+        public override float Time_DeltaTime() => Time.deltaTime;
+
+        public override float Time_Time() => Time.time;
+
+        public override int Time_Frame() => Time.frameCount;
 
         #endregion
 

@@ -16,7 +16,7 @@ namespace Swole.API.Unity.Animation
 {
     public class CustomIKManagerUpdater : SingletonBehaviour<CustomIKManagerUpdater>
     {
-        public static int ExecutionPriority => CustomAnimatorUpdater.ExecutionPriority + 10; // Update after animators
+        public static int ExecutionPriority => CustomAnimatorUpdater.ExecutionPriority + 100; // Update after animators
         public override int Priority => ExecutionPriority;
         public override bool DestroyOnLoad => false;
 
@@ -525,7 +525,8 @@ namespace Swole.API.Unity.Animation
                     if (solver == null) continue;
 
                     if (ik.component.fixTransforms) solver.FixTransforms();
-                    solver.Update();
+
+                    solver.Update();  
                 }
             }
 #endif

@@ -7,6 +7,7 @@ using System.Collections.Generic;
 using UnityEngine;
 
 using Swole.Morphing;
+using Swole.DataStructures;
 
 namespace Swole.API.Unity
 {
@@ -21,7 +22,7 @@ namespace Swole.API.Unity
 #if !UNITY_EDITOR
         [NonSerialized]
 #endif
-        public CustomizableCharacterMesh.NamedFloat[] shapeWeightsEditor;
+        public NamedFloat[] shapeWeightsEditor;
 
 #if !UNITY_EDITOR
         [NonSerialized]
@@ -31,12 +32,12 @@ namespace Swole.API.Unity
 #if !UNITY_EDITOR
         [NonSerialized]
 #endif
-        public CustomizableCharacterMesh.NamedFloat[] fatWeightsEditor;
+        public NamedFloat[] fatWeightsEditor;
 
 #if !UNITY_EDITOR
         [NonSerialized]
 #endif
-        public CustomizableCharacterMesh.NamedFloat2[] variationWeightsEditor;
+        public NamedFloat2[] variationWeightsEditor;
 
         public void Apply(CustomizableCharacterMesh ccm)
         {

@@ -719,6 +719,8 @@ namespace Swole.Morphing
 
             public UVChannelURP NearestVertexUVChannel { get; }
 
+            public UVChannelURP NearestVertexIndexUVChannel { get; }
+
             public RGBAChannel NearestVertexIndexElement { get; }
 
             public string ConvertDefaultMuscleGroupName(MuscleGroupsDefault defaultGroup);
@@ -826,6 +828,12 @@ namespace Swole.Morphing
             public ComputeBuffer MeshShapeIndicesBuffer { get; }
 
             public ComputeBuffer VertexColorDeltasBuffer { get; }
+
+            public float GetMuscleMassKilograms(string groupName);
+            public float GetMuscleMassKilograms(int groupIndex);
+
+            public float GetFatKilograms(string groupName);
+            public float GetFatKilograms(int groupIndex);
 
             #endregion
 
@@ -1232,8 +1240,7 @@ namespace Swole.Morphing
                 skinnedBones = SkinnedBones; // force init skinned bones
             }
 
-            if (animatablePropertiesController == null) animatablePropertiesController = gameObject.GetComponent<DynamicAnimationProperties>();
-            if (animatablePropertiesController == null && transform.parent != null) animatablePropertiesController = transform.parent.GetComponent<DynamicAnimationProperties>();
+            if (animatablePropertiesController == null) animatablePropertiesController = gameObject.GetComponentInParent<DynamicAnimationProperties>();
             SetAnimatablePropertiesController(animatablePropertiesController);
 
             Animator = animator; // force subscribe listeners
@@ -1354,6 +1361,8 @@ namespace Swole.Morphing
             return data.IndexOfStandaloneShape(name, caseSensitive);
         }
 
+        public int StandaloneShapeCount => CustomizationData?.StandaloneShapesCount ?? 0; 
+
         public int IndexOfVertexGroup(string name, bool caseSensitive = false)
         {
             var data = CustomizationData;
@@ -1462,6 +1471,7 @@ namespace Swole.Morphing
         protected Dictionary<string, int> intOverrides;// = new Dictionary<string, int>();
         protected Dictionary<string, Vector4> vectorOverrides;// = new Dictionary<string, Vector4>();
         protected Dictionary<string, Color> colorOverrides;// = new Dictionary<string, Color>();
+        protected Dictionary<string, Texture> textureOverrides;
 
         protected void ApplyCachedMaterialPropertyOverrides() => ApplyCachedMaterialPropertyOverrides(MaterialInstances);
         protected virtual void ApplyCachedMaterialPropertyOverrides(IEnumerable<Material> materialInstances)
@@ -1507,6 +1517,30 @@ namespace Swole.Morphing
                         if (mat != null) mat.SetColor(entry.Key, entry.Value);
                     }
                 }
+            }
+            if (textureOverrides != null)
+            {
+                foreach (var entry in textureOverrides)
+                {
+                    foreach (var mat in materialInstances)
+                    {
+                        if (mat != null && mat.HasProperty(entry.Key)) mat.SetTexture(entry.Key, entry.Value);
+                    }
+                }
+            }
+        }
+
+        public virtual void SetTextureOverride(string propertyName, Texture texture)
+        {
+            if (textureOverrides == null) textureOverrides = new Dictionary<string, Texture>();
+            textureOverrides[propertyName] = texture;
+
+            var materialInstances = MaterialInstances;
+            if (materialInstances == null) return;
+
+            foreach (var mat in materialInstances)
+            {
+                if (mat != null && mat.HasProperty(propertyName)) mat.SetTexture(propertyName, texture);
             }
         }
 
@@ -1706,7 +1740,7 @@ namespace Swole.Morphing
             BindStandaloneShapesControlBufferToMaterials(materialInstances);
             BindMuscleGroupsControlBufferToMaterials(materialInstances);
             BindFatGroupsControlBufferToMaterials(materialInstances);
-            BindVariationGroupsControlBufferToMaterials(materialInstances); 
+            BindVariationGroupsControlBufferToMaterials(materialInstances);  
 
             ApplyCachedMaterialPropertyOverrides();
             ApplyIDsToMaterials();
@@ -1981,7 +2015,8 @@ namespace Swole.Morphing
             data.valuesLeft.flex = math.max(data.valuesLeft.flex, -0.15f);
             data.valuesRight.flex = math.max(data.valuesRight.flex, -0.15f);
 
-            SetMuscleDataInternal(groupIndex, ref data);
+            SetMuscleDataInternal(groupIndex, ref data); 
+            //Debug.Log($"{name} SET MUSCLE DATA : " + groupIndex + " | " + data.valuesLeft.mass + " | " + data.valuesRight.mass + " | " + data.valuesLeft.flex + " | " + data.valuesRight.flex);
 
             SyncMuscleMassData(groupIndex, data.valuesLeft.mass, data.valuesRight.mass);
             SyncMuscleFlexData(groupIndex, data.valuesLeft.flex, data.valuesRight.flex);
@@ -2066,6 +2101,15 @@ namespace Swole.Morphing
             if (!IsInitialized || groupIndex < 0 || groupIndex >= CustomizationData.FatVertexGroupCount) return 0f;
             return GetBodyHairLevelUnsafe(groupIndex);
         }
+
+        public void SetGlobalFat(float fat)
+        {
+            for (int a = 0; a < FatGroupCount; a++)
+            {
+                SetFatLevelUnsafe(a, fat); 
+            }
+        }
+
         protected virtual void SetBodyHairLevelInternal(int groupIndex, ref float level, ref float blend)
         {
             if (characterInstanceReference == null)
@@ -2097,7 +2141,8 @@ namespace Swole.Morphing
             SetBodyHairLevelUnsafe(groupIndex, level, blend);
         }
         public int IndexOfFatGroup(string groupName) => CustomizationData == null ? -1 : CustomizationData.IndexOfFatGroup(groupName);
-
+        public int FatGroupCount => CustomizationData == null ? 0 : CustomizationData.FatVertexGroupCount;
+        public int BodyhairGroupCount => CustomizationData == null ? 0 : CustomizationData.FatVertexGroupCount;
 
         public int VariationShapesControlDataSize => CustomizationData.VariationShapesControlDataSize;
         public int FirstVariationShapesControlIndex => CharacterInstanceID * VariationShapesControlDataSize;
@@ -2172,6 +2217,9 @@ namespace Swole.Morphing
             SetVariationWeightUnsafe(indexInArray, weight);
         }
 
+        public int VariationGroupCount => CustomizationData == null ? 0 : CustomizationData.VariationVertexGroupCount;
+        public int VariationShapeCount => CustomizationData == null ? 0 : CustomizationData.VariationShapesCount;
+
         #endregion
 
         #region Animation
@@ -2218,7 +2266,11 @@ namespace Swole.Morphing
             }
 
             animatablePropertiesController = controller;
-            if (animatablePropertiesController == null) return;
+            if (animatablePropertiesController == null)
+            {
+                Debug.LogError($"AnimatablePropertiesController is null for {name}");
+                return;
+            }
 
 #if UNITY_EDITOR
             if (!Application.isPlaying) return;
@@ -2253,7 +2305,11 @@ namespace Swole.Morphing
             for (int a = 0; a < meshData.MuscleVertexGroupCount; a++)
             {
                 var group = meshData.GetMuscleVertexGroupInfo(a);
-                if (group.IsInvalid /*|| !group.flag*/) continue; // animatable permission is stored in vertex group flag field // TODO: uncomment group.flag check
+                if (group.IsInvalid /*|| !group.flag*/) // animatable permission is stored in vertex group flag field // TODO: uncomment group.flag check
+                {
+                    Debug.LogError($"Muscle group {a} for {Name} is invalid!"); 
+                    continue;
+                } 
 
                 int shapeIndex = a;
 
@@ -2895,9 +2951,9 @@ namespace Swole.Morphing
                 {
                     if (mat == null) continue;
 
-#if UNITY_EDITOR
+//#if UNITY_EDITOR
                     Debug.Log($"{name}: Binding {meshData.MuscleGroupsControlPropertyName} to {mat.name}");
-#endif
+//#endif
                     muscleBuffer.BindMaterialProperty(mat, meshData.MuscleGroupsControlPropertyName);
                 }
             }
@@ -3831,6 +3887,17 @@ namespace Swole.Morphing
 
         #endregion
 
+    }
+
+    [Serializable]
+    public class KilogramGroup
+    {
+        public string groupName;
+        [NonSerialized]
+        public int cachedIndex = -1;
+
+        [Tooltip("The weight in kilograms of the group when it has a mass of 1.0")]
+        public float kilograms;
     }
 
 #if UNITY_EDITOR

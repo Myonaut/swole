@@ -53,6 +53,8 @@ namespace Swole.Animation
         public void SetAvatarMask(WeightedAvatarMask mask, bool invertMask);
         public void SetAvatarMask(WeightedAvatarMaskComposite mask, bool invertMask);
 
+        public void ApplyPropertyStates();
+
 
         public bool Paused { get; set; }
 

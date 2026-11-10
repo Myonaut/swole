@@ -68,6 +68,7 @@ namespace Swole
         protected ComputeBuffer[] bufferPool;
         public int BufferPoolSize => bufferPool.Length;
         public ComputeBuffer ActiveBuffer => bufferPool[activeBuffer];
+        public ComputeBuffer GetPooledBuffer(int index) => bufferPool == null || index < 0 || index >= bufferPool.Length ? null : bufferPool[index];
         public void SetActiveBuffer(int bufferIndex)
         {
             activeBuffer = bufferIndex;
@@ -268,7 +269,7 @@ namespace Swole
             this.bufferMode = bufferMode;
 
             internalData = new NativeList<T>(initialSize, Allocator.Persistent);
-            bufferPool = new ComputeBuffer[bufferPoolSize];
+            bufferPool = new ComputeBuffer[Mathf.Max(1, bufferPoolSize)];
             SetSize(initialSize);
 
             framesToWaitBeforeSwap = 0;
@@ -282,36 +283,55 @@ namespace Swole
 
         private void UploadToBuffer(ComputeBuffer buffer, int startIndex, int count)
         {
-            var writer = buffer.BeginWrite<T>(startIndex, count);
-            NativeArray<T>.Copy(internalData.AsArray(), startIndex, writer, 0, count);
-            buffer.EndWrite<T>(count);
+            if (bufferMode == ComputeBufferMode.SubUpdates)
+            {
+                var writer = buffer.BeginWrite<T>(startIndex, count);
+                NativeArray<T>.Copy(internalData.AsArray(), startIndex, writer, 0, count); 
+                buffer.EndWrite<T>(count);
+                //buffer.EndWrite<T>(startIndex + count); 
+            } 
+            else 
+            {
+                buffer.SetData<T>(internalData.AsArray(), startIndex, startIndex, count); 
+            }
         }
         public void Upload()
         {
             queuedForUpload = false;
-              
-            if (invalid || bufferPool == null) return;
+            
+            if (invalid || bufferPool == null)
+            {
+                Debug.LogError($"Could not upload invalid buffer {Name}"); 
+                return;
+            }
 
             try
             {
                 //writeStart = 0; // debug write entire array to buffer
                 //writeEnd = internalData.Length - 1;
 
+                int currentFrameWriteBuffer = writeBuffer;
+
                 int writeCount = (writeEnd - writeStart) + 1;
                 var buffer = bufferPool[writeBuffer];
                 UploadToBuffer(buffer, writeStart, writeCount);
 
-                if (writeBuffer != activeBuffer) 
+                //Debug.Log($"Uploading buffer {Name} (Count:{writeCount})");   
+                if (writeBuffer != activeBuffer)
                 {
                     if (framesToWaitBeforeSwap > 0)
                     {
-                        CoroutineProxy.Start(WaitSetActiveBuffer(writeBuffer, framesToWaitBeforeSwap));
-                    } 
+                        CoroutineProxy.Start(WaitSetActiveBuffer(currentFrameWriteBuffer, framesToWaitBeforeSwap)); 
+                    }
                     else
                     {
-                        SetActiveBuffer(writeBuffer);  
+                        SetActiveBuffer(currentFrameWriteBuffer);
                     }
                 }
+            }
+            catch (Exception ex)
+            {
+                Debug.LogException(ex);
             }
             finally
             {
@@ -319,7 +339,7 @@ namespace Swole
                 writeEndCounter++;
 
                 writeBuffer++;
-                if (writeBuffer >= bufferPool.Length) writeBuffer = 0;
+                if (writeBuffer >= bufferPool.Length) writeBuffer = 0; 
             }
         }
         public void UploadToAll()
@@ -330,6 +350,8 @@ namespace Swole
 
             try
             {
+                int currentFrameWriteBuffer = writeBuffer;
+
                 int writeCount = (writeEnd - writeStart) + 1;
                 foreach(var buffer in bufferPool) UploadToBuffer(buffer, writeStart, writeCount);
 
@@ -337,13 +359,17 @@ namespace Swole
                 {
                     if (framesToWaitBeforeSwap > 0)
                     {
-                        CoroutineProxy.Start(WaitSetActiveBuffer(writeBuffer, framesToWaitBeforeSwap));
+                        CoroutineProxy.Start(WaitSetActiveBuffer(currentFrameWriteBuffer, framesToWaitBeforeSwap));
                     }
                     else
                     {
-                        SetActiveBuffer(writeBuffer);
+                        SetActiveBuffer(currentFrameWriteBuffer); 
                     }
                 }
+            }
+            catch (Exception ex)
+            {
+                Debug.LogException(ex);
             }
             finally
             {
@@ -404,14 +430,20 @@ namespace Swole
                 internalData.AddReplicated(val, size - internalData.Length);
             }
 
+            Debug.Log("Resizing ComputeBufferPool '" + Name + "' to size " + size + " with stride " + stride + " and buffer pool size " + bufferPool.Length);  
             for (int a = 0; a < bufferPool.Length; a++)
             {
                 var buffer = bufferPool[a];
                 if (buffer != null && buffer.IsValid()) buffer.Dispose();
 
-                buffer = new ComputeBuffer(size, stride, bufferType, bufferMode);  
+                //bufferMode = bufferMode == ComputeBufferMode.SubUpdates ? ComputeBufferMode.Immutable : bufferMode; // debug
+                buffer = new ComputeBuffer(size, stride, bufferType, bufferMode);    
                 //buffer.SetData(internalData.AsArray());
                 bufferPool[a] = buffer;
+
+                // Run this check once at startup to output log diagnostics
+                Debug.Log($"[Buffer Check] ({Name}) C# Struct Size: {System.Runtime.InteropServices.Marshal.SizeOf(typeof(T))}. Your Buffer Stride: {buffer.stride}"); 
+
             }
 
             //RequestUpload();

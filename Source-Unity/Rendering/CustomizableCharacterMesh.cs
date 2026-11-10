@@ -406,18 +406,6 @@ namespace Swole.Morphing
 #endif
 
         [Serializable]
-        public struct NamedFloat
-        {
-            public string name;
-            public float value;
-        }
-        [Serializable]
-        public struct NamedFloat2
-        {
-            public string name;
-            public float2 value;
-        }
-        [Serializable]
         public struct NamedMuscleData
         {
             public string name;
@@ -672,11 +660,14 @@ namespace Swole.Morphing
             return meshData.IndexOfStandaloneShape(name, caseSensitive);
         }
 
+        public int StandaloneShapeCount => meshData?.StandaloneShapesCount ?? 0;
+
         public int IndexOfVertexGroup(string name, bool caseSensitive = false)
         {
             if (meshData == null) return -1;
             return meshData.IndexOfVertexGroup(name, caseSensitive);
         }
+
         public int IndexOfStandaloneVertexGroup(string name, bool caseSensitive = false)
         {
             if (meshData == null) return -1;
@@ -687,11 +678,15 @@ namespace Swole.Morphing
             if (meshData == null) return -1;
             return meshData.IndexOfMuscleGroup(name, caseSensitive);
         }
+
         public int IndexOfFatGroup(string name, bool caseSensitive = false)
         {
             if (meshData == null) return -1;
             return meshData.IndexOfFatGroup(name, caseSensitive);
         }
+        public int FatGroupCount => meshData?.FatVertexGroupCount ?? 0;
+        public int BodyhairGroupCount => FatGroupCount;
+
         public int IndexOfVariationGroup(string name, bool caseSensitive = false)
         {
             if (meshData == null) return -1;
@@ -702,6 +697,8 @@ namespace Swole.Morphing
             if (meshData == null) return -1;
             return meshData.IndexOfVariationShape(name, caseSensitive);
         }
+        public int VariationGroupCount => meshData?.VariationVertexGroupCount ?? 0;
+        public int VariationShapeCount => meshData?.VariationShapesCount ?? 0;
 
         public VertexGroup GetVertexGroup(int index)
         {

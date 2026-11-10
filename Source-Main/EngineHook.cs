@@ -184,6 +184,16 @@ namespace Swole
             SingletonCallStack.ExecutePostFixed();
         }
 
+        #region Time
+
+        public virtual float Time_DeltaTime() => 0f;
+
+        public virtual float Time_Time() => 0f;
+
+        public virtual int Time_Frame() => 0;
+
+        #endregion
+
         #region RNG
 
         public virtual EngineInternal.RNG RNG_Global() => default;

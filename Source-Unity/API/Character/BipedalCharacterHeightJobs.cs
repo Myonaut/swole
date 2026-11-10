@@ -139,8 +139,8 @@ namespace Swole.API.Unity
 
         }
 
-        public static int ExecutionPriority => CustomIKManagerUpdater.ExecutionPriority - 1; // Update before IK
-        public override int Priority => base.Priority;
+        public static int ExecutionPriority => CustomIKManagerUpdater.ExecutionPriority - 10; // Update before IK
+        public override int Priority => ExecutionPriority;
 
         public override void OnFixedUpdate()
         {

@@ -46,8 +46,14 @@ namespace Swole.Animation
         public float GetTime(IAnimationLayer layer, float addTime = 0);
         public float GetNormalizedTime(IAnimationLayer layer, float addTime = 0);
 
+        public float GetPreviousTime(IAnimationLayer layer);
+        public float GetPreviousNormalizedTime(IAnimationLayer layer);
+
         public void SetTime(IAnimationLayer layer, float time, bool resetFlags = true);
         public void SetNormalizedTime(IAnimationLayer layer, float normalizedTime, bool resetFlags = true);
+
+        public void ForceSetPreviousTime(IAnimationLayer layer, float time);
+        public void ForceSetPreviousNormalizedTime(IAnimationLayer layer, float normalizedTime);
 
         public bool HasAnimationPlayer(IAnimationLayer layer);
 
@@ -79,7 +85,13 @@ namespace Swole.Animation
 
         public float GetCurrentBoneHeight(IAnimationLayer layer, string boneName);
         public float GetBoneHeight(IAnimationLayer layer, string boneName, float timeOffset);
+        public float GetBoneHeight(IAnimationLayer layer, string boneName, float timeOffset, out bool foundCurve);
         public float GetBoneHeightAtTime(IAnimationLayer layer, string boneName, float time);
+        public float GetBoneHeightAtTime(IAnimationLayer layer, string boneName, float time, out bool foundCurve); 
+
+        public bool AffectsTransform(IAnimationLayer layer, string transformName);
+
+        public void ApplyPropertyStates(IAnimationLayer layer);
     }
 
     public delegate WeightedAvatarMaskComposite AvatarMaskInversionDelegate(WeightedAvatarMaskComposite mask);
@@ -185,12 +197,38 @@ namespace Swole.Animation
     public class MotionPart : IMotionPart, ICloneable
     {
 
+        public bool replaceBaseSpeed = false;
+        public bool ReplaceBaseSpeed
+        {
+            get => replaceBaseSpeed;
+            set => replaceBaseSpeed = value; 
+        }
         public float speed = 1f;
         public float Speed
         {
             get => speed;
             set => speed = value;
         }
+        public float blendSpeed = 1f;
+        public float BlendSpeed
+        {
+            get => blendSpeed;
+            set => blendSpeed = value;
+        }
+        public int blendSpeedParameterIndex = -1;
+        public int BlendSpeedParameterIndex
+        {
+            get => blendSpeedParameterIndex;
+            set => blendSpeedParameterIndex = value;
+        }
+        public float GetBlendSpeed(IAnimationLayer layer)
+        {
+            if (blendSpeedParameterIndex < 0) return blendSpeed;
+            var param = layer.GetParameter(blendSpeedParameterIndex);
+            if (param == null) return blendSpeed;
+            return blendSpeed * param.Value;
+        }
+
         public int controllerIndex = -1;
         public int ControllerIndex
         {
@@ -273,6 +311,8 @@ namespace Swole.Animation
             var clone = new MotionPart();
 
             clone.speed = speed;
+            clone.blendSpeed = blendSpeed;
+            clone.blendSpeedParameterIndex = blendSpeedParameterIndex;
             clone.controllerIndex = controllerIndex;
             clone.syncMode = syncMode;
             clone.localSyncReferenceIndex = localSyncReferenceIndex;
@@ -303,6 +343,9 @@ namespace Swole.Animation
 
         public IMotionPart[] BaseMotionParts { get; set; }
 
+        public bool UseBlendSpeed { get; set; }
+        public bool BlendSpeedIsAdditive { get; set; }
+
     }
 
     [Serializable]
@@ -329,12 +372,19 @@ namespace Swole.Animation
 
         public IMotionField[] BaseMotionFields { get; }
 
+        public bool UseBlendSpeed { get; set; }
+
     }
     public interface IMotionField 
     {
+        public bool ReplaceBaseSpeed { get; set; }
         public float Speed { get; set; }
         public int ControllerIndex { get; set; }
         public float NormalizedStartTime { get; set; }
+
+        public float BlendSpeed { get; set; }
+        public int BlendSpeedParameterIndex { get; set; }
+        public float GetBlendSpeed(IAnimationLayer layer);
     }
 
     public interface IBlendTree1D : IBlendTree 
@@ -371,12 +421,39 @@ namespace Swole.Animation
             get => threshold;
             set => threshold = value;
         }
+
+        public bool replaceBaseSpeed = false;
+        public bool ReplaceBaseSpeed
+        {
+            get => replaceBaseSpeed;
+            set => replaceBaseSpeed = value;
+        }
         public float speed = 1f;
         public float Speed
         {
             get => speed;
             set => speed = value;
         }
+        public float blendSpeed = 1f;
+        public float BlendSpeed
+        {
+            get => blendSpeed;
+            set => blendSpeed = value;
+        }
+        public int blendSpeedParameterIndex = -1;
+        public int BlendSpeedParameterIndex
+        {
+            get => blendSpeedParameterIndex;
+            set => blendSpeedParameterIndex = value;
+        }
+        public float GetBlendSpeed(IAnimationLayer layer)
+        {
+            if (blendSpeedParameterIndex < 0) return blendSpeed;
+            var param = layer.GetParameter(blendSpeedParameterIndex);
+            if (param == null) return blendSpeed;
+            return blendSpeed * param.Value;
+        }
+
         public int controllerIndex = -1;
         public int ControllerIndex
         {
@@ -398,6 +475,8 @@ namespace Swole.Animation
 
             clone.threshold = threshold;
             clone.speed = speed;
+            clone.blendSpeed = blendSpeed;
+            clone.blendSpeedParameterIndex = blendSpeedParameterIndex;
             clone.controllerIndex = controllerIndex;
             clone.normalizedStartTime = normalizedStartTime;
 
@@ -430,12 +509,38 @@ namespace Swole.Animation
             set => y = value;
         }
 
+        public bool replaceBaseSpeed = false;
+        public bool ReplaceBaseSpeed
+        {
+            get => replaceBaseSpeed;
+            set => replaceBaseSpeed = value;
+        }
         public float speed = 1f;
         public float Speed
         {
             get => speed;
             set => speed = value;
         }
+        public float blendSpeed = 1f;
+        public float BlendSpeed
+        {
+            get => blendSpeed;
+            set => blendSpeed = value;
+        }
+        public int blendSpeedParameterIndex = -1;
+        public int BlendSpeedParameterIndex
+        {
+            get => blendSpeedParameterIndex;
+            set => blendSpeedParameterIndex = value;
+        }
+        public float GetBlendSpeed(IAnimationLayer layer)
+        {
+            if (blendSpeedParameterIndex < 0) return blendSpeed;
+            var param = layer.GetParameter(blendSpeedParameterIndex);
+            if (param == null) return blendSpeed;
+            return blendSpeed * param.Value;
+        }
+
         public int controllerIndex = -1;
         public int ControllerIndex
         {
@@ -458,6 +563,8 @@ namespace Swole.Animation
             clone.x = x;
             clone.y = y;
             clone.speed = speed;
+            clone.blendSpeed = blendSpeed;
+            clone.blendSpeedParameterIndex = blendSpeedParameterIndex;
             clone.controllerIndex = controllerIndex;
             clone.normalizedStartTime = normalizedStartTime;
 

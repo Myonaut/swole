@@ -896,10 +896,11 @@ namespace Swole.API.Unity.Animation
         public EditableAnimationCurve timeCurve;
 
         public float ScaleTime(float time) => ScaleTime(time, LengthInSeconds, timeCurve);
+        public float ScaleTime(float time, float lengthInSeconds) => ScaleTime(time, lengthInSeconds, timeCurve);
         public static float ScaleTime(float time, float lengthInSeconds, AnimationCurve timeCurve)
         {
-            float normalizedTime = time / lengthInSeconds;
-            return time * (ScaleNormalizedTime(normalizedTime, timeCurve) / normalizedTime);
+            float normalizedTime = (time - math.floor(time / lengthInSeconds) * lengthInSeconds) / lengthInSeconds;  
+            return time + (ScaleNormalizedTime(normalizedTime, timeCurve) - normalizedTime) * lengthInSeconds;  
         }
         public float ScaleNormalizedTime(float normalizedTime) => ScaleNormalizedTime(normalizedTime, timeCurve);
         public static float ScaleNormalizedTime(float normalizedTime, AnimationCurve timeCurve)
@@ -997,6 +998,9 @@ namespace Swole.API.Unity.Animation
 
             return false;
         }
+
+        public bool AffectsTransform(string transformName) => TryGetTransformCurve(transformName, out _) || TryGetTransformLinearCurve(transformName, out _); 
+
 
         /// <summary>
         /// The number of samples per frame in one second of a curve's timeline (will pick the time slice with the most frames). 
@@ -1228,7 +1232,7 @@ namespace Swole.API.Unity.Animation
                     { 
                         int sampleCount = SampleTransformCurve(sampleData, frameHeaders, curve, animationLength, out float timeRatio, out int frameHeaderIndex, out int frameCount);
 
-                        if (sampleCount > 0)
+                        if (sampleCount > 0 && frameCount > 0)
                         {
                             jobData.transformCurvesSampledHeaders[i] = new CurveHeader(index, sampleCount, frameHeaderIndex, frameCount, curve.PreWrapMode, curve.PostWrapMode,
                                 timeRatio, frameHeaders[frameHeaderIndex].time / (animationLength <= 0 ? 1 : animationLength), frameCount <= 0 ? 0 : ((frameHeaders[frameHeaderIndex + frameCount - 1].time - frameHeaders[frameHeaderIndex].time) / (animationLength <= 0 ? 1 : animationLength)),
@@ -1237,7 +1241,7 @@ namespace Swole.API.Unity.Animation
                         } 
                         else
                         {
-                            jobData.transformCurvesSampledHeaders[i] = new CurveHeader(index, sampleCount, frameHeaderIndex, frameCount, curve.PreWrapMode, curve.PostWrapMode, 0, 0, 0, false, false, false); 
+                            jobData.transformCurvesSampledHeaders[i] = new CurveHeader(index, 0, 0, 0, curve.PreWrapMode, curve.PostWrapMode, 0, 0, 0, false, false, false);  
                         }
                     }
 
@@ -1588,6 +1592,12 @@ namespace Swole.API.Unity.Animation
             }
 
             protected float prevTime;
+            public float PreviousTime => prevTime;
+            public void ForceSetPreviousTime(float time)
+            {
+                prevTime = time;
+            }
+
             protected float time;
             public float Time
             {
@@ -1602,6 +1612,7 @@ namespace Swole.API.Unity.Animation
                     prevTime = time;
                     skipNextRootMotionUpdate = true;
                 }
+                //Debug.Log($"Set time for {this.Animation.Name} to {time}");
             }
             public float GetLoopedTime(float time, bool canLoop = true)
             {
@@ -1704,6 +1715,21 @@ namespace Swole.API.Unity.Animation
             private PropertyState[] propertyStates;
             private TransformStateReference[] transformStates;
             private float[] propertyMaskWeights;
+
+            public void ApplyPropertyStates()
+            {
+                if (propertyStates != null && propertyStates.Length > 0 && layer != null)
+                {
+                    var animator = layer.Animator as CustomAnimator;
+                    if (animator != null)
+                    {
+                        foreach (var state in propertyStates)
+                        {
+                            animator.ApplyPropertyState(state);  
+                        }
+                    }
+                }
+            } 
 
             private class JobData : IDisposable
             {
@@ -1837,6 +1863,7 @@ namespace Swole.API.Unity.Animation
 
                 var invertedMask = new WeightedAvatarMaskComposite()
                 {
+                    defaultWeight = 1f - mask.defaultWeight,
                     boneMask = mask.boneMask == null ? null : new List<WeightedAvatarMask.WeightedEntry>(),
                     propertyMask = mask.propertyMask == null ? null : new List<WeightedAvatarMask.WeightedEntry>()
                 };
@@ -1849,11 +1876,11 @@ namespace Swole.API.Unity.Animation
                         var state = GetPropertyState(curveInfo, animation, m_animator, false);
                         if (state == null) continue;
 
-                        float weight = !mask.IsValid ? 1f : mask.GetProperty(state.ID, 0f, false).weight; 
+                        float weight = !mask.IsValid ? 1f : mask.GetProperty(state.ID, false).weight;  
                         invertedMask.propertyMask.Add(new WeightedAvatarMask.WeightedEntry()
                         {
                             entryName = state.ID,
-                            weight = 1 - weight
+                            weight = 1f - weight
                         });
                     }
                 }
@@ -1869,11 +1896,11 @@ namespace Swole.API.Unity.Animation
                         var transform = m_animator.FindTransformInHierarchy(curve.TransformName/*, curve.IsBone*/);
                         if (transform == null) continue;
 
-                        float weight = !mask.IsValid ? 1f : mask.Get(transform.name, 0f, false).weight;
+                        float weight = !mask.IsValid ? 1f : mask.Get(transform.name, false).weight;
                         invertedMask.boneMask.Add(new WeightedAvatarMask.WeightedEntry()
                         {
                             entryName = transform.name,
-                            weight = 1 - weight
+                            weight = 1f - weight
                         });
                     }
                 }
@@ -1888,10 +1915,11 @@ namespace Swole.API.Unity.Animation
                 var anim = TypedAnimation;
                 if (anim == null) return;
 
-                float layerMix = cal.Mix;
+                float layerMix = math.saturate(cal.Mix);
                 if (useMultithreading)
                 {
-                    lastJobHandle.Complete(); 
+                    lastJobHandle.Complete();
+                    lastJobHandle = default;
 
                     for (int a = 0; a < jobData.m_transformCurveBindings.Length; a++)
                     {
@@ -1901,12 +1929,12 @@ namespace Swole.API.Unity.Animation
                         float currentWeight = animator.GetResetPrepassWeight(binding.y);
                         if (weight <= currentWeight) continue;
 
-                        animator.SetResetPrepassWeight(binding.y, weight);
+                        animator.SetResetPrepassWeight(binding.y, weight);  
                     }
-                } 
+                }
                 else
                 {
-                    for(int a = 0; a < transformStates.Length; a++)
+                    for (int a = 0; a < transformStates.Length; a++)
                     {
                         var state = transformStates[a];
                         if (state == null) continue;
@@ -1967,7 +1995,7 @@ namespace Swole.API.Unity.Animation
                         float weight = 0f;
                         if (this.topMask.IsValid || this.currentMask.IsValid)
                         {
-                            weight = (!this.topMask.IsValid ? 1f : this.topMask.GetProperty(state.ID, 0f, this.invertTopMask).weight) * (!this.currentMask.IsValid ? 1f : this.currentMask.GetProperty(state.ID, 0f, this.invertCurrentMask).weight);
+                            weight = (!this.topMask.IsValid ? 1f : this.topMask.GetProperty(state.ID, this.invertTopMask).weight) * (!this.currentMask.IsValid ? 1f : this.currentMask.GetProperty(state.ID, this.invertCurrentMask).weight);
                         }
                         else
                         {
@@ -2013,7 +2041,7 @@ namespace Swole.API.Unity.Animation
                         float weight = 0f;
                         if (this.topMask.IsValid || this.currentMask.IsValid)
                         {
-                            weight = (!this.topMask.IsValid ? 1f : this.topMask.Get(transform.name, 0f, this.invertTopMask).weight) * (!this.currentMask.IsValid ? 1f : this.currentMask.Get(transform.name, 0f, this.invertCurrentMask).weight);
+                            weight = (!this.topMask.IsValid ? 1f : this.topMask.Get(transform.name, this.invertTopMask).weight) * (!this.currentMask.IsValid ? 1f : this.currentMask.Get(transform.name, this.invertCurrentMask).weight);
                         }
                         else
                         {
@@ -2088,7 +2116,7 @@ namespace Swole.API.Unity.Animation
                 rootMotionWeight = 0f;
                 if (this.topMask.IsValid || this.currentMask.IsValid)
                 {
-                    rootMotionWeight = (!this.topMask.IsValid ? 1f : this.topMask.Get(transformName, 0f, invertTopMask).weight) * (!this.currentMask.IsValid ? 1f : this.currentMask.Get(transformName, 0f, invertCurrentMask).weight);
+                    rootMotionWeight = (!this.topMask.IsValid ? 1f : this.topMask.Get(transformName, invertTopMask).weight) * (!this.currentMask.IsValid ? 1f : this.currentMask.Get(transformName, invertCurrentMask).weight);
                 }
                 else
                 {
@@ -2137,20 +2165,20 @@ namespace Swole.API.Unity.Animation
                 rootTranslation = Vector3.zero;
                 rootRotation = Quaternion.identity;
 
-                if (rootMotionTransformCurveIndex < 0 || mix == 0f || rootMotionWeight == 0f) return; 
+                if (rootMotionTransformCurveIndex < 0 || Mathf.Approximately(mix, 0f) || Mathf.Approximately(rootMotionWeight, 0f)) return;  
 
                 var curveInfo = m_animation.transformAnimationCurves[rootMotionTransformCurveIndex];
                 ITransformCurve mainCurve = curveInfo.infoMain.isLinear ? m_animation.transformLinearCurves[curveInfo.infoMain.curveIndex] : m_animation.transformCurves[curveInfo.infoMain.curveIndex];
 
                 float curveLength = mainCurve.GetLengthInSeconds(m_animation.framesPerSecond);
                 float curveEndTime = 0.999f;
-                time = time / curveLength;
-                prevTime = prevTime / curveLength;
+                time = math.saturate(time / curveLength);
+                prevTime = math.saturate(prevTime / curveLength); 
 
-                var beginning = mainCurve.Evaluate(0);
+                var beginning = mainCurve.Evaluate(0f);
                 var current = mainCurve.Evaluate(time);
 
-                Quaternion alignment = beginning.localRotation * Quaternion.Inverse(current.localRotation);
+                Quaternion alignment = beginning.localRotation * Quaternion.Inverse(current.localRotation); 
 
                 if (speed > 0)
                 {
@@ -2159,7 +2187,7 @@ namespace Swole.API.Unity.Animation
                         var startA = mainCurve.Evaluate(prevTime);
                         var endA = mainCurve.Evaluate(curveEndTime); 
 
-                        var startB = mainCurve.Evaluate(0);
+                        var startB = mainCurve.Evaluate(0f);
                         var endB = mainCurve.Evaluate(time);
 
                         rootTranslation += alignment * (Vector3)(endA.localPosition - startA.localPosition);
@@ -2182,7 +2210,7 @@ namespace Swole.API.Unity.Animation
                     if (time > prevTime)
                     {
                         var startA = mainCurve.Evaluate(prevTime);
-                        var endA = mainCurve.Evaluate(0);
+                        var endA = mainCurve.Evaluate(0f);
 
                         var startB = mainCurve.Evaluate(curveEndTime);
                         var endB = mainCurve.Evaluate(time);
@@ -2210,7 +2238,112 @@ namespace Swole.API.Unity.Animation
             
             private JobHandle lastJobHandle;
             public JobHandle LastJobHandle => lastJobHandle;
-            public JobHandle Progress(float deltaTime, float layerMix = 1f, JobHandle jobDeps = default, bool useMultithreading = true, bool isFinal = false, bool canLoop = true)
+            /// <summary>
+            /// Gets the time this player would be at after advancing <paramref name="deltaTime"/> seconds at <paramref name="speed"/>, mirroring <see cref="Progress"/> (time override, looping, ping-pong) without changing any state.
+            /// </summary>
+            public float PredictTime(float deltaTime, float speed, bool canLoop = true)
+            {
+                if (overrideTime) return GetLoopedTimeSample(timeOverride, canLoop);
+                if (paused) return time;
+                return GetLoopedTimeSample(time + deltaTime * speed * internalSpeedMultiplier, canLoop);
+            }
+
+            /// <summary>Wraps or clamps a time like <see cref="GetLoopedTime"/> does, without changing the ping-pong direction or any other state.</summary>
+            public float GetLoopedTimeSample(float time, bool canLoop = true)
+            {
+                float lengthInSeconds = LengthInSeconds;
+                if (canLoop && loopMode != AnimationLoopMode.PlayOnce)
+                {
+                    if (lengthInSeconds > 0)
+                    {
+                        switch (loopMode)
+                        {
+                            case AnimationLoopMode.Loop:
+                                time = time - math.floor(time / lengthInSeconds) * lengthInSeconds;
+                                break;
+
+                            case AnimationLoopMode.PingPong:
+                                // fold the time back into range, as the ping-pong direction flips would over the elapsed time
+                                float period = lengthInSeconds * 2f;
+                                float t = time - math.floor(time / period) * period;
+                                time = t > lengthInSeconds ? period - t : t;
+                                break;
+                        }
+                    }
+                }
+                else
+                {
+                    if (time < 0) time = 0;
+                    if (time > lengthInSeconds - 0.0001f) time = lengthInSeconds - 0.0001f;
+                }
+
+                return time;
+            }
+
+            /// <summary>
+            /// Applies this player's transform curves at <paramref name="sampleTime"/> (seconds) to an offline pose, using the same blend mode, avatar mask weights and mix math as <see cref="Progress"/>.
+            /// <paramref name="mix"/> stands in for the player's mix (the controller weight) and <paramref name="layerMix"/> for the layer mix.
+            /// </summary>
+            public void SampleInto(CustomAnimator.SampledPose pose, float sampleTime, float mix, float layerMix = 1f)
+            {
+                if (pose == null || m_animation == null || jobData == null || !jobData.m_transformCurveBindings.IsCreated) return;
+                var anim = TypedAnimation;
+                if (anim == null) return;
+
+                float lengthInSeconds = m_length;
+                float normalizedTime = lengthInSeconds <= 0f ? 0f : (sampleTime / lengthInSeconds);
+                normalizedTime = math.clamp(normalizedTime, 0f, 0.99999f);
+                normalizedTime = m_animation.ScaleNormalizedTime(normalizedTime);
+
+                float sampleDynamicMix = mix * layerMix;
+                bool isAdditiveBlend = (isBlend && isAdditive) || isBlend;
+                if (isBlend && math.abs(isAdditiveBlend ? sampleDynamicMix : layerMix) < 0.00001f) return;
+
+                var bindings = jobData.m_transformCurveBindings;
+                var maskWeights = jobData.m_transformMaskWeights;
+                for (int a = 0; a < bindings.Length; a++)
+                {
+                    var binding = bindings[a];
+                    var curveInfo = anim.transformAnimationCurves[binding.x];
+
+                    ITransformCurve mainCurve = null;
+                    ITransformCurve baseCurve = null;
+                    if (curveInfo.infoMain.curveIndex >= 0) mainCurve = curveInfo.infoMain.isLinear ? anim.transformLinearCurves[curveInfo.infoMain.curveIndex] : anim.transformCurves[curveInfo.infoMain.curveIndex];
+                    if (curveInfo.infoBase.curveIndex >= 0) baseCurve = curveInfo.infoBase.isLinear ? anim.transformLinearCurves[curveInfo.infoBase.curveIndex] : anim.transformCurves[curveInfo.infoBase.curveIndex];
+
+                    float weight = maskWeights[a];
+                    var state = pose.GetOrInit(binding.y);
+
+                    if (isAdditiveBlend || isAdditive)
+                    {
+                        if (mainCurve == null && baseCurve == null) continue;
+                        if (mainCurve == null) mainCurve = baseCurve;
+                        if (baseCurve == null) baseCurve = mainCurve;
+
+                        float cachedLengthMain = mainCurve.CachedLengthInSeconds;
+                        float cachedLengthBase = baseCurve.CachedLengthInSeconds;
+                        float tM = cachedLengthMain <= 0 ? 0 : normalizedTime * (lengthInSeconds / cachedLengthMain);
+                        float tB = cachedLengthBase <= 0 ? 0 : normalizedTime * (lengthInSeconds / cachedLengthBase);
+
+                        float additiveMix = isAdditiveBlend ? sampleDynamicMix * weight : weight;
+                        state = state.Swizzle(state.ApplyAdditiveMix(mainCurve.Evaluate(tM) - baseCurve.Evaluate(tB), additiveMix), mainCurve.ValidityPosition, mainCurve.ValidityRotation, mainCurve.ValidityScale);
+                    }
+                    else
+                    {
+                        if (mainCurve == null) continue;
+
+                        float cachedLength = mainCurve.CachedLengthInSeconds;
+                        float t = cachedLength <= 0 ? 0 : normalizedTime * (lengthInSeconds / cachedLength);
+
+                        if (isBlend) state = state.Swizzle(state.ApplyMix(ITransformCurve.Data.Default.Lerp(mainCurve.Evaluate(t), mix), layerMix * weight), mainCurve.ValidityPosition, mainCurve.ValidityRotation, mainCurve.ValidityScale);
+                        else state = state.Swizzle(state.ApplyMix(mainCurve.Evaluate(t), weight), mainCurve.ValidityPosition, mainCurve.ValidityRotation, mainCurve.ValidityScale);
+                    }
+
+                    pose.Set(binding.y, state);
+                }
+            }
+
+            public JobHandle Progress(float deltaTime, float layerMix = 1f, JobHandle jobDeps = default, bool useMultithreading = true, bool isFinal = false, bool previousWasFinal = false, bool canLoop = true)
             {
                 if (m_animation == null) 
                 {
@@ -2254,7 +2387,7 @@ namespace Swole.API.Unity.Animation
 
                 }
 
-                float realLengthInSeconds = LengthInSeconds;
+                //float realLengthInSeconds = LengthInSeconds;
                 float lengthInSeconds = m_length;
                 float normalizedTime = lengthInSeconds <= 0f ? 0f : (time / lengthInSeconds); 
                 // Apply time curve
@@ -2268,7 +2401,8 @@ namespace Swole.API.Unity.Animation
                 dynamicMix = mix * layerMix;
                 bool isAdditiveBlend = (isBlend && isAdditive) || (isBlend /*&& layerMix != 1f*/);
 
-                if (!isFinal && isBlend && math.abs(isAdditiveBlend ? dynamicMix : layerMix) < 0.00001f) return jobDeps; // Don't bother updating when the changes to be made are insignificant
+                // if previous was final and this is final but the blend is zero, we can still skip
+                if ((previousWasFinal || !isFinal) && isBlend && math.abs(isAdditiveBlend ? dynamicMix : layerMix) < 0.00001f) return jobDeps; // Don't bother updating when the changes to be made are insignificant/nonexistent
 
                 var animator = m_animator;  
                 var anim = TypedAnimation;
@@ -2282,11 +2416,11 @@ namespace Swole.API.Unity.Animation
                     }
                     else if (IsApplyingRootMotion)
                     {
-                        CalculateRootMotion(previousTime, time, real_speed, out var rootTranslation, out var rootRotation, dynamicMix);
+                        CalculateRootMotion(m_animation.ScaleTime(previousTime, lengthInSeconds), m_animation.ScaleTime(time, lengthInSeconds), real_speed, out var rootTranslation, out var rootRotation, dynamicMix);
 
                         if (getRootMotion != null)
                         {
-                            getRootMotion(out var currentRootTranslation, out var currentRootRotation);
+                            getRootMotion(out var currentRootTranslation, out var currentRootRotation); 
                             rootTranslation += currentRootTranslation;
                             rootRotation = rootRotation * currentRootRotation;
                         }
@@ -2342,7 +2476,7 @@ namespace Swole.API.Unity.Animation
                     }
                     else if (IsApplyingRootMotion)
                     {
-                        CalculateRootMotion(previousTime, time, real_speed, out var rootTranslation, out var rootRotation);
+                        CalculateRootMotion(m_animation.ScaleTime(previousTime, lengthInSeconds), m_animation.ScaleTime(time, lengthInSeconds), real_speed, out var rootTranslation, out var rootRotation);
 
                         if (getRootMotion != null)
                         {
@@ -2386,7 +2520,7 @@ namespace Swole.API.Unity.Animation
 
                             //state.ApplyAdditive(mainCurve.Evaluate(t) - baseCurve.Evaluate(t), mix);
                             state.ApplyAdditiveMix(mainCurve.Evaluate(tM) - baseCurve.Evaluate(tB), weight);
-                            Debug.Log($"ApplyAdditiveMix (Additive) {state.Path}:: ({tM}){mainCurve.Evaluate(tM)} - ({tB}){baseCurve.Evaluate(tB)} = {(mainCurve.Evaluate(tM) - baseCurve.Evaluate(tB))} * {weight}");
+                            //Debug.Log($"ApplyAdditiveMix (Additive) {state.Path}:: ({tM}){mainCurve.Evaluate(tM)} - ({tB}){baseCurve.Evaluate(tB)} = {(mainCurve.Evaluate(tM) - baseCurve.Evaluate(tB))} * {weight}");
                         }
                     }
 
@@ -2399,7 +2533,7 @@ namespace Swole.API.Unity.Animation
                     }
                     else if (IsApplyingRootMotion)
                     {
-                        CalculateRootMotion(previousTime, time, real_speed, out var rootTranslation, out var rootRotation);
+                        CalculateRootMotion(m_animation.ScaleTime(previousTime, lengthInSeconds), m_animation.ScaleTime(time, lengthInSeconds), real_speed, out var rootTranslation, out var rootRotation);
 
                         var currentRootTranslation = Vector3.zero;
                         var currentRootRotation = Quaternion.identity;
@@ -2450,8 +2584,8 @@ namespace Swole.API.Unity.Animation
                     }
                     else if (IsApplyingRootMotion)
                     {
-                        CalculateRootMotion(previousTime, time, real_speed, out var rootTranslation, out var rootRotation);
-                        setRootMotion(rootTranslation, rootRotation);
+                        CalculateRootMotion(m_animation.ScaleTime(previousTime, lengthInSeconds), m_animation.ScaleTime(time, lengthInSeconds), real_speed, out var rootTranslation, out var rootRotation); 
+                        setRootMotion(rootTranslation, rootRotation); 
                     }
 
                     if (propertyStates != null)
@@ -2491,6 +2625,11 @@ namespace Swole.API.Unity.Animation
 
                         if (isAdditiveBlend)
                         {
+                            /*for (int a = 0; a < jobData.m_affectedTransforms.length; a++)
+                            {
+                                Debug.Log($"{(isFinal ? "FINAL" : "DEFAULT")} A {UnityEngine.Time.frameCount} {Layer.Name} ({mix} * {layerMix} * {jobData.m_transformMaskWeights[a]} = {(mix * layerMix * jobData.m_transformMaskWeights[a])}) Applying final transform data for {jobData.m_affectedTransforms[a].name}");
+                            }*/
+
                             jobDeps = isFinal ?
 
                                 new ApplyAdditiveMixTransformCurvesJobFinal()
@@ -2526,6 +2665,10 @@ namespace Swole.API.Unity.Animation
                         }
                         else if (isAdditive)
                         {
+                            /*for (int a = 0; a < jobData.m_affectedTransforms.length; a++)
+                            {
+                                Debug.Log($"{(isFinal ? "FINAL" : "DEFAULT")} B {UnityEngine.Time.frameCount} {Layer.Name} ({mix} * {layerMix} * {jobData.m_transformMaskWeights[a]} = {(mix * layerMix * jobData.m_transformMaskWeights[a])}) Applying final transform data for {jobData.m_affectedTransforms[a].name}");
+                            }*/
 
                             jobDeps = isFinal ?
 
@@ -2560,6 +2703,11 @@ namespace Swole.API.Unity.Animation
                         }
                         else if (isBlend)
                         {
+
+                            /*for (int a = 0; a < jobData.m_affectedTransforms.length; a++)
+                            {
+                                Debug.Log($"{(isFinal ? "FINAL" : "DEFAULT")} C {UnityEngine.Time.frameCount} {Layer.Name} ({mix} * {layerMix} * {jobData.m_transformMaskWeights[a]} = {(mix * layerMix * jobData.m_transformMaskWeights[a])}) Applying final transform data for {jobData.m_affectedTransforms[a].name}");
+                            }*/
 
                             jobDeps = isFinal ?
 
@@ -2598,6 +2746,10 @@ namespace Swole.API.Unity.Animation
                         }
                         else
                         {
+                            /*for (int a = 0; a < jobData.m_affectedTransforms.length; a++) 
+                            {
+                                Debug.Log($"{(isFinal ? "FINAL" : "DEFAULT")} D {UnityEngine.Time.frameCount} {Layer.Name} ({mix} * {layerMix} * {jobData.m_transformMaskWeights[a]} = {(mix * layerMix * jobData.m_transformMaskWeights[a])}) Applying final transform data for {jobData.m_affectedTransforms[a].name}");
+                            } */
 
                             jobDeps = isFinal ?
 
@@ -2779,6 +2931,7 @@ namespace Swole.API.Unity.Animation
             protected void DisposeJobData()
             {
                 lastJobHandle.Complete();
+                lastJobHandle = default;
 
 #if UNITY_EDITOR
                 //Debug.Log($"Disposing job data for animation player {(Animation == null ? "null" : Animation.Name)} - {GetHashCode()}");
@@ -3214,13 +3367,13 @@ namespace Swole.API.Unity.Animation
                 state = state.Swizzle(state.ApplyAdditiveMix(mainData - baseData, weight), validityPosition, validityRotation, validityScale);
                 //state = state.Swizzle(state.ApplyAdditive(ITransformCurve.Data.Subtract(mainData, baseData, state.modifiedLocalRotation)), validityPosition, validityRotation, validityScale);
                 
-                transformStates[binding.y] = state;
+                transformStates[binding.y] = state; 
 
                 state.Modify(transform);
 
             }
 
-        }
+        } 
 
         [BurstCompile]
         public struct ApplyAdditiveMixTransformCurvesJobFinal : IJobParallelForTransform
@@ -3308,7 +3461,7 @@ namespace Swole.API.Unity.Animation
                 //i++;
             }
 
-            //Debug.DrawRay(worldMatrix.MultiplyPoint(Vector3.zero), worldMatrix.MultiplyVector(Vector3.up * 0.1f), test, 100f); 
+            //Debug.DrawRay(worldMatrix.MultiplyPoint(Vector3.zero), worldMatrix.MultiplyVector(Vector3.up * 0.1f), Color.red, 100f);  
             //Debug.DrawLine(worldMatrix2.MultiplyPoint(Vector3.zero), worldMatrix.MultiplyPoint(Vector3.zero), test, 100f);
             //Debug.DrawLine(worldMatrix3.MultiplyPoint(Vector3.zero), worldMatrix2.MultiplyPoint(Vector3.zero), test, 100f); 
 
@@ -3333,9 +3486,13 @@ namespace Swole.API.Unity.Animation
 #else
                 finalCurve.keys = new Keyframe[0];
 #endif
-            } 
+            }
+             
+#if UNITY_EDITOR
+            Debug.Log("Calculating bone heights for " + bone.name + " with " + samplesPerSecond + " samples per second, base reference time: " + baseReferenceTime + ", height axis: " + heightAxis + ", cutoff transform: " + (cutoffTransform == null ? "null" : cutoffTransform.name)); 
+#endif
 
-            if (heightAxis.x == 0f && heightAxis.y == 0f && heightAxis.z == 0f) heightAxis = Vector3.up;
+            if (Mathf.Approximately(heightAxis.x, 0f) && Mathf.Approximately(heightAxis.y, 0f) && Mathf.Approximately(heightAxis.z, 0f)) heightAxis = Vector3.up;
 
             //Color test = UnityEngine.Random.ColorHSV(0f, 1f, 0f, 1f, 0.5f, 1f);
             float baseHeight = Vector3.Dot(CalculateBoneWorldMatrix(bone, baseReferenceTime, cutoffTransform/*, test*/).GetPosition(), heightAxis);
@@ -3362,7 +3519,7 @@ namespace Swole.API.Unity.Animation
             AnimationCurve finalCurve = null;
             if (boneHeightCurves == null || !boneHeightCurves.TryGetValue(bone.name, out finalCurve))
             {
-                finalCurve = CalculateBoneHeights(bone, samplesPerSecond, baseReferenceTime, heightAxis, cutoffTransform);
+                finalCurve = AffectsTransform(bone.name) ? CalculateBoneHeights(bone, samplesPerSecond, baseReferenceTime, heightAxis, cutoffTransform) : null;   
             }
 
             return finalCurve;
@@ -3377,7 +3534,16 @@ namespace Swole.API.Unity.Animation
 
             return false;
         }
-        public bool TryGetBoneHeightCurve(Transform bone, out AnimationCurve heightCurve) => TryGetBoneHeightCurve(bone == null ? string.Empty : bone.name, out heightCurve);
+        public bool TryGetBoneHeightCurve(Transform bone, out AnimationCurve heightCurve)
+        {
+            if (TryGetBoneHeightCurve(bone == null ? string.Empty : bone.name, out heightCurve))
+            {
+                return true;
+            }
+
+            heightCurve = GetBoneHeightCurve(bone, framesPerSecond <= 0 ? DefaultFrameRate : framesPerSecond);
+            return heightCurve != null;   
+        }
 
 #endregion
 

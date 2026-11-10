@@ -2867,6 +2867,12 @@ namespace Swole
                 instance.RecalculateLayerIndicesNoRemap();
             }
 
+            public void ReorderLayersByPriority(bool recalculateIndices = true)
+            {
+                if (IsDestroyed) return;
+                instance.ReorderLayersByPriority(recalculateIndices);  
+            }
+
             public bool IsLayerActive(int index)
             {
                 if (IsDestroyed) return false;
@@ -3007,6 +3013,7 @@ namespace Swole
                 if (IsDestroyed) return 0f;
                 return instance.GetBoneHeight(boneName, timeOffset);
             }
+
             public float GetBoneHeightAtTime(string boneName, float time)
             {
                 if (IsDestroyed) return 0f;
@@ -3243,6 +3250,19 @@ namespace Swole
                     instance.IndexInAnimator = value;
                 }
             }
+            public int OrderPriority
+            {
+                get
+                {
+                    if (instance == null) return 0; 
+                    return instance.OrderPriority;
+                }
+                set
+                {
+                    if (instance == null) return;
+                    instance.OrderPriority = value;
+                }
+            }
             public bool IsAdditive
             {
                 get
@@ -3256,6 +3276,46 @@ namespace Swole
                     instance.IsAdditive = value;
                 }
             }
+            public bool ModifyAllStates
+            {
+                get
+                {
+                    if (instance == null) return false;
+                    return instance.ModifyAllStates;
+                }
+                set
+                {
+                    if (instance == null) return;
+                    instance.ModifyAllStates = value; 
+                }
+            }
+            public bool ApplyPropertyStatesEarly
+            {
+                get
+                {
+                    if (instance == null) return false;
+                    return instance.ApplyPropertyStatesEarly;
+                }
+                set
+                {
+                    if (instance == null) return;
+                    instance.ApplyPropertyStatesEarly = value; 
+                }
+            }
+            public bool AffectsRootMotion
+            {
+                get
+                {
+                    if (instance == null) return false;
+                    return instance.AffectsRootMotion;
+                }
+                set
+                {
+                    if (instance == null) return;
+                    instance.AffectsRootMotion = value; 
+                }
+            }
+
             public float Mix
             {
                 get
@@ -3387,10 +3447,10 @@ namespace Swole
                 return instance.DisposeIfHasPrefix(prefix);
             }
 
-            public IAnimationLayer NewInstance(IAnimator animator, IAnimationController animationController = null)
+            public IAnimationLayer NewInstance(IAnimator animator, IAnimationController animationController = null, bool performSafetyChecks = false)
             {
                 if (instance == null) return null;
-                return instance.NewInstance(animator, animationController);
+                return instance.NewInstance(animator, animationController, performSafetyChecks);
             }
 
             public Dictionary<int, int> Rearrange(int swapIndex, bool recalculateIndices = true)
@@ -3646,16 +3706,55 @@ namespace Swole
                 if (instance == null) return 0f;
                 return instance.GetBoneHeight(boneName, timeOffset);
             }
+            public float GetBoneHeight(string boneName, float timeOffset, out bool foundCurve)
+            {
+                if (instance == null)
+                {
+                    foundCurve = false;
+                    return 0f;
+                }
+                return instance.GetBoneHeight(boneName, timeOffset, out foundCurve);
+            }
             public float GetBoneHeightAtTime(string boneName, float time)
             {
                 if (instance == null) return 0f;
                 return instance.GetBoneHeightAtTime(boneName, time);
+            }
+            public float GetBoneHeightAtTime(string boneName, float time, out bool foundCurve)
+            {
+                if (instance == null)
+                {
+                    foundCurve = false;
+                    return 0f;
+                }
+                return instance.GetBoneHeightAtTime(boneName, time, out foundCurve);
+            }
+
+            public bool AffectsTransform(string transformName)
+            {
+                if (instance == null) return false;
+                return instance.AffectsTransform(transformName); 
             }
 
             public void NonAdditivePrepass(bool useMultithreading)
             {
                 if (instance == null) return;
                 instance.NonAdditivePrepass(useMultithreading);
+            }
+
+            public void ApplyPropertyStates() 
+            {
+                if (instance == null) return;
+                instance.ApplyPropertyStates();
+            }
+
+            public object Clone()
+            {
+                if (instance == null) return this;
+
+                var copy = this;
+                copy.instance = (IAnimationLayer)instance.Clone(); 
+                return copy;
             }
 
             #endregion
@@ -4004,6 +4103,25 @@ namespace Swole
                 if (instance == null) return -1;
                 return instance.GetTransitionIndex(transition);
             }
+            public int FindTransitionIndex(string transitionName)
+            {
+                if (instance == null) return -1;
+                return instance.FindTransitionIndex(transitionName);
+            }
+            public Transition FindTransition(string transitionName)
+            {
+                if (instance == null) return null;
+                return instance.FindTransition(transitionName);
+            }
+            public bool TryFindTransition(string transitionName, out Transition transition)
+            {
+                if (instance == null)
+                {
+                    transition = null;
+                    return false;
+                }
+                return instance.TryFindTransition(transitionName, out transition); 
+            }
 
             public Transition ActiveTransition => instance == null ? null : instance.ActiveTransition; 
 
@@ -4047,16 +4165,40 @@ namespace Swole
                 return instance.GetNormalizedTime(addTime);
             }
 
-            public void SetTime(float time)
+            public float GetPreviousTime()
             {
-                if (instance == null) return;
-                instance.SetTime(time);
+                if (instance == null) return 0;
+                return instance.GetPreviousTime();
             }
 
-            public void SetNormalizedTime(float normalizedTime)
+            public float GetPreviousNormalizedTime()
+            {
+                if (instance == null) return 0;
+                return instance.GetPreviousNormalizedTime();
+            }
+
+            public void SetTime(float time, bool resetFlags = true)
             {
                 if (instance == null) return;
-                instance.SetNormalizedTime(normalizedTime);
+                instance.SetTime(time, resetFlags);
+            }
+
+            public void SetNormalizedTime(float normalizedTime, bool resetFlags = true)
+            {
+                if (instance == null) return;
+                instance.SetNormalizedTime(normalizedTime, resetFlags); 
+            }
+
+            public void ForceSetPreviousTime(float time)
+            {
+                if (instance == null) return;
+                instance.ForceSetPreviousTime(time);
+            }
+
+            public void ForceSetPreviousNormalizedTime(float normalizedTime)
+            {
+                if (instance == null) return;
+                instance.ForceSetPreviousNormalizedTime(normalizedTime); 
             }
 
             public float GetEstimatedDuration()
@@ -4111,16 +4253,46 @@ namespace Swole
                 if (instance == null) return 0f;
                 return instance.GetBoneHeight(boneName, timeOffset);
             }
+            public float GetBoneHeight(string boneName, float timeOffset, out bool foundCurve)
+            {
+                if (instance == null)
+                {
+                    foundCurve = false;
+                    return 0f;
+                }
+                return instance.GetBoneHeight(boneName, timeOffset, out foundCurve);
+            }
             public float GetBoneHeightAtTime(string boneName, float time)
             {
                 if (instance == null) return 0f;
                 return instance.GetBoneHeightAtTime(boneName, time);
+            }
+            public float GetBoneHeightAtTime(string boneName, float time, out bool foundCurve)
+            {
+                if (instance == null)
+                {
+                    foundCurve = false;
+                    return 0f;
+                }
+                return instance.GetBoneHeightAtTime(boneName, time, out foundCurve);
+            }
+
+            public bool AffectsTransform(string transformName)
+            {
+                if (instance == null) return false;
+                return instance.AffectsTransform(transformName);
             }
 
             public void NonAdditivePrepass(bool useMultithreading)
             {
                 if (instance == null) return;
                 instance.NonAdditivePrepass(useMultithreading);
+            }
+
+            public void ApplyPropertyStates()
+            {
+                if (instance == null) return;
+                instance.ApplyPropertyStates();
             }
 
             #endregion
@@ -4305,6 +4477,18 @@ namespace Swole
                 return instance.GetNormalizedTime(layer, addTime);
             }
 
+            public float GetPreviousTime(IAnimationLayer layer)
+            {
+                if (instance == null) return default;
+                return instance.GetPreviousTime(layer);
+            }
+
+            public float GetPreviousNormalizedTime(IAnimationLayer layer)
+            {
+                if (instance == null) return default;
+                return instance.GetPreviousNormalizedTime(layer);
+            }
+
             public void SetTime(IAnimationLayer layer, float time, bool resetFlags = true)
             {
                 if (instance == null) return;
@@ -4315,6 +4499,18 @@ namespace Swole
             {
                 if (instance == null) return;
                 instance.SetNormalizedTime(layer, normalizedTime, resetFlags);
+            }
+
+            public void ForceSetPreviousTime(IAnimationLayer layer, float time)
+            {
+                if (instance == null) return;
+                instance.ForceSetPreviousTime(layer, time); 
+            }
+
+            public void ForceSetPreviousNormalizedTime(IAnimationLayer layer, float normalizedTime)
+            {
+                if (instance == null) return;
+                instance.ForceSetPreviousNormalizedTime(layer, normalizedTime);
             }
 
             public bool HasAnimationPlayer(IAnimationLayer layer)
@@ -4411,16 +4607,46 @@ namespace Swole
                 if (instance == null) return 0f;
                 return instance.GetBoneHeight(layer, boneName, timeOffset);
             }
+            public float GetBoneHeight(IAnimationLayer layer, string boneName, float timeOffset, out bool foundCurve)
+            {
+                if (instance == null)
+                {
+                    foundCurve = false;
+                    return 0f;
+                }
+                return instance.GetBoneHeight(layer, boneName, timeOffset, out foundCurve);
+            }
             public float GetBoneHeightAtTime(IAnimationLayer layer, string boneName, float time)
             {
                 if (instance == null) return 0f;
                 return instance.GetBoneHeightAtTime(layer, boneName, time);
+            }
+            public float GetBoneHeightAtTime(IAnimationLayer layer, string boneName, float time, out bool foundCurve)
+            {
+                if (instance == null)
+                {
+                    foundCurve = false;
+                    return 0f;
+                }
+                return instance.GetBoneHeightAtTime(layer, boneName, time, out foundCurve); 
+            }
+
+            public bool AffectsTransform(IAnimationLayer layer, string transformName)
+            {
+                if (instance == null) return false;
+                return instance.AffectsTransform(layer, transformName);
             }
 
             public void NonAdditivePrepass(bool useMultithreading, IAnimationLayer layer)
             {
                 if (instance == null) return;
                 instance.NonAdditivePrepass(useMultithreading, layer);
+            }
+
+            public void ApplyPropertyStates(IAnimationLayer layer)
+            {
+                if (instance == null) return;
+                instance.ApplyPropertyStates(layer);
             }
 
             #endregion
@@ -4827,6 +5053,12 @@ namespace Swole
             {
                 if (instance == null) return;
                 instance.NonAdditivePrepass(useMultithreading, layer);
+            }
+
+            public void ApplyPropertyStates()
+            {
+                if (instance == null) return;
+                instance.ApplyPropertyStates(); 
             }
 
             #endregion

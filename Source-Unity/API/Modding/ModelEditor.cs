@@ -11,6 +11,8 @@ using UnityEngine.UI;
 using UnityEngine.SceneManagement;
 using UnityEngine.Events;
 using UnityEngine.EventSystems;
+using UnityEngine.Playables;
+using UnityEngine.Animations;
 
 using Unity.Mathematics;
 
@@ -34,8 +36,10 @@ namespace Swole
     {
 
         public bool loadInEditor;
+        [Tooltip("If true, the reference animation clips will be played back using a native Unity Animator component instead of being converted to swole's custom animation system for the reference playback. The remap target will always use swole's custom animation system regardless of this setting.")]
+        public bool loadInEditorNatively;
         public bool inEditorResetToBindpose;
-        public bool inEditorMirrorAnims;
+        public bool inEditorMirrorAnims; 
 
         public UnityEngine.AnimationClip clipToLoad;
         public UnityEngine.AnimationClip[] clipsToLoad;
@@ -55,8 +59,20 @@ namespace Swole
                     var preset = _defaultImportPreset.Duplicate();
                     preset.resetToBindpose = inEditorResetToBindpose;
                     preset.mirrorAnimations = inEditorMirrorAnims;
+
+                    List<AnimationClip> nativeReferenceClips = new List<AnimationClip>();
+                    if (clipToLoad != null) nativeReferenceClips.Add(clipToLoad);
+                    if (clipsToLoad != null && clipsToLoad.Length > 0)
+                    {
+                        foreach (var clip in clipsToLoad)
+                        {
+                            if (clip != null) nativeReferenceClips.Add(clip);
+                        }
+                    }
+
                     LoadModelAndStartNewSession(preset, instance, (ITransformCurve[] defaultTransformCurves, IPropertyCurve[] defaultPropertyCurves, Transform rootBone, Transform rigContainer, Matrix4x4 rendererL2W, Transform[] bones, Matrix4x4[] bindpose) => 
                     {
+                        if (loadInEditorNatively) return null; // native mode never converts reference clips to swole's custom animation system
 
                         List<CustomAnimationConversion.ClipPair> clipsToLoad_ = new List<CustomAnimationConversion.ClipPair>();
                         if (clipToLoad != null) clipsToLoad_.Add(new CustomAnimationConversion.ClipPair() { mainClip = clipToLoad });
@@ -70,7 +86,7 @@ namespace Swole
 
                         return CustomAnimationConversion.Convert(null, defaultTransformCurves, defaultPropertyCurves, clipsToLoad_.ToArray(), 1.0f, rootBone == null ? (rigContainer == null ? preset.rootBoneName : rigContainer.name) : rootBone.name, CustomAnimation.DefaultFrameRate, CustomAnimation.DefaultJobCurveSampleRate, preset.mirrorAnimations, rendererL2W, bones, bindpose);
 
-                    }, RegisterSession);
+                    }, RegisterSession, loadInEditorNatively, nativeReferenceClips);
                 }
             }
         }
@@ -134,12 +150,189 @@ namespace Swole
             public CustomAnimation asset;
             public string controlLayer;
 
-            public AnimationImport(CustomAnimation asset, string controlLayer)
+            [Tooltip("The native Unity AnimationClip used to drive the reference playback when the session's reference uses a native Unity Animator component instead of swole's CustomAnimator.")]
+            public AnimationClip nativeClip;
+
+            public AnimationImport(CustomAnimation asset, string controlLayer, AnimationClip nativeClip = null)
             {
                 this.asset = asset;
                 this.controlLayer = controlLayer;
+                this.nativeClip = nativeClip;
             }
         }
+
+        /// <summary>
+        /// Lightweight component used to drive reference bone playback for animation retarget baking using
+        /// a native AnimationClip.SampleAnimation call, instead of routing playback through swole's CustomAnimator/CustomAnimation system.
+        /// The remap target always continues to use the swole animation system regardless of whether this is used for the reference.
+        /// </summary>
+        public class NativeReferencePlayer : MonoBehaviour
+        {
+            public AnimationClip activeClip;
+            public float normalizedTime;
+
+            public bool isPlaying;
+            public float speed = 1f;
+
+            [NonSerialized]
+            public UnityEvent OnSampled;
+
+            [NonSerialized]
+            private UnityEngine.Animator unityAnimator;
+            [NonSerialized]
+            private bool unityAnimatorChecked;
+            /// <summary>
+            /// AnimationClip.SampleAnimation writes directly to the transform hierarchy and does not use a
+            /// UnityEngine.Animator component, but if one is present and enabled (e.g. on an imported prefab)
+            /// it will still run its own update afterward and can reapply pose data or root motion on top of
+            /// our sampled pose. Disable it (and its root motion) so it never interferes with reference playback.
+            /// </summary>
+            public void DisableRootObjectAnimator()
+            {
+                if (!unityAnimatorChecked)
+                {
+                    unityAnimator = GetComponent<UnityEngine.Animator>(); 
+                    unityAnimatorChecked = true;
+                }
+
+                if (unityAnimator != null)
+                {
+                    unityAnimator.applyRootMotion = false;
+                    unityAnimator.enabled = false;
+                }
+            }
+
+            public bool HasHumanoidAnimator
+            {
+                get
+                {
+                    if (!unityAnimatorChecked)
+                    {
+                        unityAnimator = GetComponent<UnityEngine.Animator>();
+                        unityAnimatorChecked = true;
+                    }
+                    return unityAnimator != null && unityAnimator.isHuman;
+                }
+            }
+
+            [NonSerialized]
+            public Vector3 accumulatedRootPosition;
+            [NonSerialized]
+            public Quaternion accumulatedRootRotation = Quaternion.identity;
+
+            [NonSerialized]
+            private UnityEngine.Playables.PlayableGraph rootMotionGraph;
+            [NonSerialized]
+            private UnityEngine.Animations.AnimationClipPlayable rootMotionPlayable; 
+            [NonSerialized]
+            private AnimationClip rootMotionGraphClip;
+            [NonSerialized]
+            private float rootMotionGraphTime;
+
+            public void ReleaseRootMotionGraph()
+            {
+                if (rootMotionGraph.IsValid()) rootMotionGraph.Destroy();
+                rootMotionGraphClip = null;
+                rootMotionGraphTime = 0f;
+                DisableRootObjectAnimator();
+            }
+
+            private void OnDestroy() => ReleaseRootMotionGraph();
+
+            /// <summary>
+            /// Temporarily enables the native humanoid Animator with root motion, advances it to the given time, measures how far
+            /// the animator transform was moved by root motion, accumulates that into accumulatedRootPosition/Rotation, and moves the
+            /// transform back to where it started. Returns false if no humanoid animator is available.
+            /// </summary>
+            public bool SampleWithRootMotion(float time)
+            {
+                if (activeClip == null || !HasHumanoidAnimator) return false;
+
+                time = Mathf.Clamp(time, 0f, activeClip.length);
+
+                var tr = transform;
+                Vector3 startPos = tr.position;
+                Quaternion startRot = tr.rotation;
+
+                if (!rootMotionGraph.IsValid() || rootMotionGraphClip != activeClip || time < rootMotionGraphTime)
+                {
+                    if (rootMotionGraph.IsValid()) rootMotionGraph.Destroy();
+
+                    unityAnimator.enabled = true;
+                    unityAnimator.applyRootMotion = true;
+
+                    rootMotionGraph = UnityEngine.Playables.PlayableGraph.Create("NativeRootMotionBake");
+                    rootMotionGraph.SetTimeUpdateMode(UnityEngine.Playables.DirectorUpdateMode.Manual);
+                    var output = UnityEngine.Animations.AnimationPlayableOutput.Create(rootMotionGraph, "Output", unityAnimator);
+                    rootMotionPlayable = UnityEngine.Animations.AnimationClipPlayable.Create(rootMotionGraph, activeClip);
+                    output.SetSourcePlayable(rootMotionPlayable);
+                    rootMotionGraph.Play();
+
+                    rootMotionGraphClip = activeClip;
+                    rootMotionGraphTime = 0f;
+                    accumulatedRootPosition = Vector3.zero;
+                    accumulatedRootRotation = Quaternion.identity;
+
+                    rootMotionPlayable.SetTime(0);
+                    rootMotionGraph.Evaluate(0f);
+                    tr.SetPositionAndRotation(startPos, startRot);
+                }
+
+                unityAnimator.enabled = true;
+                unityAnimator.applyRootMotion = true;
+
+                float remaining = time - rootMotionGraphTime;
+                const float maxStep = 1f / 30f;
+                while (remaining > 1e-5f)
+                {
+                    float step = Mathf.Min(remaining, maxStep);
+                    rootMotionGraph.Evaluate(step);
+
+                    accumulatedRootPosition += tr.position - startPos;
+                    accumulatedRootRotation = (tr.rotation * Quaternion.Inverse(startRot)) * accumulatedRootRotation;
+                    tr.SetPositionAndRotation(startPos, startRot);
+
+                    remaining -= step;
+                }
+                rootMotionGraphTime = time;
+
+                normalizedTime = time;
+                return true;
+            }
+
+            public void SetTime(float time)
+            {
+                if (activeClip == null) return;
+
+                if (rootMotionGraph.IsValid()) ReleaseRootMotionGraph();
+
+                normalizedTime = time;
+                activeClip.SampleAnimation(gameObject, Mathf.Clamp(time, 0f, activeClip.length));
+            }
+
+            public void SetNormalizedTime(float normalizedTime)
+            {
+                if (activeClip == null) return;
+
+                SetTime(normalizedTime * activeClip.length);
+            }
+
+            public float ClipLength => activeClip == null ? 0f : activeClip.length;
+
+            public void Awake() => DisableRootObjectAnimator();
+
+            public void Update()
+            {
+                if (!isPlaying || activeClip == null || activeClip.length <= 0f) return;
+
+                float time = normalizedTime + (Time.deltaTime * speed);
+                if (time > activeClip.length) time %= activeClip.length;
+
+                SetTime(time);
+                OnSampled?.Invoke();
+            }
+        }
+
 
         private static readonly List<GameObject> _tempGameObjects = new List<GameObject>();
         private static readonly List<Transform> _tempTransforms = new List<Transform>();
@@ -272,6 +465,23 @@ namespace Swole
 
             public List<WeightedBoneBinding> bindings = new List<WeightedBoneBinding>();
 
+            /// <summary>
+            /// A properly captured binding never has both its world and local rotations zeroed out
+            /// (an all-zero quaternion is not a valid rotation - Quaternion.identity is (0,0,0,1)).
+            /// If this occurs, the entry was malformed (e.g. captured before the target's transform
+            /// hierarchy was fully initialized) and should be treated as if it were never recorded.
+            /// </summary>
+            public bool IsMalformed
+            {
+                get
+                {
+                    bool rotationsAreZeroed = boundWorldRotation.value.Equals(float4.zero) && boundLocalRotation.value.Equals(float4.zero);
+                    bool positionsAreZeroed = boundWorldPosition.Equals(float3.zero) && boundLocalPosition.Equals(float3.zero); 
+
+                    return rotationsAreZeroed && positionsAreZeroed;
+                }
+            }
+
             public BoneBindings Duplicate()
             {
                 var clone = new BoneBindings();
@@ -380,6 +590,11 @@ namespace Swole
                 {
                     if (string.IsNullOrWhiteSpace(name)) return false;
 
+                    // Never persist malformed bindings (e.g. captured before the target's transform
+                    // hierarchy was fully initialized) - they would otherwise overwrite/corrupt the
+                    // affected bone's pose the next time this preset is loaded.
+                    remapBindings?.RemoveAll(b => b != null && b.IsMalformed);
+
                     var json = swole.ToJson(this, true);
                     if (json != null)
                     {
@@ -436,6 +651,17 @@ namespace Swole
             public GameObject rootObject;
             public CustomAnimator animator;
 
+            [Tooltip("If true, this session's reference animations are played back/sampled using a native UnityEngine.Animator component (via AnimationClip.SampleAnimation) instead of swole's CustomAnimator, for the purposes of animation retarget baking. The remap target always uses the swole animation system regardless of this setting.")]
+            public bool useNativeReference;
+            [NonSerialized]
+            public NativeReferencePlayer nativeReferencePlayer;
+            public NativeReferencePlayer EnsureNativeReferencePlayer()
+            {
+                if (nativeReferencePlayer == null && rootObject != null) nativeReferencePlayer = rootObject.AddOrGetComponent<NativeReferencePlayer>();
+                if (nativeReferencePlayer != null) nativeReferencePlayer.DisableRootObjectAnimator();
+                return nativeReferencePlayer;
+            }
+
             [NonSerialized]
             public CustomAnimationController controller;
             public void ReapplyController()
@@ -467,6 +693,36 @@ namespace Swole
                 if (animationImports == null) return;
 
                 editor.IgnorePreviewObjects();
+
+                if (useNativeReference)
+                {
+                    var player = EnsureNativeReferencePlayer();
+                    if (player != null)
+                    {
+                        AnimationClip clip = null;
+                        foreach (var index in selectedAnimations)
+                        {
+                            if (index < 0 || index >= animationImports.Count) continue;
+                            var import = animationImports[index];
+                            if (import.nativeClip != null)
+                            {
+                                clip = import.nativeClip;
+                                break;
+                            }
+                        }
+
+                        player.activeClip = clip;
+                        player.isPlaying = true;
+                        player.speed = 1f;
+
+                        player.OnSampled = player.OnSampled ?? new UnityEvent();
+                        player.OnSampled.RemoveListener(SyncRemapTargetPoseDefault);
+                        player.OnSampled.AddListener(SyncRemapTargetPoseDefault);
+                    }
+
+                    isPlaying = true;
+                    return;
+                }
 
                 foreach (var import in animationImports)
                 {
@@ -514,6 +770,16 @@ namespace Swole
 
                 editor.StopIgnoringPreviewObjects();
 
+                if (useNativeReference)
+                {
+                    if (nativeReferencePlayer != null) nativeReferencePlayer.isPlaying = false;
+
+                    isPlaying = false;
+
+                    SyncRemapTargetPoseDelayed(2, false/*true*/, false);
+                    return;
+                }
+
                 foreach (var import in animationImports)
                 {
                     if (string.IsNullOrWhiteSpace(import.controlLayer)) continue;
@@ -547,6 +813,23 @@ namespace Swole
 
                 editor.StopIgnoringPreviewObjects();
 
+                if (useNativeReference)
+                {
+                    if (nativeReferencePlayer != null)
+                    {
+                        nativeReferencePlayer.isPlaying = false;
+                        nativeReferencePlayer.SetTime(0);
+                        if (nativeReferencePlayer.OnSampled != null) nativeReferencePlayer.OnSampled.RemoveListener(SyncRemapTargetPoseDefault);
+                    }
+
+                    if (animator != null) animator.ResetToPreInitializedBindPose(); // native player sampling doesn't automatically revert the reference bones, so do it manually here (mirrors the swole animator's own bind pose reset)
+
+                    isPlaying = false;
+
+                    SyncRemapTargetPoseDelayed(2, false/*true*/, false);
+                    return;
+                }
+
                 foreach (var import in animationImports)
                 {
                     if (string.IsNullOrWhiteSpace(import.controlLayer)) continue;
@@ -556,7 +839,7 @@ namespace Swole
 
                     controlLayer.mix = 0;
 
-                    if (controlLayer.HasActiveState && controlLayer.ActiveState is CustomAnimationLayerState state && state.MotionControllerIndex >= 0)
+                    if (controlLayer.HasActiveState && controlLayer.ActiveState is CustomAnimationLayerState state && state.MotionControllerIndex >= 0) 
                     {
                         var mc = controlLayer.GetMotionControllerUnsafe(state.MotionControllerIndex);
                         if (mc is AnimationReference ar)
@@ -1125,6 +1408,11 @@ namespace Swole
             {
                 RemapData = preset;
 
+                // Reset the remap target to its bind pose first, so that any bones not covered
+                // by a binding entry in the loaded preset (i.e. unbound bones) start from a
+                // known-good pose instead of retaining whatever pose they happened to be in.
+                if (remapTarget != null && remapTarget.animator != null) remapTarget.animator.ResetToPreInitializedBindPose(); 
+
                 // delay bone sync for transforms that are dependent on other transforms
                 if (remapData.remapBindings != null && dependentRemapBones != null)
                 {
@@ -1182,6 +1470,41 @@ namespace Swole
 
                 InstantiateRemapPreset();
                 remapData.Clear();
+            }
+
+            /// <summary>
+            /// Removes/resets bone binding data for target bones that are not bound to any reference bones
+            /// (i.e. unbound offset entries), restoring those bones to their bind pose without affecting
+            /// bones that are actually bound to the reference.
+            /// </summary>
+            public void ResetUnboundRemapBindings()
+            {
+                if (remapData == null || remapData.remapBindings == null) return;
+
+                InstantiateRemapPreset();
+
+                remapData.remapBindings.RemoveAll(b => b == null || b.bindings == null || b.bindings.Count == 0);
+
+                if (remapTarget != null && remapTarget.animator != null && remapTarget.animator.Bones != null)
+                {
+                    var bones = remapTarget.animator.Bones.bones;
+                    if (bones != null)
+                    {
+                        foreach (var bone in bones)
+                        {
+                            if (bone == null) continue;
+
+                            int boneIndex = IndexOfRemapBone(bone);
+                            if (boneIndex < 0) continue;
+
+                            if (GetRemapBindingsForBone(bone.name) == null) // no longer has any binding data (was unbound), so revert to bind pose
+                            {
+                                var defaultPose = GetRemapBoneDefaultPose(boneIndex);
+                                defaultPose.ApplyLocal(bone);
+                            }
+                        }
+                    }
+                }
             }
 
             public void AddRemapBinding(string targetRemapBone, float3 boundWorldPosition, quaternion boundWorldRotation, float3 boundLocalPosition, quaternion boundLocalRotation, float3 boundParentWorldPosition, quaternion boundParentWorldRotation, float3 boundParentLocalPosition, quaternion boundParentLocalRotation, WeightedBoneBinding binding)
@@ -1285,7 +1608,7 @@ namespace Swole
 
                 public void Sync(Session session, ICollection<Transform> referenceBones, bool revertToDefaultPosition = true, bool revertToDefaultRotation = false)
                 {
-                    if (binding != null)
+                    if (binding != null && !binding.IsMalformed)
                     {
 
                         var syncBone_ = syncBone;
@@ -1649,7 +1972,8 @@ namespace Swole
 
         public delegate void ModelLoadIntoNewSessionDelegate(Session session);
         public delegate CustomAnimationAsset[] ConvertAnimationsDelegate(ITransformCurve[] defaultTransformCurves, IPropertyCurve[] defaultPropertyCurves, Transform rootBone, Transform rigContainer, Matrix4x4 rendererL2W, Transform[] bones, Matrix4x4[] bindpose);
-        public void LoadModelAndStartNewSession(ModelImportSettings activePreset, GameObject rootGameObject, ConvertAnimationsDelegate convertAnims, ModelLoadIntoNewSessionDelegate callback)
+        public void LoadModelAndStartNewSession(ModelImportSettings activePreset, GameObject rootGameObject, ConvertAnimationsDelegate convertAnims, ModelLoadIntoNewSessionDelegate callback) => LoadModelAndStartNewSession(activePreset, rootGameObject, convertAnims, callback, false, null);
+        public void LoadModelAndStartNewSession(ModelImportSettings activePreset, GameObject rootGameObject, ConvertAnimationsDelegate convertAnims, ModelLoadIntoNewSessionDelegate callback, bool useNativeReference, IList<AnimationClip> nativeReferenceClips)
         {
             if (rootGameObject != null)
             {
@@ -1814,22 +2138,55 @@ namespace Swole
                             }
                         }
 
-                        CustomAnimationConversion.CreateDefaultCurvesFromPosedObject(avatar, bones, out var defaultA, out var defaultB);
-                        var anims = convertAnims(defaultA, defaultB, rootBone, rigContainer, mainSkinnedRenderer.transform.localToWorldMatrix, bones, bindposes);
+                        session.useNativeReference = useNativeReference;
 
-                        var animator = rootGameObject.AddOrGetComponent<CustomAnimator>();
-                        session.animator = animator;
-                        animator.avatar = avatar;
-                        animator.ReinitializeBindPose(); 
-
-                        var controller = CustomAnimationController.BuildDefaultController("imported", anims, 0);
-                        session.controller = controller;
-                        session.ReapplyController();
-
-                        foreach (var anim in anims)
+                        if (useNativeReference)
                         {
-                            session.animationImports.Add(new AnimationImport(anim.Animation, $"imported/{anim.Name}"));
-                        }                       
+                            // Native mode never converts reference clips into swole's custom animation system.
+                            // Only the native AnimationClips are retained and used for reference playback/baking.
+                            session.EnsureNativeReferencePlayer();
+
+                            // A reference-side CustomAnimator is still required so the remap/binding UI has
+                            // a bone set (avatar.bones) to enumerate and bind against. It is kept disabled
+                            // and set to not receive automatic update calls since native playback drives the reference instead.
+                            var animator = rootGameObject.AddOrGetComponent<CustomAnimator>();
+                            session.animator = animator;
+                            animator.avatar = avatar;
+                            animator.OverrideUpdateCalls = true;
+                            animator.ReinitializeBindPose();
+                            animator.enabled = false;
+
+                            if (nativeReferenceClips != null)
+                            {
+                                for (int a = 0; a < nativeReferenceClips.Count; a++)
+                                {
+                                    var nativeClip = nativeReferenceClips[a];
+                                    if (nativeClip == null) continue;
+
+                                    session.animationImports.Add(new AnimationImport(null, $"imported/{nativeClip.name}", nativeClip));
+                                }
+                            }
+                        }
+                        else
+                        {
+                            CustomAnimationConversion.CreateDefaultCurvesFromPosedObject(avatar, bones, out var defaultA, out var defaultB);
+                            var anims = convertAnims(defaultA, defaultB, rootBone, rigContainer, mainSkinnedRenderer.transform.localToWorldMatrix, bones, bindposes);
+
+                            var animator = rootGameObject.AddOrGetComponent<CustomAnimator>();
+                            session.animator = animator;
+                            animator.avatar = avatar;
+                            animator.ReinitializeBindPose();
+
+                            var controller = CustomAnimationController.BuildDefaultController("imported", anims, 0);
+                            session.controller = controller;
+                            session.ReapplyController();
+
+                            for (int a = 0; a < anims.Length; a++)
+                            {
+                                var anim = anims[a];
+                                session.animationImports.Add(new AnimationImport(anim.Animation, $"imported/{anim.Name}", null));
+                            }
+                        }
                     }
                 } 
 
@@ -1943,7 +2300,9 @@ namespace Swole
                 var anim = session.animationImports[a];
                 int index = a;
 
-                if (anim.asset.timeCurve == null || anim.asset.timeCurve.length < 1)
+                bool isNativeOnly = anim.asset == null;
+
+                if (!isNativeOnly && (anim.asset.timeCurve == null || anim.asset.timeCurve.length < 1))
                 {
                     anim.asset.timeCurve = new EditableAnimationCurve();
                     anim.asset.timeCurve.InsertKey(new AnimationCurveEditor.KeyframeStateRaw()
@@ -1961,7 +2320,9 @@ namespace Swole
                     AnimationUtils.ForceLinear(anim.asset.timeCurve, null, false); 
                 }
 
-                list.AddNewMember(anim.asset.Name, null, false, (UIRecyclingList.MemberData memberData, GameObject instance) =>
+                string displayName = isNativeOnly ? (anim.nativeClip == null ? "null" : anim.nativeClip.name) : anim.asset.Name;
+
+                list.AddNewMember(displayName, null, false, (UIRecyclingList.MemberData memberData, GameObject instance) =>
                 {
                     CustomEditorUtils.SetToggleOnValueChangeAction(instance, (bool selected) =>
                     {
@@ -1975,12 +2336,25 @@ namespace Swole
                         }
                         else
                         {
-                            session.selectedAnimations.Remove(index);
+                            session.selectedAnimations.Remove(index); 
                             session.StopPlayback(this);
                         }
                     });
 
                     CustomEditorUtils.SetToggleValue(instance, session.selectedAnimations.Contains(index));
+
+                    if (isNativeOnly)
+                    {
+                        // Native clips (used when the session's reference plays back via a native Unity Animator) don't support
+                        // swole's timeline retiming/curve-editing features, so those controls are hidden/disabled for these entries.
+                        var lengthFieldObj = instance.transform.FindDeepChildLiberal("length");
+                        if (lengthFieldObj != null) lengthFieldObj.gameObject.SetActive(false);
+
+                        var timeCurveButtonObj = instance.transform.FindDeepChildLiberal("timeCurve");
+                        if (timeCurveButtonObj != null) timeCurveButtonObj.gameObject.SetActive(false);
+
+                        return;
+                    }
 
                     CustomEditorUtils.SetInputFieldOnEndEditActionByName(instance, "length", (string val) =>
                     {
@@ -2308,6 +2682,16 @@ namespace Swole
                         }
                     });
                     CustomEditorUtils.SetButtonInteractable(resetObj, session.HasRemapTarget);
+                }
+
+                var resetUnboundObj = poseEditingObj.FindDeepChildLiberal("resetUnbound");
+                if (resetUnboundObj != null)
+                {
+                    CustomEditorUtils.SetButtonOnClickAction(resetUnboundObj, () =>
+                    {
+                        session.ResetUnboundRemapBindings();
+                    });
+                    CustomEditorUtils.SetButtonInteractable(resetUnboundObj, session.HasRemapTarget);
                 }
             }
 
@@ -3288,7 +3672,7 @@ namespace Swole
                             var next = toBake[0];
                             toBake.RemoveAt(0);
 
-                            var bake = BeginAnimationBake(activeSession.animationImports[next].asset, animName + (activeSession.selectedAnimations.Count > 1 ? $"_{(activeSession.selectedAnimations.Count - toBake.Count)}" : string.Empty), bakeSettings.bakeType, openInNewTab && toBake.Count <= 0, (AnimationBake bakeObj) =>
+                            var bake = BeginAnimationBake(activeSession.animationImports[next], animName + (activeSession.selectedAnimations.Count > 1 ? $"_{(activeSession.selectedAnimations.Count - toBake.Count)}" : string.Empty), bakeSettings.bakeType, openInNewTab && toBake.Count <= 0, (AnimationBake bakeObj) =>
                             {
                                 if (bakeObj != null && bakeObj.OutputAnimation != null)
                                 {
@@ -3343,7 +3727,36 @@ namespace Swole
         public static readonly List<string> _defaultBonesToIgnoreForOptimization = new List<string>() { "root", "pelvis" };
         public AnimationBake BeginAnimationBake(CustomAnimation animationToTransfer, string newAnimationName, AnimationBakeType bakeType, bool openInNewSession, Action<AnimationBake> OnComplete = null, Action<AnimationBake> OnCancel = null, List<CustomAnimation> bakedAnimations = null)
         {
-            if (activeSession == null || animationToTransfer == null)
+            AnimationClip nativeClip = null;
+            if (activeSession != null && activeSession.useNativeReference && animationToTransfer != null)
+            {
+                foreach (var import in activeSession.animationImports)
+                {
+                    if (import.asset == animationToTransfer)
+                    {
+                        nativeClip = import.nativeClip;
+                        break;
+                    }
+                }
+            }
+
+            return BeginAnimationBake(animationToTransfer, nativeClip, newAnimationName, bakeType, openInNewSession, OnComplete, OnCancel, bakedAnimations);
+        }
+        public AnimationBake BeginAnimationBake(AnimationImport import, string newAnimationName, AnimationBakeType bakeType, bool openInNewSession, Action<AnimationBake> OnComplete = null, Action<AnimationBake> OnCancel = null, List<CustomAnimation> bakedAnimations = null)
+        {
+            if (import == null)
+            {
+                OnCancel?.Invoke(null);
+                return null;
+            }
+
+            return BeginAnimationBake(import.asset, import.nativeClip, newAnimationName, bakeType, openInNewSession, OnComplete, OnCancel, bakedAnimations);
+        }
+        private AnimationBake BeginAnimationBake(CustomAnimation animationToTransfer, AnimationClip nativeClip, string newAnimationName, AnimationBakeType bakeType, bool openInNewSession, Action<AnimationBake> OnComplete, Action<AnimationBake> OnCancel, List<CustomAnimation> bakedAnimations)
+        {
+            bool useNative = activeSession != null && activeSession.useNativeReference && nativeClip != null;
+
+            if (activeSession == null || (animationToTransfer == null && !useNative))
             {
                 OnCancel?.Invoke(null);
                 return null;
@@ -3351,6 +3764,8 @@ namespace Swole
 
             animationBake = new AnimationBake(activeSession.animator, activeSession.RemapTarget.animator, animationToTransfer, activeSession.RemapTarget.RestPose, () => activeSession.SyncRemapTargetPoseDelayed(1, false/*true*/, false));    
             animationBake.insertionFrameDelay = 3;
+
+            if (useNative) animationBake.SetNativeReference(activeSession.EnsureNativeReferencePlayer(), nativeClip);
 
             activeSession.ValidateRemapPreset();
             var preset = activeSession.RemapData;
@@ -3368,7 +3783,8 @@ namespace Swole
 
                 activeSession.RemapTarget.animator.ResetToPreInitializedBindPose(); 
                 activeSession.RemapTarget.animator.enabled = false;
-                activeSession.animator.enabled = false; 
+                if (!activeSession.useNativeReference && activeSession.animator != null) activeSession.animator.enabled = false; 
+                if (activeSession.useNativeReference && activeSession.IsPlaying) activeSession.StopPlayback(this); 
 
                 yield return null;
 
@@ -3411,7 +3827,7 @@ namespace Swole
                 }
                 SetVisualAnimationBakeProgress(0);
 
-                activeSession.animator.enabled = true;
+                if (!activeSession.useNativeReference && activeSession.animator != null) activeSession.animator.enabled = true;
 
                 yield return null;
 
@@ -3420,7 +3836,7 @@ namespace Swole
                     yield return null;
                 }
 
-                if (animationBakeProgressBar != null) animationBakeProgressBar.gameObject.SetActive(false); 
+                if (animationBakeProgressBar != null) animationBakeProgressBar.gameObject.SetActive(false);  
 
                 if (cancel)
                 {
@@ -3437,8 +3853,11 @@ namespace Swole
 
                 activeSession.RemapTarget.animator.enabled = true;
                 activeSession.RemapTarget.animator.applyRootMotion = false;
-                activeSession.animator.enabled = true;
-                activeSession.animator.applyRootMotion = false;
+                if (!activeSession.useNativeReference && activeSession.animator != null)
+                {
+                    activeSession.animator.enabled = true;
+                    activeSession.animator.applyRootMotion = false;
+                }
 
                 if (openInNewSession && !cancel)
                 {
@@ -4114,7 +4533,7 @@ namespace Swole
     {
         public struct BoneRelation
         {
-            public string boneName;
+            public string boneName; 
             public bool applyOffsets;
 
             public bool forceInsertPosition;
@@ -4129,6 +4548,20 @@ namespace Swole
 
         private CustomAnimator animatorReference;
         private CustomAnimator animatorTarget;
+
+        private bool useNativeReference;
+        private ModelEditor.NativeReferencePlayer nativeReferencePlayer;
+        private AnimationClip nativeReferenceClip;
+        /// <summary>
+        /// Configures this bake to sample reference bone transforms using a native Unity AnimationClip (via NativeReferencePlayer.SampleAnimation)
+        /// instead of driving the reference through swole's CustomAnimator. The remap target always continues to use the swole animation system.
+        /// </summary>
+        public void SetNativeReference(ModelEditor.NativeReferencePlayer nativeReferencePlayer, AnimationClip nativeReferenceClip)
+        {
+            this.nativeReferencePlayer = nativeReferencePlayer;
+            this.nativeReferenceClip = nativeReferenceClip;
+            this.useNativeReference = nativeReferencePlayer != null && nativeReferenceClip != null;
+        }
 
         public struct MixedAnimationReference
         {
@@ -4181,12 +4614,24 @@ namespace Swole
         private Quaternion startRootRotation;
         private Vector3 previousRootPosition;
         private Quaternion previousRootRotation;
+        private Vector3 initialRootOffset;
+        private Quaternion initialRootRotationOffset;
+        private Vector3 centeringRootOffset;
+        private Quaternion centeringRootRotationOffset;
         private bool rootMotionInitialized;
+        private bool humanoidRootMotion;
 
         private void CalculateRootMotionPositionAndRotation(out Vector3 rootPosition, out Quaternion rootRotation)
         {
             rootPosition = Vector3.zero;
             rootRotation = Quaternion.identity;
+
+            if (humanoidRootMotion && nativeReferencePlayer != null)
+            {
+                rootPosition = nativeReferencePlayer.accumulatedRootPosition;
+                rootRotation = nativeReferencePlayer.accumulatedRootRotation;
+                return;
+            }
 
             if (rootMotionPositionReferenceBones != null && rootMotionPositionReferenceBones.Count > 0) 
             {
@@ -4289,7 +4734,7 @@ namespace Swole
         {
             this.animatorReference = animatorReference;
             this.animatorTarget = animatorTarget;
-            this.animationReferences.Add(new MixedAnimationReference() { animation = animationReference, mix = 1f });
+            if (animationReference != null) this.animationReferences.Add(new MixedAnimationReference() { animation = animationReference, mix = 1f });
             this.restPoseTarget = restPoseTarget;
             this.syncPose = syncPose;
         }
@@ -4356,7 +4801,7 @@ namespace Swole
             this.lastFrame = Time.frameCount;
 
             controlLayers.Clear();
-            if (animatorReference != null)
+            if (!useNativeReference && animatorReference != null)
             {
                 for (int a = 0; a < animatorReference.LayerCount; a++) originalLayers.Add(animatorReference.GetLayer(a));
                 animatorReference.ClearLayers(false);
@@ -4394,17 +4839,25 @@ namespace Swole
             ContentInfo contentInfo = default;
             int framesPerSecond = CustomAnimation.DefaultFrameRate;
             int jobCurveSampleRate = CustomAnimation.DefaultJobCurveSampleRate;
-            foreach (var animationReference in animationReferences)
+            if (useNativeReference && nativeReferenceClip != null)
             {
-                float length_ = animationReference.animation.LengthInSeconds;
-                if (animationReference.animation.timeCurve != null && animationReference.animation.timeCurve.length > 1) length_ = Mathf.Abs((length_ * animationReference.animation.timeCurve[animationReference.animation.timeCurve.length - 1].time) - (length_ * animationReference.animation.timeCurve[0].time));
-
-                if (length_ > length)
+                length = nativeReferenceClip.length;
+                contentInfo.name = nativeReferenceClip.name;
+            }
+            else
+            {
+                foreach (var animationReference in animationReferences)
                 {
-                    length = length_;
-                    contentInfo = animationReference.animation.ContentInfo;
-                    framesPerSecond = animationReference.animation.framesPerSecond;
-                    jobCurveSampleRate = animationReference.animation.jobCurveSampleRate;
+                    float length_ = animationReference.animation.LengthInSeconds;
+                    if (animationReference.animation.timeCurve != null && animationReference.animation.timeCurve.length > 1) length_ = Mathf.Abs((length_ * animationReference.animation.timeCurve[animationReference.animation.timeCurve.length - 1].time) - (length_ * animationReference.animation.timeCurve[0].time));
+
+                    if (length_ > length)
+                    {
+                        length = length_;
+                        contentInfo = animationReference.animation.ContentInfo;
+                        framesPerSecond = animationReference.animation.framesPerSecond;
+                        jobCurveSampleRate = animationReference.animation.jobCurveSampleRate;
+                    }
                 }
             }
 
@@ -4416,10 +4869,54 @@ namespace Swole
             insertionLine.Clear();
             completionLine.Clear();
 
-            foreach (var animationRef in animationReferences)
+            if (useNativeReference && nativeReferenceClip != null)
             {
-                var animationReference = animationRef.animation;
-                switch (bakeType)
+                // Native clips don't expose swole's per-bone curve data, so we can't determine per-bone
+                // keyframe times. Instead, sample every bound target bone at a fixed interval across the whole clip length.
+                var length_ = length * 0.998f;
+                int insertions = resampleIntervalPos > 0 ? Mathf.FloorToInt(length_ / resampleIntervalPos) : 0;
+
+                HashSet<Transform> targetBones = new HashSet<Transform>();
+                if (boneBindings != null)
+                {
+                    foreach (var pair in boneBindings)
+                    {
+                        if (string.IsNullOrWhiteSpace(pair.targetBone)) continue;
+
+                        var targetBone = animatorTarget.GetUnityBone(pair.targetBone);
+                        if (targetBone == null) continue;
+
+                        targetBones.Add(targetBone);
+                    }
+                }
+
+                foreach (var targetBone in targetBones)
+                {
+                    for (int i = 0; i < insertions; i++)
+                    {
+                        float time = i == insertions - 1 ? length_ : (i * resampleIntervalPos);
+
+                        insertionLine.Add(new TransformDataInsertion() { bone = targetBone, time = time, channel = TransformDataChannel.LocalPositionX });
+                        insertionLine.Add(new TransformDataInsertion() { bone = targetBone, time = time, channel = TransformDataChannel.LocalPositionY });
+                        insertionLine.Add(new TransformDataInsertion() { bone = targetBone, time = time, channel = TransformDataChannel.LocalPositionZ });
+
+                        insertionLine.Add(new TransformDataInsertion() { bone = targetBone, time = time, channel = TransformDataChannel.LocalRotationX });
+                        insertionLine.Add(new TransformDataInsertion() { bone = targetBone, time = time, channel = TransformDataChannel.LocalRotationY });
+                        insertionLine.Add(new TransformDataInsertion() { bone = targetBone, time = time, channel = TransformDataChannel.LocalRotationZ });
+                        insertionLine.Add(new TransformDataInsertion() { bone = targetBone, time = time, channel = TransformDataChannel.LocalRotationW });
+
+                        insertionLine.Add(new TransformDataInsertion() { bone = targetBone, time = time, channel = TransformDataChannel.LocalScaleX });
+                        insertionLine.Add(new TransformDataInsertion() { bone = targetBone, time = time, channel = TransformDataChannel.LocalScaleY });
+                        insertionLine.Add(new TransformDataInsertion() { bone = targetBone, time = time, channel = TransformDataChannel.LocalScaleZ });
+                    }
+                }
+            }
+            else
+            {
+                foreach (var animationRef in animationReferences)
+                {
+                    var animationReference = animationRef.animation;
+                    switch (bakeType)
                 {
                     case AnimationBakeType.ResamplePerKey:
                         if (animationReference.transformAnimationCurves != null)
@@ -5162,6 +5659,7 @@ namespace Swole
                             }
                         }
                         break;
+                    }
                 }
             }
 
@@ -5215,6 +5713,9 @@ namespace Swole
                     }
                 }
 
+                humanoidRootMotion = useNativeReference && nativeReferencePlayer != null && nativeReferencePlayer.HasHumanoidAnimator
+                    && this.rootMotionPositionReferenceBones.Count == 0 && this.rootMotionRotationReferenceBones.Count == 0;
+
                 worldToRootRot = Quaternion.identity;
                 rootToWorldRot = Quaternion.identity;
                 worldToRoot = Matrix4x4.identity;
@@ -5222,6 +5723,12 @@ namespace Swole
 
                 baseRootLocalPosition = currentRootLocalPosition = Vector3.zero;
                 baseRootLocalRotation = currentRootLocalRotation = Quaternion.identity;
+
+                initialRootOffset = Vector3.zero;
+                initialRootRotationOffset = Quaternion.identity;
+
+                centeringRootOffset = Vector3.zero;
+                centeringRootRotationOffset = Quaternion.identity;
 
                 rootMotionBone = string.IsNullOrWhiteSpace(rootMotionBoneName) ? animatorTarget.RootMotionBone : animatorTarget.GetUnityBone(rootMotionBoneName);
                 if (rootMotionBone != null)
@@ -5291,7 +5798,7 @@ namespace Swole
                 }
                 insertionLine.RemoveAll(i => i.channel != TransformDataChannel.LocalScaleX && i.channel != TransformDataChannel.LocalScaleY && i.channel != TransformDataChannel.LocalScaleZ && IsRootMotionBoneChild(i.bone)); // children will get readded further along
 
-                if (bakeRootMotionAtSeparateInterval)
+                if (bakeRootMotionAtSeparateInterval || humanoidRootMotion)
                 {
                     var length_ = length * 0.998f;
 
@@ -5445,7 +5952,7 @@ namespace Swole
             boneRotations.Clear();
 
 #if UNITY_EDITOR
-            Debug.Log($"Initialized animation bake ({bakeType.ToString()}) with {insertionCount} insertions");
+            Debug.Log($"Initialized animation bake ({bakeType.ToString()}) with {insertionCount} insertions"); 
 #endif
         }
 
@@ -5487,19 +5994,27 @@ namespace Swole
 
                 float nextTime = insertionLine[0].time;
 
-                foreach (var controlLayer in controlLayers) 
+                if (useNativeReference && nativeReferencePlayer != null && nativeReferenceClip != null)
                 {
-                    controlLayer.layer.mix = controlLayer.mix;
-                    if (controlLayer.layer.HasActiveState && controlLayer.layer.ActiveState is CustomAnimationLayerState state && state.MotionControllerIndex >= 0)
+                    nativeReferencePlayer.activeClip = nativeReferenceClip;
+                    if (!(humanoidRootMotion && nativeReferencePlayer.SampleWithRootMotion(nextTime))) nativeReferencePlayer.SetTime(nextTime);
+                }
+                else
+                {
+                    foreach (var controlLayer in controlLayers)
                     {
-                        var mc = controlLayer.layer.GetMotionControllerUnsafe(state.MotionControllerIndex);
-                        if (mc is AnimationReference ar)
+                        controlLayer.layer.mix = controlLayer.mix;
+                        if (controlLayer.layer.HasActiveState && controlLayer.layer.ActiveState is CustomAnimationLayerState state && state.MotionControllerIndex >= 0)
                         {
-                            ar.BaseSpeed = 0f;
-                            ar.SetTime(controlLayer.layer, nextTime);
+                            var mc = controlLayer.layer.GetMotionControllerUnsafe(state.MotionControllerIndex);
+                            if (mc is AnimationReference ar)
+                            {
+                                ar.BaseSpeed = 0f;
+                                ar.SetTime(controlLayer.layer, nextTime);
 #if UNITY_EDITOR
-                            //Debug.Log(nextTime);
+                                //Debug.Log(nextTime);
 #endif
+                            }
                         }
                     }
                 }
@@ -5550,15 +6065,151 @@ namespace Swole
                             CalculateRootMotionPositionAndRotation(out var rootPos_, out var rootRot_);
                             startRootPosition = previousRootPosition = rootPos_;
                             startRootRotation = previousRootRotation = rootRot_;
+
+                            initialRootOffset = Vector3.zero;
+                            initialRootRotationOffset = Quaternion.identity;
+                            centeringRootOffset = Vector3.zero;
+                            centeringRootRotationOffset = Quaternion.identity;
+
+                            // On the first bake frame, the root motion reference bones (e.g. the pelvis) may be positioned/rotated
+                            // far from the root motion bone's base (bind/rest) pose. If left as-is, the root would stay at its
+                            // base pose while all subsequent frames only apply *deltas* relative to this first frame - meaning the
+                            // character's actual starting pose (pelvis position/facing) is never reflected in the root, and later,
+                            // when the runtime applies this baked root motion, the same misalignment will resurface. To fix this,
+                            // shift the root's baseline (local) position/rotation once here so the character starts aligned with
+                            // the reference bones, then rigidly recenters the whole skeleton so the root sits at the character's
+                            // own transform origin on the masked axes (e.g. x=0, z=0 for Planar).
+                            //
+                            // NOTE: animatorTarget.transform and rootMotionBone.parent are both static/world-aligned and never
+                            // move, so they can be relied on as fixed reference frames throughout this block.
+                            if (rootMotionBone != null && rootMotionBone.parent != null)
+                            {
+                                float3 verticalAxis = math.abs((float3)animatorTarget.transform.TransformDirection(animatorTarget.yawAxis));
+                                float3 forwardAxis = math.abs((float3)animatorTarget.transform.TransformDirection(animatorTarget.forwardAxis));
+                                float3 sidewaysAxis = math.abs(math.cross(forwardAxis, verticalAxis));
+
+                                Vector3 MaskWorldDelta(Vector3 delta)
+                                {
+                                    switch (rootMotionPositionMode)
+                                    {
+                                        case ModelEditor.RootMotionPositionMode.Planar:
+                                            return Vector3.ProjectOnPlane(delta, (Vector3)verticalAxis);
+                                        case ModelEditor.RootMotionPositionMode.Vertical:
+                                            return (Vector3)(verticalAxis * Vector3.Dot(delta, verticalAxis));
+                                        case ModelEditor.RootMotionPositionMode.LeftRight:
+                                            return (Vector3)(sidewaysAxis * Vector3.Dot(delta, sidewaysAxis));
+                                        case ModelEditor.RootMotionPositionMode.ForwardBack:
+                                            return (Vector3)(forwardAxis * Vector3.Dot(delta, forwardAxis));
+                                        case ModelEditor.RootMotionPositionMode.LeftRightVertical:
+                                            return (Vector3)((sidewaysAxis * Vector3.Dot(delta, sidewaysAxis)) + (verticalAxis * Vector3.Dot(delta, verticalAxis)));
+                                        case ModelEditor.RootMotionPositionMode.ForwardBackVertical:
+                                            return (Vector3)((forwardAxis * Vector3.Dot(delta, forwardAxis)) + (verticalAxis * Vector3.Dot(delta, verticalAxis)));
+                                        default:
+                                            return delta;
+                                    }
+                                }
+
+                                // --- Step 1: snap the root to meet the reference bones (e.g. the pelvis), exactly like moving
+                                // the root bone onto the body. The body itself (children) does not move here - only the root
+                                // bone's position/rotation is changed to match where/how the reference bones already are.
+                                {
+                                    Vector3 currentRootWorldPos = rootMotionBone.position;
+                                    Quaternion currentRootWorldRot = rootMotionBone.rotation;
+
+                                    Vector3 posDelta = Vector3.zero;
+                                    if (!humanoidRootMotion && rootMotionPositionReferenceBones.Count > 0) posDelta = MaskWorldDelta(startRootPosition - currentRootWorldPos);
+
+                                    Quaternion newRootWorldRot = currentRootWorldRot;
+                                    if (!humanoidRootMotion && rootMotionRotationReferenceBones.Count > 0)
+                                    {
+                                        if (rootMotionPositionMode == ModelEditor.RootMotionPositionMode.LeftRight ||
+                                            rootMotionPositionMode == ModelEditor.RootMotionPositionMode.ForwardBack)
+                                        {
+                                            // Yaw is excluded from these modes - leave the root's rotation untouched.
+                                        }
+                                        else
+                                        {
+                                            // Align only the yaw component: swing the root's current forward direction to match
+                                            // the reference bone's forward direction, both flattened onto the yaw plane, so any
+                                            // pitch/roll present in the reference bone's raw rotation cannot bleed into the root.
+                                            Vector3 refForwardFlat = Vector3.ProjectOnPlane(startRootRotation * Vector3.forward, (Vector3)verticalAxis).normalized;
+                                            Vector3 curForwardFlat = Vector3.ProjectOnPlane(currentRootWorldRot * animatorTarget.rootMotionBoneForwardAxis, (Vector3)verticalAxis).normalized;
+
+                                            Quaternion swing = Quaternion.FromToRotation(curForwardFlat, refForwardFlat);
+                                            newRootWorldRot = swing * currentRootWorldRot;
+                                        }
+                                    }
+
+                                    if (posDelta != Vector3.zero || newRootWorldRot != currentRootWorldRot)
+                                    {
+                                        Vector3 newRootWorldPos = currentRootWorldPos + posDelta;
+
+                                        int childCount_ = rootMotionBone.childCount;
+                                        Vector3[] childPos_ = childCount_ > 0 ? new Vector3[childCount_] : null;
+                                        Quaternion[] childRot_ = childCount_ > 0 ? new Quaternion[childCount_] : null;
+                                        for (int a = 0; a < childCount_; a++)
+                                        {
+                                            var child = rootMotionBone.GetChild(a);
+                                            childPos_[a] = child.position;
+                                            childRot_[a] = child.rotation;
+                                        }
+
+                                        initialRootOffset = newRootWorldPos - currentRootWorldPos;
+                                        initialRootRotationOffset = newRootWorldRot * Quaternion.Inverse(currentRootWorldRot);
+                                        rootMotionBone.SetPositionAndRotation(newRootWorldPos, newRootWorldRot);
+
+                                        for (int a = 0; a < childCount_; a++)
+                                        {
+                                            var child = rootMotionBone.GetChild(a);
+                                            child.position = childPos_[a];
+                                            child.rotation = childRot_[a];
+                                        }
+                                    }
+                                }
+
+                                // --- Step 2: rigidly shift the whole skeleton (root and every descendant, including the
+                                // reference bones themselves, moving together as one unit) so the root ends up centered at the
+                                // character's own transform origin on the masked axes (e.g. x=0, z=0 for Planar), instead of
+                                // wherever the reference bones happened to place it in step 1.
+                                {
+                                    Vector3 currentRootWorldPos = rootMotionBone.position;
+                                    Vector3 offsetFromCharacter = currentRootWorldPos - animatorTarget.transform.position;
+                                    Vector3 centerDelta = -MaskWorldDelta(offsetFromCharacter);
+
+                                    if (centerDelta != Vector3.zero)
+                                    {
+                                        centeringRootOffset = centerDelta;
+                                    }
+
+                                    Vector3 currentRootFwd = rootMotionBone.rotation * animatorTarget.rootMotionBoneForwardAxis;
+                                    currentRootFwd.y = 0f;
+                                    currentRootFwd = currentRootFwd.normalized;
+                                    centeringRootRotationOffset = Quaternion.FromToRotation(currentRootFwd, animatorTarget.transform.TransformDirection(animatorTarget.forwardAxis).normalized);
+                                }
+                            }
                         }
 
                         CalculateRootMotionPositionAndRotation(out var rootPos, out var rootRot);
 
-                        if (rootMotionPositionReferenceBones.Count > 0)
+                        // Capture the current world positions of the root motion bone's children before we touch the root at all.
+                        // The base animation pose (re-applied every bake frame via ResetToBindPose + syncPose) already has these
+                        // children correctly posed relative to the root's *base* transform. Any translation/rotation we impose on
+                        // the root below would otherwise drag/orbit these children away from that correct base-relative pose, since
+                        // moving/rotating a Transform moves its children with it. We restore these captured world positions (and,
+                        // for rotation, apply only the compensating rotation) after modifying the root so the children stay put.
+                        int childCount = rootMotionBone.childCount;
+                        Vector3[] childWorldPositions = childCount > 0 ? new Vector3[childCount] : null;
+                        Quaternion[] childWorldRotations = childCount > 0 ? new Quaternion[childCount] : null;
+                        for (int a = 0; a < childCount; a++)
+                        {
+                            var child = rootMotionBone.GetChild(a);
+                            childWorldPositions[a] = child.position;
+                            childWorldRotations[a] = child.rotation;
+                        }
+
+                        if (humanoidRootMotion || rootMotionPositionReferenceBones.Count > 0)
                         {
                             Vector3 rootTranslation = rootPos - startRootPosition;
-
-                            //Debug.DrawLine(startRootPosition, rootPos, Color.Lerp(Color.red, Color.green, 1 - (insertionLine.Count / (float)insertionCount)), 120); 
 
                             float3 verticalAxis = math.abs((float3)animatorTarget.transform.TransformDirection(animatorTarget.yawAxis));
                             float3 forwardAxis = math.abs((float3)animatorTarget.transform.TransformDirection(animatorTarget.forwardAxis));
@@ -5586,44 +6237,45 @@ namespace Swole
                                     break;
                             }
 
-                            rootMotionBone.position = rootTranslation + (rootMotionBone.parent.rotation * baseRootLocalPosition);
-                            for (int a = 0; a < rootMotionBone.childCount; a++)
-                            {
-                                var child = rootMotionBone.GetChild(a);
-                                child.position = child.position - rootTranslation;
-                            }
+                            rootMotionBone.position = initialRootOffset + rootTranslation + (rootMotionBone.parent.rotation * baseRootLocalPosition);
                         }
 
-                        if (rootMotionRotationReferenceBones.Count > 0)
+                        if (humanoidRootMotion || rootMotionRotationReferenceBones.Count > 0)
                         {
                             Quaternion rootRotation = rootRot * Quaternion.Inverse(startRootRotation);
-                            float yaw = Vector3.SignedAngle(animatorTarget.forwardAxis, rootRotation * animatorTarget.forwardAxis, animatorTarget.yawAxis);
+                            Vector3 fwd = rootRotation * animatorTarget.forwardAxis;
+                            fwd.y = 0f;
+                            fwd = fwd.normalized;
+                            float yaw = Vector3.SignedAngle(animatorTarget.forwardAxis, fwd, animatorTarget.yawAxis);
 
                             switch (rootMotionPositionMode)
                             {
                                 case ModelEditor.RootMotionPositionMode.LeftRight:
-                                    yaw = 0;
+                                    yaw = 0f;
                                     break;
                                 case ModelEditor.RootMotionPositionMode.ForwardBack:
-                                    yaw = 0;
+                                    yaw = 0f;
                                     break;
                             }
 
                             Quaternion yawRot = Quaternion.AngleAxis(yaw, animatorTarget.yawAxis);
-                            Quaternion inverseYawRot = Quaternion.Inverse(yawRot);
 
-                            //Debug.DrawRay(startRootPosition, yawRot * animatorTarget.forwardAxis, Color.Lerp(Color.blue, Color.magenta, 1 - (insertionLine.Count / (float)insertionCount)), 120);
+                            rootMotionBone.rotation = initialRootRotationOffset * yawRot * (rootMotionBone.parent.rotation * baseRootLocalRotation);
+                        }
 
-                            rootMotionBone.rotation = yawRot * (rootMotionBone.parent.rotation * baseRootLocalRotation);
-                            for (int a = 0; a < rootMotionBone.childCount; a++)
-                            {
-                                var child = rootMotionBone.GetChild(a);
-                                child.rotation = inverseYawRot * child.rotation;
-                            }
+                        // Restore each child's captured world position/rotation so the root's translation/rotation above does not
+                        // drag or orbit them out of their correctly-posed (base animation) location.
+                        for (int a = 0; a < childCount; a++)
+                        {
+                            var child = rootMotionBone.GetChild(a);
+                            child.position = childWorldPositions[a];
+                            child.rotation = childWorldRotations[a];
                         }
 
                         previousRootPosition = rootPos;
                         previousRootRotation = rootRot;
+
+                        rootMotionBone.SetPositionAndRotation((initialRootOffset + (rootMotionBone.parent.rotation * baseRootLocalPosition)) + (centeringRootRotationOffset * (rootMotionBone.position - (initialRootOffset + (rootMotionBone.parent.rotation * baseRootLocalPosition)))) + centeringRootOffset, centeringRootRotationOffset * rootMotionBone.rotation); // re-center everything
                     }
 
                     if (bakeFkToIk) animatorTarget.SyncIKFK(false, false, false);

@@ -1,4 +1,4 @@
-#if UNITY_2017_1_OR_NEWER
+#if UNITY_EDITOR
 
 using UnityEditor;
 using UnityEngine;
@@ -18,8 +18,10 @@ namespace Swole.Modding
 
         private float normalPenalty;
 
-        private Vector3 sourceToTargetRot;
+        private Vector3 sourceToTargetRot; 
         private bool useCustomSkinning;
+
+        private MeshBindingData editingAsset;
 
         [MenuItem("Swole/Mesh Binding Baker")]
         public static void ShowWindow()
@@ -27,9 +29,64 @@ namespace Swole.Modding
             GetWindow<MeshBinderWindow>("Mesh Baker");
         }
 
+        [MenuItem("Swole/Open All Bound Mesh Assets")]
+        public static void OpenAllBoundMeshAssets()
+        {
+            var guids = AssetDatabase.FindAssets($"t:{typeof(MeshBindingData).Name}");
+
+            foreach (string guid in guids)
+            {
+                string assetPath = AssetDatabase.GUIDToAssetPath(guid);
+                MeshBindingData asset = AssetDatabase.LoadAssetAtPath<MeshBindingData>(assetPath);
+
+                if (asset != null)
+                {
+                    MeshBinderWindow window = ScriptableObject.CreateInstance<MeshBinderWindow>();
+
+                    window.titleContent = new GUIContent(asset.name);
+                    window.Show();
+                    window.LoadFromAsset(asset); 
+                }
+            }
+        }
+
+        [MenuItem("CONTEXT/MeshBindingData/Edit Binding Data")]
+        public static void EditBindingData(MenuCommand command)
+        {
+            var data = command.context as MeshBindingData;
+            if (data == null) return;
+
+            var window = GetWindow<MeshBinderWindow>("Mesh Baker");
+            window.LoadFromAsset(data);
+        }
+
+        private void LoadFromAsset(MeshBindingData asset)
+        {
+            if (asset == null) return;
+
+            editingAsset = asset;
+            var settings = asset.GetGenerationSettings();
+            if (settings == null) return;
+
+            sourceMesh = asset.OriginalMesh;
+            targetMesh = settings.targetMesh;
+            normalPenalty = settings.normalPenalty;
+            sourceToTargetRot = asset.eulerOffset;
+            useCustomSkinning = asset.useCustomSkinning;
+        }
+
         private void OnGUI()
         {
             GUILayout.Label("Mesh Binding Baker", EditorStyles.boldLabel);
+            EditorGUILayout.Space();
+
+            EditorGUI.BeginChangeCheck();
+            var newEditingAsset = (MeshBindingData)EditorGUILayout.ObjectField("Load Existing Asset", editingAsset, typeof(MeshBindingData), false);
+            if (EditorGUI.EndChangeCheck() && newEditingAsset != editingAsset)
+            {
+                if (newEditingAsset != null) LoadFromAsset(newEditingAsset); else editingAsset = null;
+            }
+
             EditorGUILayout.Space();
 
             sourceMesh = (Mesh)EditorGUILayout.ObjectField("Source Mesh", sourceMesh, typeof(Mesh), true);
@@ -61,6 +118,11 @@ namespace Swole.Modding
 
             var asset = MeshDataTools.GenerateBindingDataAsset(sourceMesh, targetMesh, normalPenalty, sourceToTargetRot);
             asset.useCustomSkinning = useCustomSkinning;
+            asset.SetGenerationSettings(new MeshBindingData.GenerationSettings
+            {
+                targetMesh = targetMesh,
+                normalPenalty = normalPenalty
+            });
 
             EditorUtility.ClearProgressBar();
 
@@ -75,7 +137,15 @@ namespace Swole.Modding
             }
 
             // Save the Asset file
-            string path = EditorUtility.SaveFilePanelInProject("Save Binding Data", sourceMesh.name + "_ProxyBinding", "asset", "Save your binding data asset", defaultSaveDir); 
+            string path;
+            if (editingAsset != null)
+            {
+                path = AssetDatabase.GetAssetPath(editingAsset);
+            }
+            else
+            {
+                path = EditorUtility.SaveFilePanelInProject("Save Binding Data", sourceMesh.name + "_ProxyBinding", "asset", "Save your binding data asset", defaultSaveDir);
+            }
             if (!string.IsNullOrEmpty(path))
             {
                 // Check if asset already exists at this path
@@ -99,11 +169,13 @@ namespace Swole.Modding
 
                     EditorUtility.SetDirty(existingAsset);
                     DestroyImmediate(asset);
+                    editingAsset = existingAsset;
                     Selection.activeObject = existingAsset;
                 }
                 else
                 {
                     AssetDatabase.CreateAsset(asset, path);
+                    editingAsset = asset;
                     Selection.activeObject = asset;
                 }
 

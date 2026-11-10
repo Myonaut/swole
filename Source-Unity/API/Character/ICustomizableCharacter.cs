@@ -196,6 +196,7 @@ namespace Swole.API.Unity
             get;
         }
         public int IndexOfStandaloneShape(string shapeName, bool caseSensitive = false);
+        public int StandaloneShapeCount { get; }
 
         public int FirstMuscleGroupsControlIndex { get; }
         public MuscleDataLR GetMuscleDataUnsafe(int groupIndex);
@@ -207,6 +208,7 @@ namespace Swole.API.Unity
             get;
         }
         public int IndexOfMuscleGroup(string groupName, bool caseSensitive = false);
+
 
         public int FirstFatGroupsControlIndex { get; }
         public float GetFatLevelUnsafe(int groupIndex);
@@ -222,6 +224,8 @@ namespace Swole.API.Unity
             get;
         }
         public int IndexOfFatGroup(string groupName, bool caseSensitive = false);
+        public int FatGroupCount { get; }
+        public int BodyhairGroupCount { get; }
 
         public int VariationShapesControlDataSize { get; }
         public int FirstVariationShapesControlIndex { get; }
@@ -244,6 +248,8 @@ namespace Swole.API.Unity
         }
         public int IndexOfVariationGroup(string groupName, bool caseSensitive = false);
         public int IndexOfVariationShape(string shapeName, bool caseSensitive = false);
+        public int VariationGroupCount { get; }
+        public int VariationShapeCount { get; }
 
         public void SetFloatOverride(string propertyName, float value, bool updateMaterials = true);
         public void SetIntegerOverride(string property, int value, bool updateMaterials = true);

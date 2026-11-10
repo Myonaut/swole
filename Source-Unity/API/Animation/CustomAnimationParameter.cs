@@ -461,7 +461,7 @@ namespace Swole.API.Unity.Animation
             triggerParameters.Add(p);
         }
 
-        public int FindParamterIndex(string parameterName)
+        public int FindParameterIndex(string parameterName)
         {
             if (string.IsNullOrWhiteSpace(parameterName)) return -1;
 

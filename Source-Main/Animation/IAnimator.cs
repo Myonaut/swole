@@ -74,6 +74,7 @@ namespace Swole.Animation
         public void MoveLayerNoRemap(int layerIndex, int newIndex, bool recalculateIndices = true); 
         public Dictionary<int, int> RecalculateLayerIndices();
         public void RecalculateLayerIndicesNoRemap();
+        public void ReorderLayersByPriority(bool recalculateIndices = true);
 
         public bool IsLayerActive(int index);
 

@@ -230,6 +230,12 @@ namespace Swole
 
         public void SetExternalWeightSource(float[] weights, int startIndex = 0, int size = -1, bool clearDefaultLists = false, bool nullifyDefaultLists = false)
         {
+            if (weights == null)
+            {
+                swole.LogError($"VertexGroup.SetExternalWeightSource() called with a null weights array (VertexGroup: {name}).");
+                return;
+            }
+
             weightSampleSource = SampleSource.ExternalArray;
             weightSampleSourceStartIndex = startIndex;
             weightSampleSourceSize = size < 0 ? weights.Length - startIndex : size;
@@ -237,8 +243,8 @@ namespace Swole
 
             if (clearDefaultLists)
             {
-                this.indices.Clear();
-                this.weights.Clear();
+                if (this.indices != null) this.indices.Clear();
+                if (this.weights != null) this.weights.Clear();   
             }
             if (nullifyDefaultLists)
             {
@@ -250,6 +256,12 @@ namespace Swole
 #if UNITY_2017_1_OR_NEWER
         public void SetExternalWeightSource(NativeArray<float> weights, int startIndex = 0, int size = -1, bool clearDefaultLists = false, bool nullifyDefaultLists = false)
         {
+            if (!weights.IsCreated)
+            {
+                swole.LogError($"VertexGroup.SetExternalWeightSource() called with an invalid weights array (VertexGroup: {name}).");
+                return;
+            }
+
             weightSampleSource = SampleSource.ExternalNativeArray;
             weightSampleSourceStartIndex = startIndex;
             weightSampleSourceSize = size < 0 ? weights.Length - startIndex : size;
@@ -257,8 +269,8 @@ namespace Swole
 
             if (clearDefaultLists)
             {
-                this.indices.Clear();
-                this.weights.Clear();
+                if (this.indices != null) this.indices.Clear();
+                if (this.weights != null) this.weights.Clear();
             }
             if (nullifyDefaultLists)
             {

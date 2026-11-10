@@ -139,7 +139,7 @@ namespace Swole.API.Unity.Animation
             set => speedMultiplierParameter = value;
         }
 
-        public float GetSpeed(IAnimationLayer layer)
+        public virtual float GetSpeed(IAnimationLayer layer)
         {
 
             float speed = baseSpeed;
@@ -207,7 +207,6 @@ namespace Swole.API.Unity.Animation
         public virtual float GetMaxScaledDuration(IAnimationLayer layer) => GetScaledDuration(layer);
 
         public abstract float GetTime(IAnimationLayer layer, float addTime = 0f);
-
         public virtual float GetNormalizedTime(IAnimationLayer layer, float addTime = 0f)
         {
             float length = GetDuration(layer);
@@ -216,11 +215,23 @@ namespace Swole.API.Unity.Animation
             return GetTime(layer, addTime) / length;
         }
 
+        public abstract float GetPreviousTime(IAnimationLayer layer);
+        public virtual float GetPreviousNormalizedTime(IAnimationLayer layer)
+        {
+            float length = GetDuration(layer);
+            if (length <= 0f) return 0f;
+
+            return GetPreviousTime(layer) / length;
+        }
+
+        public abstract void ForceSetPreviousTime(IAnimationLayer layer, float time);
+        public abstract void ForceSetPreviousNormalizedTime(IAnimationLayer layer, float normalizedTime);
+
         public abstract void SetTime(IAnimationLayer layer, float time, bool resetFlags = true);
 
         public abstract void SetNormalizedTime(IAnimationLayer layer, float normalizedTime, bool resetFlags = true);
 
-        public abstract void Progress(IAnimationLayer layer, float deltaTime, ref JobHandle jobHandle, bool useMultithreading = true, bool isFinal = false, bool canLoop = true);
+        public abstract void Progress(IAnimationLayer layer, float deltaTime, ref JobHandle jobHandle, bool useMultithreading = true, bool isFinal = false, bool previousWasFinal = false, bool canLoop = true);
 
         public abstract bool HasAnimationPlayer(IAnimationLayer layer);
 
@@ -287,10 +298,85 @@ namespace Swole.API.Unity.Animation
         public virtual int GetLongestHierarchyIndex(IAnimationLayer layer) => -1;
 
         public virtual float GetCurrentBoneHeight(IAnimationLayer layer, string boneName) => GetBoneHeight(layer, boneName, 0f);
-        public abstract float GetBoneHeight(IAnimationLayer layer, string boneName, float timeOffset);
-        public abstract float GetBoneHeightAtTime(IAnimationLayer layer, string boneName, float time);
+        public float GetBoneHeight(IAnimationLayer layer, string boneName, float timeOffset) => GetBoneHeight(layer, boneName, timeOffset, out _);
+        public abstract float GetBoneHeight(IAnimationLayer layer, string boneName, float timeOffset, out bool foundCurve);
+
+        public float GetBoneHeightAtTime(IAnimationLayer layer, string boneName, float time) => GetBoneHeightAtTime(layer, boneName, time, out _);
+        public abstract float GetBoneHeightAtTime(IAnimationLayer layer, string boneName, float time, out bool foundCurve);
+
+        /// <summary>
+        /// Samples where a bone would be, relative to <paramref name="space"/>, after this controller advances <paramref name="timeOffset"/> seconds.
+        /// Uses the same per-bone curve application as playback (masks, additive/blend modes, mixes). Only this layer's controller tree is sampled.
+        /// Parameters use their current values, unless their layer parameter index is a key in <paramref name="parameterOverrides"/>.
+        /// </summary>
+        public virtual bool TrySampleBonePosition(IAnimationLayer layer, Transform bone, Transform space, float timeOffset, out Vector3 position, IReadOnlyDictionary<int, float> parameterOverrides = null)
+        {
+            position = default;
+            if (bone == null || layer == null || layer.Animator is not CustomAnimator animator) return false;
+
+            var pose = new CustomAnimator.SampledPose(animator);
+            if (!SampleInto(layer, pose, timeOffset, 1f, parameterOverrides)) return false;
+
+            position = pose.GetMatrix(bone, space).GetPosition();
+            return true;
+        }
+
+        /// <summary>
+        /// Applies this controller's animation, as it would be after advancing <paramref name="timeOffset"/> seconds, to an offline pose. Returns true if anything was sampled.
+        /// <paramref name="weight"/> is the accumulated weight from parent controllers (used in place of the live weight, so no controller state is modified).
+        /// </summary>
+        public virtual bool SampleInto(IAnimationLayer layer, CustomAnimator.SampledPose pose, float timeOffset, float weight, IReadOnlyDictionary<int, float> parameterOverrides = null) => false;
+
+        /// <summary>Gets a layer parameter's value for sampling: the override if one exists for <paramref name="parameterIndex"/>, otherwise the parameter's current value.</summary>
+        public static bool TryGetSampleParameterValue(IAnimationLayer layer, int parameterIndex, IReadOnlyDictionary<int, float> parameterOverrides, out float value)
+        {
+            value = 0f;
+            if (parameterIndex < 0) return false;
+            if (parameterOverrides != null && parameterOverrides.TryGetValue(parameterIndex, out value)) return true;
+
+            var p = layer?.GetParameter(parameterIndex);
+            if (p == null) return false;
+            value = p.Value;
+            return true;
+        }
+
+        public static bool HasParameterOverride(int parameterIndex, IReadOnlyDictionary<int, float> parameterOverrides) => parameterIndex >= 0 && parameterOverrides != null && parameterOverrides.ContainsKey(parameterIndex);
+
+        /// <summary>Mirrors <see cref="GetSpeed"/> for sampling, honoring parameter overrides.</summary>
+        public virtual float GetSampleSpeed(IAnimationLayer layer, IReadOnlyDictionary<int, float> parameterOverrides)
+        {
+            if (parameterOverrides == null || parameterOverrides.Count == 0) return GetSpeed(layer);
+
+            float speed = baseSpeed;
+            if (Parent is CustomMotionController parent) speed = speed * parent.GetSampleSpeed(layer, parameterOverrides);
+            else if (Parent != null) speed = speed * Parent.GetSpeed(layer);
+
+            if (layer == null) return speed;
+            if (TryGetSampleParameterValue(layer, speedMultiplierParameter, parameterOverrides, out float mul)) speed = speed * mul;
+
+            return speed;
+        }
+
+        /// <summary>Mirrors <see cref="MotionPart.GetMix"/> for sampling, honoring parameter overrides.</summary>
+        public static float GetSampleMix(MotionPart part, IAnimationLayer layer, IReadOnlyDictionary<int, float> parameterOverrides)
+        {
+            if (!HasParameterOverride(part.mixParameterIndex, parameterOverrides)) return part.GetMix(layer);
+
+            float paramVal = parameterOverrides[part.mixParameterIndex];
+            if (part.mixParameterMappingMin != part.mixParameterMappingMax)
+            {
+                if (part.clampMixParameter) paramVal = Math.Clamp(paramVal, part.mixParameterMappingMin, part.mixParameterMappingMax);
+                paramVal = (paramVal - part.mixParameterMappingMin) / (part.mixParameterMappingMax - part.mixParameterMappingMin);
+            }
+
+            return part.mix * paramVal;
+        }
+
+        public abstract bool AffectsTransform(IAnimationLayer layer, string transformName);
 
         public abstract void NonAdditivePrepass(bool useMultithreading, IAnimationLayer layer);
+
+        public abstract void ApplyPropertyStates(IAnimationLayer layer);
 
     }
 
@@ -408,6 +494,14 @@ namespace Swole.API.Unity.Animation
             clone.timeOverrideParameter = timeOverrideParameter;
             clone.useNormalizedTimeForOverriding = useNormalizedTimeForOverriding;
 
+            clone.remapTimeOverrideParameter = remapTimeOverrideParameter;
+            clone.remapTimeOverrideParameterSrcMin = remapTimeOverrideParameterSrcMin;
+            clone.remapTimeOverrideParameterSrcMax = remapTimeOverrideParameterSrcMax;
+            clone.remapTimeOverrideParameterDstMin = remapTimeOverrideParameterDstMin;
+            clone.remapTimeOverrideParameterDstMax = remapTimeOverrideParameterDstMax;
+            clone.remapTimeOverrideParameterClampMin = remapTimeOverrideParameterClampMin;
+            clone.remapTimeOverrideParameterClampMax = remapTimeOverrideParameterClampMax; 
+
             return clone;
 
         }
@@ -478,6 +572,62 @@ namespace Swole.API.Unity.Animation
         {
             get => useNormalizedTimeForOverriding;
             set => useNormalizedTimeForOverriding = value; 
+        }
+
+        [SerializeField]
+        public bool remapTimeOverrideParameter = false;
+        public bool RemapTimeOverrideParameter
+        {
+            get => remapTimeOverrideParameter;
+            set => remapTimeOverrideParameter = value;
+        }
+
+        [SerializeField]
+        public float remapTimeOverrideParameterSrcMin = 0f;
+        public float RemapTimeOverrideParameterSrcMin
+        {
+            get => remapTimeOverrideParameterSrcMin;
+            set => remapTimeOverrideParameterSrcMin = value;
+        }
+
+        [SerializeField]
+        public float remapTimeOverrideParameterSrcMax = 1f;
+        public float RemapTimeOverrideParameterSrcMax
+        {
+            get => remapTimeOverrideParameterSrcMax;
+            set => remapTimeOverrideParameterSrcMax = value;
+        }
+
+        [SerializeField]
+        public float remapTimeOverrideParameterDstMin = 0f;
+        public float RemapTimeOverrideParameterDstMin
+        {
+            get => remapTimeOverrideParameterDstMin;
+            set => remapTimeOverrideParameterDstMin = value;
+        }
+
+        [SerializeField]
+        public float remapTimeOverrideParameterDstMax = 1f;
+        public float RemapTimeOverrideParameterDstMax
+        {
+            get => remapTimeOverrideParameterDstMax;
+            set => remapTimeOverrideParameterDstMax = value;
+        }
+
+        [SerializeField]
+        public bool remapTimeOverrideParameterClampMin = false;
+        public bool RemapTimeOverrideParameterClampMin
+        {
+            get => remapTimeOverrideParameterClampMin;
+            set => remapTimeOverrideParameterClampMin = value;
+        }
+
+        [SerializeField]
+        public bool remapTimeOverrideParameterClampMax = false;
+        public bool RemapTimeOverrideParameterClampMax
+        {
+            get => remapTimeOverrideParameterClampMax;
+            set => remapTimeOverrideParameterClampMax = value;
         }
 
         public override void RemapParameterIndices(IAnimationLayer layer, Dictionary<int, int> remapper, bool invalidateNonRemappedIndices = false, bool remapChildren = true)
@@ -583,7 +733,7 @@ namespace Swole.API.Unity.Animation
 
                 if (combineMasks)
                 {
-                    var mask = AvatarMaskUsage.GetCombinedMaskMultiplicative(masks, m_animationPlayer.GetInvertedMask);
+                    var mask = AvatarMaskUsage.GetCombinedMaskMultiplicative(masks, m_animationPlayer.GetInvertedMask); 
                     m_animationPlayer.SetTopAvatarMask(mask, false);
                 }
                 else if (avatarMask != null)
@@ -637,7 +787,8 @@ namespace Swole.API.Unity.Animation
             if (AnimationPlayer == null) return 0f;
 
             float speed = BaseSpeed;//GetSpeed(layer); // are u insane
-            return speed == 0f ? 0f : (AnimationPlayer.LengthInSeconds / math.abs(speed)); 
+
+            return Mathf.Approximately(speed, 0f) ? 0f : (AnimationPlayer.LengthInSeconds / math.abs(speed)); 
 
         }
 
@@ -651,6 +802,26 @@ namespace Swole.API.Unity.Animation
 
         }
 
+        public override float GetPreviousTime(IAnimationLayer layer)
+        {
+
+            if (AnimationPlayer is not CustomAnimation.Player cap) return 0f;
+
+            return cap.PreviousTime;
+
+        }
+
+        public override void ForceSetPreviousTime(IAnimationLayer layer, float time)
+        {
+            if (AnimationPlayer is not CustomAnimation.Player cap) return; 
+            cap.ForceSetPreviousTime(time);
+        }
+        public override void ForceSetPreviousNormalizedTime(IAnimationLayer layer, float normalizedTime)
+        {
+            if (AnimationPlayer is not CustomAnimation.Player cap) return;
+            cap.ForceSetPreviousTime(normalizedTime * cap.LengthInSeconds);
+        }
+
         public override void SetTime(IAnimationLayer layer, float time, bool resetFlags = true)
         {
 
@@ -662,14 +833,14 @@ namespace Swole.API.Unity.Animation
 
         public override void SetNormalizedTime(IAnimationLayer layer, float normalizedTime, bool resetFlags = true)
         {
-
+            
             if (AnimationPlayer == null) return;
 
             AnimationPlayer.SetTime(AnimationPlayer.LengthInSeconds * normalizedTime, resetFlags);
 
         }
 
-        public override void Progress(IAnimationLayer layer, float deltaTime, ref JobHandle jobHandle, bool useMultithreading = true, bool isFinal = false, bool canLoop = true)
+        public override void Progress(IAnimationLayer layer, float deltaTime, ref JobHandle jobHandle, bool useMultithreading = true, bool isFinal = false, bool previousWasFinal = false, bool canLoop = true)
         {
 
             if (AnimationPlayer is not CustomAnimation.Player cap) return;
@@ -685,11 +856,17 @@ namespace Swole.API.Unity.Animation
                 if (p != null)
                 {
                     float val = p.UpdateAndGetValue();
-                    cap.TimeOverride = val * (useNormalizedTimeForOverriding ? cap.LengthInSeconds : 1f);  
+                    if (remapTimeOverrideParameter)
+                    {
+                        val = math.remap(remapTimeOverrideParameterSrcMin, remapTimeOverrideParameterSrcMax, remapTimeOverrideParameterDstMin, remapTimeOverrideParameterDstMax, val);
+                        if (remapTimeOverrideParameterClampMin) val = math.max(val, remapTimeOverrideParameterDstMin);
+                        if (remapTimeOverrideParameterClampMax) val = math.min(val, remapTimeOverrideParameterDstMax); 
+                    }
+                    cap.TimeOverride = val * (useNormalizedTimeForOverriding ? cap.LengthInSeconds : 1f); 
                 }
             }
 
-            jobHandle = cap.Progress(deltaTime, layer.Mix, jobHandle, useMultithreading, isFinal, canLoop);
+            jobHandle = cap.Progress(deltaTime, layer.Mix, jobHandle, useMultithreading, isFinal, previousWasFinal, canLoop);
             //Debug.Log($"{name}: {layer.Mix} {cap.Time} {cap.Speed}"); 
         }
 
@@ -701,27 +878,68 @@ namespace Swole.API.Unity.Animation
         }
 
 
-        public override float GetBoneHeight(IAnimationLayer layer, string boneName, float timeOffset)
+        public override float GetBoneHeight(IAnimationLayer layer, string boneName, float timeOffset, out bool foundCurve)
         {
+            foundCurve = false;
+
             if (AnimationPlayer != null)
             {
-                return GetBoneHeightAtTime(layer, boneName, GetTime(layer, timeOffset)) * layer.Mix * AnimationPlayer.Mix;
+                return GetBoneHeightAtTime(layer, boneName, GetTime(layer, timeOffset), out foundCurve) * layer.Mix * AnimationPlayer.Mix;
             }
 
             return 0f;
         }
-        public override float GetBoneHeightAtTime(IAnimationLayer layer, string boneName, float time)
+        public override float GetBoneHeightAtTime(IAnimationLayer layer, string boneName, float time, out bool foundCurve)
         {
+            foundCurve = false;
+
             var anim = Animation;
             if (anim is CustomAnimation canim)
             {
                 if (canim.TryGetBoneHeightCurve(boneName, out var curve))
                 {
-                    return curve.Evaluate(time) * layer.Mix * AnimationPlayer.Mix;
+                    foundCurve = true;
+                    return curve.Evaluate(time) * layer.Mix * AnimationPlayer.Mix; 
                 }
             }
 
             return 0f;
+        }
+
+        public override bool SampleInto(IAnimationLayer layer, CustomAnimator.SampledPose pose, float timeOffset, float weight, IReadOnlyDictionary<int, float> parameterOverrides = null)
+        {
+            if (pose == null || AnimationPlayer is not CustomAnimation.Player cap) return false;
+
+            float sampleTime;
+            if (HasParameterOverride(timeOverrideParameter, parameterOverrides))
+            {
+                float val = parameterOverrides[timeOverrideParameter];
+                if (remapTimeOverrideParameter)
+                {
+                    val = math.remap(remapTimeOverrideParameterSrcMin, remapTimeOverrideParameterSrcMax, remapTimeOverrideParameterDstMin, remapTimeOverrideParameterDstMax, val);
+                    if (remapTimeOverrideParameterClampMin) val = math.max(val, remapTimeOverrideParameterDstMin);
+                    if (remapTimeOverrideParameterClampMax) val = math.min(val, remapTimeOverrideParameterDstMax);
+                }
+                sampleTime = cap.GetLoopedTimeSample(val * (useNormalizedTimeForOverriding ? cap.LengthInSeconds : 1f));
+            }
+            else
+            {
+                sampleTime = cap.PredictTime(timeOffset, GetSampleSpeed(layer, parameterOverrides));
+            }
+
+            cap.SampleInto(pose, sampleTime, weight, layer.Mix);
+            return true;
+        }
+
+        public override bool AffectsTransform(IAnimationLayer layer, string transformName)
+        {
+            var anim = IsUsingAsset ? AnimationAsset : Animation;
+            if (anim is CustomAnimation canim)
+            {
+                return canim.AffectsTransform(transformName); 
+            }
+
+            return false;
         }
 
         public override void NonAdditivePrepass(bool useMultithreading, IAnimationLayer layer)
@@ -729,6 +947,14 @@ namespace Swole.API.Unity.Animation
             if (AnimationPlayer is not CustomAnimation.Player cap) return;
 
             cap.NonAdditivePrepass(useMultithreading, layer);
+        }
+
+        public override void ApplyPropertyStates(IAnimationLayer layer)
+        {
+            var player = AnimationPlayer;
+            if (player == null) return;
+
+            player.ApplyPropertyStates();
         }
 
     }
@@ -763,6 +989,9 @@ namespace Swole.API.Unity.Animation
 
             public MotionPart[] motionParts;
 
+            public bool useBlendSpeed;
+            public bool blendSpeedIsAdditive;
+
             public string AsJSON(bool prettyPrint = false) => swole.Engine.ToJson(this, prettyPrint);
 
             public object AsNonserializableObject(PackageInfo packageInfo = default) => AsOriginalType(packageInfo);
@@ -791,6 +1020,9 @@ namespace Swole.API.Unity.Animation
 
                 anim.useDedicatedChildForTime = useDedicatedChildForTime;
                 anim.timeDedicatedChildIndex = timeDedicatedChildIndex;
+
+                anim.useBlendSpeed = useBlendSpeed;
+                anim.blendSpeedIsAdditive = blendSpeedIsAdditive;
 
                 return anim;
             }
@@ -827,6 +1059,9 @@ namespace Swole.API.Unity.Animation
                 s.useDedicatedChildForTime = inst.useDedicatedChildForTime;
                 s.timeDedicatedChildIndex = inst.timeDedicatedChildIndex;
 
+                s.useBlendSpeed = inst.useBlendSpeed;
+                s.blendSpeedIsAdditive = inst.blendSpeedIsAdditive;
+
                 return s;
             }
 
@@ -859,6 +1094,9 @@ namespace Swole.API.Unity.Animation
 
             clone.useDedicatedChildForTime = useDedicatedChildForTime;
             clone.timeDedicatedChildIndex = timeDedicatedChildIndex;
+
+            clone.useBlendSpeed = useBlendSpeed;
+            clone.blendSpeedIsAdditive = blendSpeedIsAdditive;
 
             return clone;
 
@@ -909,6 +1147,43 @@ namespace Swole.API.Unity.Animation
             return controller.GetDuration(layer);
         }
 
+        [SerializeField]
+        public bool useBlendSpeed;
+        public bool UseBlendSpeed
+        {
+            get => useBlendSpeed;
+            set => useBlendSpeed = value;
+        }
+
+        [SerializeField]
+        public bool blendSpeedIsAdditive;
+        public bool BlendSpeedIsAdditive
+        {
+            get => blendSpeedIsAdditive;
+            set => blendSpeedIsAdditive = value;
+        }
+
+        [NonSerialized]
+        public float blendSpeed = 1f;
+
+        public override float GetSpeed(IAnimationLayer layer)
+        {
+
+            float speed = base.GetSpeed(layer);
+
+            if (useBlendSpeed) speed = speed * blendSpeed;
+
+            return speed;
+
+        }
+
+        public override float GetSampleSpeed(IAnimationLayer layer, IReadOnlyDictionary<int, float> parameterOverrides)
+        {
+            float speed = base.GetSampleSpeed(layer, parameterOverrides);
+            if (useBlendSpeed && parameterOverrides != null && parameterOverrides.Count > 0) speed = speed * blendSpeed;
+            return speed;
+        }
+
         public override void Initialize(IAnimationLayer layer, List<AvatarMaskUsage> masks, IAnimationMotionController parent = null)
         {
 
@@ -926,9 +1201,12 @@ namespace Swole.API.Unity.Animation
                     if (controller != null)
                     {
 
+                        int initialMasksCount = masks == null ? 0 : masks.Count;
                         controller.Initialize(layer, masks, this);
+                        if (masks != null) masks.RemoveRange(initialMasksCount, masks.Count - initialMasksCount);
 
-                        float speed = 1f;
+
+                        float speed = part.ReplaceBaseSpeed ? 1f : controller.BaseSpeed;
                         if (normalizeDurations)
                         {
                             if (normalizedDuration <= 0f)
@@ -937,8 +1215,8 @@ namespace Swole.API.Unity.Animation
                             }
                             else
                             {
-                                float duration = controller.GetDuration(layer);
-                                speed = duration / normalizedDuration;
+                                float duration = Mathf.Approximately(speed, 0f) ? 0f : (controller.GetDuration(layer) / math.abs(speed));
+                                speed = (duration / normalizedDuration) * Mathf.Sign(speed);  
                             }
                         }
 
@@ -994,13 +1272,13 @@ namespace Swole.API.Unity.Animation
             if (onlyAddIfNotPresent)
             {
 
-                foreach (var part in motionParts) if (!indices.Contains(part.controllerIndex)) indices.Add(part.controllerIndex);
+                foreach (var part in motionParts) if (part.controllerIndex >= 0 && !indices.Contains(part.controllerIndex)) indices.Add(part.controllerIndex);
 
             }
             else
             {
 
-                foreach (var part in motionParts) indices.Add(part.controllerIndex);
+                foreach (var part in motionParts) if (part.controllerIndex >= 0) indices.Add(part.controllerIndex);
 
             }
 
@@ -1051,6 +1329,44 @@ namespace Swole.API.Unity.Animation
 
         public int GetParameterIndex(int localParameterIndex) => -1;
 
+        public override void GetParameterIndices(IAnimationLayer layer, List<int> indices)
+        {
+
+            if (indices == null) return;
+
+            base.GetParameterIndices(layer, indices);
+
+            if (ParameterCount > 0)
+            {
+                for (int a = 0; a < ParameterCount; a++)
+                {
+                    int paramIndex = GetParameterIndex(a);
+                    if (paramIndex >= 0) indices.Add(paramIndex);
+                }
+
+            }
+
+            if (BaseMotionParts != null)
+            {
+
+                foreach (var part in BaseMotionParts)
+                {
+
+                    if (part.MixParameterIndex >= 0) indices.Add(part.MixParameterIndex);
+
+                    if (part.BlendSpeedParameterIndex >= 0) indices.Add(part.BlendSpeedParameterIndex);
+
+                    var controller = layer.GetMotionController(part.ControllerIndex);
+                    if (controller == null) continue;
+
+                    controller.GetParameterIndices(layer, indices);
+
+                }
+
+            }
+
+        }
+
         public override void RemapParameterIndices(IAnimationLayer layer, Dictionary<int, int> remapper, bool invalidateNonRemappedIndices = false, bool remapChildren = true)
         {
 
@@ -1077,6 +1393,23 @@ namespace Swole.API.Unity.Animation
                             Debug.LogError($"Failed to remap mix parameter index {origIndex} for {GetType().Name} '{name}', (Part:{a})");
 #else
                             swole.LogError($"Failed to remap mix parameter index {origIndex} for {GetType().Name} '{name}', (Part:{a})");
+#endif
+                        }
+
+                    }
+
+                    if (part.BlendSpeedParameterIndex >= 0)
+                    {
+
+                        int origIndex = part.BlendSpeedParameterIndex;
+                        if (!remapper.TryGetValue(origIndex, out part.blendSpeedParameterIndex) && invalidateNonRemappedIndices)
+                        {
+                            part.blendSpeedParameterIndex = -1;
+
+#if UNITY_EDITOR
+                            Debug.LogError($"Failed to remap blend speed parameter index {origIndex} for {GetType().Name} '{name}', (Part:{a})");
+#else
+                            swole.LogError($"Failed to remap blend speed parameter index {origIndex} for {GetType().Name} '{name}', (Part:{a})");
 #endif
                         }
 
@@ -1144,7 +1477,7 @@ namespace Swole.API.Unity.Animation
                     }
                     else
                     {
-                        motionParts[a] = new MotionPart() { speed = mf.Speed, controllerIndex = mf.ControllerIndex, syncMode = mf.SyncMode, localSyncReferenceIndex = mf.LocalSyncReferenceIndex, mix = mf.Mix, mixParameterIndex = mf.MixParameterIndex };
+                        motionParts[a] = new MotionPart() { replaceBaseSpeed = mf.ReplaceBaseSpeed, speed = mf.Speed, controllerIndex = mf.ControllerIndex, syncMode = mf.SyncMode, localSyncReferenceIndex = mf.LocalSyncReferenceIndex, mix = mf.Mix, mixParameterIndex = mf.MixParameterIndex, blendSpeed = mf.BlendSpeed, blendSpeedParameterIndex = mf.BlendSpeedParameterIndex };
                     }
                 }
             }
@@ -1215,20 +1548,29 @@ namespace Swole.API.Unity.Animation
 
             AnimationLoopMode loopMode = AnimationLoopMode.Loop;
 
-            if (MotionParts != null)
+            var motionParts = MotionParts;
+            if (UseDedicatedChildForTime && motionParts != null && TimeDedicatedChildIndex >= 0 && TimeDedicatedChildIndex < motionParts.Length)
             {
+                var dedicatedController = layer.GetMotionController(motionParts[TimeDedicatedChildIndex].ControllerIndex);
+                if (dedicatedController != null) return dedicatedController.GetLoopMode(layer);
+            }
 
-                foreach (var part in MotionParts)
+            if (motionParts != null && motionParts.Length > 0)
+            {
+                loopMode = AnimationLoopMode.PlayOnce;
+                foreach (var part in motionParts)
                 {
 
                     var controller = layer.GetMotionController(part.ControllerIndex);
                     if (controller == null) continue;
 
-                    loopMode = controller.GetLoopMode(layer);
-                    break;
-
+                    var loopMode_ = controller.GetLoopMode(layer);
+                    if (loopMode_ != AnimationLoopMode.PlayOnce)
+                    {
+                        loopMode = loopMode_;
+                        break;
+                    }
                 }
-
             }
 
             return loopMode;
@@ -1277,7 +1619,7 @@ namespace Swole.API.Unity.Animation
         public override float GetScaledDuration(IAnimationLayer layer)
         {
 
-            if (MotionParts == null) return 0;
+            if (MotionParts == null) return 0f;
 
             if (UseDedicatedChildForTime)
             {
@@ -1290,7 +1632,7 @@ namespace Swole.API.Unity.Animation
                 return controller.GetScaledDuration(layer);
             }
 
-            float length = 0;
+            float length = 0f;
 
             for (int a = 0; a < MotionParts.Length; a++)
             {
@@ -1300,7 +1642,6 @@ namespace Swole.API.Unity.Animation
                 if (controller == null) continue;
 
                 length = math.max(length, controller.GetScaledDuration(layer)); // always uses scaled length because children can have varied playback speeds
-
             }
 
             return length;
@@ -1385,7 +1726,7 @@ namespace Swole.API.Unity.Animation
 
                 float duration = controller.GetDuration(layer);
                 float t = controller.GetTime(layer, addTime) - (duration * dedicatedChild.NormalizedStartTime);
-                if (t < 0f || t > duration) t = Maths.wrap(t, duration);
+                if (controller.GetLoopMode(layer) != AnimationLoopMode.PlayOnce && (t < 0f || t > duration)) t = Maths.wrap(t, duration);
                 return t;
             }
 
@@ -1404,7 +1745,7 @@ namespace Swole.API.Unity.Animation
 
                     float addTimeScaled = length <= 0 ? 0 : (addTime * (maxLength / length)); // Keep add time uniform among all children
                     float t = controller.GetTime(layer, addTimeScaled) - (duration * part.normalizedStartTime);
-                    if (t < 0f || t > duration) t = Maths.wrap(t, duration);
+                    if (controller.GetLoopMode(layer) != AnimationLoopMode.PlayOnce && (t < 0f || t > duration)) t = Maths.wrap(t, duration);
                     time = addTime < 0 ? math.max(time, t) : math.min(time, t);
                 }
             }
@@ -1427,7 +1768,7 @@ namespace Swole.API.Unity.Animation
                 if (controller == null) return 0f;
 
                 float nT = controller.GetNormalizedTime(layer, addTime) - dedicatedChild.NormalizedStartTime;
-                if (nT < 0f || nT > 1f) nT = Maths.wrap(nT, 1f);
+                if (controller.GetLoopMode(layer) != AnimationLoopMode.PlayOnce && (nT < 0f || nT > 1f)) nT = Maths.wrap(nT, 1f);
                 return nT;
             }
 
@@ -1436,21 +1777,90 @@ namespace Swole.API.Unity.Animation
             float maxLength = GetScaledDuration(layer);
             for (int a = 0; a < MotionParts.Length; a++)
             {
-
                 var part = MotionParts[a];
                 var controller = layer.GetMotionController(part.ControllerIndex);
                 if (controller == null) continue;
+                
                 float length = controller.GetScaledDuration(layer);
                 if (length == maxLength) // use normalized time of controller with longest duration
                 {
                     float addTimeScaled = length <= 0f ? 0f : (addTime * (maxLength / length)); // Keep add time uniform among all children
                     float nt = controller.GetNormalizedTime(layer, addTimeScaled) - part.NormalizedStartTime;
-                    if (nt < 0f || nt > 1f) nt = Maths.wrap(nt, 1f);
-                    time = addTime < 0 ? math.max(time, nt) : math.min(time, nt);
+                    if (controller.GetLoopMode(layer) != AnimationLoopMode.PlayOnce && (nt < 0f || nt > 1f)) nt = Maths.wrap(nt, 1f);
+                    time = addTime < 0f ? math.max(time, nt) : math.min(time, nt);
                 }
             }
 
             return time;
+
+        }
+
+        public override float GetPreviousTime(IAnimationLayer layer)
+        {
+
+            if (MotionParts == null) return 0f;
+
+            if (UseDedicatedChildForTime)
+            {
+                if (TimeDedicatedChildIndex < 0 || TimeDedicatedChildIndex >= MotionParts.Length) return 0f;
+
+                var dedicatedChild = MotionParts[TimeDedicatedChildIndex];
+                var controller = layer.GetMotionController(dedicatedChild.ControllerIndex);
+                if (controller == null) return 0f;
+
+                return controller.GetPreviousTime(layer);
+            }
+
+            float maxLength = GetScaledDuration(layer);
+            for (int a = 0; a < MotionParts.Length; a++)
+            {
+
+                var part = MotionParts[a];
+                var controller = layer.GetMotionController(part.ControllerIndex);
+                if (controller == null) continue;
+
+                float length = controller.GetScaledDuration(layer);
+                if (length == maxLength) // use time of controller with longest duration
+                {
+                    return controller.GetPreviousTime(layer);
+                }
+            }
+
+            return 0f;
+
+        }
+
+        public override float GetPreviousNormalizedTime(IAnimationLayer layer)
+        {
+
+            if (MotionParts == null) return 0f;
+
+            if (UseDedicatedChildForTime)
+            {
+                if (TimeDedicatedChildIndex < 0 || TimeDedicatedChildIndex >= MotionParts.Length) return 0f;
+
+                var dedicatedChild = MotionParts[TimeDedicatedChildIndex];
+                var controller = layer.GetMotionController(dedicatedChild.ControllerIndex);
+                if (controller == null) return 0f;
+
+                return controller.GetPreviousNormalizedTime(layer);
+            }
+
+            float maxLength = GetScaledDuration(layer);
+            for (int a = 0; a < MotionParts.Length; a++)
+            {
+                var part = MotionParts[a];
+                var controller = layer.GetMotionController(part.ControllerIndex);
+                if (controller == null) continue;
+
+                float length = controller.GetScaledDuration(layer);
+                if (length == maxLength) // use normalized time of controller with longest duration
+                {
+                    return controller.GetPreviousNormalizedTime(layer);
+                }
+            }
+
+            return 0f;
 
         }
 
@@ -1503,6 +1913,35 @@ namespace Swole.API.Unity.Animation
                 }
             }
 
+        }
+
+        public override void ForceSetPreviousTime(IAnimationLayer layer, float time)
+        {
+            if (MotionParts == null) return;
+
+            for (int a = 0; a < MotionParts.Length; a++)
+            {
+
+                var motionField = MotionParts[a];
+                var controller = layer.GetMotionController(motionField.ControllerIndex);
+                if (controller is not CustomMotionController cmc) continue;
+
+                cmc.ForceSetPreviousTime(layer, time);
+            }
+        }
+        public override void ForceSetPreviousNormalizedTime(IAnimationLayer layer, float normalizedTime)
+        {
+            if (MotionParts == null) return;
+
+            for (int a = 0; a < MotionParts.Length; a++)
+            {
+
+                var motionField = MotionParts[a];
+                var controller = layer.GetMotionController(motionField.ControllerIndex);
+                if (controller is not CustomMotionController cmc) continue;
+
+                cmc.ForceSetPreviousNormalizedTime(layer, normalizedTime);
+            }
         }
 
         [NonSerialized]
@@ -1573,7 +2012,7 @@ namespace Swole.API.Unity.Animation
             }
         }
 
-        public override void Progress(IAnimationLayer layer, float deltaTime, ref JobHandle jobHandle, bool useMultithreading = true, bool isFinal = false, bool canLoop = true)
+        public override void Progress(IAnimationLayer layer, float deltaTime, ref JobHandle jobHandle, bool useMultithreading = true, bool isFinal = false, bool previousWasFinal = false, bool canLoop = true)
         {
 
             if (MotionParts == null) return;
@@ -1599,13 +2038,16 @@ namespace Swole.API.Unity.Animation
                         if (controller is not CustomMotionController cmc) continue;
 
                         sync_duration = controller.GetDuration(layer);
+                        if (Mathf.Approximately(sync_duration, 0f)) continue;
+
                         sync_time = controller.GetTime(layer) - (sync_duration * motionField.NormalizedStartTime);
                         firstIndex = a;
                         break;
                     }
                 }
 
-                float sync_duration_abs = math.abs(sync_duration); 
+                float sync_duration_abs = math.abs(sync_duration);
+                bool sync_duration_zero = Mathf.Approximately(sync_duration, 0f);
                 for (int a = firstIndex + 1; a < MotionParts.Length; a++)
                 {
                     if (UseDedicatedChildForTime && a == TimeDedicatedChildIndex) continue; // skip dedicated child
@@ -1621,9 +2063,9 @@ namespace Swole.API.Unity.Animation
                     float offset = duration * motionField.NormalizedStartTime;
 
                     float localTime = 0f;
-                    if (sync_duration != 0f)
+                    if (!sync_duration_zero)
                     {
-                        bool isSmaller = sync_duration_abs >= duration_abs;
+                        /*bool isSmaller = sync_duration_abs >= duration_abs;
                         float ratio = isSmaller ? (sync_duration / duration) : (duration / sync_duration);
                         ratio = (ratio - math.floor(ratio)) + 1f;
                         float scalingRatio = isSmaller ? ratio : 1f; 
@@ -1640,7 +2082,8 @@ namespace Swole.API.Unity.Animation
 
                         //Debug.Log($"{Name}: {controller.Name}: ST:{sync_time}  CT:{currentTime}  ERROR:{error}"); 
 
-                        localTime = (currentTimeScaled - error) / scalingRatio;
+                        localTime = (currentTimeScaled - error) / scalingRatio;*/
+                        localTime = sync_time * (duration_abs / sync_duration_abs); 
                     }
 
                     controller.SetTime(layer, localTime + offset, false); // force sync all controllers to the sync controller's time
@@ -1659,6 +2102,8 @@ namespace Swole.API.Unity.Animation
 
             }
 
+            blendSpeed = 0f;
+            float blendSpeedWeightSum = 0f;
             for (int a = 0; a < MotionParts.Length; a++)
             {
                 var motionPart = MotionParts[a];
@@ -1701,7 +2146,15 @@ namespace Swole.API.Unity.Animation
                         }
                         break;
                 }
+
+                if (useBlendSpeed)
+                {
+                    float mix = motionPart.GetMix(layer);
+                    blendSpeed += motionPart.GetBlendSpeed(layer) * mix;
+                    blendSpeedWeightSum += mix;
+                }
             }
+            if (useBlendSpeed && !blendSpeedIsAdditive && blendSpeedWeightSum > 0f) blendSpeed /= blendSpeedWeightSum;
 
             for (int a = 0; a < MotionParts.Length; a++)
             {
@@ -1715,7 +2168,7 @@ namespace Swole.API.Unity.Animation
 
                 cmc.SetWeight(motionPart.GetMix(layer));
                 cmc.SyncWeight(layer);
-                cmc.Progress(layer, deltaTime, ref jobHandle, useMultithreading, isFinal && finalIndices[a], canLoop);
+                cmc.Progress(layer, deltaTime, ref jobHandle, useMultithreading, isFinal && finalIndices[a], previousWasFinal, canLoop);
             }           
         }
 
@@ -1754,11 +2207,16 @@ namespace Swole.API.Unity.Animation
             }
         }
 
-        public override float GetBoneHeight(IAnimationLayer layer, string boneName, float timeOffset)
+        public override float GetBoneHeight(IAnimationLayer layer, string boneName, float timeOffset, out bool foundCurve)
         {
-            if (MotionParts == null) return 0f;
+            if (MotionParts == null)
+            {
+                foundCurve = false;
+                return 0f;
+            }
 
             float height = 0f;
+            foundCurve = false;
             for (int a = 0; a < MotionParts.Length; a++)
             {
 
@@ -1766,17 +2224,23 @@ namespace Swole.API.Unity.Animation
                 var controller = layer.GetMotionController(part.ControllerIndex);
                 if (controller == null) continue;
 
-                height += controller.GetBoneHeight(layer, boneName, timeOffset);
+                height += controller.GetBoneHeight(layer, boneName, timeOffset, out bool partFoundCurve);
+                if (partFoundCurve) foundCurve = true;
 
             }
 
             return height;
         }
-        public override float GetBoneHeightAtTime(IAnimationLayer layer, string boneName, float time)
+        public override float GetBoneHeightAtTime(IAnimationLayer layer, string boneName, float time, out bool foundCurve)
         {
-            if (MotionParts == null) return 0f;
+            if (MotionParts == null)
+            {
+                foundCurve = false;
+                return 0f;
+            }
 
             float height = 0f;
+            foundCurve = false;
             for (int a = 0; a < MotionParts.Length; a++)
             {
 
@@ -1784,11 +2248,44 @@ namespace Swole.API.Unity.Animation
                 var controller = layer.GetMotionController(part.ControllerIndex);
                 if (controller == null) continue;
 
-                height += controller.GetBoneHeightAtTime(layer, boneName, time);
+                height += controller.GetBoneHeightAtTime(layer, boneName, time, out bool partFoundCurve);
+                if (partFoundCurve) foundCurve = true;
 
             }
 
             return height;
+        }
+
+        public override bool SampleInto(IAnimationLayer layer, CustomAnimator.SampledPose pose, float timeOffset, float weight, IReadOnlyDictionary<int, float> parameterOverrides = null)
+        {
+            if (pose == null || MotionParts == null) return false;
+
+            bool sampled = false;
+            for (int a = 0; a < MotionParts.Length; a++)
+            {
+                var part = MotionParts[a];
+                if (layer.GetMotionController(part.ControllerIndex) is not CustomMotionController cmc) continue;
+                sampled |= cmc.SampleInto(layer, pose, timeOffset, weight * GetSampleMix(part, layer, parameterOverrides), parameterOverrides);
+            }
+
+            return sampled;
+        }
+
+        public override bool AffectsTransform(IAnimationLayer layer, string transformName)
+        {
+            if (MotionParts == null) return false;
+
+            for (int a = 0; a < MotionParts.Length; a++)
+            {
+
+                var part = MotionParts[a];
+                var controller = layer.GetMotionController(part.ControllerIndex);
+                if (controller == null) continue;
+
+                if (controller.AffectsTransform(layer, transformName)) return true;
+            }
+
+            return false;
         }
 
         public override void NonAdditivePrepass(bool useMultithreading, IAnimationLayer layer)
@@ -1802,6 +2299,20 @@ namespace Swole.API.Unity.Animation
                 if (controller == null) continue;
 
                 controller.NonAdditivePrepass(useMultithreading, layer);
+            }
+        }
+
+        public override void ApplyPropertyStates(IAnimationLayer layer)
+        {
+            if (MotionParts == null) return;
+
+            for (int a = 0; a < MotionParts.Length; a++)
+            {
+                var motionPart = MotionParts[a];
+                var controller = layer.GetMotionController(motionPart.ControllerIndex);
+                if (controller == null) continue;
+
+                controller.ApplyPropertyStates(layer);
             }
         }
 
@@ -1855,6 +2366,35 @@ namespace Swole.API.Unity.Animation
             return controller.GetDuration(layer);
         }
 
+        [SerializeField]
+        public bool useBlendSpeed;
+        public bool UseBlendSpeed
+        {
+            get => useBlendSpeed;
+            set => useBlendSpeed = value;
+        }
+
+        [NonSerialized]
+        public float blendSpeed = 1f;
+
+        public override float GetSpeed(IAnimationLayer layer)
+        {
+
+            float speed = base.GetSpeed(layer);
+
+            if (useBlendSpeed) speed = speed * blendSpeed; 
+
+            return speed;
+
+        }
+
+        public override float GetSampleSpeed(IAnimationLayer layer, IReadOnlyDictionary<int, float> parameterOverrides)
+        {
+            float speed = base.GetSampleSpeed(layer, parameterOverrides);
+            if (useBlendSpeed && parameterOverrides != null && parameterOverrides.Count > 0) speed = speed * blendSpeed;
+            return speed;
+        }
+
         public override void Initialize(IAnimationLayer layer, List<AvatarMaskUsage> masks, IAnimationMotionController parent = null)
         {
 
@@ -1872,9 +2412,11 @@ namespace Swole.API.Unity.Animation
                     if (controller != null)
                     {
 
+                        int initialMasksCount = masks == null ? 0 : masks.Count;
                         controller.Initialize(layer, masks, this);
+                        if (masks  != null) masks.RemoveRange(initialMasksCount, masks.Count - initialMasksCount);
 
-                        float speed = 1f;
+                        float speed = field.ReplaceBaseSpeed ? 1f : controller.BaseSpeed; 
                         if (normalizeDurations)
                         {
                             if (normalizedDuration <= 0f)
@@ -1883,16 +2425,20 @@ namespace Swole.API.Unity.Animation
                             }
                             else
                             {
-                                float duration = controller.GetDuration(layer); 
-                                speed = duration / normalizedDuration;
-                                if (duration <= 0f) Debug.LogError($"{controller.Name} duration is negative or zero: {duration} (BaseSpeed: {controller.BaseSpeed})");
+                                float duration = Mathf.Approximately(speed, 0f) ? 0f : (controller.GetDuration(layer) / math.abs(speed));
+                                speed = (duration / normalizedDuration) * Mathf.Sign(speed);
+#if UNITY_EDITOR
+                                if (duration <= 0f) Debug.LogWarning($"{controller.Name} duration is negative or zero: {duration} (BaseSpeed: {controller.BaseSpeed})");
+#endif
                             }
                         }
 
                         controller.BaseSpeed = speed * field.Speed;
+#if UNITY_EDITOR
                         if (normalizeDurations) Debug.Log($"{Name} Normalized Duration for {controller.Name}. (Normalized Speed:{speed}) (Base Speed:{controller.BaseSpeed}) (Duration:{controller.GetScaledDuration(layer)})");
+#endif
 
-                        controller.SetNormalizedTime(layer, field.NormalizedStartTime);
+                        controller.SetNormalizedTime(layer, field.NormalizedStartTime);  
                     }
 
                 }
@@ -1946,7 +2492,7 @@ namespace Swole.API.Unity.Animation
                 for (int a = 0; a < ParameterCount; a++)
                 {
                     int paramIndex = GetParameterIndex(a);
-                    if (paramIndex > 0) indices.Add(paramIndex);
+                    if (paramIndex >= 0) indices.Add(paramIndex);
                 }
 
             }
@@ -1956,6 +2502,8 @@ namespace Swole.API.Unity.Animation
 
                 foreach (var field in BaseMotionFields)
                 {
+
+                    if (field.BlendSpeedParameterIndex >= 0) indices.Add(field.BlendSpeedParameterIndex);
 
                     var controller = layer.GetMotionController(field.ControllerIndex);
                     if (controller == null) continue;
@@ -2048,22 +2596,25 @@ namespace Swole.API.Unity.Animation
 
             AnimationLoopMode loopMode = AnimationLoopMode.Loop;
 
-            if (BaseMotionFields != null)
+            var motionFields = BaseMotionFields;
+            if (motionFields != null && motionFields.Length > 0)
             {
-
-                foreach (var field in BaseMotionFields)
+                loopMode = AnimationLoopMode.PlayOnce;
+                foreach (var field in motionFields)
                 {
 
                     var controller = layer.GetMotionController(field.ControllerIndex);
                     if (controller == null) continue;
 
-                    loopMode = controller.GetLoopMode(layer);
-                    break;
-
+                    var loopMode_ = controller.GetLoopMode(layer);
+                    if (loopMode_ != AnimationLoopMode.PlayOnce)
+                    {
+                        loopMode = loopMode_;
+                        break;
+                    }
                 }
-
             }
-
+             
             return loopMode;
 
         }
@@ -2220,7 +2771,7 @@ namespace Swole.API.Unity.Animation
 
                 float duration = controller.GetDuration(layer);
                 float t = controller.GetTime(layer, addTime) - (duration * dedicatedChild.NormalizedStartTime);  
-                if (t < 0f || t > duration) t = Maths.wrap(t, duration);
+                if (controller.GetLoopMode(layer) != AnimationLoopMode.PlayOnce && (t < 0f || t > duration)) t = Maths.wrap(t, duration);
                 return t;
             }
 
@@ -2243,7 +2794,7 @@ namespace Swole.API.Unity.Animation
 
                 float addTimeScaled = length <= 0 ? 0 : (addTime * (maxLength / length)); // Keep add time uniform among all children
                 float t = controller.GetTime(layer, addTimeScaled) - (duration * motionField.NormalizedStartTime);
-                if (t < 0f || t > duration) t = Maths.wrap(t, duration);
+                if (controller.GetLoopMode(layer) != AnimationLoopMode.PlayOnce && (t < 0f || t > duration)) t = Maths.wrap(t, duration); 
                 time += t * weight;
 
             }
@@ -2266,7 +2817,7 @@ namespace Swole.API.Unity.Animation
                 if (controller == null) return 0f;
 
                 float nT = controller.GetNormalizedTime(layer, addTime) - dedicatedChild.NormalizedStartTime;
-                if (nT < 0f || nT > 1f) nT = Maths.wrap(nT, 1f);
+                if (controller.GetLoopMode(layer) != AnimationLoopMode.PlayOnce && (nT < 0f || nT > 1f)) nT = Maths.wrap(nT, 1f);
                 return nT;
             }
 
@@ -2288,8 +2839,84 @@ namespace Swole.API.Unity.Animation
 
                 float addTimeScaled = length <= 0f ? 0f : (addTime * (maxLength / length)); // Keep add time uniform among all children
                 float nt = controller.GetNormalizedTime(layer, addTimeScaled) - motionField.NormalizedStartTime;
-                if (nt < 0f || nt > 1f) nt = Maths.wrap(nt, 1f);
+                if (controller.GetLoopMode(layer) != AnimationLoopMode.PlayOnce && (nt < 0f || nt > 1f)) nt = Maths.wrap(nt, 1f);
                 time += nt * weight;
+            }
+
+            return totalWeight > 0f ? (time / totalWeight) : time;
+
+        }
+
+        public override float GetPreviousTime(IAnimationLayer layer)
+        {
+
+            if (BaseMotionFields == null) return 0f;
+
+            if (UseDedicatedChildForTime)
+            {
+                if (TimeDedicatedChildIndex < 0 || TimeDedicatedChildIndex >= BaseMotionFields.Length) return 0f;
+
+                var dedicatedChild = BaseMotionFields[TimeDedicatedChildIndex];
+                var controller = layer.GetMotionController(dedicatedChild.ControllerIndex);
+                if (controller == null) return 0f;
+
+                return controller.GetPreviousTime(layer);
+            }
+
+            float totalWeight = 0f;
+            float time = 0f;
+
+            float maxLength = GetMaxScaledDuration(layer);
+            for (int a = 0; a < BaseMotionFields.Length; a++)
+            {
+
+                var motionField = BaseMotionFields[a];
+                var controller = layer.GetMotionController(motionField.ControllerIndex);
+                if (controller == null) continue;
+
+                float weight = Mathf.Abs(controller.GetBaseWeight());
+                totalWeight += weight;
+
+                time += controller.GetPreviousTime(layer) * weight;
+
+            }
+
+            return totalWeight > 0f ? (time / totalWeight) : time;
+
+        }
+
+        public override float GetPreviousNormalizedTime(IAnimationLayer layer)
+        {
+
+            if (BaseMotionFields == null) return 0f;
+
+            if (UseDedicatedChildForTime)
+            {
+                if (TimeDedicatedChildIndex < 0 || TimeDedicatedChildIndex >= BaseMotionFields.Length) return 0f; 
+
+                var dedicatedChild = BaseMotionFields[TimeDedicatedChildIndex];
+                var controller = layer.GetMotionController(dedicatedChild.ControllerIndex);
+                if (controller == null) return 0f;
+
+                return controller.GetPreviousNormalizedTime(layer); 
+            }
+
+            float totalWeight = 0f;
+            float time = 0f;
+
+            float maxLength = GetMaxScaledDuration(layer);
+            for (int a = 0; a < BaseMotionFields.Length; a++)
+            {
+
+                var motionField = BaseMotionFields[a];
+                var controller = layer.GetMotionController(motionField.ControllerIndex);
+                if (controller == null) continue;
+
+                float weight = Mathf.Abs(controller.GetBaseWeight());
+                totalWeight += weight;
+
+                time += controller.GetPreviousNormalizedTime(layer) * weight;
+
             }
 
             return totalWeight > 0f ? (time / totalWeight) : time;
@@ -2344,6 +2971,35 @@ namespace Swole.API.Unity.Animation
                 }
             }
 
+        }
+
+        public override void ForceSetPreviousTime(IAnimationLayer layer, float time)
+        {
+            if (BaseMotionFields == null) return;
+
+            for (int a = 0; a < BaseMotionFields.Length; a++)
+            {
+
+                var motionField = BaseMotionFields[a];
+                var controller = layer.GetMotionController(motionField.ControllerIndex);
+                if (controller is not CustomMotionController cmc) continue;
+
+                cmc.ForceSetPreviousTime(layer, time);
+            }
+        }
+        public override void ForceSetPreviousNormalizedTime(IAnimationLayer layer, float normalizedTime)
+        {
+            if (BaseMotionFields == null) return;
+
+            for (int a = 0; a < BaseMotionFields.Length; a++)
+            {
+
+                var motionField = BaseMotionFields[a];
+                var controller = layer.GetMotionController(motionField.ControllerIndex);
+                if (controller is not CustomMotionController cmc) continue;
+
+                cmc.ForceSetPreviousNormalizedTime(layer, normalizedTime);
+            }
         }
 
         [NonSerialized]
@@ -2483,7 +3139,7 @@ namespace Swole.API.Unity.Animation
             return GetLastParameterValue(localParameterIndex);
         }
 
-        public override void Progress(IAnimationLayer layer, float deltaTime, ref JobHandle jobHandle, bool useMultithreading = true, bool isFinal = false, bool canLoop = true)
+        public override void Progress(IAnimationLayer layer, float deltaTime, ref JobHandle jobHandle, bool useMultithreading = true, bool isFinal = false, bool previousWasFinal = false, bool canLoop = true)
         {
             if (BaseMotionFields == null) return;
 
@@ -2495,9 +3151,9 @@ namespace Swole.API.Unity.Animation
                 float sync_duration = 0f;
                 int firstIndex = -1;
                 if (UseDedicatedChildForTime)
-                {
-                    sync_time = GetTime(layer, 0f);
+                {            
                     sync_duration = GetDuration(layer);
+                    sync_time = GetTime(layer, 0f);
                 }
                 else
                 {
@@ -2508,6 +3164,8 @@ namespace Swole.API.Unity.Animation
                         if (controller is not CustomMotionController cmc) continue;
 
                         sync_duration = controller.GetDuration(layer);
+                        if (Mathf.Approximately(sync_duration, 0f)) continue;
+
                         sync_time = controller.GetTime(layer) - (sync_duration * motionField.NormalizedStartTime);
                         firstIndex = a;
                         break;
@@ -2515,6 +3173,7 @@ namespace Swole.API.Unity.Animation
                 }
 
                 float sync_duration_abs = math.abs(sync_duration);
+                bool sync_duration_zero = Mathf.Approximately(sync_duration, 0f);
                 for (int a = firstIndex + 1; a < BaseMotionFields.Length; a++)
                 {
                     if (UseDedicatedChildForTime && a == TimeDedicatedChildIndex) continue; // skip dedicated child
@@ -2524,15 +3183,15 @@ namespace Swole.API.Unity.Animation
                     if (controller is not CustomMotionController cmc) continue;
 
                     var duration = controller.GetDuration(layer);
-                    if (duration == 0f) continue;
+                    if (Mathf.Approximately(duration, 0f)) continue;
 
                     float duration_abs = math.abs(duration);
                     float offset = duration * motionField.NormalizedStartTime;
 
                     float localTime = 0f;
-                    if (sync_duration != 0f)
+                    if (!sync_duration_zero)
                     {
-                        bool isSmaller = sync_duration_abs >= duration_abs;
+                        /*bool isSmaller = sync_duration_abs >= duration_abs;
                         float ratio = isSmaller ? (sync_duration / duration) : (duration / sync_duration);
                         ratio = (ratio - math.floor(ratio)) + 1f;
                         float scalingRatio = isSmaller ? ratio : 1f;
@@ -2549,7 +3208,8 @@ namespace Swole.API.Unity.Animation
 
                         //Debug.Log($"{Name}: {controller.Name}: ST:{sync_time}  CT:{currentTime}  ERROR:{error}"); 
 
-                        localTime = (currentTimeScaled - error) / scalingRatio;   
+                        localTime = (currentTimeScaled - error) / scalingRatio;  */
+                        localTime = sync_time * (duration_abs / sync_duration_abs);
                     }
 
                     controller.SetTime(layer, localTime + offset, false); // force sync all controllers to the sync controller's time
@@ -2558,7 +3218,7 @@ namespace Swole.API.Unity.Animation
 
             float normalizedTime = GetNormalizedTime(layer);
             UpdateBlendValues(layer, normalizedTime, deltaTime);
-
+            
             if (!waitForLoops)
             {
                 canLoop = true;
@@ -2567,6 +3227,24 @@ namespace Swole.API.Unity.Animation
             {
                 normalizedTime = normalizedTime + deltaTime;
                 canLoop = deltaTime < 0f && normalizedTime <= 0f || deltaTime >= 0f && normalizedTime >= 1f;
+            }
+
+            if (useBlendSpeed)
+            {
+                blendSpeed = 0f;
+                float blendSpeedWeightSum = 0f;
+                for (int a = 0; a < BaseMotionFields.Length; a++)
+                {
+                    var motionField = BaseMotionFields[a];
+
+                    var controller = layer.GetMotionController(motionField.ControllerIndex);
+                    if (controller == null) continue;
+
+                    float mix = controller.GetBaseWeight();
+                    blendSpeed += motionField.GetBlendSpeed(layer) * mix;
+                    blendSpeedWeightSum += mix;
+                }
+                if (blendSpeedWeightSum > 0f) blendSpeed /= blendSpeedWeightSum; 
             }
 
             for (int a = 0; a < BaseMotionFields.Length; a++)
@@ -2583,7 +3261,7 @@ namespace Swole.API.Unity.Animation
 #if UNITY_EDITOR
                 //if (cmc.Parent == null || !ReferenceEquals(this, cmc.Parent)) Debug.LogError($"NULL OR MISMATCHED PARENT FOR {cmc.Name} (REAL PARENT: {Name}) (CURRENT PARENT: {(cmc.Parent == null ? "null" : cmc.Parent.Name)})"); 
 #endif
-                cmc.Progress(layer, deltaTime, ref jobHandle, useMultithreading, isFinal && finalIndices[a], canLoop);
+                cmc.Progress(layer, deltaTime, ref jobHandle, useMultithreading, isFinal && finalIndices[a], previousWasFinal, canLoop); 
             }
         }
 
@@ -2622,11 +3300,16 @@ namespace Swole.API.Unity.Animation
             }
         }
 
-        public override float GetBoneHeight(IAnimationLayer layer, string boneName, float timeOffset)
+        public override float GetBoneHeight(IAnimationLayer layer, string boneName, float timeOffset, out bool foundCurve)
         {
-            if (BaseMotionFields == null) return 0f;
+            if (BaseMotionFields == null)
+            {
+                foundCurve = false;
+                return 0f;
+            }
 
             float height = 0f;
+            foundCurve = false;
             for (int a = 0; a < BaseMotionFields.Length; a++)
             {
 
@@ -2634,17 +3317,23 @@ namespace Swole.API.Unity.Animation
                 var controller = layer.GetMotionController(part.ControllerIndex);
                 if (controller == null) continue;
 
-                height += controller.GetBoneHeight(layer, boneName, timeOffset);
+                height += controller.GetBoneHeight(layer, boneName, timeOffset, out bool partFoundCurve);
+                if (partFoundCurve) foundCurve = true;
 
             }
 
             return height;
         }
-        public override float GetBoneHeightAtTime(IAnimationLayer layer, string boneName, float time)
+        public override float GetBoneHeightAtTime(IAnimationLayer layer, string boneName, float time, out bool foundCurve)
         {
-            if (BaseMotionFields == null) return 0f;
+            if (BaseMotionFields == null)
+            {
+                foundCurve = false;
+                return 0f;
+            }
 
             float height = 0f;
+            foundCurve = false; 
             for (int a = 0; a < BaseMotionFields.Length; a++)
             {
 
@@ -2652,11 +3341,58 @@ namespace Swole.API.Unity.Animation
                 var controller = layer.GetMotionController(part.ControllerIndex);
                 if (controller == null) continue;
 
-                height += controller.GetBoneHeightAtTime(layer, boneName, time);
+                height += controller.GetBoneHeightAtTime(layer, boneName, time, out bool partFoundCurve); 
+                if (partFoundCurve) foundCurve = true;
 
             }
 
             return height;
+        }
+
+        public override bool SampleInto(IAnimationLayer layer, CustomAnimator.SampledPose pose, float timeOffset, float weight, IReadOnlyDictionary<int, float> parameterOverrides = null)
+        {
+            if (pose == null || BaseMotionFields == null) return false;
+
+            float[] sampleWeights = null;
+            if (parameterOverrides != null && parameterOverrides.Count > 0)
+            {
+                sampleWeights = new float[BaseMotionFields.Length];
+                if (!TryGetSampleWeights(layer, parameterOverrides, sampleWeights)) sampleWeights = null;
+            }
+
+            bool sampled = false;
+            for (int a = 0; a < BaseMotionFields.Length; a++)
+            {
+                if (layer.GetMotionController(BaseMotionFields[a].ControllerIndex) is not CustomMotionController cmc) continue;
+                float childWeight = sampleWeights == null ? cmc.GetBaseWeight() : sampleWeights[a];
+                if (childWeight == 0f) continue;
+                sampled |= cmc.SampleInto(layer, pose, timeOffset, weight * childWeight, parameterOverrides);
+            }
+
+            return sampled;
+        }
+
+        /// <summary>
+        /// Computes per-field blend weights for sampling when one of this tree's blend parameters is overridden, mirroring <see cref="UpdateBlendValues"/> without modifying any state.
+        /// Returns false if no relevant override exists, in which case the live weights are used.
+        /// </summary>
+        protected virtual bool TryGetSampleWeights(IAnimationLayer layer, IReadOnlyDictionary<int, float> parameterOverrides, float[] weights) => false;
+
+        public override bool AffectsTransform(IAnimationLayer layer, string transformName)
+        {
+            if (BaseMotionFields == null) return false;
+
+            for (int a = 0; a < BaseMotionFields.Length; a++)
+            {
+
+                var part = BaseMotionFields[a];
+                var controller = layer.GetMotionController(part.ControllerIndex);
+                if (controller == null) continue;
+
+                if (controller.AffectsTransform(layer, transformName)) return true;
+            }
+
+            return false;
         }
 
         public override void NonAdditivePrepass(bool useMultithreading, IAnimationLayer layer)
@@ -2670,6 +3406,20 @@ namespace Swole.API.Unity.Animation
                 if (controller == null) continue;
 
                 controller.NonAdditivePrepass(useMultithreading, layer);
+            }
+        }
+
+        public override void ApplyPropertyStates(IAnimationLayer layer)
+        {
+            if (BaseMotionFields == null) return;
+
+            for (int a = 0; a < BaseMotionFields.Length; a++)
+            {
+                var part = BaseMotionFields[a];
+                var controller = layer.GetMotionController(part.ControllerIndex);
+                if (controller == null) continue;
+                 
+                controller.ApplyPropertyStates(layer);
             }
         }
 
@@ -2709,6 +3459,8 @@ namespace Swole.API.Unity.Animation
             public bool useDedicatedChildForTime;
             public int timeDedicatedChildIndex;
 
+            public bool useBlendSpeed;
+
             public string AsJSON(bool prettyPrint = false) => swole.Engine.ToJson(this, prettyPrint);
 
             public object AsNonserializableObject(PackageInfo packageInfo = default) => AsOriginalType(packageInfo);
@@ -2740,6 +3492,8 @@ namespace Swole.API.Unity.Animation
 
                 anim.useDedicatedChildForTime = useDedicatedChildForTime;
                 anim.timeDedicatedChildIndex = timeDedicatedChildIndex;
+
+                anim.useBlendSpeed = useBlendSpeed;
 
                 return anim;
             }
@@ -2780,6 +3534,8 @@ namespace Swole.API.Unity.Animation
                 s.useDedicatedChildForTime = inst.useDedicatedChildForTime;
                 s.timeDedicatedChildIndex = inst.timeDedicatedChildIndex;
 
+                s.useBlendSpeed = inst.useBlendSpeed;
+
                 return s;
             }
 
@@ -2819,6 +3575,8 @@ namespace Swole.API.Unity.Animation
             clone.useDedicatedChildForTime = useDedicatedChildForTime;
             clone.timeDedicatedChildIndex = timeDedicatedChildIndex;
 
+            clone.useBlendSpeed = useBlendSpeed;
+
             return clone;
 
         }
@@ -2830,13 +3588,13 @@ namespace Swole.API.Unity.Animation
             if (onlyAddIfNotPresent)
             {
 
-                foreach (var field in motionFields) if (!indices.Contains(field.controllerIndex)) indices.Add(field.controllerIndex);
+                foreach (var field in motionFields) if (field.controllerIndex >= 0 && !indices.Contains(field.controllerIndex)) indices.Add(field.controllerIndex);
                 
             }
             else
             {
 
-                foreach (var field in motionFields) indices.Add(field.controllerIndex);
+                foreach (var field in motionFields) if (field.controllerIndex >= 0) indices.Add(field.controllerIndex);
 
             }
 
@@ -2945,26 +3703,47 @@ namespace Swole.API.Unity.Animation
 
             }
 
-            if (remapChildren)
+            if (motionFields != null)
             {
-                if (motionFields != null)
-                {
 
-                    foreach (var field in motionFields)
+                for (int a = 0; a < motionFields.Length; a++)
+                {
+                    var field = motionFields[a];
+
+                    if (field.BlendSpeedParameterIndex >= 0)
+                    {
+
+                        int origIndex = field.BlendSpeedParameterIndex;
+                        if (!remapper.TryGetValue(origIndex, out field.blendSpeedParameterIndex) && invalidateNonRemappedIndices)
+                        {
+                            field.blendSpeedParameterIndex = -1;
+
+#if UNITY_EDITOR
+                            Debug.LogError($"Failed to remap blend speed parameter index {origIndex} for {GetType().Name} '{name}', (Field:{a})");
+#else
+                            swole.LogError($"Failed to remap blend speed parameter index {origIndex} for {GetType().Name} '{name}', (Field:{a})");
+#endif
+                        }
+
+                    }
+                    
+                    if (remapChildren)
                     {
 
                         var controller = layer.GetMotionController(field.controllerIndex);
                         if (controller == null) continue;
 
-                        controller.RemapParameterIndices(layer, remapper, invalidateNonRemappedIndices, remapChildren); 
+                        controller.RemapParameterIndices(layer, remapper, invalidateNonRemappedIndices, remapChildren);
 
                     }
 
                 }
+
             }
 
         }
 
+        private static int SortMotionFields(MotionField1D mfA, MotionField1D mfB) => Math.Sign(mfA.threshold - mfB.threshold);
         public override void Initialize(IAnimationLayer layer, List<AvatarMaskUsage> masks, IAnimationMotionController parent = null)
         {
             base.Initialize(layer, masks, parent);
@@ -2988,8 +3767,8 @@ namespace Swole.API.Unity.Animation
                 if (needsToBeSorted)
                 {
                     List<MotionField1D> sortedFields = new List<MotionField1D>(motionFields);
-                    sortedFields.Sort((MotionField1D mfA, MotionField1D mfB) => Math.Sign(mfA.threshold - mfB.threshold));
-                    motionFields = sortedFields.ToArray();
+                    sortedFields.Sort(SortMotionFields);
+                    motionFields = sortedFields.ToArray(); 
                     sortedFields.Clear();
                 }
             }
@@ -3023,7 +3802,7 @@ namespace Swole.API.Unity.Animation
                     }
                     else
                     {
-                        motionFields[a] = new MotionField1D() { speed = mf.Speed, threshold = mf.Threshold, controllerIndex = mf.ControllerIndex };
+                        motionFields[a] = new MotionField1D() { replaceBaseSpeed = mf.ReplaceBaseSpeed, speed = mf.Speed, threshold = mf.Threshold, controllerIndex = mf.ControllerIndex, blendSpeed = mf.BlendSpeed, blendSpeedParameterIndex = mf.BlendSpeedParameterIndex };
                     }
                 }
             }
@@ -3111,6 +3890,41 @@ namespace Swole.API.Unity.Animation
 
         }
 
+        protected override bool TryGetSampleWeights(IAnimationLayer layer, IReadOnlyDictionary<int, float> parameterOverrides, float[] weights)
+        {
+            if (layer == null || motionFields == null || !HasParameterOverride(ParameterIndex, parameterOverrides)) return false;
+
+            float thresholdPosition = parameterOverrides[ParameterIndex];
+            for (int a = 0; a < motionFields.Length; a++)
+            {
+                var motionField = motionFields[a];
+                if (layer.GetMotionController(motionField.controllerIndex) == null) continue;
+
+                if (motionField.threshold > thresholdPosition || a == motionFields.Length - 1)
+                {
+                    int minIndex = a - 1;
+                    int maxIndex = a;
+                    if (minIndex < 0) minIndex = 0;
+
+                    if (minIndex == maxIndex)
+                    {
+                        weights[maxIndex] = 1f;
+                    }
+                    else
+                    {
+                        var prevMotionField = motionFields[minIndex];
+                        float interp = math.saturate((thresholdPosition - prevMotionField.threshold) / (motionField.threshold - prevMotionField.threshold));
+                        weights[minIndex] = 1f - interp;
+                        weights[maxIndex] = interp;
+                    }
+
+                    break;
+                }
+            }
+
+            return true;
+        }
+
     }
 
     [Serializable]
@@ -3151,6 +3965,8 @@ namespace Swole.API.Unity.Animation
             public BlendValuesUpdateLimit parameterY_UpdateLimit;
             public float2 parameterY_UpdateNormalizedTimeRange;
 
+            public bool useBlendSpeed;
+
             public string AsJSON(bool prettyPrint = false) => swole.Engine.ToJson(this, prettyPrint);
 
             public object AsNonserializableObject(PackageInfo packageInfo = default) => AsOriginalType(packageInfo);
@@ -3183,6 +3999,8 @@ namespace Swole.API.Unity.Animation
 
                 anim.useDedicatedChildForTime = useDedicatedChildForTime;
                 anim.timeDedicatedChildIndex = timeDedicatedChildIndex;
+
+                anim.useBlendSpeed = useBlendSpeed;
 
                 return anim;
             }
@@ -3224,6 +4042,8 @@ namespace Swole.API.Unity.Animation
 
                 s.useDedicatedChildForTime = inst.useDedicatedChildForTime;
                 s.timeDedicatedChildIndex = inst.timeDedicatedChildIndex;
+
+                s.useBlendSpeed = inst.useBlendSpeed;
 
                 return s;
             }
@@ -3267,6 +4087,8 @@ namespace Swole.API.Unity.Animation
             clone.useDedicatedChildForTime = useDedicatedChildForTime;
             clone.timeDedicatedChildIndex = timeDedicatedChildIndex;
 
+            clone.useBlendSpeed = useBlendSpeed;
+
             return clone;
 
         }
@@ -3279,13 +4101,13 @@ namespace Swole.API.Unity.Animation
             if (onlyAddIfNotPresent)
             {
 
-                foreach (var field in motionFields) if (!indices.Contains(field.controllerIndex)) indices.Add(field.controllerIndex);
+                foreach (var field in motionFields) if (field.controllerIndex >= 0 && !indices.Contains(field.controllerIndex)) indices.Add(field.controllerIndex);
 
             }
             else
             {
 
-                foreach (var field in motionFields) indices.Add(field.controllerIndex);
+                foreach (var field in motionFields) if (field.controllerIndex >= 0) indices.Add(field.controllerIndex); 
 
             }
 
@@ -3370,7 +4192,7 @@ namespace Swole.API.Unity.Animation
         public override float GetLastParameterValue(int localParameterIndex) => localParameterIndex > 0 ? lastParameterValY : lastParameterValX;
         public override void SetLastParameterValue(int localParameterIndex, float value)
         {
-            if (localParameterIndex > 0)
+            if (localParameterIndex > 0) // if it's greater than zero it's parameter Y, otherwise it's parameter X
             {
                 lastParameterValY = value;
             }
@@ -3382,7 +4204,7 @@ namespace Swole.API.Unity.Animation
         public override BlendValuesUpdateLimit GetParameterUpdateLimit(int localParameterIndex) => localParameterIndex > 0 ? parameterY_UpdateLimit : parameterX_UpdateLimit;
         public override void GetParameterUpdateNormalizedTimeRange(int localParameterIndex, out float timeMin, out float timeMax) 
         { 
-            if (localParameterIndex > 0)
+            if (localParameterIndex > 0) // if it's greater than zero it's parameter Y, otherwise it's parameter X
             {
                 timeMin = parameterY_UpdateNormalizedTimeRange.x;
                 timeMax = parameterY_UpdateNormalizedTimeRange.y;
@@ -3442,12 +4264,31 @@ namespace Swole.API.Unity.Animation
                 }
             }
 
-            if (remapChildren)
+            if (motionFields != null)
             {
-                if (motionFields != null)
-                {
 
-                    foreach (var field in motionFields)
+                for (int a = 0; a < motionFields.Length; a++)
+                {
+                    var field = motionFields[a];
+
+                    if (field.BlendSpeedParameterIndex >= 0)
+                    {
+
+                        int origIndex = field.BlendSpeedParameterIndex;
+                        if (!remapper.TryGetValue(origIndex, out field.blendSpeedParameterIndex) && invalidateNonRemappedIndices)
+                        {
+                            field.blendSpeedParameterIndex = -1;
+
+#if UNITY_EDITOR
+                            Debug.LogError($"Failed to remap blend speed parameter index {origIndex} for {GetType().Name} '{name}', (Field:{a})");
+#else
+                            swole.LogError($"Failed to remap blend speed parameter index {origIndex} for {GetType().Name} '{name}', (Field:{a})");
+#endif
+                        }
+
+                    }
+
+                    if (remapChildren)
                     {
 
                         var controller = layer.GetMotionController(field.controllerIndex);
@@ -3458,6 +4299,7 @@ namespace Swole.API.Unity.Animation
                     }
 
                 }
+
             }
 
         }
@@ -3490,7 +4332,7 @@ namespace Swole.API.Unity.Animation
                     }
                     else
                     {
-                        motionFields[a] = new MotionField2D() { speed = mf.Speed, x = mf.X, y = mf.Y, controllerIndex = mf.ControllerIndex };
+                        motionFields[a] = new MotionField2D() { replaceBaseSpeed = mf.ReplaceBaseSpeed, speed = mf.Speed, x = mf.X, y = mf.Y, controllerIndex = mf.ControllerIndex, blendSpeed = mf.BlendSpeed, blendSpeedParameterIndex = mf.BlendSpeedParameterIndex };
                     }
                 }
             }
@@ -3637,6 +4479,71 @@ namespace Swole.API.Unity.Animation
 #endif
         }
 
+        protected override bool TryGetSampleWeights(IAnimationLayer layer, IReadOnlyDictionary<int, float> parameterOverrides, float[] weights)
+        {
+            if (layer == null || motionFields == null || motionTriangles == null || motionVertices == null) return false;
+            if (!HasParameterOverride(ParameterIndexX, parameterOverrides) && !HasParameterOverride(ParameterIndexY, parameterOverrides)) return false;
+
+            TryGetSampleParameterValue(layer, ParameterIndexX, parameterOverrides, out float posX);
+            TryGetSampleParameterValue(layer, ParameterIndexY, parameterOverrides, out float posY);
+            float2 point = new float2(posX, posY);
+
+            bool hasTri = false;
+            MotionVertex closestV0 = default, closestV1 = default, closestV2 = default;
+            float3 closestCoords = float3.zero;
+            float minDist = float.MaxValue;
+            for (int a = 0; a < motionTriangles.Length; a++)
+            {
+                var tri = motionTriangles[a];
+                var v0 = motionVertices[tri.i0];
+                var v1 = motionVertices[tri.i1];
+                var v2 = motionVertices[tri.i2];
+
+                var baryCoords = Maths.BarycentricCoords2D(point, v0, v1, v2);
+                if (Maths.IsInTriangle2D(baryCoords))
+                {
+                    hasTri = true;
+                    closestV0 = v0; closestV1 = v1; closestV2 = v2;
+                    closestCoords = baryCoords;
+                    break;
+                }
+
+                float3 dist = math.abs(math.select(baryCoords, baryCoords - 1f, baryCoords > 0));
+                float distSq = math.lengthsq(dist);
+                if (distSq < minDist)
+                {
+                    minDist = distSq;
+                    hasTri = true;
+                    closestV0 = v0; closestV1 = v1; closestV2 = v2;
+                    closestCoords = baryCoords;
+                }
+            }
+
+            if (hasTri)
+            {
+                closestCoords = math.clamp(closestCoords, 0f, 1f);
+                float totalWeight = math.csum(math.abs(closestCoords));
+                if (totalWeight > 0f) closestCoords = closestCoords / totalWeight;
+
+                weights[closestV0.motionFieldIndex] += closestCoords.x;
+                weights[closestV1.motionFieldIndex] += closestCoords.y;
+                weights[closestV2.motionFieldIndex] += closestCoords.z;
+            }
+
+            return true;
+        }
+
+        private void UpdateMotionField(IAnimationLayer layer, int index, float weight, float deltaTime)
+        {
+            var motionField = motionFields[index];
+            var controller = layer.GetMotionController(motionField.controllerIndex);
+            if (controller == null) return;
+
+            controller.SetWeight(weight + controller.GetBaseWeight()); // sum with existing weight incase the controller appears in multiple motion fields
+            controller.SyncWeight(layer);
+
+            if (controller is IBlendTree blendTree) blendTree.UpdateBlendValues(layer, blendTree.GetNormalizedTime(layer), deltaTime);
+        }
         public override void UpdateBlendValues(IAnimationLayer layer, float normalizedTime, float deltaTime)
         {
 
@@ -3716,24 +4623,12 @@ namespace Swole.API.Unity.Animation
                 closestCoords = math.max(closestCoords, new float3(0, 0, 0));
                 closestCoords = math.min(closestCoords, new float3(1, 1, 1));  
 
-                void UpdateMotionField(int index, float weight)
-                {
-                    var motionField = motionFields[index];
-                    var controller = layer.GetMotionController(motionField.controllerIndex);
-                    if (controller == null) return;
-
-                    controller.SetWeight(weight + controller.GetBaseWeight()); // sum with existing weight incase the controller appears in multiple motion fields
-                    controller.SyncWeight(layer);
-
-                    if (controller is IBlendTree blendTree) blendTree.UpdateBlendValues(layer, blendTree.GetNormalizedTime(layer), deltaTime);
-                }
-
                 float totalWeight = math.csum(math.abs(closestCoords));
                 if (totalWeight > 0f) closestCoords = closestCoords / totalWeight; 
 
-                UpdateMotionField(closestV0.motionFieldIndex, closestCoords.x); 
-                UpdateMotionField(closestV1.motionFieldIndex, closestCoords.y);
-                UpdateMotionField(closestV2.motionFieldIndex, closestCoords.z);
+                UpdateMotionField(layer, closestV0.motionFieldIndex, closestCoords.x, deltaTime);
+                UpdateMotionField(layer, closestV1.motionFieldIndex, closestCoords.y, deltaTime);
+                UpdateMotionField(layer, closestV2.motionFieldIndex, closestCoords.z, deltaTime);
 
                 //Debug.Log($"PARAMS: {point}"); 
                 //Debug.Log($"{name} -> ({layer.GetMotionControllerUnsafe(motionFields[closestV0.motionFieldIndex].controllerIndex).Name}:{closestCoords.x})({layer.GetMotionControllerUnsafe(motionFields[closestV1.motionFieldIndex].controllerIndex).Name}:{closestCoords.y})({layer.GetMotionControllerUnsafe(motionFields[closestV2.motionFieldIndex].controllerIndex).Name}:{closestCoords.z})"); 
@@ -3844,13 +4739,17 @@ namespace Swole.API.Unity.Animation
             motionControllerIds.Add(new MotionControllerIdentifier() { index = blendTreeIndex, type = MotionControllerType.BlendTree2D });
         }
 
-        public int GetMotionControllerIdIndex(string name, MotionControllerType type)
+        public int GetMotionControllerIdIndex(string name, MotionControllerType type, int minIndex = 0, int maxIndex = -1)
         {
             if (string.IsNullOrWhiteSpace(name)) return -1;
 
-            for (int a = 0; a < motionControllerIds.Count; a++)
+            minIndex = Mathf.Max(0, minIndex);
+            for (int a = minIndex; a <= (maxIndex < 0 ? (motionControllerIds.Count-1) : maxIndex); a++)
             {
                 var id = motionControllerIds[a];
+
+                if (id.type != type) continue;
+
                 switch(id.type)
                 {
                     case MotionControllerType.AnimationReference:
@@ -3878,14 +4777,50 @@ namespace Swole.API.Unity.Animation
             return -1;
         }
 
-        public bool TryFindAnimationReferenceIndex(string name, out int controllerIndex, out int animRefIndex)
+        public int GetAnyMotionControllerIndex(string name, int minIndex = 0, int maxIndex = -1)
+        {
+            if (string.IsNullOrWhiteSpace(name)) return -1;
+
+            minIndex = Mathf.Max(0, minIndex);
+            for (int a = minIndex; a <= (maxIndex < 0 ? (motionControllerIds.Count - 1) : maxIndex); a++)
+            {
+                var id = motionControllerIds[a];
+                switch (id.type)
+                {
+                    case MotionControllerType.AnimationReference:
+                        var animRef = animationReferences[id.index];
+                        if (animRef.name == name) return a;
+                        break;
+
+                    case MotionControllerType.MotionComposite:
+                        var comp = motionComposites[id.index];
+                        if (comp.name == name) return a;
+                        break;
+
+                    case MotionControllerType.BlendTree1D:
+                        var tree1D = blendTree1Ds[id.index];
+                        if (tree1D.name == name) return a;
+                        break;
+
+                    case MotionControllerType.BlendTree2D:
+                        var tree2D = blendTree2Ds[id.index];
+                        if (tree2D.name == name) return a;
+                        break;
+                }
+            }
+
+            return -1;
+        }
+
+        public bool TryFindAnimationReferenceIndex(string name, out int controllerIndex, out int animRefIndex, int minIndex = 0, int maxIndex = -1)
         {
             controllerIndex = -1;
             animRefIndex = -1;
 
             if (string.IsNullOrWhiteSpace(name)) return false;
 
-            for (int a = 0; a < motionControllerIds.Count; a++)
+            minIndex = Mathf.Max(0, minIndex);
+            for (int a = minIndex; a <= (maxIndex < 0 ? (motionControllerIds.Count - 1) : maxIndex); a++)
             {
                 var id = motionControllerIds[a];
 
@@ -3903,14 +4838,15 @@ namespace Swole.API.Unity.Animation
 
             return false;
         }
-        public bool TryFindMotionCompositeindex(string name, out int controllerIndex, out int motionCompIndex)
+        public bool TryFindMotionCompositeindex(string name, out int controllerIndex, out int motionCompIndex, int minIndex = 0, int maxIndex = -1)
         {
             controllerIndex = -1;
             motionCompIndex = -1;
 
             if (string.IsNullOrWhiteSpace(name)) return false;
 
-            for (int a = 0; a < motionControllerIds.Count; a++)
+            minIndex = Mathf.Max(0, minIndex);
+            for (int a = minIndex; a <= (maxIndex < 0 ? (motionControllerIds.Count - 1) : maxIndex); a++)
             {
                 var id = motionControllerIds[a];
 
@@ -3928,14 +4864,15 @@ namespace Swole.API.Unity.Animation
 
             return false;
         }
-        public bool TryFindBlendTree1DIndex(string name, out int controllerIndex, out int blendTree1dIndex)
+        public bool TryFindBlendTree1DIndex(string name, out int controllerIndex, out int blendTree1dIndex, int minIndex = 0, int maxIndex = -1)
         {
             controllerIndex = -1;
             blendTree1dIndex = -1;
 
             if (string.IsNullOrWhiteSpace(name)) return false;
 
-            for (int a = 0; a < motionControllerIds.Count; a++)
+            minIndex = Mathf.Max(0, minIndex);
+            for (int a = minIndex; a <= (maxIndex < 0 ? (motionControllerIds.Count - 1) : maxIndex); a++)
             {
                 var id = motionControllerIds[a];
 
@@ -3953,14 +4890,15 @@ namespace Swole.API.Unity.Animation
 
             return false;
         }
-        public bool TryFindBlendTree2DIndex(string name, out int controllerIndex, out int blendTree2dIndex)
+        public bool TryFindBlendTree2DIndex(string name, out int controllerIndex, out int blendTree2dIndex, int minIndex = 0, int maxIndex = -1)
         {
             controllerIndex = -1;
             blendTree2dIndex = -1;
 
             if (string.IsNullOrWhiteSpace(name)) return false;
 
-            for (int a = 0; a < motionControllerIds.Count; a++)
+            minIndex = Mathf.Max(0, minIndex);
+            for (int a = minIndex; a <= (maxIndex < 0 ? (motionControllerIds.Count - 1) : maxIndex); a++)
             {
                 var id = motionControllerIds[a];
 
@@ -4055,15 +4993,19 @@ namespace Swole.API.Unity.Animation
                             switch (id.type)
                             {
                                 case MotionControllerType.AnimationReference:
+                                    Debug.Log($"Updated MC [{i}] AnimationReference {animationReferences[id.index].name} local index {id.index} -> {id.index + animRefIndexOffset}");
                                     id.index = id.index + animRefIndexOffset;
                                     break;
                                 case MotionControllerType.MotionComposite:
+                                    Debug.Log($"Updated MC [{i}] MotionComposite {motionComposites[id.index].name} local index {id.index} -> {id.index + motionCompIndexOffset}");
                                     id.index = id.index + motionCompIndexOffset;
                                     break;
                                 case MotionControllerType.BlendTree1D:
+                                    Debug.Log($"Updated MC [{i}] BlendTree1D {blendTree1Ds[id.index].name} local index {id.index} -> {id.index + blendTree1dIndexOffset}");
                                     id.index = id.index + blendTree1dIndexOffset;
                                     break;
                                 case MotionControllerType.BlendTree2D:
+                                    Debug.Log($"Updated MC [{i}] BlendTree2D {blendTree2Ds[id.index].name} local index {id.index} -> {id.index + blendTree2dIndexOffset}");  
                                     id.index = id.index + blendTree2dIndexOffset;
                                     break;
                             }
@@ -4081,23 +5023,48 @@ namespace Swole.API.Unity.Animation
             }
         }
 
-        public void Finalize(CustomAnimationLayer layer) => Finalize(layer, false, out _);
-        public void Finalize(CustomAnimationLayer layer, bool additive, out int idsOffset)
+        public void Finalize(CustomAnimationLayer layer)
         {
-            idsOffset = 0;
+            int startIndex = 0;
+            int count = motionControllerIds.Count;
+            Finalize(layer, false, ref startIndex, ref count, out _);
+        }
+        public void Finalize(CustomAnimationLayer layer, bool additive, out int idsOffsetInLayerOwnedArray)
+        {
+            int startIndex = 0;
+            int count = motionControllerIds.Count;
+            Finalize(layer, additive, ref startIndex, ref count, out idsOffsetInLayerOwnedArray);
+        }
+        public void Finalize(CustomAnimationLayer layer, bool additive, ref int startIndex, ref int count, out int idsOffsetInLayerOwnedArray)
+        {
+            startIndex = Mathf.Max(0, startIndex);
+            count = Mathf.Clamp(count, 0, motionControllerIds.Count - startIndex); 
+
+            idsOffsetInLayerOwnedArray = 0;
+
+            if (count <= 0) return;
 
             if (additive)
             {
                 if (layer.motionControllerIdentifiers == null || layer.motionControllerIdentifiers.Length <= 0)
                 {
-                    layer.motionControllerIdentifiers = motionControllerIds.ToArray();
+                    if (startIndex == 0 && count == motionControllerIds.Count)
+                    {
+                        layer.motionControllerIdentifiers = motionControllerIds.ToArray();
+                    }
+                    else
+                    {
+                        var newArray = new MotionControllerIdentifier[count];
+                        motionControllerIds.CopyTo(startIndex, newArray, 0, count);
+                        layer.motionControllerIdentifiers = newArray;
+                    }
                 }
                 else
                 {
-                    idsOffset = layer.motionControllerIdentifiers.Length;
-                    var newArray = new MotionControllerIdentifier[layer.motionControllerIdentifiers.Length + motionControllerIds.Count];
+                    idsOffsetInLayerOwnedArray = layer.motionControllerIdentifiers.Length;
+                    var newArray = new MotionControllerIdentifier[layer.motionControllerIdentifiers.Length + count];
                     layer.motionControllerIdentifiers.CopyTo(newArray, 0);
-                    motionControllerIds.CopyTo(newArray, idsOffset);
+                    motionControllerIds.CopyTo(startIndex, newArray, idsOffsetInLayerOwnedArray, count); 
                     layer.motionControllerIdentifiers = newArray;
                 }
             }

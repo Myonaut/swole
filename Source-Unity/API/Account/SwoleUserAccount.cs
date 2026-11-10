@@ -44,6 +44,7 @@ namespace Swole.API.Unity
                 this.user.StopListeningForConnectionInitiation(ConnectingToServer);
                 this.user.StopListeningForConnectionConfirmation(ConnectedToServer);
                 this.user.StopListeningForDisconnect(DisconnectedFromServer);
+                this.user.StopListeningForDataChanges(RefreshDisplays);
             }
 
             this.user = user;
@@ -59,13 +60,20 @@ namespace Swole.API.Unity
             {
                 activeAccount = this;
 
-                if (usernameDisplay != null) CustomEditorUtils.SetComponentText(usernameDisplay, user.Username);
-                if (swoleBucksDisplay != null) CustomEditorUtils.SetComponentText(swoleBucksDisplay, user.SwoleBucks.ToString()); 
+                RefreshDisplays();
 
                 user.ListenForConnectionInitiation(ConnectingToServer);
                 user.ListenForConnectionConfirmation(ConnectedToServer);
                 user.ListenForDisconnect(DisconnectedFromServer);
+                user.ListenForDataChanges(RefreshDisplays);
             }
+        }
+
+        protected void RefreshDisplays()
+        {
+            if (!HasUser) return;
+            if (usernameDisplay != null) CustomEditorUtils.SetComponentText(usernameDisplay, user.Username);
+            if (swoleBucksDisplay != null) CustomEditorUtils.SetComponentText(swoleBucksDisplay, user.SwoleBucks.ToString());
         }
 
         protected void ConnectedToServer()
@@ -93,9 +101,9 @@ namespace Swole.API.Unity
 
         #region ISwoleUser
 
-        public string Username => HasUser ? string.Empty : user.Username;
+        public string Username => HasUser ? user.Username : string.Empty;
 
-        public int SwoleBucks => HasUser ? 0 : user.SwoleBucks;
+        public int SwoleBucks => HasUser ? user.SwoleBucks : 0;
 
         public void OpenSwoleBucksStore()
         {
@@ -103,11 +111,89 @@ namespace Swole.API.Unity
             user.OpenSwoleBucksStore();
         }
 
-        public string FetchCashShop(string storeId)
+        public void FetchCashShop(string storeId, Action<string> callback, Action<string> errorCallback)
         {
-            if (!HasUser) return null;
-            return user.FetchCashShop(storeId);
+            if (!HasUser)
+            {
+                errorCallback?.Invoke("User is not logged in.");
+                return;
+            }
+
+            user.FetchCashShop(storeId, callback, errorCallback);
         }
+
+        public void FetchCashShopProduct(string productId, Action<string> callback, Action<string> errorCallback)
+        {
+            if (!HasUser)
+            {
+                errorCallback?.Invoke("User is not logged in.");
+                return;
+            }
+
+            user.FetchCashShopProduct(productId, callback, errorCallback);
+        }
+
+        public void FetchCashShopProductPrice(string productId, Action<float> callback, Action<string> errorCallback)
+        {
+            if (!HasUser)
+            {
+                errorCallback?.Invoke("User is not logged in.");
+                return;
+            }
+
+            user.FetchCashShopProductPrice(productId, callback, errorCallback);
+        }
+
+        public void FetchCashShopProductCurrencyID(string productId, Action<string> callback, Action<string> errorCallback)
+        {
+            if (!HasUser)
+            {
+                errorCallback?.Invoke("User is not logged in.");
+                return;
+            }
+
+            user.FetchCashShopProductCurrencyID(productId, callback, errorCallback);
+        }
+
+        public void FetchCashShopProductPriceString(string productId, Action<string> callback, Action<string> errorCallback)
+        {
+            if (!HasUser)
+            {
+                errorCallback?.Invoke("User is not logged in.");
+                return;
+            }
+
+            user.FetchCashShopProductPriceString(productId, callback, errorCallback);
+        }
+
+        public void TryPurchaseCashShopProduct(string productId, float price, string currencyId, Action onSuccess, Action<string> onError)
+        {
+            if (!HasUser)
+            {
+                onError?.Invoke("User is not logged in.");
+                return;
+            }
+
+            user.TryPurchaseCashShopProduct(productId, price, currencyId, onSuccess, onError);
+        }
+
+        public bool DoesOwnCashShopProduct(string productId)
+        {
+            if (!HasUser) return false;
+            return user.DoesOwnCashShopProduct(productId);
+        }
+
+        public void DoesOwnCashShopProduct(string productId, Action<bool> callback, Action<string> errorCallback)
+        {
+            if (!HasUser)
+            {
+                errorCallback?.Invoke("User is not logged in.");
+                return;
+            }
+
+            user.DoesOwnCashShopProduct(productId, callback, errorCallback);
+        }
+
 
         public void FetchCurrencyBalance(string currencyId, Action<float> callback, Action<string> errorCallback, bool forceRefetch = false)
         {
@@ -172,13 +258,13 @@ namespace Swole.API.Unity
         public void ListenForConnectionConfirmation(Action onConnect)
         {
             if (!HasUser) return;
-            user.ListenForConnectionInitiation(onConnect);
+            user.ListenForConnectionConfirmation(onConnect);
         }
 
         public void ListenForDisconnect(Action onDisconnect)
         {
             if (!HasUser) return;
-            user.ListenForConnectionInitiation(onDisconnect);
+            user.ListenForDisconnect(onDisconnect);
         }
 
         public void ListenForDataChanges(Action onDataChanged)
@@ -190,19 +276,19 @@ namespace Swole.API.Unity
         public void StopListeningForConnectionInitiation(Action onInitiateConnection)
         {
             if (!HasUser) return;
-            user.ListenForConnectionInitiation(onInitiateConnection);
+            user.StopListeningForConnectionInitiation(onInitiateConnection);
         }
 
         public void StopListeningForConnectionConfirmation(Action onConnect)
         {
             if (!HasUser) return;
-            user.ListenForConnectionInitiation(onConnect);
+            user.StopListeningForConnectionConfirmation(onConnect);
         }
 
         public void StopListeningForDisconnect(Action onDisconnect)
         {
             if (!HasUser) return;
-            user.ListenForConnectionInitiation(onDisconnect);
+            user.StopListeningForDisconnect(onDisconnect);
         }
 
         public void StopListeningForDataChanges(Action onDataChanged)

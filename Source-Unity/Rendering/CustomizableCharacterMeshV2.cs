@@ -1,4 +1,4 @@
-#if UNITY_2017_1_OR_NEWER
+﻿#if UNITY_2017_1_OR_NEWER
 
 using System;
 using System.Collections;
@@ -27,7 +27,7 @@ namespace Swole.Morphing
 
     //ICustomizableCharacterMeshBaseData
 
-    public class CustomizableCharacterMeshV2 : CustomizableCharacterMeshBase
+    public partial class CustomizableCharacterMeshV2 : CustomizableCharacterMeshBase
     {
 
         #region Singleton Updater
@@ -49,9 +49,9 @@ namespace Swole.Morphing
 
                 if (!singleton.meshGroups.TryGetValue(data.GetInstanceID(), out var meshGroup))
                 {
-#if UNITY_EDITOR
-                    data.TryPrecache();
-#endif
+//#if UNITY_EDITOR
+                    data.TryPrecache(); 
+//#endif
                     meshGroup = new MeshGroupV2(data.SerializedData);
                     singleton.meshGroups[data.GetInstanceID()] = meshGroup;
                 }
@@ -204,6 +204,7 @@ namespace Swole.Morphing
                 {
                     ownerGroup.BeginNewJob();
                     ownerGroup.WaitForJobCompletion();
+                    ownerGroup.ProcessGPUReadbacks(true); // [CCMV2-GPU-SYNC] immediate updates must expose results on the CPU (no-op on CPU backends)
                 }
 
                 return flag;
@@ -357,7 +358,7 @@ namespace Swole.Morphing
         /// <summary>
         /// Handles realtime updates of meshes that use the same serialized data.
         /// </summary>
-        public class MeshGroupV2 : IDisposable
+        public partial class MeshGroupV2 : IDisposable
         {
 
             #region Disposal
@@ -384,6 +385,7 @@ namespace Swole.Morphing
             public void Dispose()
             {
                 activeJob.Complete();
+                DisposeShapingAcceleration();
                 disposed = true;
 
                 if (trackingDisposables)
@@ -1269,13 +1271,14 @@ namespace Swole.Morphing
                 return false;
             }
             public int CreateInstanceMaterialBuffer<T>(string propertyName, int elementsPerInstance, int bufferPoolSize, bool autoApplyToMaterials, out InstanceBuffer<T> buffer) where T : unmanaged => CreateInstanceMaterialBuffer(propertyName, null, elementsPerInstance, bufferPoolSize, autoApplyToMaterials, out buffer);
-            public int CreateInstanceMaterialBuffer<T>(string propertyName, ICollection<int> materialSlots, int elementsPerInstance, int bufferPoolSize, bool autoApplyToMaterials, out InstanceBuffer<T> buffer) where T : unmanaged
+            public int CreateInstanceMaterialBuffer<T>(string propertyName, ICollection<int> materialSlots, int elementsPerInstance, int bufferPoolSize, bool autoApplyToMaterials, out InstanceBuffer<T> buffer) where T : unmanaged => CreateInstanceMaterialBuffer(propertyName, materialSlots, elementsPerInstance, bufferPoolSize, autoApplyToMaterials, ComputeBufferMode.SubUpdates, out buffer);
+            public int CreateInstanceMaterialBuffer<T>(string propertyName, ICollection<int> materialSlots, int elementsPerInstance, int bufferPoolSize, bool autoApplyToMaterials, ComputeBufferMode bufferMode, out InstanceBuffer<T> buffer) where T : unmanaged
             {
                 buffer = null;
                 if (elementsPerInstance <= 0 || bufferPoolSize <= 0) return -1;
 
                 Debug.Log($"Creating buffer with initial size {MaxInstanceCount}"); 
-                buffer = new InstanceBuffer<T>(propertyName, MaxInstanceCount, elementsPerInstance, bufferPoolSize, ComputeBufferType.Structured, ComputeBufferMode.SubUpdates);
+                buffer = new InstanceBuffer<T>(propertyName, MaxInstanceCount, elementsPerInstance, bufferPoolSize, ComputeBufferType.Structured, bufferMode);
                 return BindInstanceMaterialBuffer(propertyName, materialSlots, buffer, autoApplyToMaterials);
             }
 
@@ -1371,13 +1374,13 @@ namespace Swole.Morphing
 
             public void MarkForPhysiqueUpdate(int index)
             {
-                if (index < 0 || index >= MaxInstanceCount || IsDisposed || indicesToPhysiqueUpdateNext.Contains(index)) return;
+                if (index < 0 || index >= MaxInstanceCount || IsDisposed || !indicesToPhysiqueUpdateNextSet.Add(index)) return;
                 indicesToPhysiqueUpdateNext.Add(index);
             }
 
             public void MarkForVariationUpdate(int index)
             {
-                if (index < 0 || index >= MaxInstanceCount || IsDisposed || indicesToVariationUpdateNext.Contains(index)) return;
+                if (index < 0 || index >= MaxInstanceCount || IsDisposed || !indicesToVariationUpdateNextSet.Add(index)) return;
                 indicesToVariationUpdateNext.Add(index);
             }
 
@@ -1486,18 +1489,16 @@ namespace Swole.Morphing
             {
                 activeJob.Complete();
 
+                if (!IsInitialized || IsDisposed) return;
+
+                ProcessGPUReadbacks(false); // [CCMV2-GPU-SYNC] apply finished async readbacks so CPU consumers see GPU results
+
                 if (hasActiveJob)
                 {
                     hasActiveJob = false;
 
-                    if (finalVertexDeltasBufferIndex >= 0)
-                    {
-                        var finalDeltasBuffer = instanceBuffers[finalVertexDeltasBufferIndex];
-                        if (finalDeltasBuffer.buffer is InstanceBuffer<MeshVertexDelta> finalDeltasBuffer_)
-                        {
-                            finalDeltasBuffer_.WriteToBuffer(finalVertexDeltas.AsArray(), 0, 0, finalVertexDeltas.Length);
-                        }
-                    }
+                    // [CCMV2-UPLOAD] CPU backends upload only the changed instance range; the GPU backend already wrote into the same instance buffer (see DispatchGPUShaping).
+                    if (!activeJobIsGPU) UploadFinalDeltasCPU();
 
                     foreach(var index in indicesToUpdate)
                     {
@@ -1511,6 +1512,8 @@ namespace Swole.Morphing
                 foreach (var index in indicesToVariationUpdateNext) indicesToVariationUpdate.Add(index);
                 indicesToPhysiqueUpdateNext.Clear();
                 indicesToVariationUpdateNext.Clear();
+                indicesToPhysiqueUpdateNextSet.Clear();
+                indicesToVariationUpdateNextSet.Clear();
 
                 if (PrecalculateSkinningMatrices && TryGetInstanceBuffer<float4x4>(data.SkinningMatricesPropertyName, out var baseSkinningMatricesBuffer))
                 {
@@ -1536,11 +1539,16 @@ namespace Swole.Morphing
                     }
                 }
             }
-            public void BeginNewJob()
+            /// <summary>
+            /// [CCMV2-LEGACY] The original job scheduler, kept verbatim as the reference implementation (ShapingBackend.CPUJobsLegacy) for A/B parity checks.
+            /// </summary>
+            private void BeginNewJobLegacy()
             {
                 hasActiveJob = false;
                 activeJob.Complete();
                 //activeJob = default;
+
+                if (!IsInitialized || IsDisposed) return;
 
                 insertionFlags.Clear();
                 insertionFlags.AddReplicated(false, MaxInstanceCount);
@@ -2004,6 +2012,8 @@ namespace Swole.Morphing
 
                 #endregion
 
+                BuildShapingVertexEntryMaps(); // [CCMV2-MAPS] per-vertex gather maps used by the optimized CPU jobs and GPU kernels
+
                 int initialDeltasCount = data.vertexCount * maxInstanceCount;
                 finalVertexDeltas = new NativeList<MeshVertexDelta>(initialDeltasCount, Allocator.Persistent);
                 finalVertexDeltas.AddReplicated(MeshVertexDelta.Default, initialDeltasCount);
@@ -2011,8 +2021,9 @@ namespace Swole.Morphing
                 variationVertexDeltas = new NativeList<MeshVertexDelta>(initialDeltasCount, Allocator.Persistent);
                 variationVertexDeltas.AddReplicated(MeshVertexDelta.Default, initialDeltasCount); 
 
-                finalVertexDeltasBufferIndex = CreateInstanceMaterialBuffer<MeshVertexDelta>(data.PerVertexDeltaDataPropertyName, data.vertexCount, 3, true, out var finalVertexDeltasBuffer);
-                finalVertexPreviousDeltasBufferIndex = CreateInstanceMaterialBuffer<MeshVertexDelta>(data.PerVertexPreviousDeltaDataPropertyName, data.vertexCount, 3, true, out var finalVertexPreviousDeltasBuffer);
+                // [CCMV2-COPY] Immutable mode (not SubUpdates) so the GPU backend's CopyDeltas kernel can write into these buffers as UAVs. CPU uploads use SetData.
+                finalVertexDeltasBufferIndex = CreateInstanceMaterialBuffer<MeshVertexDelta>(data.PerVertexDeltaDataPropertyName, null, data.vertexCount, 3, true, ComputeBufferMode.Immutable, out var finalVertexDeltasBuffer);
+                finalVertexPreviousDeltasBufferIndex = CreateInstanceMaterialBuffer<MeshVertexDelta>(data.PerVertexPreviousDeltaDataPropertyName, null, data.vertexCount, 3, true, ComputeBufferMode.Immutable, out var finalVertexPreviousDeltasBuffer);
                 EnsureInstanceBufferSize(finalVertexDeltasBuffer);
                 EnsureInstanceBufferSize(finalVertexPreviousDeltasBuffer);
 #if UNITY_EDITOR
@@ -2037,7 +2048,11 @@ namespace Swole.Morphing
             {
                 if (disposed) return null;
 
+#if UNITY_EDITOR
                 Initialize(debug);
+#else
+                Initialize();
+#endif
 
                 int index;
                 if (openIndices.Count > 0) // use an existing index
@@ -2074,6 +2089,8 @@ namespace Swole.Morphing
                     variationVertexDeltas.AddReplicated(MeshVertexDelta.Default, data.vertexCount);
 
                     EnsureInstanceBufferSizes();
+
+                    gpuStateInvalid = true; // [CCMV2-GPU] instance capacity changed, GPU per-instance buffers must be rebuilt
                 }
 
                 activeIndices.Add(index);
@@ -2342,10 +2359,15 @@ namespace Swole.Morphing
 
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
             public static MeshVertexDeltaLR CalculateMuscleVertexDelta(int groupControlIndex, float groupWeightAtIndex, int vertexIndex, int vertexCount, float minShapeMassWeight, float defaultShapeMassWeight, float muscleMassRange, int2 muscleShapeIndex, int2 fatMuscleBlendShapeIndex, NativeList<GroupControlWeight2> muscleGroupControlWeights, NativeArray<float> meshShapeFrameWeights, NativeArray<MeshVertexDelta> meshShapeDeltas, NativeList<float2> fatValuesPerVertex, out float2 muscleGroupMassWeight)
+                => CalculateMuscleVertexDelta(groupControlIndex, groupWeightAtIndex, vertexIndex, vertexIndex, vertexCount, minShapeMassWeight, defaultShapeMassWeight, muscleMassRange, muscleShapeIndex, fatMuscleBlendShapeIndex, muscleGroupControlWeights, meshShapeFrameWeights, meshShapeDeltas, fatValuesPerVertex, out muscleGroupMassWeight);
+
+            /// <param name="fatValueIndex">Index into fatValuesPerVertex, including the instance offset ((meshIndex * vertexCount) + vertexIndex). [CCMV2-MUSCLE]</param>
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            public static MeshVertexDeltaLR CalculateMuscleVertexDelta(int groupControlIndex, float groupWeightAtIndex, int vertexIndex, int fatValueIndex, int vertexCount, float minShapeMassWeight, float defaultShapeMassWeight, float muscleMassRange, int2 muscleShapeIndex, int2 fatMuscleBlendShapeIndex, NativeList<GroupControlWeight2> muscleGroupControlWeights, NativeArray<float> meshShapeFrameWeights, NativeArray<MeshVertexDelta> meshShapeDeltas, NativeList<float2> fatValuesPerVertex, out float2 muscleGroupMassWeight)
             {
                 GroupControlWeight2 muscleGroupMass = muscleGroupControlWeights[groupControlIndex];
 
-                float2 fat = fatValuesPerVertex[vertexIndex];
+                float2 fat = fatValuesPerVertex[fatValueIndex];
 
                 float bustNerfFactor = 1f;// CalculateBustNerfFactor(bustSizes[meshIndex].x, vertexGroups, bustNerfVertexGroupIndex, vertexCount, groupVertexWeight.vertexIndex, 0.45f);
 
@@ -2378,7 +2400,7 @@ namespace Swole.Morphing
                 var groupVertexWeight = muscleGroupVertexWeights[localVertexSequenceIndex];
 
                 int muscleGroupControlIndex = (meshIndex * controlGroupCount) + groupVertexWeight.groupIndex;
-                var deltas = CalculateMuscleVertexDelta(muscleGroupControlIndex, groupVertexWeight.weight, groupVertexWeight.vertexIndex, vertexCount, minShapeMassWeight, defaultShapeMassWeight, muscleMassRange, muscleShapeIndex, fatMuscleBlendShapeIndex, muscleGroupControlWeights, meshShapeFrameWeights, meshShapeDeltas, fatValuesPerVertex, out var muscleGroupMassWeight);
+                var deltas = CalculateMuscleVertexDelta(muscleGroupControlIndex, groupVertexWeight.weight, groupVertexWeight.vertexIndex, (meshIndex * vertexCount) + groupVertexWeight.vertexIndex, vertexCount, minShapeMassWeight, defaultShapeMassWeight, muscleMassRange, muscleShapeIndex, fatMuscleBlendShapeIndex, muscleGroupControlWeights, meshShapeFrameWeights, meshShapeDeltas, fatValuesPerVertex, out var muscleGroupMassWeight);
 
                 int bufferIndex = (meshIndex * combinedVertexCount) + localVertexSequenceIndex;
                 vertexDeltas[bufferIndex] = deltas;
@@ -2562,7 +2584,7 @@ namespace Swole.Morphing
 
                 float2 bustData = bustSizes[meshIndex];
                 float2 bustDataSat = math.saturate(bustData.x);
-                float muscleMass = math.saturate((muscleData[vertexIndex] - muscleMassStartWeight) / muscleMassRange);
+                float muscleMass = math.saturate((muscleData[(meshIndex * vertexCount) + vertexIndex] - muscleMassStartWeight) / muscleMassRange);
                 var sizeDelta = meshShapeDeltas.SampleDeltaShapeBuffer(vertexIndex, meshShapeFrameWeights, bustSizeShapeIndex.x, bustSizeShapeIndex.y, bustData.x, vertexCount);
                 var sizeMuscleDelta = meshShapeDeltas.SampleDeltaShapeBuffer(vertexIndex, meshShapeFrameWeights, bustSizeMuscleShapeIndex.x, bustSizeMuscleShapeIndex.y, muscleMass, vertexCount);
                 var shapeDelta = meshShapeDeltas.SampleDeltaShapeBuffer(vertexIndex, meshShapeFrameWeights, breastShapeIndex.x, breastShapeIndex.y, bustData.y, vertexCount);
@@ -3059,7 +3081,7 @@ namespace Swole.Morphing
 
                 if (lod > 0)
                 {
-                    if (TryGetUV(lod, nearestVertexUVChannel, out var uvArray))
+                    if (TryGetUV(lod, nearestVertexIndexUVChannel, out var uvArray))
                     {
                         for (int i = 0; i < array.Length; i++)
                         {
@@ -3526,8 +3548,12 @@ namespace Swole.Morphing
             public int RaycastLOD => raycastLod;
 
             [Tooltip("The uv channel to use for determining the nearest vertex.")]
-            public UVChannelURP nearestVertexUVChannel = UVChannelURP.UV3;
+            public UVChannelURP nearestVertexUVChannel = UVChannelURP.UV0;
             public UVChannelURP NearestVertexUVChannel => nearestVertexUVChannel;
+
+            [Tooltip("The uv channel to store the nearest vertex index in.")]
+            public UVChannelURP nearestVertexIndexUVChannel = UVChannelURP.UV3;
+            public UVChannelURP NearestVertexIndexUVChannel => nearestVertexIndexUVChannel;
 
             [Tooltip("The uv element to store the nearest vertex index in.")]
             public RGBAChannel nearestVertexIndexElement = RGBAChannel.R;
@@ -3852,6 +3878,99 @@ namespace Swole.Morphing
                     return emptyWeightsBuffer;
                 }
             }
+
+            #region Weight In Kilograms
+
+            [Header("Weight In Kilograms"), SerializeField, Tooltip("Default value for how many kilograms a muscle group weighs with a mass of 1.0. Used if the group isn't defined in perGroupMuscleMassKilograms.")]
+            public float defaultMuscleMassKilograms = 0.05f;
+
+            [SerializeField, Tooltip("How many kilograms a muscle group weighs with a mass of 1.0")]
+            protected KilogramGroup[] perGroupMuscleMassKilograms;
+            [NonSerialized]
+            protected Dictionary<string, int> muscleGroupToKilogramGroupIndex;
+            [NonSerialized]
+            protected Dictionary<int, int> muscleGroupIndexToKilogramGroupIndex;
+
+            public float GetMuscleMassKilograms(string groupName)
+            {
+                if (!cachedKilogramGroupIndices) CacheKilogramGroupIndices();
+                if (muscleGroupToKilogramGroupIndex != null && muscleGroupToKilogramGroupIndex.TryGetValue(groupName, out int kgGroupIndex)) return perGroupMuscleMassKilograms[kgGroupIndex].kilograms;
+                return defaultMuscleMassKilograms;
+            }
+            public float GetMuscleMassKilograms(int groupIndex)
+            {
+                if (!cachedKilogramGroupIndices) CacheKilogramGroupIndices();
+                if (muscleGroupIndexToKilogramGroupIndex != null && muscleGroupIndexToKilogramGroupIndex.TryGetValue(groupIndex, out int kgGroupIndex)) return perGroupMuscleMassKilograms[kgGroupIndex].kilograms;
+                return defaultMuscleMassKilograms;
+            }
+
+            public float defaultFatKilograms = 0.1f;
+
+            [SerializeField, Tooltip("How many kilograms a fat group weighs with a level of 1.0")]
+            protected KilogramGroup[] perGroupFatKilograms;
+            [NonSerialized]
+            protected Dictionary<string, int> fatGroupToKilogramGroupIndex;
+            [NonSerialized]
+            protected Dictionary<int, int> fatGroupIndexToKilogramGroupIndex;
+
+            public float GetFatKilograms(string groupName)
+            {
+                if (!cachedKilogramGroupIndices) CacheKilogramGroupIndices();
+                if (fatGroupToKilogramGroupIndex != null && fatGroupToKilogramGroupIndex.TryGetValue(groupName, out int kgGroupIndex)) return perGroupFatKilograms[kgGroupIndex].kilograms;
+                return defaultFatKilograms;
+            } 
+            public float GetFatKilograms(int groupIndex)
+            {
+                if (!cachedKilogramGroupIndices) CacheKilogramGroupIndices();
+                if (fatGroupIndexToKilogramGroupIndex != null && fatGroupIndexToKilogramGroupIndex.TryGetValue(groupIndex, out int kgGroupIndex)) return perGroupFatKilograms[kgGroupIndex].kilograms;
+                return defaultFatKilograms;
+            }
+
+            [NonSerialized]
+            protected bool cachedKilogramGroupIndices;
+
+            protected void CacheKilogramGroupIndices()
+            {
+                muscleGroupToKilogramGroupIndex = new Dictionary<string, int>();
+                muscleGroupIndexToKilogramGroupIndex = new Dictionary<int, int>();
+                if (perGroupMuscleMassKilograms != null)
+                {
+                    for (int i = 0; i < perGroupMuscleMassKilograms.Length; i++)
+                    {
+                        var kgGroup = perGroupMuscleMassKilograms[i];
+                        if (kgGroup == null) continue;
+
+                        kgGroup.cachedIndex = IndexOfMuscleGroup(kgGroup.groupName);
+                        if (kgGroup.cachedIndex >= 0)
+                        {
+                            muscleGroupToKilogramGroupIndex[kgGroup.groupName] = i;
+                            muscleGroupIndexToKilogramGroupIndex[kgGroup.cachedIndex] = i;
+                        }
+                    }
+                }
+
+                fatGroupToKilogramGroupIndex = new Dictionary<string, int>();
+                fatGroupIndexToKilogramGroupIndex = new Dictionary<int, int>();
+                if (perGroupFatKilograms != null)
+                {
+                    for (int i = 0; i < perGroupFatKilograms.Length; i++)
+                    {
+                        var kgGroup = perGroupFatKilograms[i];
+                        if (kgGroup == null) continue;
+
+                        kgGroup.cachedIndex = IndexOfFatGroup(kgGroup.groupName);
+                        if (kgGroup.cachedIndex >= 0)
+                        {
+                            fatGroupToKilogramGroupIndex[kgGroup.groupName] = i;
+                            fatGroupIndexToKilogramGroupIndex[kgGroup.cachedIndex] = i;
+                        }
+                    }
+                }
+
+                cachedKilogramGroupIndices = true;
+            }
+
+            #endregion
 
             #endregion
 
@@ -5495,7 +5614,7 @@ namespace Swole.Morphing
                 if (PrecacheVertexColorDeltas()) didPrecache = true;
 
 #if !UNITY_EDITOR
-                if (meshShapes != null)
+                /*if (meshShapes != null) // TODO: reenable this later
                 {
                     for (int i = 0; i < meshShapes.Length; i++)
                     {
@@ -5526,7 +5645,7 @@ namespace Swole.Morphing
 
                         delta.deltaColors = null;
                     }
-                }
+                }*/
 #endif
 
 
@@ -5699,7 +5818,7 @@ namespace Swole.Morphing
             topVertexIndex = vertexIndex;
             if (lod > 0)
             {
-                if (TryGetUV(lod, subData.nearestVertexUVChannel, out var uvArray))
+                if (TryGetUV(lod, subData.nearestVertexIndexUVChannel, out var uvArray))
                 {
                     topVertexIndex = MorphUtils.FetchIndexFromUV(subData.nearestVertexIndexElement, uvArray[vertexIndex]);
                 }
@@ -5845,7 +5964,7 @@ namespace Swole.Morphing
             if (subData.muscleGroups.y >= subData.muscleGroups.x)
             {
                 int topVertexIndex = vertexIndex;
-                if (lod > 0 && TryGetUV(lod, subData.nearestVertexUVChannel, out var uvArray))
+                if (lod > 0 && TryGetUV(lod, subData.nearestVertexIndexUVChannel, out var uvArray))
                 {
                     topVertexIndex = MorphUtils.FetchIndexFromUV(subData.nearestVertexIndexElement, uvArray[vertexIndex]);
                 }
@@ -5872,7 +5991,7 @@ namespace Swole.Morphing
             if (subData.fatGroups.y >= subData.fatGroups.x)
             {
                 int topVertexIndex = vertexIndex;
-                if (lod > 0 && TryGetUV(lod, subData.nearestVertexUVChannel, out var uvArray))
+                if (lod > 0 && TryGetUV(lod, subData.nearestVertexIndexUVChannel, out var uvArray))
                 {
                     topVertexIndex = MorphUtils.FetchIndexFromUV(subData.nearestVertexIndexElement, uvArray[vertexIndex]);
                 }
@@ -5899,7 +6018,7 @@ namespace Swole.Morphing
             if (subData.variationGroups.y >= subData.variationGroups.x)
             {
                 int topVertexIndex = vertexIndex;
-                if (lod > 0 && TryGetUV(lod, subData.nearestVertexUVChannel, out var uvArray))
+                if (lod > 0 && TryGetUV(lod, subData.nearestVertexIndexUVChannel, out var uvArray))
                 {
                     topVertexIndex = MorphUtils.FetchIndexFromUV(subData.nearestVertexIndexElement, uvArray[vertexIndex]);
                 }
@@ -6123,11 +6242,14 @@ namespace Swole.Morphing
 
         protected override void OnSetBust(float size, float shape)
         {
-            var prevData = instance.GetBustSize();
-            if (prevData.x != size || prevData.y != shape)
+            if (instance != null && instance.IsValid)
             {
-                instance.SetBustSize(new float2(size, shape));
-                instance.MarkForPhysiqueUpdateUnsafe(); 
+                var prevData = instance.GetBustSize();
+                if (prevData.x != size || prevData.y != shape)
+                {
+                    instance.SetBustSize(new float2(size, shape));
+                    instance.MarkForPhysiqueUpdateUnsafe();
+                }
             }
         }
 
@@ -6247,7 +6369,7 @@ namespace Swole.Morphing
             if (!Data.SerializedData.TryGetVertices(lod, out var vertices)) return false;
             if (!Data.SerializedData.TryGetTriangles(lod, out var triangles)) return false;
             NativeArray<float4> indexUVs = default;
-            if (lod > 0 && !Data.SerializedData.TryGetUV(lod, Data.SerializedData.nearestVertexUVChannel, out indexUVs)) return false; 
+            if (lod > 0 && !Data.SerializedData.TryGetUV(lod, Data.SerializedData.nearestVertexIndexUVChannel, out indexUVs)) return false;
 
             instance.UpdateIfDirty(false, true);
             instance.OwnerGroup.ActiveJob.Complete(); 
@@ -6255,17 +6377,17 @@ namespace Swole.Morphing
             var rigSampler = RigSampler;
             RaycastResult finalResult = default; 
             using (var resultQueue = new NativeQueue<RaycastResult>(Allocator.TempJob))
-            {
+            { 
                 using (var skinningMatrices = new NativeArray<float4x4>(SkinningBoneCount, Allocator.TempJob))
                 {
                     if (rigSampler != null) 
                     { 
                         rigSampler.TrackingGroup.CopyIntoArray(skinningMatrices, 0);
-                        for (int z = 0; z < SkinningBoneCount; z++)
+                        /*for (int z = 0; z < SkinningBoneCount; z++)
                         {
                             var m = skinningMatrices[z];
                             Debug.DrawRay(math.transform(m, float3.zero), math.rotate(m, new float3(0f, 1f, 0f)) * 0.35f, Color.blue, 0.5f); 
-                        }
+                        }*/
                     }
 
                     var handle = instance.OwnerGroup.ActiveJob;

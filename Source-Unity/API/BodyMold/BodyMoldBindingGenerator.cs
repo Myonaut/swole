@@ -20,7 +20,7 @@ namespace Swole.Modding
             if (bodies == null) throw new ArgumentNullException(nameof(bodies));
 
             boneNameIndexConverter.Clear();
-            var bindingData = ClothingEditor.GenerateSkinningBasedBindingData(boneNameIndexConverter, clothingVertexMaskName, false, false, false, false, clothing, bodies);
+            var bindingData = ClothingEditor.GenerateSkinningBasedBindingData(boneNameIndexConverter, clothingVertexMaskName, false, false, false, false, clothing, bodies, optionalBindingShapeName, optionalBindingShapeWeight);
 
             localIndicesPerBody = new int[bodies.Length][];
             indicesPerBody = new int4[bodies.Length][];
@@ -31,7 +31,7 @@ namespace Swole.Modding
             var finalData = new Dictionary<int, (int4, float4)>();
 
             // Use per-body influences to ensure each body mesh gets proper bindings
-            var perBodyInfluences = ClothingEditor.GeneratePerBodyInfluences(bodies, bindingData, distanceBindingWeight);
+            var perBodyInfluences = ClothingEditor.GeneratePerBodyInfluences(bodies, bindingData, distanceBindingWeight, optionalBindingShapeName, optionalBindingShapeWeight); 
             var influenceLists = new List<float3>[bodies.Length];
 
             for(int bIndex = 0; bIndex < bodies.Length; bIndex++) 

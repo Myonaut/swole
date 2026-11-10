@@ -9,6 +9,7 @@ using UnityEngine;
 using Swole.API.Unity;
 using Swole.API.Unity.Animation;
 using Swole.Morphing;
+using Swole.API.Unity.Store;
 
 namespace Swole
 {
@@ -17,13 +18,32 @@ namespace Swole
     public class CharacterAddition : ScriptableObject, ISelectableAsset
     {
 
+        [Serializable]
+        public class PrefabSpawner
+        {
+            public GameObject prefab;
+            public Vector3 positionInRoot;
+            public Vector3 rotationInRoot;
+            public Vector3 scaleInRoot = Vector3.one;
+        }
+
+        [Header("Cashshop"), SerializeField]
+        protected CashShopProduct cashShopProduct;
+        public CashShopProduct CashShopProduct => cashShopProduct;
+
+        public static implicit operator CashShopProduct(CharacterAddition addition) => addition == null ? null : addition.cashShopProduct;
+
+        public string ProductID => cashShopProduct == null ? null : cashShopProduct.ProductID;
+
+        public bool IsCashShopProduct => cashShopProduct != null; 
+
         [Header("UI")]
         public Sprite icon;
 
         [Serializable]
         public enum MeshType
         {
-            UnitySkinnedMesh, CustomizableCharacterMesh
+            None, UnitySkinnedMesh, CustomizableCharacterMesh
         }
 
         [Header("Settings")]
@@ -190,6 +210,9 @@ namespace Swole
             return ccm;
         }
 
+        [Header("Prefabs")]
+        public PrefabSpawner[] prefabsToSpawn; 
+
         public GameObject Spawn(Transform root)
         {
             switch (meshType)
@@ -205,6 +228,21 @@ namespace Swole
                     break;
             }
 
+            if (prefabsToSpawn != null && prefabsToSpawn.Length > 0)
+            {
+                foreach (var prefabSpawner in prefabsToSpawn)
+                {
+                    if (prefabSpawner.prefab == null) continue;
+
+                    var go = GameObject.Instantiate(prefabSpawner.prefab, root);
+                    go.transform.localPosition = prefabSpawner.positionInRoot;
+                    go.transform.localRotation = Quaternion.Euler(prefabSpawner.rotationInRoot); 
+                    go.transform.localScale = prefabSpawner.scaleInRoot; 
+
+                    return go;
+                }
+            }
+
             return null;
         }
 
@@ -218,6 +256,10 @@ namespace Swole
         public string ID => name;
 
         public string Description => description;
+
+        [Tooltip("If true, only listed in selection windows when running in the editor.")]
+        public bool editorOnly;
+        public bool EditorOnly => editorOnly;
 
         public int AttributeCount => attributes == null ? 0 : attributes.Length;
 

@@ -1,0 +1,382 @@
+// =========================================================================================
+//  CustomizableCharacterMeshV2 - GPU shaping backend
+//  CPU counterpart: Assets/SwoleScript/Source-Unity/Rendering/CustomizableCharacterMeshV2_Shaping.cs
+//  Every kernel mirrors a Burst gather job 1:1. Search for the [CCMV2-*] tags in both files.
+//  Struct layouts MUST match the C# structs (see header in CustomizableCharacterMeshV2_Shaping.cs).
+// =========================================================================================
+
+#pragma kernel FatGather
+#pragma kernel MuscleGather
+#pragma kernel VariationGather
+#pragma kernel FinalizeGather
+#pragma kernel CopyDeltas
+
+#define THREADS 64
+
+struct MeshVertexDelta          // C#: Swole.Morphing.MeshVertexDelta (36 bytes)
+{
+    float3 position;
+    float3 normal;
+    float3 tangent;
+};
+
+struct MeshVertexDeltaLR        // C#: Swole.Morphing.MeshVertexDeltaLR (72 bytes)
+{
+    MeshVertexDelta left;
+    MeshVertexDelta right;
+};
+
+struct GroupControlWeight2      // C#: CustomizableCharacterMeshBase.GroupControlWeight2 (20 bytes)
+{
+    int groupIndex;
+    int vertexSequenceStartIndex;
+    int vertexCount;
+    float2 weight;
+};
+
+struct GroupVertexControlWeight // C#: CustomizableCharacterMeshBase.GroupVertexControlWeight (12 bytes)
+{
+    int groupIndex;
+    int vertexIndex;
+    float weight;
+};
+
+uint _WorkCount;
+int _VertexCount;
+int _MidlinePreMul;
+int _BustNerfGroup;
+int _FatCombined;
+int _MuscleCombined;
+int _FatControlGroupCount;
+int _MuscleControlGroupCount;
+int _VariationShapesCount;
+int _VariationShapesStart;
+int _VariationControlGroupCount;
+float _MinMassShapeWeight;
+float _DefaultMassShapeWeight;
+float _MuscleMassRange;
+
+int _FatShapeStart, _FatShapeFrames;
+int _MassShapeStart, _MassShapeFrames;
+int _BlendShapeStart, _BlendShapeFrames;
+
+int _ApplyBreast;
+int _BustSizeShapeStart, _BustSizeShapeFrames;
+int _BreastShapeStart, _BreastShapeFrames;
+int _BustMuscleShapeStart, _BustMuscleShapeFrames;
+
+int _CopyStart;
+
+// static
+StructuredBuffer<MeshVertexDelta> _ShapeDeltas;
+StructuredBuffer<float> _FrameWeights;
+StructuredBuffer<int2> _ShapeInfos;
+StructuredBuffer<float> _VertexGroups;
+StructuredBuffer<uint> _LeftRight;
+
+StructuredBuffer<GroupVertexControlWeight> _FatWeights;
+StructuredBuffer<GroupVertexControlWeight> _MuscleWeights;
+StructuredBuffer<GroupVertexControlWeight> _VariationWeights;
+
+StructuredBuffer<int2> _FatRanges;
+StructuredBuffer<int2> _FatEntries;
+StructuredBuffer<int2> _MuscleRanges;
+StructuredBuffer<int2> _MuscleEntries;
+StructuredBuffer<int2> _VariationRanges;
+StructuredBuffer<int2> _VariationEntries;
+
+// per update
+StructuredBuffer<int> _Indices;
+StructuredBuffer<float2> _BustSizes;
+StructuredBuffer<GroupControlWeight2> _FatControl;
+StructuredBuffer<GroupControlWeight2> _MuscleControl;
+StructuredBuffer<GroupControlWeight2> _VariationControl;
+
+// working state (mirrors MeshGroupV2 native lists)
+RWStructuredBuffer<MeshVertexDeltaLR> _FatDeltasLR;
+RWStructuredBuffer<float4> _FatData;
+RWStructuredBuffer<float2> _FatValues;
+StructuredBuffer<float2> _FatValuesRO;
+
+RWStructuredBuffer<MeshVertexDeltaLR> _MuscleDeltasLR;
+RWStructuredBuffer<float2> _MuscleData;
+RWStructuredBuffer<float> _MuscleValues;
+StructuredBuffer<float> _MuscleValuesRO;
+
+RWStructuredBuffer<MeshVertexDelta> _VariationDeltas;
+StructuredBuffer<MeshVertexDelta> _VariationDeltasRO;
+
+StructuredBuffer<MeshVertexDeltaLR> _FatDeltasLRRO;
+StructuredBuffer<MeshVertexDeltaLR> _MuscleDeltasLRRO;
+
+RWStructuredBuffer<MeshVertexDelta> _FinalDeltas;
+
+StructuredBuffer<MeshVertexDelta> _CopySrc;
+RWStructuredBuffer<MeshVertexDelta> _CopyDst;
+
+MeshVertexDelta Zero()
+{
+    MeshVertexDelta d;
+    d.position = 0; d.normal = 0; d.tangent = 0;
+    return d;
+}
+MeshVertexDelta Mul(MeshVertexDelta d, float v)
+{
+    d.position *= v; d.normal *= v; d.tangent *= v;
+    return d;
+}
+MeshVertexDelta Add(MeshVertexDelta a, MeshVertexDelta b)
+{
+    a.position += b.position; a.normal += b.normal; a.tangent += b.tangent;
+    return a;
+}
+
+// [CCMV2-SAMPLE] mirrors MorphUtils.SampleDeltaShapeBuffer exactly (including the "continue" frame-pair search)
+MeshVertexDelta SampleShape(int vertexIndex, int frameStart, int frameCount, float weight)
+{
+    MeshVertexDelta output = Zero();
+
+    if (frameCount > 1)
+    {
+        int frameCountM1 = frameCount - 1;
+        for (int frameIndexA = 0; frameIndexA < frameCountM1; frameIndexA++)
+        {
+            int fullA = frameStart + frameIndexA;
+            float frameWeightA = _FrameWeights[fullA];
+            int frameIndexB = frameIndexA + 1;
+            int fullB = frameStart + frameIndexB;
+            float frameWeightB = _FrameWeights[fullB];
+
+            float weightRange = frameWeightB - frameWeightA;
+
+            float weightA = 0;
+            float weightB = (weight - frameWeightA) / weightRange;
+            if (weightB < 0)
+            {
+                if (frameIndexA == 0)
+                {
+                    if (frameWeightA != 0)
+                    {
+                        weightA = weight / frameWeightA;
+                        weightB = 0;
+                    }
+                    else
+                    {
+                        weightA = 1 + abs(weight / weightRange);
+                        weightB = 0;
+                    }
+                }
+                else
+                {
+                    weightA = abs(weightB);
+                    weightB = 0;
+                }
+            }
+            else
+            {
+                weightA = 1 - weightB;
+                if (weightA < 0 && frameIndexB < frameCountM1) continue;
+                weightA = max(0, weightA);
+            }
+
+            output = Mul(_ShapeDeltas[(fullA * _VertexCount) + vertexIndex], weightA);
+            output = Add(output, Mul(_ShapeDeltas[(fullB * _VertexCount) + vertexIndex], weightB));
+            break;
+        }
+    }
+    else if (frameCount > 0)
+    {
+        float maxWeight = _FrameWeights[frameStart];
+        output = Mul(_ShapeDeltas[(frameStart * _VertexCount) + vertexIndex], weight / maxWeight);
+    }
+
+    return output;
+}
+
+// [CCMV2-NERF] mirrors CustomizableCharacterMeshBase.CalculateBustNerfFactor
+float BustNerfFactor(float bustSize, int vertexIndex, float multiplier)
+{
+    float f = saturate(bustSize * min(1.0, pow(_VertexGroups[(_BustNerfGroup * _VertexCount) + vertexIndex], 0.5)));
+    return 1.0 - (f * multiplier);
+}
+
+// [CCMV2-LR]
+float2 WeightLeftRight(int vertexIndex)
+{
+    float midlineWeight = _VertexGroups[_MidlinePreMul + vertexIndex];
+    float2 side = _LeftRight[vertexIndex] != 0 ? float2(0, 1) : float2(1, 0);
+    return lerp(side, float2(0.5, 0.5), midlineWeight);
+}
+
+// [CCMV2-FAT] mirrors FatGatherJob
+[numthreads(THREADS, 1, 1)]
+void FatGather(uint3 id : SV_DispatchThreadID)
+{
+    if (id.x >= _WorkCount) return;
+
+    int slot = (int)id.x / _VertexCount;
+    int meshIndex = _Indices[slot];
+    int vertexIndex = (int)id.x - (slot * _VertexCount);
+
+    float2 wlr = WeightLeftRight(vertexIndex);
+    float2 accumulated = 0;
+
+    int2 range = _FatRanges[vertexIndex];
+    for (int k = range.x; k < range.x + range.y; k++)
+    {
+        int sequenceIndex = _FatEntries[k].x;
+        GroupVertexControlWeight gvw = _FatWeights[sequenceIndex];
+        GroupControlWeight2 control = _FatControl[(meshIndex * _FatControlGroupCount) + gvw.groupIndex];
+
+        float nerf = BustNerfFactor(_BustSizes[meshIndex].x, gvw.vertexIndex, 0.6);
+        MeshVertexDelta shapeDelta = Mul(Mul(SampleShape(gvw.vertexIndex, _FatShapeStart, _FatShapeFrames, control.weight.x), gvw.weight), nerf);
+        float2 fatDelta = control.weight * gvw.weight;
+
+        int bufferIndex = (meshIndex * _FatCombined) + sequenceIndex;
+        MeshVertexDeltaLR lr;
+        lr.left = shapeDelta; lr.right = shapeDelta;
+        _FatDeltasLR[bufferIndex] = lr;
+        float4 dataLR = float4(fatDelta.x, fatDelta.y, fatDelta.x, fatDelta.y);
+        _FatData[bufferIndex] = dataLR;
+
+        accumulated = accumulated + (dataLR.xy * wlr.x) + (dataLR.zw * wlr.y);
+    }
+
+    _FatValues[(meshIndex * _VertexCount) + vertexIndex] = accumulated;
+}
+
+// [CCMV2-MUSCLE] mirrors MuscleGatherJob / UpdateMeshMuscleVertexDeltasJob.CalculateMuscleVertexDelta
+[numthreads(THREADS, 1, 1)]
+void MuscleGather(uint3 id : SV_DispatchThreadID)
+{
+    if (id.x >= _WorkCount) return;
+
+    int slot = (int)id.x / _VertexCount;
+    int meshIndex = _Indices[slot];
+    int vertexIndex = (int)id.x - (slot * _VertexCount);
+
+    float2 wlr = WeightLeftRight(vertexIndex);
+    float accumulated = 0;
+
+    int2 range = _MuscleRanges[vertexIndex];
+    for (int k = range.x; k < range.x + range.y; k++)
+    {
+        int sequenceIndex = _MuscleEntries[k].x;
+        GroupVertexControlWeight gvw = _MuscleWeights[sequenceIndex];
+        GroupControlWeight2 control = _MuscleControl[(meshIndex * _MuscleControlGroupCount) + gvw.groupIndex];
+
+        int vi = gvw.vertexIndex;
+        float2 fat = _FatValuesRO[(meshIndex * _VertexCount) + vi];
+
+        float muscleWeight = gvw.weight * 1.0 * (1.0 - fat.y);
+        float minMass = max(_MinMassShapeWeight, _DefaultMassShapeWeight * pow(saturate(fat.x), 0.3) * 0.7);
+        float2 massWeight = max(minMass, control.weight);
+
+        MeshVertexDelta dl = Mul(SampleShape(vi, _MassShapeStart, _MassShapeFrames, massWeight.x), muscleWeight);
+        MeshVertexDelta dr = Mul(SampleShape(vi, _MassShapeStart, _MassShapeFrames, massWeight.y), muscleWeight);
+
+        float fatMuscleWeight = muscleWeight * fat.x;
+        float2 massSat = saturate((massWeight - _DefaultMassShapeWeight) / _MuscleMassRange);
+        dl = Add(dl, Mul(SampleShape(vi, _BlendShapeStart, _BlendShapeFrames, massSat.x), fatMuscleWeight));
+        dr = Add(dr, Mul(SampleShape(vi, _BlendShapeStart, _BlendShapeFrames, massSat.y), fatMuscleWeight));
+
+        int bufferIndex = (meshIndex * _MuscleCombined) + sequenceIndex;
+        MeshVertexDeltaLR lr;
+        lr.left = dl; lr.right = dr;
+        _MuscleDeltasLR[bufferIndex] = lr;
+        float2 dataLR = massWeight * gvw.weight;
+        _MuscleData[bufferIndex] = dataLR;
+
+        accumulated = accumulated + (dataLR.x * wlr.x) + (dataLR.y * wlr.y);
+    }
+
+    _MuscleValues[(meshIndex * _VertexCount) + vertexIndex] = accumulated;
+}
+
+// [CCMV2-VARIATION] mirrors VariationGatherJob
+[numthreads(THREADS, 1, 1)]
+void VariationGather(uint3 id : SV_DispatchThreadID)
+{
+    if (id.x >= _WorkCount) return;
+
+    int slot = (int)id.x / _VertexCount;
+    int meshIndex = _Indices[slot];
+    int vertexIndex = (int)id.x - (slot * _VertexCount);
+
+    int controlOffset = meshIndex * _VariationControlGroupCount;
+    MeshVertexDelta accumulated = Zero();
+
+    int2 range = _VariationRanges[vertexIndex];
+    for (int k = range.x; k < range.x + range.y; k++)
+    {
+        int2 entry = _VariationEntries[k];
+        for (int b = 0; b < _VariationShapesCount; b++)
+        {
+            GroupControlWeight2 control = _VariationControl[controlOffset + (entry.y * _VariationShapesCount) + b];
+            GroupVertexControlWeight gvw = _VariationWeights[control.vertexSequenceStartIndex + entry.x];
+            int vi = gvw.vertexIndex;
+
+            int2 shapeIndex = _ShapeInfos[_VariationShapesStart + b];
+            MeshVertexDelta dl = Mul(SampleShape(vi, shapeIndex.x, shapeIndex.y, control.weight.x), gvw.weight);
+            MeshVertexDelta dr = Mul(SampleShape(vi, shapeIndex.x, shapeIndex.y, control.weight.y), gvw.weight);
+
+            float2 wlr = WeightLeftRight(vi);
+            accumulated = Add(Add(accumulated, Mul(dl, wlr.x)), Mul(dr, wlr.y));
+        }
+    }
+
+    _VariationDeltas[(meshIndex * _VertexCount) + vertexIndex] = accumulated;
+}
+
+// [CCMV2-FINAL] mirrors FinalizeGatherJob (variation base + fat + muscle + breast)
+[numthreads(THREADS, 1, 1)]
+void FinalizeGather(uint3 id : SV_DispatchThreadID)
+{
+    if (id.x >= _WorkCount) return;
+
+    int slot = (int)id.x / _VertexCount;
+    int meshIndex = _Indices[slot];
+    int vertexIndex = (int)id.x - (slot * _VertexCount);
+    int finalIndex = (meshIndex * _VertexCount) + vertexIndex;
+
+    float2 wlr = WeightLeftRight(vertexIndex);
+    MeshVertexDelta accumulated = _VariationDeltasRO[finalIndex];
+
+    int2 range = _FatRanges[vertexIndex];
+    for (int k = range.x; k < range.x + range.y; k++)
+    {
+        MeshVertexDeltaLR lr = _FatDeltasLRRO[(_FatCombined * meshIndex) + _FatEntries[k].x];
+        accumulated = Add(Add(accumulated, Mul(lr.left, wlr.x)), Mul(lr.right, wlr.y));
+    }
+
+    range = _MuscleRanges[vertexIndex];
+    for (int m = range.x; m < range.x + range.y; m++)
+    {
+        MeshVertexDeltaLR lr = _MuscleDeltasLRRO[(_MuscleCombined * meshIndex) + _MuscleEntries[m].x];
+        accumulated = Add(Add(accumulated, Mul(lr.left, wlr.x)), Mul(lr.right, wlr.y));
+    }
+
+    if (_ApplyBreast != 0)
+    {
+        float2 bustData = _BustSizes[meshIndex];
+        float bustSat = saturate(bustData.x);
+        float muscleMass = saturate((_MuscleValuesRO[finalIndex] - _DefaultMassShapeWeight) / _MuscleMassRange);
+        MeshVertexDelta sizeDelta = SampleShape(vertexIndex, _BustSizeShapeStart, _BustSizeShapeFrames, bustData.x);
+        MeshVertexDelta sizeMuscleDelta = SampleShape(vertexIndex, _BustMuscleShapeStart, _BustMuscleShapeFrames, muscleMass);
+        MeshVertexDelta shapeDelta = SampleShape(vertexIndex, _BreastShapeStart, _BreastShapeFrames, bustData.y);
+
+        sizeDelta = Add(sizeDelta, Mul(Add(sizeMuscleDelta, shapeDelta), bustSat));
+        accumulated = Add(accumulated, sizeDelta);
+    }
+
+    _FinalDeltas[finalIndex] = accumulated;
+}
+
+// [CCMV2-COPY] mirrors InstanceBuffer<MeshVertexDelta>.WriteToBuffer(range)
+[numthreads(THREADS, 1, 1)]
+void CopyDeltas(uint3 id : SV_DispatchThreadID)
+{
+    if (id.x >= _WorkCount) return;
+    int i = _CopyStart + (int)id.x;
+    _CopyDst[i] = _CopySrc[i];
+}

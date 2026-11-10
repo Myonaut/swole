@@ -151,26 +151,32 @@ namespace Swole
                         if (capture.packAsJpg)
                         {
                             var _savePath = savePath;
-                            _savePath = Extensions.CreateUnityAssetPathString(_savePath, capture.textureName, "jpg");
+                            _savePath = Extensions.CreateUnityAssetPathString(_savePath, capture.textureName, "jpg"); 
 
                             DirectoryInfo directoryInfo = new DirectoryInfo(Application.dataPath);
                             directoryInfo = directoryInfo.Parent;
 
+                            string finalPath = Path.Join(directoryInfo.FullName, _savePath);
+                            Directory.CreateDirectory(Path.GetDirectoryName(finalPath)); 
+
                             var bytes = capture.output.EncodeToJPG(100);
-                            File.WriteAllBytes(Path.Join(directoryInfo.FullName, _savePath), bytes);
+                            File.WriteAllBytes(finalPath, bytes);
 
                             UnityEditor.AssetDatabase.Refresh();
                         }
                         if (capture.packAsPng)
                         {
                             var _savePath = savePath;
-                            _savePath = Extensions.CreateUnityAssetPathString(_savePath, capture.textureName, "png");
+                            _savePath = Extensions.CreateUnityAssetPathString(_savePath, capture.textureName, "png"); 
 
                             DirectoryInfo directoryInfo = new DirectoryInfo(Application.dataPath);
                             directoryInfo = directoryInfo.Parent;
 
+                            string finalPath = Path.Join(directoryInfo.FullName, _savePath);
+                            Directory.CreateDirectory(Path.GetDirectoryName(finalPath));
+
                             var bytes = capture.output.EncodeToPNG();
-                            File.WriteAllBytes(Path.Join(directoryInfo.FullName, _savePath), bytes);
+                            File.WriteAllBytes(finalPath, bytes);
 
                             UnityEditor.AssetDatabase.Refresh();
                         }

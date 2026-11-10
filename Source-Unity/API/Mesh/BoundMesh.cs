@@ -12,6 +12,7 @@ namespace Swole.API.Unity
     {
         public const string defaultMatProp_meshProxyBindings = "_MeshProxyBindings";
 
+        public string isDynamicKeyword = "IS_DYNAMIC";
         public string proxyKeyword = "USE_PROXY_MESH";
 
         public string bindingsMaterialPropertyName = "_MeshProxyBindings";
@@ -26,6 +27,7 @@ namespace Swole.API.Unity
         {
             public Renderer renderer;
 
+            public string isDynamicKeywordOverride;
             public string proxyKeywordOverride;
 
             public string bindingsMaterialPropertyNameOverride;
@@ -46,6 +48,7 @@ namespace Swole.API.Unity
                     {
                         if (material != null)
                         {
+                            material.EnableKeyword(string.IsNullOrWhiteSpace(isDynamicKeywordOverride) ? bm.isDynamicKeyword : isDynamicKeywordOverride); 
                             material.EnableKeyword(string.IsNullOrWhiteSpace(proxyKeywordOverride) ? bm.proxyKeyword : proxyKeywordOverride);
                             material.SetBuffer(bindingsPropertyName, bm.bindings.BindingsBuffer);
 

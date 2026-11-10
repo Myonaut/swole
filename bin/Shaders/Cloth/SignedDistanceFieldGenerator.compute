@@ -350,6 +350,9 @@ RWStructuredBuffer<uint> _CellPopulateOffsets; // Size: 4096 <--- NEW: Dedicated
 RWStructuredBuffer<uint> _GridTriangleList; // Size: Max expected intersections (e.g., TriangleCount * 4)
 RWStructuredBuffer<uint> _GlobalCounter; // Size: 1 (Tracks current index allocation)
 
+uint _GridTriangleListSize; // Capacity of _GridTriangleList; writes past it are dropped instead of corrupting memory
+int _SliceOffset; // Z voxel offset used by the incremental (time-sliced) SDF build; 0 for a full dispatch
+
 // Helper: Convert a 3D position to a coarse grid 3D integer index
 int3 GetGridCellCoords(float3 pos)
 {
@@ -540,7 +543,8 @@ void CS_PopulateGrid(uint3 id : SV_DispatchThreadID)
                 InterlockedAdd(_CellPopulateOffsets[flatCell], 1u, localItemOffset);
 
                 // Store securely inside the list without corruption
-                _GridTriangleList[baseStartOffset + localItemOffset] = triIndex;
+                if (baseStartOffset + localItemOffset < _GridTriangleListSize)
+                    _GridTriangleList[baseStartOffset + localItemOffset] = triIndex;
             }
         }
     }
@@ -573,19 +577,22 @@ void CS_PopulateGridWithDeltas(uint3 id : SV_DispatchThreadID)
                 InterlockedAdd(_CellPopulateOffsets[flatCell], 1u, localItemOffset);
 
                 // Store securely inside the list without corruption
-                _GridTriangleList[baseStartOffset + localItemOffset] = triIndex;
+                if (baseStartOffset + localItemOffset < _GridTriangleListSize)
+                    _GridTriangleList[baseStartOffset + localItemOffset] = triIndex;
             }
         }
     }
 }
 
 // -------------------------------------------------------------
-// PASS 4: Voxel-Centric SDF Calculation
+// PASS 4
 // -------------------------------------------------------------
 // Include your existing ShortestDistanceToTriangleSq helper function here
 [numthreads(8, 8, 8)]
-void CS_BuildHighDetailSDF(uint3 id : SV_DispatchThreadID)
+void CS_BuildHighDetailSDF(uint3 dispatchId : SV_DispatchThreadID)
 {
+    uint3 id = uint3(dispatchId.x, dispatchId.y, dispatchId.z + (uint) _SliceOffset);
+
     if (id.x >= (uint) _Resolution || id.y >= (uint) _Resolution || id.z >= (uint) _Resolution)
         return;
 

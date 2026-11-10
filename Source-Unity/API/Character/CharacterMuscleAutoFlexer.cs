@@ -61,12 +61,29 @@ namespace Swole.API.Unity
             public Vector2 angularSpeedRange;
             public Vector2 angularSpeedFlexMultiplier = Vector2.one;
             public bool invertAngleOutputWeight;
+            [Tooltip("How much the angular speed multiplier is allowed to affect the output (0 = ignore velocity, 1 = full effect)."), Range(0f, 1f)]
+            public float angularSpeedInfluence = 1f;
+            [Tooltip("Ignore the pose angle entirely and drive output only by the total angular speed of the transform (axis independent). Output fades to zero when the transform stops moving.")]
+            public bool angularSpeedOnly;
+
+            public TransformBinding MemberwiseCloneBinding() => (TransformBinding)MemberwiseClone();
         }
 
         [Serializable]
         public enum FlexMixType
         {
             Max, Mul, Add
+        }
+
+        [Serializable]
+        public enum InputMixType
+        {
+            [Tooltip("Output is scaled towards the input (lerp(1, input, weight)).")]
+            Multiply,
+            [Tooltip("Input * weight is added to the output.")]
+            Add,
+            [Tooltip("Output becomes max(output, input * weight).")]
+            Max
         }
         [Serializable]
         public class MuscleDependency
@@ -80,6 +97,19 @@ namespace Swole.API.Unity
             public float flexScale = 1f;
             public float2 flexRemap = new float2(0f, 1f);
             public FlexMixType flexMixType;
+            [Tooltip("If true, this flexer's contribution is reduced by how much the muscle is already flexed (e.g. by the animation) before any auto flexing is applied.")]
+            public bool limitByExistingFlex;
+            [Tooltip("Existing flex range remapped to the limit (x = limiting starts, y = contribution fully blocked).")]
+            public Vector2 existingFlexLimitRange = new Vector2(0f, 1f);
+            [Range(0f, 1f), Tooltip("How strongly existing flex blocks this contribution (1 = fully blocked at the end of the range).")]
+            public float existingFlexLimitStrength = 1f;
+
+            public float GetExistingFlexLimit(float existingFlex)
+            {
+                if (!limitByExistingFlex) return 1f;
+                float t = existingFlexLimitRange.y > existingFlexLimitRange.x ? Mathf.InverseLerp(existingFlexLimitRange.x, existingFlexLimitRange.y, existingFlex) : (existingFlex >= existingFlexLimitRange.x ? 1f : 0f);
+                return 1f - Mathf.SmoothStep(0f, 1f, t) * existingFlexLimitStrength;
+            }
 
             [NonSerialized]
             public int cachedMuscleIndex;
@@ -145,6 +175,105 @@ namespace Swole.API.Unity
             public bool useGradualFlexingForTransforms;
             public float gradualFlexingSyncSpeed = 5f;
 
+            [Header("Pose Gate"), Tooltip("Optional: output is faded out as the gate transform's axis points away from the reference direction (e.g. blend out when the upper arm is raised).")]
+            public Transform gateTransformLeft;
+            public Transform gateTransformRight;
+            [Tooltip("Local axis of the gate transform to measure (bone direction).")]
+            public Vector3 gateLocalAxis = Vector3.up;
+            [Tooltip("Space the reference direction is defined in. Defaults to the auto flexer's transform.")]
+            public Transform gateReferenceSpace;
+            public Vector3 gateReferenceDirection = Vector3.down;
+            [Tooltip("Angle (degrees) from the reference direction where the gate starts fading (x) and is fully closed (y).")]
+            public Vector2 gateAngleRange = new Vector2(35f, 75f);
+            [Tooltip("If true the gate only affects transform outputs, not muscle flex.")]
+            public bool gateTransformsOnly;
+
+            [Header("Bust Size Blend"), Tooltip("Blend transform offsets towards the 'large bust' offsets based on the character's bust size.")]
+            public bool useBustSizeBlend;
+            public Vector2 bustSizeRange = new Vector2(0f, 1f);
+            public Vector3 largeBustLocalPositionOffset;
+            public Vector3 largeBustLocalRotationOffsetEuler;
+            public Vector3 largeBustLocalScaleOffset;
+
+            [Header("External Input"), Tooltip("Optional named input channel (e.g. 'exertion', 'load', 'breathExhale') read from the component's input providers or SetInput. Leave empty to ignore.")]
+            public string inputChannel;
+            [Tooltip("If true, '<channel>.L' / '<channel>.R' are queried first for each side, falling back to '<channel>'.")]
+            public bool inputPerSide;
+            [Tooltip("Raw input range remapped to 0-1.")]
+            public Vector2 inputRange = new Vector2(0f, 1f);
+            public InputMixType inputMixType;
+            public float inputWeight = 1f;
+            [Tooltip("If true, the input only affects transform outputs, not muscle flex.")]
+            public bool inputTransformsOnly;
+
+            [Header("Antagonist"), Tooltip("Optional name of another auto flexer on this component whose output suppresses this one (e.g. triceps suppressing biceps).")]
+            public string antagonistFlexer;
+            [Range(0f, 1f)]
+            public float antagonistSuppression = 0.5f;
+
+            [NonSerialized]
+            public AutoFlexer antagonist;
+
+            [NonSerialized]
+            public float bustBlend;
+            [NonSerialized]
+            public Transform owner;
+            [NonSerialized]
+            public CharacterMuscleAutoFlexer component;
+
+            private static float MixInput(float output, float input, InputMixType mixType, float weight)
+            {
+                switch (mixType)
+                {
+                    case InputMixType.Add: return output + input * weight;
+                    case InputMixType.Max: return Mathf.Max(output, input * weight);
+                    default: return output * Mathf.LerpUnclamped(1f, input, weight);
+                }
+            }
+
+            private void ApplyExternalModifiers(ref float flexLeft, ref float flexRight, ref float transformFlexLeft, ref float transformFlexRight)
+            {
+                if (component != null && !string.IsNullOrEmpty(inputChannel))
+                {
+                    float inL = component.GetInput(inputChannel, inputPerSide ? ".L" : null);
+                    float inR = component.GetInput(inputChannel, inputPerSide ? ".R" : null);
+                    if (inputRange.y != inputRange.x)
+                    {
+                        inL = Mathf.InverseLerp(inputRange.x, inputRange.y, inL);
+                        inR = Mathf.InverseLerp(inputRange.x, inputRange.y, inR);
+                    }
+                    transformFlexLeft = MixInput(transformFlexLeft, inL, inputMixType, inputWeight);
+                    transformFlexRight = MixInput(transformFlexRight, inR, inputMixType, inputWeight);
+                    if (!inputTransformsOnly)
+                    {
+                        flexLeft = MixInput(flexLeft, inL, inputMixType, inputWeight);
+                        flexRight = MixInput(flexRight, inR, inputMixType, inputWeight);
+                    }
+                }
+                if (antagonist != null && antagonistSuppression != 0f)
+                {
+                    float sL = 1f - Mathf.Clamp01(antagonist.flexOutputLeft) * antagonistSuppression;
+                    float sR = 1f - Mathf.Clamp01(antagonist.flexOutputRight) * antagonistSuppression;
+                    flexLeft *= sL;
+                    flexRight *= sR;
+                    transformFlexLeft *= sL;
+                    transformFlexRight *= sR;
+                }
+            }
+
+            public AutoFlexer MemberwiseCloneFlexer() => (AutoFlexer)MemberwiseClone();
+
+            private float EvaluateGate(Transform gateTransform)
+            {
+                if (gateTransform == null) return 1f;
+                var space = gateReferenceSpace != null ? gateReferenceSpace : owner;
+                Vector3 refDir = space != null ? space.TransformDirection(gateReferenceDirection) : gateReferenceDirection;
+                Vector3 axis = gateTransform.TransformDirection(gateLocalAxis);
+                float angle = Vector3.Angle(axis, refDir);
+                if (gateAngleRange.y <= gateAngleRange.x) return angle <= gateAngleRange.x ? 1f : 0f;
+                return 1f - Mathf.SmoothStep(0f, 1f, Mathf.InverseLerp(gateAngleRange.x, gateAngleRange.y, angle));
+            }
+
             [NonSerialized]
             public float gradualFlexOutputLeft;
             [NonSerialized]
@@ -160,6 +289,7 @@ namespace Swole.API.Unity
             {
                 float transformFlexLeft = flexLeft;
                 float transformFlexRight = flexRight;
+                ApplyExternalModifiers(ref flexLeft, ref flexRight, ref transformFlexLeft, ref transformFlexRight);
                 if (muscles != null && muscles.Length > 0 && characterMesh != null && characterMesh.IsInitialized)
                 {
                     if (seperateMassScalingForTransforms)
@@ -268,6 +398,24 @@ namespace Swole.API.Unity
                     }
                 } 
 
+                if (gateTransformLeft != null || gateTransformRight != null)
+                {
+                    float gateL = EvaluateGate(gateTransformLeft);
+                    float gateR = EvaluateGate(gateTransformRight);
+                    transformFlexLeft *= gateL;
+                    transformFlexRight *= gateR;
+                    if (!gateTransformsOnly)
+                    {
+                        flexLeft *= gateL;
+                        flexRight *= gateR;
+                    }
+                }
+
+                if (useBustSizeBlend && characterMesh != null && characterMesh.IsInitialized)
+                {
+                    bustBlend = Mathf.SmoothStep(0f, 1f, Mathf.InverseLerp(bustSizeRange.x, bustSizeRange.y, characterMesh.BustSize));
+                }
+
                 if (clampFlexOutput)
                 {
                     flexLeft = Mathf.Clamp(flexLeft, clampRange.x, clampRange.y);
@@ -282,14 +430,24 @@ namespace Swole.API.Unity
                 flexOutputLeft = flexLeft;
                 flexOutputRight = flexRight;
 
-                gradualFlexOutputLeft = Mathf.MoveTowards(gradualFlexOutputLeft, flexLeft, deltaTime * gradualFlexingSyncSpeed);
-                gradualFlexOutputRight = Mathf.MoveTowards(gradualFlexOutputRight, flexRight, deltaTime * gradualFlexingSyncSpeed);
+                gradualFlexOutputLeft = SmoothTowards(gradualFlexOutputLeft, flexLeft, deltaTime, gradualFlexingSyncSpeed);
+                gradualFlexOutputRight = SmoothTowards(gradualFlexOutputRight, flexRight, deltaTime, gradualFlexingSyncSpeed);
 
                 transformFlexOutputLeft = transformFlexLeft;
                 transformFlexOutputRight = transformFlexRight;
 
-                gradualTransformFlexOutputLeft = Mathf.MoveTowards(gradualTransformFlexOutputLeft, transformFlexLeft, deltaTime * gradualFlexingSyncSpeed);
-                gradualTransformFlexOutputRight = Mathf.MoveTowards(gradualTransformFlexOutputRight, transformFlexRight, deltaTime * gradualFlexingSyncSpeed);
+                gradualTransformFlexOutputLeft = SmoothTowards(gradualTransformFlexOutputLeft, transformFlexLeft, deltaTime, gradualFlexingSyncSpeed);
+                gradualTransformFlexOutputRight = SmoothTowards(gradualTransformFlexOutputRight, transformFlexRight, deltaTime, gradualFlexingSyncSpeed);
+            }
+
+            /// <summary>
+            /// Frame-rate independent exponential approach with a linear speed cap, so large target jumps ease in instead of popping.
+            /// </summary>
+            private static float SmoothTowards(float current, float target, float deltaTime, float speed)
+            {
+                if (speed <= 0f) return target;
+                float smoothed = Mathf.Lerp(current, target, 1f - Mathf.Exp(-speed * 1.5f * deltaTime));
+                return Mathf.MoveTowards(current, smoothed, deltaTime * speed * 1.5f);
             }
 
             [NonSerialized]
@@ -303,9 +461,14 @@ namespace Swole.API.Unity
                 muscleTargetLocalRotationOffset_Right = Quaternion.Euler(Vector3.Scale(muscleTargetLocalRotationOffsetEuler, rightMuscleTargetLocalRotationOffsetEulerMultiplier));
                 muscleTargetLocalPositionOffset_Right = Vector3.Scale(muscleTargetLocalPositionOffset, rightMuscleTargetLocalPositionOffsetMultiplier);
             }
+            public void Initialize(Transform owner)
+            {
+                this.owner = owner;
+                Initialize();
+            }
             public void Initialize()
             {
-                
+
                 if (muscles != null)
                 {
                     foreach (var muscle in muscles) muscle.cachedMuscleIndex = -1;
@@ -330,6 +493,21 @@ namespace Swole.API.Unity
             {
                 float2 flexValues = useGradualFlexingForTransforms ? new float2(gradualTransformFlexOutputLeft, gradualTransformFlexOutputRight) : new float2(transformFlexOutputLeft, transformFlexOutputRight);
 
+                Vector3 posOffsetL = muscleTargetLocalPositionOffset;
+                Vector3 posOffsetR = muscleTargetLocalPositionOffset_Right;
+                // Scale euler angles directly (rather than slerping a quaternion) so large offsets (>= 180 degrees) scale linearly instead of taking the shortest arc.
+                Vector3 rotEulerL = muscleTargetLocalRotationOffsetEuler;
+                Vector3 rotEulerR = Vector3.Scale(muscleTargetLocalRotationOffsetEuler, rightMuscleTargetLocalRotationOffsetEulerMultiplier);
+                Vector3 scaleOffset = muscleTargetLocalScaleOffset;
+                if (useBustSizeBlend && bustBlend > 0f)
+                {
+                    posOffsetL = Vector3.Lerp(posOffsetL, largeBustLocalPositionOffset, bustBlend);
+                    posOffsetR = Vector3.Lerp(posOffsetR, Vector3.Scale(largeBustLocalPositionOffset, rightMuscleTargetLocalPositionOffsetMultiplier), bustBlend);
+                    rotEulerL = Vector3.Lerp(muscleTargetLocalRotationOffsetEuler, largeBustLocalRotationOffsetEuler, bustBlend);
+                    rotEulerR = Vector3.Scale(rotEulerL, rightMuscleTargetLocalRotationOffsetEulerMultiplier);
+                    scaleOffset = Vector3.Lerp(scaleOffset, largeBustLocalScaleOffset, bustBlend);
+                }
+
                 if (muscleTransformLeft != null)
                 { 
                     //Debug.Log($"{muscleTransformLeft} : {flexValues.x}");
@@ -337,9 +515,9 @@ namespace Swole.API.Unity
 
                     muscleTransformLeft.GetLocalPositionAndRotation(out var localPos, out var localRot);
                     var localScale = muscleTransformLeft.localScale;
-                    localPos = localPos + muscleTargetLocalPositionOffset * flexValues.x;
-                    localRot = Quaternion.SlerpUnclamped(Quaternion.identity, muscleTargetLocalRotationOffset, flexValues.x) * localRot;
-                    localScale = localScale + muscleTargetLocalScaleOffset * flexValues.x;
+                    localPos = localPos + posOffsetL * flexValues.x;
+                    localRot = Quaternion.Euler(rotEulerL * flexValues.x) * localRot;
+                    localScale = localScale + scaleOffset * flexValues.x;
                     muscleTransformLeft.SetLocalPositionAndRotation(localPos, localRot);
                     muscleTransformLeft.localScale = localScale;
                 }
@@ -351,9 +529,9 @@ namespace Swole.API.Unity
 
                     muscleTransformRight.GetLocalPositionAndRotation(out var localPos, out var localRot);
                     var localScale = muscleTransformRight.localScale;
-                    localPos = localPos + muscleTargetLocalPositionOffset_Right * flexValues.y;
-                    localRot = Quaternion.SlerpUnclamped(Quaternion.identity, muscleTargetLocalRotationOffset_Right, flexValues.y) * localRot;
-                    localScale = localScale + muscleTargetLocalScaleOffset * flexValues.y;
+                    localPos = localPos + posOffsetR * flexValues.y;
+                    localRot = Quaternion.Euler(rotEulerR * flexValues.y) * localRot;
+                    localScale = localScale + scaleOffset * flexValues.y;
                     muscleTransformRight.SetLocalPositionAndRotation(localPos, localRot);
                     muscleTransformRight.localScale = localScale;
                 }
@@ -361,14 +539,148 @@ namespace Swole.API.Unity
         }
 
 #if UNITY_EDITOR
+        [SerializeField, Tooltip("Auto flexer to copy data from. Bone references are remapped to bones at the same hierarchy path under this component's root.")]
+#endif
+        private CharacterMuscleAutoFlexer copySource;
+#if UNITY_EDITOR
+        [SerializeField, Tooltip("Check to copy all auto flexer data from the copy source. Resets itself afterwards.")]
+#endif
+        private bool copyFromSource;
+
+#if UNITY_EDITOR
         private void OnValidate()
         {
+            if (copyFromSource)
+            {
+                copyFromSource = false;
+                if (copySource != null && copySource != this)
+                {
+                    UnityEditor.Undo.RecordObject(this, "Copy Auto Flexer Data");
+                    CopyFrom(copySource);
+                    UnityEditor.EditorUtility.SetDirty(this);
+                }
+            }
+
             if (autoFlexers != null)
             {
-                foreach (var flexer in autoFlexers) flexer.ReinitializeOffsets(); 
+                foreach (var flexer in autoFlexers) if (flexer != null) flexer.ReinitializeOffsets(); 
             }
         }
 #endif
+
+        /// <summary>
+        /// Copies all auto flexer data from another component. Transform references are remapped to transforms with the same relative hierarchy path under this component's transform.
+        /// </summary>
+        public void CopyFrom(CharacterMuscleAutoFlexer source)
+        {
+            if (source == null || source == this) return;
+
+            autoFlexingMix = source.autoFlexingMix;
+
+            if (source.autoFlexers == null)
+            {
+                autoFlexers = null;
+                return;
+            }
+
+            var srcRoot = source.transform;
+            var dstRoot = transform;
+            var cache = new Dictionary<Transform, Transform>();
+
+            Transform Remap(Transform t)
+            {
+                if (t == null) return null;
+                if (cache.TryGetValue(t, out var result)) return result;
+
+                result = null;
+                if (t == srcRoot)
+                {
+                    result = dstRoot;
+                }
+                else if (t.IsChildOf(srcRoot))
+                {
+                    var path = new List<string>();
+                    var current = t;
+                    while (current != null && current != srcRoot)
+                    {
+                        path.Add(current.name);
+                        current = current.parent;
+                    }
+                    path.Reverse();
+                    result = dstRoot.Find(string.Join("/", path));
+                    if (result == null) Debug.LogWarning($"[{nameof(CharacterMuscleAutoFlexer)}] Could not find '{string.Join("/", path)}' under '{dstRoot.name}' while copying auto flexer data.", this);
+                }
+                else
+                {
+                    result = t; // external reference, keep as is
+                }
+
+                cache[t] = result;
+                return result;
+            }
+
+            TransformBinding CopyBinding(TransformBinding b)
+            {
+                if (b == null) return null;
+                var c = (TransformBinding)b.MemberwiseCloneBinding();
+                c.transformLeft = Remap(b.transformLeft);
+                c.transformRight = Remap(b.transformRight);
+                return c;
+            }
+
+            var newFlexers = new AutoFlexer[source.autoFlexers.Length];
+            for (int i = 0; i < newFlexers.Length; i++)
+            {
+                var src = source.autoFlexers[i];
+                if (src == null) continue;
+
+                var dst = src.MemberwiseCloneFlexer();
+                dst.bindingA = CopyBinding(src.bindingA);
+                dst.bindingB = CopyBinding(src.bindingB);
+                dst.bindingC = CopyBinding(src.bindingC);
+                dst.bindingD = CopyBinding(src.bindingD);
+
+                if (src.muscles != null)
+                {
+                    dst.muscles = new MuscleDependency[src.muscles.Length];
+                    for (int m = 0; m < src.muscles.Length; m++)
+                    {
+                        var sm = src.muscles[m];
+                        if (sm == null) continue;
+                        dst.muscles[m] = new MuscleDependency()
+                        {
+                            name = sm.name,
+                            massScaling = sm.massScaling,
+                            massScalingTransforms = sm.massScalingTransforms,
+                            massMax = sm.massMax,
+                            flexScale = sm.flexScale,
+                            flexRemap = sm.flexRemap,
+                            flexMixType = sm.flexMixType,
+                            limitByExistingFlex = sm.limitByExistingFlex,
+                            existingFlexLimitRange = sm.existingFlexLimitRange,
+                            existingFlexLimitStrength = sm.existingFlexLimitStrength,
+                            cachedMuscleIndex = -1
+                        };
+                    }
+                }
+
+                dst.muscleTransformLeft = Remap(src.muscleTransformLeft);
+                dst.muscleTransformRight = Remap(src.muscleTransformRight);
+                dst.gateTransformLeft = Remap(src.gateTransformLeft);
+                dst.gateTransformRight = Remap(src.gateTransformRight);
+                dst.gateReferenceSpace = Remap(src.gateReferenceSpace);
+                dst.owner = dstRoot;
+                dst.component = this;
+                dst.antagonist = null;
+                dst.jobIndexLeft = -1;
+                dst.jobIndexRight = -1;
+                dst.ReinitializeOffsets();
+
+                newFlexers[i] = dst;
+            }
+
+            autoFlexers = newFlexers;
+        }
 
         public CustomizableCharacterMesh characterMesh;
         public CustomizableCharacterMeshBase characterMeshV2;
@@ -381,6 +693,35 @@ namespace Swole.API.Unity
         public AutoFlexer[] autoFlexers;
         [NonSerialized]
         private AutoFlexer[] autoFlexersWithTransforms;
+
+        [Tooltip("Components implementing IAutoFlexInputProvider that supply named input channels. Providers on this object's hierarchy are found automatically if this is empty.")]
+        public List<MonoBehaviour> inputProviders = new List<MonoBehaviour>();
+
+        [NonSerialized]
+        private readonly Dictionary<string, float> inputOverrides = new Dictionary<string, float>();
+
+        /// <summary>Sets a named input directly
+        public void SetInput(string channel, float value) { if (!string.IsNullOrEmpty(channel)) inputOverrides[channel] = value; }
+        public void ClearInput(string channel) { if (!string.IsNullOrEmpty(channel)) inputOverrides.Remove(channel); }
+
+        public bool TryGetInput(string channel, out float value)
+        {
+            if (inputOverrides.TryGetValue(channel, out value)) return true;
+            return AutoFlexInputUtility.TryGetInput(inputProviders, channel, out value);
+        }
+        /// <summary>Gets a named input, trying '<channel><sideSuffix>' first if a suffix is given. Returns 0 if not supplied.</summary>
+        public float GetInput(string channel, string sideSuffix = null)
+        {
+            if (!string.IsNullOrEmpty(sideSuffix) && TryGetInput(channel + sideSuffix, out float sided)) return sided;
+            return TryGetInput(channel, out float value) ? value : 0f;
+        }
+
+        public AutoFlexer FindAutoFlexer(string name)
+        {
+            if (autoFlexers == null || string.IsNullOrEmpty(name)) return null;
+            foreach (var f in autoFlexers) if (f != null && f.name == name) return f;
+            return null;
+        }
 
         private struct BoundAutoFlexer
         {
@@ -396,6 +737,10 @@ namespace Swole.API.Unity
             if (characterMeshV2 == null) characterMeshV2 = gameObject.GetComponentInChildren<CustomizableCharacterMeshBase>(true);
             if (animator == null) animator = gameObject.GetComponentInChildren<CustomAnimator>(true); 
 
+            if (inputProviders == null) inputProviders = new List<MonoBehaviour>();
+            inputProviders.RemoveAll(p => p == null);
+            if (inputProviders.Count == 0) AutoFlexInputUtility.FindProviders(transform.root, inputProviders);
+
             if (autoFlexers != null)
             {
                 List<AutoFlexer> autoFlexersWithTransforms = new List<AutoFlexer>();
@@ -403,7 +748,10 @@ namespace Swole.API.Unity
                 {
                     if (autoFlexer == null) continue;
 
-                    autoFlexer.Initialize();
+                    autoFlexer.component = this;
+                    autoFlexer.antagonist = string.IsNullOrEmpty(autoFlexer.antagonistFlexer) ? null : FindAutoFlexer(autoFlexer.antagonistFlexer);
+                    if (ReferenceEquals(autoFlexer.antagonist, autoFlexer)) autoFlexer.antagonist = null;
+                    autoFlexer.Initialize(transform);
                     if (autoFlexer.muscleTransformLeft != null || autoFlexer.muscleTransformRight != null) autoFlexersWithTransforms.Add(autoFlexer);
                 }
                 if (autoFlexersWithTransforms.Count > 0) this.autoFlexersWithTransforms = autoFlexersWithTransforms.ToArray();
@@ -486,6 +834,8 @@ namespace Swole.API.Unity
                         muscleData.valuesLeft.flex = 0f;//float.MinValue;
                         muscleData.valuesRight.flex = 0f;//float.MinValue;
                     }
+                    float existingFlexL = muscleData.valuesLeft.flex;
+                    float existingFlexR = muscleData.valuesRight.flex;
                     bool isFirstL = true;
                     bool isFirstR = true;
                     foreach (var flexerBinding in entry.Value)
@@ -495,6 +845,7 @@ namespace Swole.API.Unity
                         if (localMuscle.flexScale == 0f) continue; 
                         
                         float2 flexValues = math.remap(0f, 1f, localMuscle.flexRemap.x, localMuscle.flexRemap.y, flexer.useGradualFlexingForCharacterMesh ? new float2(flexer.gradualFlexOutputLeft, flexer.gradualFlexOutputRight) : new float2(flexer.flexOutputLeft, flexer.flexOutputRight)) * localMuscle.flexScale;
+                        if (localMuscle.limitByExistingFlex) flexValues *= new float2(localMuscle.GetExistingFlexLimit(existingFlexL), localMuscle.GetExistingFlexLimit(existingFlexR));
 
                         muscleData.valuesLeft.flex = MixFlex(muscleData.valuesLeft.flex, flexValues.x * autoFlexingMix * flexer.autoFlexMixLeft, localMuscle.flexMixType, ref isFirstL); 
                         muscleData.valuesRight.flex = MixFlex(muscleData.valuesRight.flex, flexValues.y * autoFlexingMix * flexer.autoFlexMixRight, localMuscle.flexMixType, ref isFirstR);
@@ -754,6 +1105,9 @@ namespace Swole.API.Unity
             binding.angularSpeedRangesMax = new float4(bindingA.angularSpeedRange.y, bindingB.angularSpeedRange.y, bindingC.angularSpeedRange.y, bindingD.angularSpeedRange.y);
             binding.angularSpeedFlexMultipliersMin = new float4(bindingA.angularSpeedFlexMultiplier.x, bindingB.angularSpeedFlexMultiplier.x, bindingC.angularSpeedFlexMultiplier.x, bindingD.angularSpeedFlexMultiplier.x);
             binding.angularSpeedFlexMultipliersMax = new float4(bindingA.angularSpeedFlexMultiplier.y, bindingB.angularSpeedFlexMultiplier.y, bindingC.angularSpeedFlexMultiplier.y, bindingD.angularSpeedFlexMultiplier.y);
+            binding.angularSpeedInfluences = math.saturate(new float4(bindingA.angularSpeedInfluence, bindingB.angularSpeedInfluence, bindingC.angularSpeedInfluence, bindingD.angularSpeedInfluence));
+            binding.smoothedAngularSpeeds = float4.zero;
+            binding.angularSpeedOnlyFlags = new bool4(bindingA.angularSpeedOnly, bindingB.angularSpeedOnly, bindingC.angularSpeedOnly, bindingD.angularSpeedOnly);
 
             if (bindingA.transformLeft != null || bindingB.transformLeft != null || bindingC.transformLeft != null || bindingD.transformLeft != null)
             {
@@ -1067,8 +1421,10 @@ namespace Swole.API.Unity
             SingletonCallStack.Insert(preIkExecutor); 
         }
 
-        protected void OnDestroy()
+        public override void OnDestroyed()
         {
+            base.OnDestroyed();
+
             if (preIkExecutor != null) 
             {
                 SingletonCallStack.Remove(preIkExecutor);
@@ -1123,6 +1479,9 @@ namespace Swole.API.Unity
             public float4 angularSpeedRangesMax;
             public float4 angularSpeedFlexMultipliersMin;
             public float4 angularSpeedFlexMultipliersMax;
+            public float4 angularSpeedInfluences;
+            public float4 smoothedAngularSpeeds;
+            public bool4 angularSpeedOnlyFlags;
             public float3x4 targetStartLocalPositions;
             public float3x4 targetStartVectors;
             public float3x4 targetAngleAxisVectors;
@@ -1177,6 +1536,7 @@ namespace Swole.API.Unity
 
                 var lengthWeights = (lengths - binding.targetMinDistances) / distanceRanges;
                 lengthWeights = math.saturate(math.select(1f - math.min(1f, math.abs(lengthWeights - 1f)), lengthWeights, binding.distanceWeightClampFlags));
+                lengthWeights = math.smoothstep(0f, 1f, lengthWeights); // soften range edges to avoid visible kinks
                 lengthWeights = math.select(lengthWeights, 1f - lengthWeights, binding.invertDistanceWeightFlags);
                 lengthWeights = math.select(float4.zero, lengthWeights, lengthWeightValidation);
                 float distanceWeightsTotal = math.csum(binding.distanceWeights);
@@ -1225,6 +1585,7 @@ namespace Swole.API.Unity
                 var axisWeightC = math.dot(binding.targetAngleStartAxisVectors.c2, axis2C);
                 var axisWeightD = math.dot(binding.targetAngleStartAxisVectors.c3, axis2D);
                 float4 axisWeights = math.saturate(math.remap(binding.angleAxisDotFalloffLowerBounds, 1f, 0f, 1f, new float4(axisWeightA, axisWeightB, axisWeightC, axisWeightD)));
+                axisWeights = math.smoothstep(0f, 1f, axisWeights); // smooth axis falloff so off-axis limb orientations fade instead of kinking
                 //Debug.Log($"AXIS: {axisWeights}"); // UNCOMMENT BURSTCOMPILE
 
                 var rotationWeightValidation = new bool4(math.any(binding.targetStartVectors.c0 != 0f), math.any(binding.targetStartVectors.c1 != 0f), math.any(binding.targetStartVectors.c2 != 0f), math.any(binding.targetStartVectors.c3 != 0f));
@@ -1239,23 +1600,34 @@ namespace Swole.API.Unity
                 rotWeights = (rotWeights - binding.targetAnglesDegreesMin) / targetAngleRanges;
                 rotWeights = math.select(float4.zero, rotWeights, targetAngleRanges != 0f);
                 rotWeights = math.saturate(math.select(1f - math.min(1f, math.abs(rotWeights - 1f)), rotWeights, binding.angleWeightClampFlags));
+                rotWeights = math.smoothstep(0f, 1f, rotWeights); // soften range edges to avoid visible kinks
 
 
                 var angularSpeedWeightA = Vector3.SignedAngle(binding.targetStartVectors.c0, angSpdVecA, axis2A);
                 var angularSpeedWeightB = Vector3.SignedAngle(binding.targetStartVectors.c1, angSpdVecB, axis2B);
                 var angularSpeedWeightC = Vector3.SignedAngle(binding.targetStartVectors.c2, angSpdVecC, axis2C);
                 var angularSpeedWeightD = Vector3.SignedAngle(binding.targetStartVectors.c3, angSpdVecD, axis2D);
-                float4 angularSpeedWeights = new float4(angularSpeedWeightA, angularSpeedWeightB, angularSpeedWeightC, angularSpeedWeightD) / deltaTime;  
+                // Clamp delta time so hitches/tiny frames can't explode the velocity estimate, then low-pass filter it so single-frame spikes don't pop the flex.
+                float safeDeltaTime = math.max(deltaTime, 1f / 240f);
+                float4 rawAngularSpeeds = new float4(angularSpeedWeightA, angularSpeedWeightB, angularSpeedWeightC, angularSpeedWeightD);
+                float4 totalAngularDeltas = math.degrees(new float4(math.angle(quaternion.identity, rotTemporalOffsetA), math.angle(quaternion.identity, rotTemporalOffsetB), math.angle(quaternion.identity, rotTemporalOffsetC), math.angle(quaternion.identity, rotTemporalOffsetD)));
+                rawAngularSpeeds = math.select(rawAngularSpeeds, totalAngularDeltas, binding.angularSpeedOnlyFlags) / safeDeltaTime;
+                rawAngularSpeeds = math.select(rawAngularSpeeds, float4.zero, deltaTime <= 0f);
+                float speedFilter = 1f - math.exp(-safeDeltaTime / 0.09f);
+                binding.smoothedAngularSpeeds = math.lerp(binding.smoothedAngularSpeeds, rawAngularSpeeds, speedFilter);
+                float4 angularSpeedWeights = binding.smoothedAngularSpeeds;
                 angularSpeedWeights = math.select(angularSpeedWeights, math.abs(angularSpeedWeights), binding.absoluteAngleFlags);
                 float4 angularSpeedRanges = binding.angularSpeedRangesMax - binding.angularSpeedRangesMin;
                 angularSpeedWeights = (angularSpeedWeights - binding.angularSpeedRangesMin) / angularSpeedRanges;
                 angularSpeedWeights = math.saturate(math.select(1f - math.min(1f, math.abs(angularSpeedWeights - 1f)), angularSpeedWeights, binding.angleWeightClampFlags));
+                angularSpeedWeights = math.smoothstep(0f, 1f, angularSpeedWeights);
                 angularSpeedWeights = math.lerp(binding.angularSpeedFlexMultipliersMin, binding.angularSpeedFlexMultipliersMax, angularSpeedWeights);
                 bool4 angularSpeedWeightValidation = angularSpeedRanges != 0f;
                 angularSpeedWeights = math.select(new float4(1f, 1f, 1f, 1f), angularSpeedWeights, angularSpeedWeightValidation);
+                angularSpeedWeights = math.lerp(1f, angularSpeedWeights, binding.angularSpeedInfluences);
 
-
-                rotWeights = math.select(angularSpeedWeights, rotWeights * angularSpeedWeights, (math.sign(angularSpeedWeights) >= 0f) | !angularSpeedWeightValidation); 
+                // Always multiply (never replace) so the result stays continuous with the pose-based weight; negative multipliers can still pull flex below zero.
+                rotWeights = math.select(rotWeights, 1f, binding.angularSpeedOnlyFlags) * angularSpeedWeights; 
                 //rotWeights = math.select(rotWeights, math.select(math.min(angularSpeedWeights, rotWeights), math.max(angularSpeedWeights, rotWeights), math.sign(angularSpeedWeights) >= 0f), angularSpeedWeightValidation);  
 
                 rotWeights = math.select(rotWeights, 1f - rotWeights, binding.invertAngleWeightFlags);

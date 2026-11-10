@@ -4222,13 +4222,16 @@ namespace Swole.API.Unity.Animation.Curves
                     if (selectedKeys.Count > 0) DeselectAll(); else SelectAll();
                 }
 
-                if (InputProxy.PressedClipboardCopyKey) CopySelectedKeysToClipboard();
-                if (InputProxy.PressedClipboardCutKey)
+                if (!IsEditMenuOpen) // Clipboard shortcuts must not act on keys while a per key/tangent edit panel is open (text fields use the same shortcuts)
                 {
-                    CopySelectedKeysToClipboard();
-                    DeleteSelectedKeys();
+                    if (InputProxy.PressedClipboardCopyKey) CopySelectedKeysToClipboard();
+                    if (InputProxy.PressedClipboardCutKey)
+                    {
+                        CopySelectedKeysToClipboard();
+                        DeleteSelectedKeys();
+                    }
+                    if (InputProxy.PressedClipboardPasteKey) PasteKeysFromClipboard();  
                 }
-                if (InputProxy.PressedClipboardPasteKey) PasteKeysFromClipboard();
             }
 
             float zoom = InputProxy.Scroll * zoomSensitivity;
@@ -5569,6 +5572,8 @@ namespace Swole.API.Unity.Animation.Curves
 
         private static readonly List<KeyframeState> clipboard = new List<KeyframeState>();
 
+        public bool IsEditMenuOpen => (editKeyMenuTransform != null && editKeyMenuTransform.gameObject.activeSelf) || (editTangentMenuTransform != null && editTangentMenuTransform.gameObject.activeSelf);
+
         public virtual void CopySelectedKeysToClipboard()
         {
             if (keyframeData == null) return;
@@ -5597,6 +5602,8 @@ namespace Swole.API.Unity.Animation.Curves
                 var newKey = CreateNewKeyframeData(default, -1, default, false);
                 newKey.state = keyState;
                 bool hasKeyAtTime = true;
+                int attempts = 0;
+                float step = 0.0001f;
                 while (hasKeyAtTime)
                 {
                     hasKeyAtTime = false;
@@ -5607,11 +5614,15 @@ namespace Swole.API.Unity.Animation.Curves
                         if (Mathf.Approximately(existingKey.Time, newKey.Time))
                         {
                             hasKeyAtTime = true;
-                            newKey.Time += 0.0001f;
+                            newKey.Time += step;
+                            step *= 2f; // Grow the step so large time values (where a tiny step is lost to float precision) still resolve
                             break;
                         }
                     }
+
+                    if (hasKeyAtTime && ++attempts >= 64) break; // Never loop indefinitely
                 }
+                if (hasKeyAtTime) continue; // Could not find a free time; skip this key
 
                 tempKeys.Add(newKey); 
                 tempKeys2.Add(newKey);

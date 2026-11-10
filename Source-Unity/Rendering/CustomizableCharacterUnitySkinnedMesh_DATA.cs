@@ -203,8 +203,9 @@ namespace Swole.Morphing
         public float FlexNerfThreshold => Data.FlexNerfThreshold;
         public float FlexNerfExponent => Data.FlexNerfExponent;
         public int RaycastLOD => Data.RaycastLOD;
-
+         
         public UVChannelURP NearestVertexUVChannel => Data.NearestVertexUVChannel;
+        public UVChannelURP NearestVertexIndexUVChannel => Data.NearestVertexIndexUVChannel;
         public RGBAChannel NearestVertexIndexElement => Data.NearestVertexIndexElement;
 
         public string ConvertDefaultMuscleGroupName(MuscleGroupsDefault defaultGroup) => Data.ConvertDefaultMuscleGroupName(defaultGroup);
@@ -288,6 +289,26 @@ namespace Swole.Morphing
         public int VariationShapesCount => Data.VariationShapesCount;
         public int IndexOfVariationShape(string name, bool caseSensitive = false) => Data.IndexOfVariationShape(name, caseSensitive);
         public ShapeInfo GetVariationShapeInfo(int index) => Data.GetVariationShapeInfo(index);
+
+        public float GetMuscleMassKilograms(string groupName)
+        {
+            throw new NotImplementedException(); 
+        }
+
+        public float GetMuscleMassKilograms(int groupIndex)
+        {
+            throw new NotImplementedException();
+        }
+
+        public float GetFatKilograms(string groupName)
+        {
+            throw new NotImplementedException();
+        }
+
+        public float GetFatKilograms(int groupIndex)
+        {
+            throw new NotImplementedException();
+        }
 
         public ComputeBuffer VertexGroupsBuffer => Data.VertexGroupsBuffer;
         public ComputeBuffer MeshShapeFrameDeltasBuffer => Data.MeshShapeFrameDeltasBuffer;

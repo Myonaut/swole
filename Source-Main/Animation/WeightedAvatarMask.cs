@@ -143,12 +143,21 @@ namespace Swole.Animation
 
         public float weightMultiplier = 1f;
 
+        /// <summary>
+        /// Weight used for bones/properties that are not explicitly defined in the mask lists.
+        /// </summary>
+#if UNITY_EDITOR
+        [UnityEngine.Range(0, 1), UnityEngine.Tooltip("Weight used for bones/properties that are not explicitly defined in the mask lists.")]
+#endif
+        public float defaultWeight = 0f;
+
         public List<WeightedEntry> boneMask;
         public List<WeightedEntry> propertyMask;
 
         public WeightedAvatarMask() { }
         public WeightedAvatarMask(WeightedAvatarMaskComposite composite)
         {
+            this.defaultWeight = composite.defaultWeight;
             this.boneMask = composite.boneMask;
             this.propertyMask = composite.propertyMask; 
         }
@@ -168,6 +177,7 @@ namespace Swole.Animation
         public int BoneCount => boneMask == null ? 0 : boneMask.Count;
         public int PropertyCount => propertyMask == null ? 0 : propertyMask.Count;
 
+        public WeightedEntry Get(string boneName, bool invert) => Get(boneName, defaultWeight, invert);
         public WeightedEntry Get(string boneName, float defaultWeight = 0f, bool invert = false)
         {
             if (boneMask == null) return default;
@@ -201,6 +211,7 @@ namespace Swole.Animation
         }
 
 
+        public WeightedEntry GetProperty(string propertyName, bool invert) => GetProperty(propertyName, defaultWeight, invert);
         public WeightedEntry GetProperty(string propertyName, float defaultWeight = 0f, bool invert = false)
         {
             if (propertyMask == null) return default;
@@ -237,6 +248,8 @@ namespace Swole.Animation
         public WeightedAvatarMask Duplicate()
         {
             var newInstance = new WeightedAvatarMask();
+            newInstance.weightMultiplier = weightMultiplier;
+            newInstance.defaultWeight = defaultWeight;
             if (boneMask != null) newInstance.boneMask = new List<WeightedEntry>(boneMask);
             if (propertyMask != null) newInstance.propertyMask = new List<WeightedEntry>(propertyMask);
             return newInstance;
@@ -246,6 +259,7 @@ namespace Swole.Animation
         {
             return new WeightedAvatarMaskComposite()  
             {
+                defaultWeight = mask.defaultWeight,
                 boneMask = mask.boneMask == null ? new List<WeightedEntry>() : new List<WeightedEntry>(mask.boneMask),
                 propertyMask = mask.propertyMask == null ? new List<WeightedEntry>() : new List<WeightedEntry>(mask.propertyMask) 
             };
@@ -256,6 +270,7 @@ namespace Swole.Animation
             {
                 return new WeightedAvatarMaskComposite()
                 {
+                    defaultWeight = defaultWeight,
                     boneMask = boneMask,
                     propertyMask = propertyMask
                 };
@@ -282,6 +297,11 @@ namespace Swole.Animation
     [Serializable]
     public struct WeightedAvatarMaskComposite
     {
+        /// <summary>
+        /// Weight used for bones/properties that are not explicitly defined in the mask lists.
+        /// </summary>
+        public float defaultWeight;
+
         public List<WeightedAvatarMask.WeightedEntry> boneMask;
         public List<WeightedAvatarMask.WeightedEntry> propertyMask;
 
@@ -302,6 +322,7 @@ namespace Swole.Animation
         public int BoneCount => boneMask == null ? 0 : boneMask.Count;
         public int PropertyCount => propertyMask == null ? 0 : propertyMask.Count;
 
+        public WeightedAvatarMask.WeightedEntry Get(string boneName, bool invert) => Get(boneName, defaultWeight, invert);
         public WeightedAvatarMask.WeightedEntry Get(string boneName, float defaultWeight = 0f, bool invert = false)
         {
             if (boneMask == null) return default;
@@ -333,6 +354,7 @@ namespace Swole.Animation
         }
 
 
+        public WeightedAvatarMask.WeightedEntry GetProperty(string propertyId, bool invert) => GetProperty(propertyId, defaultWeight, invert);
         public WeightedAvatarMask.WeightedEntry GetProperty(string propertyId, float defaultWeight = 0f, bool invert = false)
         {
             if (propertyMask == null) return default;
@@ -363,9 +385,53 @@ namespace Swole.Animation
             return false;
         }
 
+        private static List<WeightedAvatarMask.WeightedEntry> CombineEntries(List<WeightedAvatarMask.WeightedEntry> a, float defaultA, List<WeightedAvatarMask.WeightedEntry> b, float defaultB, Func<float, float, float> op)
+        {
+            if (a == null && b == null) return null;
+
+            var result = new List<WeightedAvatarMask.WeightedEntry>();
+            if (a != null)
+            {
+                foreach (var val in a)
+                {
+                    float other = defaultB;
+                    if (b != null) foreach (var val2 in b) if (val2.entryName == val.entryName) { other = val2.weight; break; }
+                    result.Add(new WeightedAvatarMask.WeightedEntry() { entryName = val.entryName, weight = op(val.weight, other) });
+                }
+            }
+            if (b != null)
+            {
+                foreach (var val in b)
+                {
+                    bool found = false;
+                    foreach (var existing in result) if (existing.entryName == val.entryName) { found = true; break; }
+                    if (!found) result.Add(new WeightedAvatarMask.WeightedEntry() { entryName = val.entryName, weight = op(defaultA, val.weight) });
+                }
+            }
+
+            return result;
+        }
+
+        /// <summary>
+        /// Combines two masks entry-wise; entries missing from one mask use that mask's default weight.
+        /// </summary>
+        public static WeightedAvatarMaskComposite Combine(WeightedAvatarMaskComposite a, WeightedAvatarMaskComposite b, Func<float, float, float> op)
+        {
+            if (!a.IsValid) return b;
+            if (!b.IsValid) return a;
+
+            return new WeightedAvatarMaskComposite()
+            {
+                defaultWeight = op(a.defaultWeight, b.defaultWeight),
+                boneMask = CombineEntries(a.boneMask, a.defaultWeight, b.boneMask, b.defaultWeight, op) ?? new List<WeightedAvatarMask.WeightedEntry>(),
+                propertyMask = CombineEntries(a.propertyMask, a.defaultWeight, b.propertyMask, b.defaultWeight, op) ?? new List<WeightedAvatarMask.WeightedEntry>()
+            };
+        }
+
         public static WeightedAvatarMaskComposite operator -(WeightedAvatarMaskComposite a)
         {
             var comp = new WeightedAvatarMaskComposite();
+            comp.defaultWeight = -a.defaultWeight;
 
             comp.boneMask = a.boneMask == null ? new List<WeightedAvatarMask.WeightedEntry>() : new List<WeightedAvatarMask.WeightedEntry>(a.boneMask);
             comp.propertyMask = a.propertyMask == null ? new List<WeightedAvatarMask.WeightedEntry>() : new List<WeightedAvatarMask.WeightedEntry>(a.propertyMask);
@@ -388,179 +454,20 @@ namespace Swole.Animation
             return comp;
         }
         public static WeightedAvatarMaskComposite operator +(WeightedAvatarMaskComposite a, WeightedAvatarMask b) => a + b.AsComposite(true);
-        public static WeightedAvatarMaskComposite operator +(WeightedAvatarMaskComposite a, WeightedAvatarMaskComposite b)
-        {
-            var comp = new WeightedAvatarMaskComposite();
-
-            comp.boneMask = a.boneMask == null ? new List<WeightedAvatarMask.WeightedEntry>() : new List<WeightedAvatarMask.WeightedEntry>(a.boneMask);
-            comp.propertyMask = a.propertyMask == null ? new List<WeightedAvatarMask.WeightedEntry>() : new List<WeightedAvatarMask.WeightedEntry>(a.propertyMask);
-
-            if (b.boneMask != null)
-            {
-                foreach(var val in b.boneMask)
-                {
-                    bool flag = false;
-                    for(int i = 0; i < comp.boneMask.Count; i++)
-                    {
-                        var val2 = comp.boneMask[i];
-                        if (val2.entryName != val.entryName) continue;
-
-                        val2.weight = val.weight + val2.weight;
-                        comp.boneMask[i] = val2;
-                        flag = true;
-                    }
-                    if (!flag) comp.boneMask.Add(val);
-                }
-            }
-            if (b.propertyMask != null)
-            {
-                foreach (var val in b.propertyMask)
-                {
-                    bool flag = false;
-                    for (int i = 0; i < comp.propertyMask.Count; i++)
-                    {
-                        var val2 = comp.propertyMask[i];
-                        if (val2.entryName != val.entryName) continue;
-
-                        val2.weight = val.weight + val2.weight;
-                        comp.propertyMask[i] = val2;
-                        flag = true;
-                    }
-                    if (!flag) comp.propertyMask.Add(val);
-                }
-            }
-
-            return comp;
-        }
+        public static WeightedAvatarMaskComposite operator +(WeightedAvatarMaskComposite a, WeightedAvatarMaskComposite b) => Combine(a, b, (x, y) => x + y);
         public static WeightedAvatarMaskComposite operator -(WeightedAvatarMaskComposite a, WeightedAvatarMask b) => a - b.AsComposite(true);
-        public static WeightedAvatarMaskComposite operator -(WeightedAvatarMaskComposite a, WeightedAvatarMaskComposite b)
-        {
-            var comp = new WeightedAvatarMaskComposite();
-
-            comp.boneMask = a.boneMask == null ? new List<WeightedAvatarMask.WeightedEntry>() : new List<WeightedAvatarMask.WeightedEntry>(a.boneMask);
-            comp.propertyMask = a.propertyMask == null ? new List<WeightedAvatarMask.WeightedEntry>() : new List<WeightedAvatarMask.WeightedEntry>(a.propertyMask);
-
-            if (b.boneMask != null)
-            {
-                foreach (var val in b.boneMask)
-                {
-                    bool flag = false;
-                    for (int i = 0; i < comp.boneMask.Count; i++)
-                    {
-                        var val2 = comp.boneMask[i];
-                        if (val2.entryName != val.entryName) continue;
-
-                        val2.weight = val.weight - val2.weight;
-                        comp.boneMask[i] = val2;
-                        flag = true;
-                    }
-                    if (!flag) comp.boneMask.Add(-val);
-                }
-            }
-            if (b.propertyMask != null)
-            {
-                foreach (var val in b.propertyMask)
-                {
-                    bool flag = false;
-                    for (int i = 0; i < comp.propertyMask.Count; i++)
-                    {
-                        var val2 = comp.propertyMask[i];
-                        if (val2.entryName != val.entryName) continue;
-
-                        val2.weight = val.weight - val2.weight;
-                        comp.propertyMask[i] = val2;
-                        flag = true;
-                    }
-                    if (!flag) comp.propertyMask.Add(-val);
-                }
-            }
-
-            return comp;
-        }
+        public static WeightedAvatarMaskComposite operator -(WeightedAvatarMaskComposite a, WeightedAvatarMaskComposite b) => Combine(a, b, (x, y) => x - y);
 
         public static WeightedAvatarMaskComposite operator *(WeightedAvatarMaskComposite a, WeightedAvatarMask b) => a * b.AsComposite(true);
-        public static WeightedAvatarMaskComposite operator *(WeightedAvatarMaskComposite a, WeightedAvatarMaskComposite b)
-        {
-            var comp = new WeightedAvatarMaskComposite();
-
-            comp.boneMask = a.boneMask == null ? new List<WeightedAvatarMask.WeightedEntry>() : new List<WeightedAvatarMask.WeightedEntry>(a.boneMask);
-            comp.propertyMask = a.propertyMask == null ? new List<WeightedAvatarMask.WeightedEntry>() : new List<WeightedAvatarMask.WeightedEntry>(a.propertyMask);
-
-            if (b.boneMask != null)
-            {
-                foreach (var val in b.boneMask)
-                {
-                    for (int i = 0; i < comp.boneMask.Count; i++)
-                    {
-                        var val2 = comp.boneMask[i];
-                        if (val2.entryName != val.entryName) continue;
-
-                        val2.weight = val.weight * val2.weight;
-                        comp.boneMask[i] = val2;
-                    }
-                }
-            }
-            if (b.propertyMask != null)
-            {
-                foreach (var val in b.propertyMask)
-                {
-                    for (int i = 0; i < comp.propertyMask.Count; i++)
-                    {
-                        var val2 = comp.propertyMask[i];
-                        if (val2.entryName != val.entryName) continue;
-
-                        val2.weight = val.weight * val2.weight;
-                        comp.propertyMask[i] = val2;
-                    }
-                }
-            }
-
-            return comp;
-        }
+        public static WeightedAvatarMaskComposite operator *(WeightedAvatarMaskComposite a, WeightedAvatarMaskComposite b) => Combine(a, b, (x, y) => x * y);
 
         public static WeightedAvatarMaskComposite operator /(WeightedAvatarMaskComposite a, WeightedAvatarMask b) => a / b.AsComposite(true);
-        public static WeightedAvatarMaskComposite operator /(WeightedAvatarMaskComposite a, WeightedAvatarMaskComposite b)
-        {
-            var comp = new WeightedAvatarMaskComposite();
-
-            comp.boneMask = a.boneMask == null ? new List<WeightedAvatarMask.WeightedEntry>() : new List<WeightedAvatarMask.WeightedEntry>(a.boneMask);
-            comp.propertyMask = a.propertyMask == null ? new List<WeightedAvatarMask.WeightedEntry>() : new List<WeightedAvatarMask.WeightedEntry>(a.propertyMask);
-
-            if (b.boneMask != null)
-            {
-                foreach (var val in b.boneMask)
-                {
-                    for (int i = 0; i < comp.boneMask.Count; i++)
-                    {
-                        var val2 = comp.boneMask[i];
-                        if (val2.entryName != val.entryName) continue;
-
-                        val2.weight = val.weight / val2.weight;
-                        comp.boneMask[i] = val2;
-                    }
-                }
-            }
-            if (b.propertyMask != null)
-            {
-                foreach (var val in b.propertyMask)
-                {
-                    for (int i = 0; i < comp.propertyMask.Count; i++)
-                    {
-                        var val2 = comp.propertyMask[i];
-                        if (val2.entryName != val.entryName) continue;
-
-                        val2.weight = val.weight / val2.weight;
-                        comp.propertyMask[i] = val2;
-                    }
-                }
-            }
-
-            return comp;
-        }
+        public static WeightedAvatarMaskComposite operator /(WeightedAvatarMaskComposite a, WeightedAvatarMaskComposite b) => Combine(a, b, (x, y) => x / y);
 
         public static WeightedAvatarMaskComposite operator +(WeightedAvatarMaskComposite a, float b)
         {
             var comp = new WeightedAvatarMaskComposite();
+            comp.defaultWeight = a.defaultWeight + b;
 
             if (a.boneMask != null)
             {
@@ -586,6 +493,7 @@ namespace Swole.Animation
         public static WeightedAvatarMaskComposite operator -(WeightedAvatarMaskComposite a, float b)
         {
             var comp = new WeightedAvatarMaskComposite();
+            comp.defaultWeight = a.defaultWeight - b;
 
             if (a.boneMask != null)
             {
@@ -612,6 +520,7 @@ namespace Swole.Animation
         public static WeightedAvatarMaskComposite operator +(float a, WeightedAvatarMaskComposite b)
         {
             var comp = new WeightedAvatarMaskComposite();
+            comp.defaultWeight = a + b.defaultWeight;
 
             if (b.boneMask != null)
             {
@@ -637,6 +546,7 @@ namespace Swole.Animation
         public static WeightedAvatarMaskComposite operator -(float a, WeightedAvatarMaskComposite b)
         {
             var comp = new WeightedAvatarMaskComposite();
+            comp.defaultWeight = a - b.defaultWeight;
 
             if (b.boneMask != null)
             {
@@ -663,6 +573,7 @@ namespace Swole.Animation
         public static WeightedAvatarMaskComposite operator *(WeightedAvatarMaskComposite a, float b)
         {
             var comp = new WeightedAvatarMaskComposite();
+            comp.defaultWeight = a.defaultWeight * b;
 
             if (a.boneMask != null)
             {
@@ -689,6 +600,7 @@ namespace Swole.Animation
         public static WeightedAvatarMaskComposite operator /(WeightedAvatarMaskComposite a, float b)
         {
             var comp = new WeightedAvatarMaskComposite();
+            comp.defaultWeight = a.defaultWeight / b;
 
             if (a.boneMask != null)
             {

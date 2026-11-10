@@ -179,7 +179,7 @@ namespace Swole.API.Unity.Store
             return currencies.Remove(currencyId);
         }
 
-        public static bool UnregisterCurrency(GameCurrency currency) => currency != null && UnregisterProduct(currency.ID);
+        public static bool UnregisterCurrency(GameCurrency currency) => currency != null && UnregisterCurrency(currency.ID);
 
         public static void ClearCurrencies() => currencies.Clear();
 

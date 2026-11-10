@@ -9,8 +9,11 @@ using UnityEngine.Rendering;
 
 namespace Swole
 {
+
     public class PerCameraRenderSettings : MonoBehaviour
     {
+
+        public bool applyEveryFrame = true;
 
         [SerializeField]
         new private Camera camera;
@@ -18,7 +21,7 @@ namespace Swole
         {
             get
             {
-                if (camera == null) camera = gameObject.GetComponent<Camera>(); 
+                if (camera == null) camera = gameObject.GetComponent<Camera>();
                 return camera;
             }
         }
@@ -28,7 +31,6 @@ namespace Swole
         [Serializable]
         public struct RenderSettingsState
         {
-
             public bool overrideFog;
             public bool enableFog;
             public Color fogColor;
@@ -47,7 +49,7 @@ namespace Swole
             [ColorUsage(false, true)]
             public Color ambientEquatorColor;
             [ColorUsage(false, true)]
-            public Color ambientGroundColor; 
+            public Color ambientGroundColor;
 
             public static RenderSettingsState GetCurrentState()
             {
@@ -71,6 +73,7 @@ namespace Swole
 
                 return state;
             }
+
             public void Apply()
             {
                 if (overrideFog)
@@ -79,7 +82,7 @@ namespace Swole
                     RenderSettings.fogColor = fogColor;
                     RenderSettings.fogMode = fogMode;
                     RenderSettings.fogDensity = fogDensity;
-                    RenderSettings.fogStartDistance = fogStartDistance; 
+                    RenderSettings.fogStartDistance = fogStartDistance;
                     RenderSettings.fogEndDistance = fogEndDistance;
                 }
 
@@ -95,43 +98,63 @@ namespace Swole
             }
         }
 
-        // Unity calls this method automatically when it enables this component
+        // Static baseline to preserve true global settings across all scene instances
+        private RenderSettingsState globalDefaultSettings;
+        private bool isGlobalDefaultCached = false;
+
+        private bool hasApplied;
+
+        private void Awake()
+        {
+            // Cache the pristine, original scene settings BEFORE any rendering loops start
+            if (!isGlobalDefaultCached)
+            {
+                globalDefaultSettings = RenderSettingsState.GetCurrentState();
+                isGlobalDefaultCached = true;
+            }
+
+            hasApplied = false; 
+        }
+
         private void OnEnable()
         {
-            camera = Camera; 
-
-            // Add WriteLogMessage as a delegate of the RenderPipelineManager.beginCameraRendering event
+            camera = Camera;
             RenderPipelineManager.beginCameraRendering += BeginRender;
             RenderPipelineManager.endCameraRendering += EndRender;
         }
 
-        // Unity calls this method automatically when it disables this component
         private void OnDisable()
         {
-            // Remove WriteLogMessage as a delegate of the  RenderPipelineManager.beginCameraRendering event
             RenderPipelineManager.beginCameraRendering -= BeginRender;
             RenderPipelineManager.endCameraRendering -= EndRender;
         }
 
-        private RenderSettingsState defaultSettings;
-        // When this method is a delegate of RenderPipeline.beginCameraRendering event, Unity calls this method every time it raises the beginCameraRendering event
         void BeginRender(ScriptableRenderContext context, Camera camera)
         {
-            if (ReferenceEquals(camera, this.camera))
+            if (applyEveryFrame || !hasApplied)
             {
-                defaultSettings = RenderSettingsState.GetCurrentState();
-                renderSettings.Apply();
+                // Only override if URP is processing your exact targeted Game Camera
+                if (ReferenceEquals(camera, this.camera))
+                {
+                    renderSettings.Apply();
+                    hasApplied = true;
+                }
             }
         }
 
         void EndRender(ScriptableRenderContext context, Camera camera)
         {
-            if (ReferenceEquals(camera, this.camera))
+            if (applyEveryFrame)
             {
-                defaultSettings.Apply();
+                // Restore back to the clean global baseline, avoiding mid-frame pipeline corruption
+                if (ReferenceEquals(camera, this.camera))
+                {
+                    globalDefaultSettings.Apply();
+                }
             }
         }
     }
+
 }
 
 #endif

@@ -12,11 +12,19 @@ namespace Swole.Unity
         {
             Debug.Log("Prewarming shader buffers.");
 
+            // Pack RGB and Intensity cleanly into a single Vector4
+            Vector4 colorIntensity = new Vector4(1f, 1f, 1f, 0.03f); 
+            Shader.SetGlobalVector("_GlobalFakeLightColorIntensity", colorIntensity);
+
+            // Pass the offset vector
+            Shader.SetGlobalVector("_GlobalFakeLightOffsetVS", new Vector4(0.1f, 0.1f, 0.1f, 0));
+
+
             var defaultBuffer = PersistentJobDataTracker.GetEmptyGraphicsBuffer();
 
             Shader.SetGlobalBuffer(Swole.API.Unity.BodyMoldSystem.clothingMatProp_skinBindings, defaultBuffer);
-            Shader.SetGlobalBuffer(Swole.API.Unity.BodyMoldSystem.bodyMatProp_finalWorldDeltas, defaultBuffer); 
-            
+            Shader.SetGlobalBuffer(Swole.API.Unity.BodyMoldSystem.bodyMatProp_finalWorldDeltas, defaultBuffer);
+
             Shader.SetGlobalBuffer(Swole.API.Unity.BoundMesh.defaultMatProp_meshProxyBindings, defaultBuffer);
 
             Shader.SetGlobalBuffer("_SkinningMatrices", defaultBuffer);
@@ -31,7 +39,7 @@ namespace Swole.Unity
             Shader.SetGlobalBuffer("_FatGroupInfluences", defaultBuffer);
             Shader.SetGlobalBuffer("_PerVertexDeltaData", defaultBuffer);
             Shader.SetGlobalBuffer("_VertexColorDeltas", defaultBuffer);
-            Shader.SetGlobalBuffer("_LeftRightFlags", defaultBuffer); 
+            Shader.SetGlobalBuffer("_LeftRightFlags", defaultBuffer);
         }
     }
 

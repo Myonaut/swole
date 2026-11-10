@@ -35,6 +35,33 @@ namespace Swole.UI
             public float angleSize;
         }
 
+#if UNITY_EDITOR
+        [SerializeField, TextArea(12, 24)]
+#endif
+        protected string setupInstructions =
+            "MENU ITEM PROTOTYPE (required):\n" +
+            "- A RectTransform object, used as a template for each wedge. It is deactivated at runtime and instantiated through a pool.\n" +
+            "- Should contain a Button (its Target Graphic receives a PointerEventsProxy automatically) to handle hover/click.\n" +
+            "\n" +
+            "WEDGE MASKING:\n" +
+            "Each wedge is the intersection of two 180 degree (half-plane) masks, so it works for any item count:\n" +
+            "1. WHAT THE 'HALF PLANE' IS: a plain rectangle (the default square UI Image works) used as a Mask. Its pivot is X = 0.5, Y = 0 (bottom center) and its height is about the radius of the circle (width should be at least the circle's diameter). It sits exactly on the circle's center, so only the part of the circle on one side of its flat bottom edge, i.e. a half of the circle, is revealed, and rotating the rectangle swings it around the circle's center.\n" +
+            "2. TWO MASKS MAKE A WEDGE: the prototype root is the first half-plane mask and a child named after 'Menu Item Object Size Mask Name' (default 'size') is the second, nested inside the first. For N items on a page, angleStep = 360 / N and sizeAngle = 180 - angleStep. The menu rotates the root by (itemAngle + sizeAngle/2) and the 'size' child locally by -sizeAngle. The overlap of the two half-planes is a wedge exactly angleStep degrees wide, so it works for any item count.\n" +
+            "3. The visible graphic (the colored circle/ring and the Button's Target Graphic) must be a descendant of the 'size' mask so both masks clip it. A full circle graphic works; only the wedge-shaped overlap is shown.\n" +
+            "4. Optionally, name that graphic's object after 'Menu Item Object Circle Name' (default 'circle'). When Preserve Circle Rotation is on, it is rotated by -itemAngle so gradients/textures on the circle keep a fixed orientation while the masks rotate around it.\n" +
+            "5. The mask rectangles (bottom-center pivot) and the circle must all rest on the same point: the menu's center. Rotating them then sweeps around the center. Spacing/Spacing Per Item offsets the wedge outward from the center.\n" +
+            "6. Because masks clip raycasts as well as rendering, the Button only receives pointer events inside the wedge.\n" +
+            "6b. Optionally, a descendant named after 'Menu Item Object Display Name Name' (default 'name') containing a UI Text or TMP_Text receives the item's display name. After the wedge is rotated, this object's world rotation is reset to the menu's rotation so the text stays upright. Place it under the 'size' mask at the position inside the wedge where the label should appear.\n" +
+            "7. AUTOMATIC MASK COMPONENTS: only the Mask components are added automatically (with the mask graphic hidden). If the prototype root or the size child already has a Mask (or RectMask2D), it is left alone. Otherwise a Mask component is added to it, which requires that object to already have a Graphic (e.g. an Image with the default square sprite, pivot (0.5, 0)). Graphics and the size child are NEVER created: if the root/size object has no Graphic, or no child matches 'Menu Item Object Size Mask Name', an error is logged.\n" +
+            "\n" +
+            "MENU ITEM ICON PROTOTYPE (optional):\n" +
+            "- A RectTransform object containing a child UnityEngine.UI.Image that displays the item's sprite. If left empty, no icons are created.\n" +
+            "- The Image's anchored position (distance from center) is used as the base icon push; raycast target is disabled automatically.\n" +
+            "- Keep its pivot at the menu center so rotating the root places the icon around the circle.\n" +
+            "\n" +
+            "SELECTION TEXT (optional): assign a UI Text and/or TMP_Text to display the highlighted item's name.";
+
+        [Tooltip("The items displayed in the menu. Items beyond Max Menu Items Per Page are placed on additional pages.")]
         [SerializeField]
         protected List<MenuItem> menuItems = new List<MenuItem>();
         public bool TryGetItem(string id, out MenuItem item)
@@ -84,7 +111,7 @@ namespace Swole.UI
             if (highlightEndListener != null)
             {
                 if (menuItem.onHighlightEnd == null) menuItem.onHighlightEnd = new UnityEvent();
-                menuItem.onHighlightEnd.AddListener(highlightListener);
+                menuItem.onHighlightEnd.AddListener(highlightEndListener);
             }
 
             if (selectListener != null)
@@ -129,12 +156,55 @@ namespace Swole.UI
         }
 
         protected PrefabPool menuItemPool;
+        private bool hasDisplayNameOffset;
+        private Vector3 displayNameOffset;
+        [Tooltip("Required. Template wedge object (RectTransform) with a Button, a 'size' child, and optionally a 'circle' child. Deactivated at runtime.")]
         [SerializeField]
         protected RectTransform menuItemPrototype;
+        protected virtual bool EnsureMask(Transform target, string description)
+        {
+            if (target.GetComponent<Mask>() != null || target.GetComponent<RectMask2D>() != null) return true;
+
+            if (target.GetComponent<Graphic>() == null)
+            {
+                Debug.LogError($"[{nameof(UIRadialMenu)}] {description} '{target.name}' has no Graphic (e.g. Image) to use as a mask shape. Add a half-plane graphic to it.", target);
+                return false;
+            }
+
+            var mask = target.gameObject.AddComponent<Mask>(); 
+            mask.showMaskGraphic = false;
+            return true;
+        }
+
+        protected virtual void EnsureMenuItemMasks(RectTransform prototype)
+        {
+            if (prototype == null) return;
+
+            EnsureMask(prototype, "Menu item prototype root");
+
+            var sizeMask = prototype.FindDeepChildLiberal(menuItemObjectSizeMaskName);
+            if (sizeMask == null)
+            {
+                Debug.LogError($"[{nameof(UIRadialMenu)}] Menu item prototype '{prototype.name}' has no child named '{menuItemObjectSizeMaskName}' to use as the size mask.", prototype);
+                return;
+            }
+
+            EnsureMask(sizeMask, "Size mask object");
+        }
+
         public void SetMenuItemPrototype(RectTransform menuItemPrototype, bool rebuildUI = true)
         {
             this.menuItemPrototype = menuItemPrototype;
             if (menuItemPrototype == null) return;
+
+            EnsureMenuItemMasks(menuItemPrototype);
+
+            var prototypeDisplayName = menuItemPrototype.FindDeepChildLiberal(menuItemObjectDisplayNameName);
+            hasDisplayNameOffset = prototypeDisplayName != null;
+            if (hasDisplayNameOffset)
+            {
+                displayNameOffset = this.transform.InverseTransformVector(prototypeDisplayName.position - menuItemPrototype.position);
+            }
 
             if (menuItemPool != null) 
             { 
@@ -145,11 +215,16 @@ namespace Swole.UI
         }
         protected List<RectTransform> activeMenuItemObjects = new List<RectTransform>();
 
+        [Tooltip("Name of the child object in the menu item prototype that is rotated to size the wedge.")]
         public string menuItemObjectSizeMaskName = "size";
+        [Tooltip("Name of the child object in the menu item prototype that is counter-rotated when Preserve Circle Rotation is enabled.")]
         public string menuItemObjectCircleName = "circle";
+        [Tooltip("Optional. Name of a child object in the menu item prototype containing a UI Text or TMP_Text that displays the item's display name. It is kept upright after the wedge is rotated.")]
+        public string menuItemObjectDisplayNameName = "name";
 
 
         protected PrefabPool menuItemIconPool;
+        [Tooltip("Optional. Template icon object (RectTransform) containing a child Image. If empty, no icons are created.")]
         [SerializeField]
         protected RectTransform menuItemIconPrototype;
         public void SetMenuItemIconPrototype(RectTransform menuItemIconPrototype, bool rebuildUI = true)
@@ -179,12 +254,16 @@ namespace Swole.UI
         }
         protected List<RectTransform> activeMenuItemIconObjects = new List<RectTransform>();
 
+        [Tooltip("Optional. UI Text that displays the highlighted item's display name.")]
         public UnityEngine.UI.Text selectionText;
+        [Tooltip("Optional. TextMeshPro text that displays the highlighted item's display name.")]
         public TMPro.TMP_Text selectionTextTMP;
 
+        [Tooltip("Extra distance icons are pushed outward for each item on the page beyond 2.")]
         public float iconPushPerItem;
         private float baseIconPush;
 
+        [Tooltip("Maximum number of items shown at once; additional items go to further pages.")]
         public int maxMenuItemsPerPage = 8;
         public int Pages => menuItems == null ? 1 : Mathf.Max(1, Mathf.CeilToInt(menuItems.Count / (float)maxMenuItemsPerPage));
         protected int page;
@@ -199,9 +278,16 @@ namespace Swole.UI
             if (rebuildUI) Rebuild();
         }
 
+        [Tooltip("If true, the currently stick-highlighted item is selected when this menu is disabled.")]
         public bool selectOnDeactivate;
+        [Tooltip("If true, the right joystick selects items; otherwise the left joystick is used.")]
         public bool useRightStick;
+        [Tooltip("Invert the horizontal axis of the stick/cursor input used to pick a wedge.")]
+        public bool invertHorizontalInput;
+        [Tooltip("Invert the vertical axis of the stick/cursor input used to pick a wedge.")]
+        public bool invertVerticalInput;
 
+        [Tooltip("If true, the 'circle' child of each wedge is counter-rotated so its graphic keeps a fixed orientation.")]
         [SerializeField]
         protected bool preserveCircleRotation;
         public void SetPreserveCircleRotation(bool preserveCircleRotation, bool rebuildUI = true)
@@ -215,6 +301,7 @@ namespace Swole.UI
             set => SetPreserveCircleRotation(value);
         }
 
+        [Tooltip("Base distance wedges and icons are offset from the menu center.")]
         [SerializeField]
         protected float spacing;
         public void SetSpacing(float spacing, bool rebuildUI = true)
@@ -228,6 +315,7 @@ namespace Swole.UI
             set => SetSpacing(value);
         }
 
+        [Tooltip("Additional offset from center for each item on the page beyond 2.")]
         [SerializeField]
         protected float spacingPerItem;
         public void SetSpacingPerItem(float spacingPerItem, bool rebuildUI = true)
@@ -259,11 +347,14 @@ namespace Swole.UI
             SetMenuItemPrototype(menuItemPrototype, false);
             menuItemPrototype.gameObject.SetActive(false);
 
-            menuItemIconPool = new GameObject("icons").AddOrGetComponent<PrefabPool>();
-            menuItemIconPool.transform.SetParent(this.transform, false);
-            menuItemIconPool.SetContainerTransform(menuItemIconPool.transform, false, false, true);
-            SetMenuItemIconPrototype(menuItemIconPrototype, false);
-            menuItemIconPrototype.gameObject.SetActive(false);
+            if (menuItemIconPrototype != null)
+            {
+                menuItemIconPool = new GameObject("icons").AddOrGetComponent<PrefabPool>();
+                menuItemIconPool.transform.SetParent(this.transform, false);
+                menuItemIconPool.SetContainerTransform(menuItemIconPool.transform, false, false, true);
+                SetMenuItemIconPrototype(menuItemIconPrototype, false);
+                menuItemIconPrototype.gameObject.SetActive(false);
+            }
 
             Rebuild(); 
         }
@@ -298,16 +389,28 @@ namespace Swole.UI
         protected MenuItem prevHighlight;
         protected MenuItem currentHighlight;
         protected MenuItem currentStickHighlight;
+        protected float cursorX;
+        protected float cursorY;
         protected virtual void Update()
         {
-            var eventSystem = EventSystem.current;
+            var eventSystem = EventSystem.current; 
 
             bool selectionFlag = false;
             var stickHor = useRightStick ? UIInput.MainRightJoystickHorizontal : UIInput.MainLeftJoystickHorizontal;
             var stickVer = useRightStick ? UIInput.MainRightJoystickVertical : UIInput.MainLeftJoystickVertical; 
+            if (Mathf.Abs(stickHor) <= 0.2f && Mathf.Abs(stickVer) <= 0.2f)
+            {
+                cursorX = Mathf.Clamp(cursorX + UIInput.CursorHorizontal, -1f, 1f);
+                cursorY = Mathf.Clamp(cursorY + UIInput.CursorVertical, -1f, 1f); 
+
+                stickHor = cursorX;
+                stickVer = cursorY; 
+            }
             if (Mathf.Abs(stickHor) > 0.2f || Mathf.Abs(stickVer) > 0.2f) 
             {
-                float angle = Vector2.SignedAngle(new Vector2(0f, 1f), new Vector2(stickHor, -stickVer).normalized) + 180f;
+                float inputX = invertHorizontalInput ? -stickHor : stickHor;
+                float inputY = invertVerticalInput ? -stickVer : stickVer;
+                float angle = Vector2.SignedAngle(new Vector2(0f, 1f), new Vector2(inputX, -inputY).normalized) + 180f;
                 foreach(var item in menuItems) 
                 {
                     if (Mathf.Abs(Maths.GetMinDeltaAngle(angle, item.angleStart)) <= item.angleSize)
@@ -369,15 +472,15 @@ namespace Swole.UI
             activeMenuItemObjects.Clear();
             foreach (var obj in activeMenuItemIconObjects)
             {
-                if (obj == null) continue;
+                if (obj == null || menuItemIconPool == null) continue;
                 menuItemIconPool.Release(obj.gameObject);
             }
-            activeMenuItemObjects.Clear();
+            activeMenuItemIconObjects.Clear();
 
             int pageCount = Pages;
             if (page >= pageCount) page = pageCount - 1;
             int itemStartIndex = page * maxMenuItemsPerPage;
-            int itemsOnThisPage = Mathf.Clamp(menuItems.Count - itemStartIndex, 2, maxMenuItemsPerPage);
+            int itemsOnThisPage = Mathf.Clamp(menuItems.Count - itemStartIndex, 2, maxMenuItemsPerPage); 
             int itemEndIndex = itemStartIndex + itemsOnThisPage;
             float angleStep = 360f / itemsOnThisPage;
             float angleStepHalf = angleStep * 0.5f;
@@ -391,7 +494,8 @@ namespace Swole.UI
                 int itemIndexOnPage = i - itemStartIndex;
 
                 if (!menuItemPool.TryGetNewInstance(out GameObject obj)) continue;
-                if (!menuItemIconPool.TryGetNewInstance(out GameObject iconObj)) 
+                GameObject iconObj = null;
+                if (menuItemIconPool != null && !menuItemIconPool.TryGetNewInstance(out iconObj)) 
                 {
                     menuItemPool.Release(obj);
                     continue;
@@ -403,11 +507,11 @@ namespace Swole.UI
                     menuItemPool.Release(obj);
                     continue;
                 }
-                var rectTransformIcon = iconObj.GetComponent<RectTransform>();
-                if (rectTransformIcon == null)
+                RectTransform rectTransformIcon = iconObj == null ? null : iconObj.GetComponent<RectTransform>();
+                if (iconObj != null && rectTransformIcon == null)
                 {
                     menuItemPool.Release(obj);
-                    menuItemPool.Release(iconObj);
+                    menuItemIconPool.Release(iconObj);
                     continue;
                 }
 
@@ -427,16 +531,34 @@ namespace Swole.UI
 
                 var rot = Quaternion.Euler(0f, 0f, angle);
                 rectTransform.localRotation = rot * Quaternion.Euler(0f, 0f, sizeAngleHalf);
-                rectTransformIcon.localRotation = rot;
+                if (rectTransformIcon != null) rectTransformIcon.localRotation = rot;
 
                 var pos = rot * Vector2.up * localSpacing;
                 rectTransform.anchoredPosition = pos;
-                rectTransformIcon.anchoredPosition = pos; 
+                if (rectTransformIcon != null) rectTransformIcon.anchoredPosition = pos; 
+
+                var displayNameObj = rectTransform.FindDeepChildLiberal(menuItemObjectDisplayNameName);
+                if (displayNameObj != null)
+                {
+                    string displayName = item == null ? string.Empty : item.displayName;
+
+                    var displayNameText = displayNameObj.GetComponentInChildren<UnityEngine.UI.Text>(true);
+                    if (displayNameText != null) displayNameText.text = displayName;
+
+                    var displayNameTextTMP = displayNameObj.GetComponentInChildren<TMPro.TMP_Text>(true);
+                    if (displayNameTextTMP != null) displayNameTextTMP.text = displayName;
+
+                    if (hasDisplayNameOffset)
+                    {
+                        displayNameObj.position = rectTransform.position + this.transform.TransformVector(rot * displayNameOffset);
+                    }
+                    displayNameObj.rotation = this.transform.rotation;
+                }
 
                 activeMenuItemObjects.Add(rectTransform);
-                activeMenuItemIconObjects.Add(rectTransformIcon);
+                if (rectTransformIcon != null) activeMenuItemIconObjects.Add(rectTransformIcon);
 
-                var iconImage = iconObj.GetComponentInChildren<UnityEngine.UI.Image>();
+                var iconImage = iconObj == null ? null : iconObj.GetComponentInChildren<UnityEngine.UI.Image>();
                 if (iconImage != null)
                 {
                     iconImage.sprite = item == null ? null : item.icon;

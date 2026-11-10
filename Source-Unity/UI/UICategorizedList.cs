@@ -27,6 +27,9 @@ namespace Swole.UI
         public bool usePrefabPool = true;
         private PrefabPool prefabPool;
 
+        public string categoryNameObjectName;
+        public string memberNameObjectName;
+
         [NonSerialized]
         private bool initialized=false;
 
@@ -275,8 +278,17 @@ namespace Swole.UI
             Category category = new Category() { gameObject=inst, name=categoryName, rectTransform=rt, objectIsSpecial = specialInstance != null, preventObjectDeletion = specialInstance != null && !allowDestroySpecialInstance };
             categories.Add(category);
 
-            category.text = inst.GetComponentInChildren<Text>(true);
-            category.textTMP = inst.GetComponentInChildren<TMP_Text>(true);
+            var nameObj = inst;
+            if (!string.IsNullOrWhiteSpace(categoryNameObjectName))
+            {
+                var childT = inst.transform.FindDeepChildLiberal(categoryNameObjectName);
+                if (childT != null) nameObj = childT.gameObject; else nameObj = null;
+            }
+            if (nameObj != null)
+            {
+                category.text = nameObj.GetComponentInChildren<Text>(true);
+                category.textTMP = nameObj.GetComponentInChildren<TMP_Text>(true);
+            }
 
             if (category.text != null) category.text.text = categoryName;  
             if (category.textTMP != null) category.textTMP.SetText(categoryName);        
@@ -395,8 +407,21 @@ namespace Swole.UI
 
             inst.name = memberName;
 
-            var text = inst.GetComponentInChildren<Text>(true);
-            var textTMP = inst.GetComponentInChildren<TMP_Text>(true);
+            var nameObj = inst;
+            if (!string.IsNullOrWhiteSpace(memberNameObjectName))
+            {
+                var childT = inst.transform.FindDeepChildLiberal(memberNameObjectName);
+                if (childT != null) nameObj = childT.gameObject; else nameObj = null; 
+            }
+
+            Text text = null;
+            TMP_Text textTMP = null;
+            if (nameObj != null)
+            {
+                text = nameObj.GetComponentInChildren<Text>(true);
+                textTMP = nameObj.GetComponentInChildren<TMP_Text>(true);
+            }
+
             if (text != null)
             {
                 text.text = memberName;

@@ -26,6 +26,10 @@ namespace Swole
 
             public string Description => description;
 
+            [Tooltip("If true, only listed in selection windows when running in the editor.")]
+            public bool editorOnly;
+            public bool EditorOnly => editorOnly;
+
             public int AttributeCount => attributes == null ? 0 : attributes.Length;
 
             public int TagCount => tags == null ? 0 : tags.Length;

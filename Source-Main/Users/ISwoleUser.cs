@@ -15,10 +15,19 @@ namespace Swole.User
 
         public void OpenSwoleBucksStore();
 
-        public string FetchCashShop(string storeId);
-  
+        public void FetchCashShop(string storeId, Action<string> callback, Action<string> errorCallback);
+        public void FetchCashShopProduct(string productId, Action<string> callback, Action<string> errorCallback);
+        public void FetchCashShopProductPrice(string productId, Action<float> callback, Action<string> errorCallback);
+        public void FetchCashShopProductCurrencyID(string productId, Action<string> callback, Action<string> errorCallback);
+        public void FetchCashShopProductPriceString(string productId, Action<string> callback, Action<string> errorCallback);
+
+        public bool DoesOwnCashShopProduct(string productId);
+        public void DoesOwnCashShopProduct(string productId, Action<bool> callback, Action<string> errorCallback);
+        public void TryPurchaseCashShopProduct(string productId, float price, string currencyId, Action onSuccess, Action<string> onError);
+
         public void FetchCurrencyBalance(string currencyId, Action<float> callback, Action<string> errorCallback, bool forceRefetch = false);
         public void FetchCurrrencyBalanceAsInt(string currencyId, Action<int> callback, Action<string> errorCallback, bool forceRefetch = false);
+
 
         public int PopupCount { get; }
         public Popup GetPopup(int index);

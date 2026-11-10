@@ -109,14 +109,22 @@ namespace Swole
                         string assetDir = UnityEditor.AssetDatabase.GetAssetPath(mesh);
                         assetDir = Path.GetDirectoryName(assetDir);
                         string assetPath = Path.Combine(assetDir, editedMesh.name + ".asset");
-                        int j = 0;
-                        while(UnityEditor.AssetDatabase.AssetPathExists(assetPath))
+                        /*int j = 0;
+                        while (UnityEditor.AssetDatabase.AssetPathExists(assetPath))
                         {
                             j++;
-                            assetPath = Path.Combine(assetDir, editedMesh.name + "_" + j + ".asset"); 
+                            assetPath = Path.Combine(assetDir, editedMesh.name + "_" + j + ".asset");
+                        }*/
+                        if (UnityEditor.AssetDatabase.AssetPathExists(assetPath))
+                        {
+                            // This deletes the asset file and its corresponding .meta file
+                            UnityEditor.AssetDatabase.DeleteAsset(assetPath);
                         }
 
                         UnityEditor.AssetDatabase.CreateAsset(editedMesh, assetPath);
+                        UnityEditor.AssetDatabase.SaveAssets();
+                        editedMesh = UnityEditor.AssetDatabase.LoadAssetAtPath<Mesh>(assetPath);
+                        UnityEditor.EditorUtility.SetDirty(this);
                         UnityEditor.AssetDatabase.SaveAssets();
 #endif
                     }
@@ -133,6 +141,32 @@ namespace Swole
         public Vector3 eulerOffset;
 
         public bool useCustomSkinning;
+
+        /// <summary>
+        /// Stores the original inputs/settings used by the Mesh Binding Baker editor window, so that the window
+        /// can be reopened later with the same targets and settings to regenerate this asset. This data is only
+        /// relevant/serialized in the editor and has no effect on runtime behaviour. Since the source/target
+        /// meshes are project assets (not scene objects), storing the raw references is sufficient.
+        /// </summary>
+        [Serializable]
+        public class GenerationSettings
+        {
+#if UNITY_EDITOR
+            [SerializeField]
+#endif
+            public Mesh targetMesh;
+#if UNITY_EDITOR
+            [SerializeField]
+#endif
+            public float normalPenalty;
+        }
+
+#if UNITY_EDITOR
+        [SerializeField]
+#endif
+        protected GenerationSettings generationSettings;
+        public GenerationSettings GetGenerationSettings() => generationSettings;
+        public void SetGenerationSettings(GenerationSettings settings) => generationSettings = settings;
 
         [System.Serializable, StructLayout(LayoutKind.Sequential)]
         public struct VertexBinding
@@ -233,7 +267,7 @@ namespace Swole
                                 boneWeights_.Length, UnsafeUtility.SizeOf<BoneWeight8Float>());
                             boneWeightsBuffer.SetData(boneWeights_);  
 
-                            Debug.Log("CREATED BONE WEIGHTS BUFFER FOR MESH: " + mesh.name + " with vertex count: " + boneWeights_.Length);
+                            //Debug.Log("CREATED BONE WEIGHTS BUFFER FOR MESH: " + mesh.name + " with vertex count: " + boneWeights_.Length);
                         }
                     }
                 }

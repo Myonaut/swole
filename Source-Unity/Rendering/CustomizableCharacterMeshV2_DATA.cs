@@ -204,6 +204,7 @@ namespace Swole.Morphing
         public int RaycastLOD => Data.RaycastLOD;
 
         public UVChannelURP NearestVertexUVChannel => Data.NearestVertexUVChannel;
+        public UVChannelURP NearestVertexIndexUVChannel => Data.NearestVertexIndexUVChannel;
         public RGBAChannel NearestVertexIndexElement => Data.NearestVertexIndexElement;
 
         public string ConvertDefaultMuscleGroupName(MuscleGroupsDefault defaultGroup) => Data.ConvertDefaultMuscleGroupName(defaultGroup);
@@ -293,6 +294,14 @@ namespace Swole.Morphing
         public ComputeBuffer MeshShapeFrameWeightsBuffer => Data.MeshShapeFrameWeightsBuffer;
         public ComputeBuffer MeshShapeIndicesBuffer => Data.MeshShapeIndicesBuffer;
         public ComputeBuffer VertexColorDeltasBuffer => Data.VertexColorDeltasBuffer;
+
+        public float GetMuscleMassKilograms(string groupName) => Data.GetMuscleMassKilograms(groupName);
+
+        public float GetMuscleMassKilograms(int groupIndex) => Data.GetMuscleMassKilograms(groupIndex);
+
+        public float GetFatKilograms(string groupName) => GetFatKilograms(groupName);
+
+        public float GetFatKilograms(int groupIndex) => GetFatKilograms(groupIndex); 
 
     }
 }

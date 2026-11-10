@@ -1,4 +1,4 @@
-#if (UNITY_STANDALONE || UNITY_EDITOR)
+﻿#if (UNITY_STANDALONE || UNITY_EDITOR)
 
 using System;
 using System.Collections;
@@ -601,31 +601,18 @@ namespace Swole.API.Unity
                     script = value;
                 }
             }
-            protected Dictionary<string, ResizableWindowState> windowStates = new Dictionary<string, ResizableWindowState>();
-            public ResizableWindowState GetWindowState(string id)
-            {
-                if (windowStates.TryGetValue(id, out var state)) return state;
-                return default;
-            }
-            public bool TryGetWindowState(string id, out ResizableWindowState state)
-            {
-                return windowStates.TryGetValue(id, out state);
-            }
+            protected ResizableWindowStateCollection windowStates = new ResizableWindowStateCollection();
+            public ResizableWindowStateCollection WindowStateCollection => windowStates;
+            public ResizableWindowState GetWindowState(string id) => windowStates.Get(id);
+            public bool TryGetWindowState(string id, out ResizableWindowState state) => windowStates.TryGet(id, out state);
             public void SetWindowState(string id, ResizableWindowState state) 
             {
-                state.id = id;
-                windowStates[id] = state;
+                windowStates.Set(id, state);
                 MarkProjectAsDirty(); 
             }
             public ResizableWindowState[] WindowStates 
             { 
-                get
-                {
-                    var temp = windowStates.Values;
-                    var array = new ResizableWindowState[temp.Count];
-                    temp.CopyTo(array, 0); 
-                    return array;
-                }
+                get => windowStates.ToArray();
 
                 set
                 {
@@ -637,12 +624,12 @@ namespace Swole.API.Unity
                     if (isActiveProj) builder.CloseFloatingWindows();
                     if (windowStates == null) return;
 
-                    windowStates.Clear();
+                    windowStates.SetAll(value);
+                    using var restoreScope = UIWindowStateTracker.BeginRestoreScope(); // Opening windows below must not overwrite the saved data (including order) with live values
                     if (value != null) 
                         foreach (var state in value) 
                             if (!string.IsNullOrWhiteSpace(state.id))
                             {
-                                windowStates[state.id] = state;
                                 if (state.id == windowStateID_objectPalette)
                                 {
                                     var palette = !isActiveProj || builder.PrefabHandler == null ? null : builder.prefabHandler.tilePickerWindow;
@@ -703,6 +690,7 @@ namespace Swole.API.Unity
                                     }
                                 }
                             }
+                    UIWindowStateTracker.ApplyOrder(windowStates); // Open methods bring windows to the front, so restore the saved order afterwards
                 }
             }
 
@@ -1313,72 +1301,41 @@ namespace Swole.API.Unity
 
             OpenStatefulEditorWindow(windowStateID, proj, editorWindow, editorWindowRT, canvasRT);
         }
+        protected readonly ResizableWindowStateCollection defaultWindowStates = new ResizableWindowStateCollection();
+        protected readonly Dictionary<string, (RectTransform window, RectTransform canvas)> openedWindows = new Dictionary<string, (RectTransform, RectTransform)>();
+
+        /// <summary>
+        /// Restores the position and size of every stateful editor window opened so far to the defaults captured when it was first opened.
+        /// </summary>
+        public void ResetWindowsToDefault()
+        {
+            foreach (var entry in openedWindows)
+            {
+                if (entry.Value.window == null || !defaultWindowStates.TryGet(entry.Key, out var state)) continue;
+                state.visible = entry.Value.window.gameObject.activeSelf;
+                state.ApplyWindowState(entry.Value.window, entry.Value.canvas);
+            }
+        }
+
         public void OpenStatefulEditorWindow(string windowStateID, Project proj, GameObject editorWindow) => OpenStatefulEditorWindow(windowStateID, proj, editorWindow, out _, out _, out _);
         public void OpenStatefulEditorWindow(string windowStateID, Project proj, GameObject editorWindow, RectTransform editorWindowRT, RectTransform canvasRT)
         {
             if (proj == null) return;
 
-            UIResizer editorResizer = null;
-            UIPopup editorPopup = null;
-
-
-            if (proj.TryGetWindowState(windowStateID, out var state))
+            if (editorWindowRT != null && !defaultWindowStates.TryGet(windowStateID, out _))
             {
-                state.visible = true;
-                state.ApplyWindowState(editorWindowRT, canvasRT);
-                proj.SetWindowState(windowStateID, state);
+                defaultWindowStates.Set(windowStateID, editorWindowRT.AsResizableWindowState(true, canvasRT));
             }
+            if (editorWindowRT != null) openedWindows[windowStateID] = (editorWindowRT, canvasRT);
 
-            void OnClose()
+            // Shared tracker restores the saved state, then keeps it current as the window changes.
+            UIWindowStateTracker.Track(editorWindowRT, windowStateID, proj.WindowStateCollection, canvasRT, true, proj.MarkProjectAsDirty, () => proj != null && proj.IsValid);
+
+            var editorPopup = editorWindow.GetComponentInChildren<UIPopup>(true);
+            if (editorPopup == null)
             {
-                if (proj == null || !proj.IsValid)
-                {
-                    proj = null;
-                    return;
-                }
-
-                proj.SetWindowState(windowStateID, editorWindowRT.AsResizableWindowState(false, canvasRT));
-                if (editorPopup != null) editorPopup.OnDragStep?.RemoveAllListeners();
-                if (editorResizer != null) editorResizer.OnDragStep?.RemoveAllListeners();
-                editorPopup = null;
-                editorResizer = null;
+                CustomEditorUtils.SetButtonOnClickActionByName(editorWindow, str_close, () => editorWindow.SetActive(false), true, true, false);
             }
-            void OnDrag()
-            {
-                if (proj == null || !proj.IsValid)
-                {
-                    proj = null;
-                    return;
-                }
-
-                proj.SetWindowState(windowStateID, editorWindowRT.AsResizableWindowState(true, canvasRT));
-            }
-            editorPopup = editorWindow.GetComponentInChildren<UIPopup>(true);
-            if (editorPopup != null)
-            {
-                if (editorPopup.OnDragStep == null) editorPopup.OnDragStep = new UnityEvent(); else editorPopup.OnDragStep.RemoveAllListeners();
-                editorPopup.OnDragStep.AddListener(OnDrag);
-
-                if (editorPopup.OnClose == null) editorPopup.OnClose = new UnityEvent(); else editorPopup.OnClose.RemoveAllListeners();
-                editorPopup.OnClose.AddListener(OnClose);
-            }
-            else
-            {
-                CustomEditorUtils.SetButtonOnClickActionByName(editorWindow, str_close, () =>
-                {
-                    OnClose();
-                    editorWindow.SetActive(false);
-                }, true, true, false);
-            }
-
-            editorResizer = editorWindow.GetComponentInChildren<UIResizer>(true);
-            if (editorResizer != null)
-            {
-                if (editorResizer.OnDragStep == null) editorResizer.OnDragStep = new UnityEvent(); else editorResizer.OnDragStep.RemoveAllListeners();
-                editorResizer.OnDragStep.AddListener(OnDrag);
-            }
-
-            proj.SetWindowState(windowStateID, editorWindowRT.AsResizableWindowState(true, canvasRT));
         }
 
         [Tooltip("A window for editing an object's properties, such as name and transform.")]
@@ -3826,7 +3783,8 @@ namespace Swole.API.Unity
                         return;
                     }
 
-                    proj.SetWindowState(layer.ToString(), editorWindowRT.AsResizableWindowState(false, canvasRT));
+                    var closedTracker = editorWindowRT == null ? null : editorWindowRT.GetComponent<UIWindowStateTracker>();
+                    if (closedTracker != null) closedTracker.MarkClosed();
                     codeEditCallback?.Invoke(source);
                     if (editorPopup != null) editorPopup.OnDragStep?.RemoveAllListeners();
                     if (editorResizer != null) editorResizer.OnDragStep?.RemoveAllListeners(); 
@@ -3839,12 +3797,10 @@ namespace Swole.API.Unity
                 canvas = editorWindow.GetComponentInParent<Canvas>();
                 canvasRT = canvas == null ? null : canvas.GetComponent<RectTransform>();
 
-                if (proj.TryGetWindowState(layer.ToString(), out var state))
-                {
-                    state.visible = true;
-                    state.ApplyWindowState(editorWindowRT, canvasRT);
-                    proj.SetWindowState(layer.ToString(), state); 
-                }
+                var layerWindowID = layer.ToString();
+                if (!defaultWindowStates.TryGet(layerWindowID, out _)) defaultWindowStates.Set(layerWindowID, editorWindowRT.AsResizableWindowState(true, canvasRT));
+                openedWindows[layerWindowID] = (editorWindowRT, canvasRT);
+                UIWindowStateTracker.Track(editorWindowRT, layerWindowID, proj.WindowStateCollection, canvasRT, true, proj.MarkProjectAsDirty, () => proj != null && proj.IsValid);
 
                 proj.activeCodeEditorWindows[layer] = editorWindowRT;
                 if (IsInTestMode)
@@ -3871,28 +3827,8 @@ namespace Swole.API.Unity
                         CustomEditorUtils.SetButtonInteractableByName(editorWindow, str_recompile, false);
                     }
                 }
-                void OnDrag()
-                {
-                    if (proj == null || !proj.IsValid)
-                    {
-                        proj = null;
-                        return;
-                    }
-
-                    proj.SetWindowState(layer.ToString(), editorWindowRT.AsResizableWindowState(true, canvasRT));
-                }
                 editorPopup = editor == null || editor.Window == null || editor.Window.rootWindowElement == null ? editorWindow.GetComponentInChildren<UIPopup>(true) : editor.Window.rootWindowElement; 
-                if (editorPopup != null)
-                {
-                    if (editorPopup.OnDragStep == null) editorPopup.OnDragStep = new UnityEvent(); else editorPopup.OnDragStep.RemoveAllListeners();
-                    editorPopup.OnDragStep.AddListener(OnDrag);
-                }
                 editorResizer = editor == null || editor.Window == null || editor.Window.resizer == null ? editorWindow.GetComponentInChildren<UIResizer>(true) : editor.Window.resizer;
-                if (editorResizer != null)
-                {
-                    if (editorResizer.OnDragStep == null) editorResizer.OnDragStep = new UnityEvent(); else editorResizer.OnDragStep.RemoveAllListeners();
-                    editorResizer.OnDragStep.AddListener(OnDrag);
-                }
             }
             if (editor != null) 
             {

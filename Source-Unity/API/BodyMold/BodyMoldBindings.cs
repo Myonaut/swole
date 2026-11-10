@@ -43,60 +43,60 @@ namespace Swole.API.Unity
                 var vertices = meshLod.mesh.vertices;
                 var normals = meshLod.mesh.normals;
                 var tangents = meshLod.mesh.tangents;
-                var colors = meshLod.mesh.colors;
-                if (colors == null || colors.Length != vertices.Length)
+                var indexUVs = meshLod.mesh.GetUVsByChannelV4(bindings.vertexIndexUVChannel);
+                if (indexUVs == null || indexUVs.Length != vertices.Length)
                 {
-                    colors = new Color[vertices.Length];
-                    for (int a = 0; a < colors.Length; a++)
+                    indexUVs = new Vector4[vertices.Length];
+                    for (int a = 0; a < indexUVs.Length; a++)
                     {
-                        colors[a] = Color.white;
+                        indexUVs[a] = Vector4.zero;
                     }
                 }
 
                 if (ReferenceEquals(highestDetailMesh, this))
                 {
-                    switch (bindings.vertexIndexChannel)
+                    switch (bindings.vertexIndexUVChannelElement)
                     {
                         case RGBAChannel.R:
                             {
-                                for (int i = 0; i < colors.Length; i++)
+                                for (int i = 0; i < indexUVs.Length; i++)
                                 {
-                                    var c = colors[i];
-                                    c.r = i;
-                                    colors[i] = c; 
+                                    var c = indexUVs[i];
+                                    c.x = i;
+                                    indexUVs[i] = c; 
                                 }
                             }
                             break;
 
                         case RGBAChannel.G:
                             {
-                                for (int i = 0; i < colors.Length; i++)
+                                for (int i = 0; i < indexUVs.Length; i++)
                                 {
-                                    var c = colors[i];
-                                    c.g = i;
-                                    colors[i] = c;
+                                    var c = indexUVs[i];
+                                    c.y = i;
+                                    indexUVs[i] = c;
                                 }
                             }
                             break;
 
                         case RGBAChannel.B:
                             {
-                                for (int i = 0; i < colors.Length; i++)
+                                for (int i = 0; i < indexUVs.Length; i++)
                                 {
-                                    var c = colors[i];
-                                    c.b = i;
-                                    colors[i] = c;
+                                    var c = indexUVs[i];
+                                    c.z = i;
+                                    indexUVs[i] = c;
                                 }
                             }
                             break;
 
                         case RGBAChannel.A:
                             {
-                                for (int i = 0; i < colors.Length; i++)
+                                for (int i = 0; i < indexUVs.Length; i++)
                                 {
-                                    var c = colors[i];
-                                    c.a = i;
-                                    colors[i] = c;
+                                    var c = indexUVs[i];
+                                    c.w = i;
+                                    indexUVs[i] = c;
                                 }
                             }
                             break;
@@ -118,55 +118,55 @@ namespace Swole.API.Unity
                         MeshDataTools.FindClosestVertices(lodV, baseV, nearestVertices);
                     }
 
-                    switch (bindings.vertexIndexChannel)
+                    switch (bindings.vertexIndexUVChannelElement)
                     {
                         case RGBAChannel.R:
                             {
-                                for (int i = 0; i < colors.Length; i++)
+                                for (int i = 0; i < indexUVs.Length; i++)
                                 {
-                                    var c = colors[i];
-                                    c.r = nearestVertices[i];
-                                    colors[i] = c;
+                                    var c = indexUVs[i];
+                                    c.x = nearestVertices[i];
+                                    indexUVs[i] = c;
                                 }
                             }
                             break;
 
                         case RGBAChannel.G:
                             {
-                                for (int i = 0; i < colors.Length; i++)
+                                for (int i = 0; i < indexUVs.Length; i++)
                                 {
-                                    var c = colors[i];
-                                    c.g = nearestVertices[i];
-                                    colors[i] = c;
+                                    var c = indexUVs[i];
+                                    c.y = nearestVertices[i];
+                                    indexUVs[i] = c;
                                 }
                             }
                             break;
 
                         case RGBAChannel.B:
                             {
-                                for (int i = 0; i < colors.Length; i++)
+                                for (int i = 0; i < indexUVs.Length; i++)
                                 {
-                                    var c = colors[i];
-                                    c.b = nearestVertices[i];
-                                    colors[i] = c;
+                                    var c = indexUVs[i];
+                                    c.z = nearestVertices[i];
+                                    indexUVs[i] = c;
                                 }
                             }
                             break;
 
                         case RGBAChannel.A:
                             {
-                                for (int i = 0; i < colors.Length; i++)
+                                for (int i = 0; i < indexUVs.Length; i++)
                                 {
-                                    var c = colors[i];
-                                    c.a = nearestVertices[i];
-                                    colors[i] = c;
+                                    var c = indexUVs[i];
+                                    c.w = nearestVertices[i];
+                                    indexUVs[i] = c;
                                 }
                             }
                             break;
                     }
                 }
 
-                meshLod.mesh.colors = colors;
+                meshLod.mesh.SetUVs((int)bindings.vertexIndexUVChannel, indexUVs);
 
                 var blendShapes = meshLod.mesh.GetBlendShapes();
                 bool hasBlendShapes = blendShapes.Count > 0;
@@ -250,10 +250,11 @@ namespace Swole.API.Unity
                 } 
 
                 UnityEditor.AssetDatabase.CreateAsset(meshLod.mesh, assetPath);
-                UnityEditor.AssetDatabase.SaveAssets();
-
                 var origPath = UnityEditor.AssetDatabase.GetAssetPath(originalMesh);
                 originalMeshHash = UnityEditor.AssetDatabase.GetAssetDependencyHash(origPath).ToString();
+
+                UnityEditor.EditorUtility.SetDirty(bindings);
+                UnityEditor.AssetDatabase.SaveAssets(); 
             }
 #endif
 
@@ -268,12 +269,13 @@ namespace Swole.API.Unity
                         var meshPath = UnityEditor.AssetDatabase.GetAssetPath(originalMesh);
                         var meshHash = UnityEditor.AssetDatabase.GetAssetDependencyHash(meshPath);
                         var origHash = Hash128.Parse(originalMeshHash);
-                        flag = meshHash != origHash;
+                        flag = meshHash != origHash; 
                     }
 
                     if (flag)
                     {
-                        RegenerateMesh(bindings.GetGeneratedMesh(0), bindings); 
+                        Debug.Log($"REGENERATING MESH {originalMesh.name} FOR {bindings.name}"); 
+                        RegenerateMesh(bindings.GetGeneratedMesh(0), bindings);  
                     }
                 }
 #endif
@@ -283,7 +285,9 @@ namespace Swole.API.Unity
         }
 
         [SerializeField]
-        public RGBAChannel vertexIndexChannel = RGBAChannel.R;
+        public UVChannelURP vertexIndexUVChannel = UVChannelURP.UV3;
+        [SerializeField]
+        public RGBAChannel vertexIndexUVChannelElement = RGBAChannel.R;
         [SerializeField]
         public bool useUVsToFindClosestVertex = true;
         [SerializeField]
@@ -323,6 +327,205 @@ namespace Swole.API.Unity
         protected Material[] materials;
         public void SetMaterials(Material[] mats) => materials = mats;
         public Material[] GetMaterials() => materials;
+
+        /// <summary>
+        /// Stores the original inputs/settings used by the Body Mold Binding Generator editor window, so that
+        /// the window can be reopened later with the same targets and settings to regenerate this asset.
+        /// This data is only relevant/serialized in the editor and has no effect on runtime behaviour.
+        /// </summary>
+        /// <summary>
+        /// A reference to a SkinnedMeshRenderer that lives in a scene rather than as a project asset. Since scene
+        /// object references stored on a project asset are unreliable (Unity will report a "type mismatch" in the
+        /// inspector, and the reference can silently break), this also stores the referenced GameObject's instance ID
+        /// and name so that, if the direct reference is ever null, the object can be relocated in the currently open
+        /// scene(s) as a fallback (instance ID first, then name).
+        /// </summary>
+        [Serializable]
+        public class SceneRendererRef
+        {
+#if UNITY_EDITOR
+            [SerializeField]
+#endif
+            protected SkinnedMeshRenderer renderer;
+#if UNITY_EDITOR
+            [SerializeField]
+#endif
+            protected int instanceID;
+#if UNITY_EDITOR
+            [SerializeField]
+#endif
+            protected string objectName;
+
+#if UNITY_EDITOR
+            public static SceneRendererRef Create(SkinnedMeshRenderer renderer)
+            {
+                if (renderer == null) return null;
+                return new SceneRendererRef
+                {
+                    renderer = renderer,
+                    instanceID = renderer.gameObject.GetInstanceID(),
+                    objectName = renderer.gameObject.name
+                };
+            }
+
+            /// <summary>
+            /// Returns the referenced renderer. Only if the stored reference is null does this fall back to
+            /// searching the currently open scene(s) for a matching GameObject, first by instance ID then by name.
+            /// </summary>
+            public SkinnedMeshRenderer Resolve()
+            {
+                if (renderer != null) return renderer;
+
+                if (instanceID == 0 && string.IsNullOrEmpty(objectName)) return null;
+
+                var allRenderers = UnityEngine.Object.FindObjectsByType<SkinnedMeshRenderer>(FindObjectsInactive.Include, FindObjectsSortMode.None);
+
+                if (instanceID != 0)
+                {
+                    foreach (var r in allRenderers)
+                    {
+                        if (r != null && r.gameObject.GetInstanceID() == instanceID)
+                        {
+                            renderer = r;
+                            return renderer;
+                        }
+                    }
+                }
+
+                if (!string.IsNullOrEmpty(objectName))
+                {
+                    foreach (var r in allRenderers)
+                    {
+                        if (r != null && r.gameObject.name == objectName)
+                        {
+                            renderer = r;
+                            return renderer;
+                        }
+                    }
+                }
+
+                return null;
+            }
+#endif
+        }
+
+        [Serializable]
+        public class GenerationSettings
+        {
+            [Serializable]
+            public class LODEntry
+            {
+#if UNITY_EDITOR
+                [SerializeField]
+#endif
+                public Mesh mesh;
+#if UNITY_EDITOR
+                [SerializeField]
+#endif
+                public float screenRelativeTransitionHeight;
+            }
+
+            [Serializable]
+            public class BodyMeshEntry
+            {
+#if UNITY_EDITOR
+                [SerializeField]
+#endif
+                public SceneRendererRef renderer;
+#if UNITY_EDITOR
+                [SerializeField]
+#endif
+                public bool maskOnly;
+#if UNITY_EDITOR
+                [SerializeField]
+#endif
+                public float weight;
+            }
+
+#if UNITY_EDITOR
+            [SerializeField]
+#endif
+            public SceneRendererRef clothingRenderer;
+#if UNITY_EDITOR
+            [SerializeField]
+#endif
+            public float mainClothingMeshScreenRelativeTransitionHeight;
+#if UNITY_EDITOR
+            [SerializeField]
+#endif
+            public LODEntry[] additionalClothingLODs;
+#if UNITY_EDITOR
+            [SerializeField]
+#endif
+            public Material[] materials;
+#if UNITY_EDITOR
+            [SerializeField]
+#endif
+            public string bindingShapeName;
+#if UNITY_EDITOR
+            [SerializeField]
+#endif
+            public float bindingShapeWeight;
+#if UNITY_EDITOR
+            [SerializeField]
+#endif
+            public bool dynamicBoneWeights;
+#if UNITY_EDITOR
+            [SerializeField]
+#endif
+            public UVChannelURP vertexIndexUVChannel;
+#if UNITY_EDITOR
+            [SerializeField]
+#endif
+            public RGBAChannel vertexIndexUVChannelElement;
+#if UNITY_EDITOR
+            [SerializeField]
+#endif
+            public bool useUVsToFindClosestVertex;
+#if UNITY_EDITOR
+            [SerializeField]
+#endif
+            public UVChannelURP nearestVertexUVChannel;
+#if UNITY_EDITOR
+            [SerializeField]
+#endif
+            public Vector3 eulerOffset;
+#if UNITY_EDITOR
+            [SerializeField]
+#endif
+            public BodyMeshEntry[] bodyMeshAssets;
+#if UNITY_EDITOR
+            [SerializeField]
+#endif
+            public bool maskByDistanceToFirst;
+#if UNITY_EDITOR
+            [SerializeField]
+#endif
+            public string clothingVertexMaskName;
+#if UNITY_EDITOR
+            [SerializeField]
+#endif
+            public float distanceBindingWeight;
+#if UNITY_EDITOR
+            [SerializeField]
+#endif
+            public bool includeCollisionTriangles;
+#if UNITY_EDITOR
+            [SerializeField]
+#endif
+            public bool includePushBackVertices;
+#if UNITY_EDITOR
+            [SerializeField]
+#endif
+            public bool includeCoverageMask;
+        }
+
+#if UNITY_EDITOR
+        [SerializeField]
+#endif
+        protected GenerationSettings generationSettings;
+        public GenerationSettings GetGenerationSettings() => generationSettings;
+        public void SetGenerationSettings(GenerationSettings settings) => generationSettings = settings;
 
         public bool dynamicBoneWeights;
         public Vector3 eulerOffset; 

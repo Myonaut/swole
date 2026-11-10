@@ -95,7 +95,7 @@ namespace Swole
 
         protected int lastQueryFrame;
 
-        private static int CompareRaycastResultDepth(RaycastResult a, RaycastResult b) => Mathf.Approximately(a.distance, b.distance) ? a.depth.CompareTo(b.depth) : a.distance.CompareTo(b.distance);
+        private static int CompareRaycastResultDepth(RaycastResult a, RaycastResult b) =>  Mathf.Approximately(a.distance, b.distance) ? b.depth.CompareTo(a.depth) : a.distance.CompareTo(b.distance); 
         public List<GameObject> GetObjectsUnderCursorLocal(List<GameObject> appendList = null, bool forceQuery = false, bool updateRaycasters = false) 
         {
             int frame = Time.frameCount;
@@ -146,9 +146,15 @@ namespace Swole
 
             results.Sort(CompareRaycastResultDepth);
 
+            //int i = 0;
             foreach(var result in results)
             {
-                if (result.gameObject != null) objectsUnderCursor.Add(result.gameObject);
+                if (result.gameObject != null)
+                {
+                    objectsUnderCursor.Add(result.gameObject);
+                    //Debug.LogError($"{i}: {result.gameObject.name}");
+                    //i++;
+                }
             }
 
             if (appendList != null)

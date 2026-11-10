@@ -1662,8 +1662,14 @@ namespace Swole
         public void SetBuffer(ComputeBuffer buffer) => SetBuffer(propertyName, buffer);
         public void SetBuffer(string propertyName, ComputeBuffer buffer)
         {
-            if (material != null) material.SetBuffer(propertyName, buffer);
-            if (computeShader != null) computeShader.SetBuffer(kernelIndex, propertyName, buffer);
+            if (material != null)
+            {
+                material.SetBuffer(propertyName, buffer);
+            }
+            if (computeShader != null)
+            {
+                computeShader.SetBuffer(kernelIndex, propertyName, buffer);
+            }
         }
     }
     public interface IInstanceBuffer : IDisposable
@@ -1791,6 +1797,8 @@ namespace Swole
         public bool IsValid() => bufferPool != null && bufferPool.IsValid();
 
         public ComputeBuffer BufferThisFrame => bufferPool == null ? null : bufferPool.ActiveBuffer;
+        public int BufferPoolSize => bufferPool == null ? 0 : bufferPool.BufferPoolSize;
+        public ComputeBuffer GetPooledBuffer(int index) => bufferPool == null ? null : bufferPool.GetPooledBuffer(index);
 
 
         public bool WriteToBuffer(int index, T data)

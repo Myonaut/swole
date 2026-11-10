@@ -10,6 +10,9 @@ namespace Swole
         public string ID { get; }
         public string Description { get; }
 
+        /// <summary>If true, this asset is only listed in selection windows when running in the editor.</summary>
+        public bool EditorOnly { get; }
+
         public int AttributeCount { get; }
         public string GetAttribute(int index);
         public bool HasAttribute(string attribute);
@@ -49,6 +52,16 @@ namespace Swole
             }
 
             return list;
+        }
+
+        public static bool IsSelectable(this ISelectableAsset asset)
+        {
+            if (asset == null) return false;
+#if UNITY_EDITOR
+            return true;
+#else
+            return !asset.EditorOnly;
+#endif
         }
 
         public static string GetAttributeValue(this ISelectableAsset asset, string attributePrefix)

@@ -897,7 +897,17 @@ namespace Swole
 
 #endif
 
-#endregion
+        #endregion
+
+        #region Time
+
+        public static float DeltaTime => Engine.Time_DeltaTime();
+
+        public static float Time => Engine.Time_Time();
+
+        public static int Frame => Engine.Time_Frame(); 
+
+        #endregion
 
     }
 

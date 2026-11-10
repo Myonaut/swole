@@ -290,18 +290,31 @@ namespace Swole.API.Unity
             }
         }
 
+        private static readonly List<T> toDestroy = new List<T>();
         public void Reinitialize(T prototype, PoolGrowthMethod growthMethod, int growthFactor, int initialSize, int maxSize)
         {
             initialized = false;
 
-            if (pooledObjects != null) foreach (var obj in pooledObjects) if (obj != null)
-                    {
-                        if (obj is GameObject go) UnityEngine.Object.DestroyImmediate(go); else if (obj is Component comp) UnityEngine.Object.Destroy(comp.gameObject); else UnityEngine.Object.Destroy(obj);
-                    }
-            if (claimedObjects != null) foreach (var obj in claimedObjects) if (obj != null)
-                    {
-                        if (obj is GameObject go) UnityEngine.Object.DestroyImmediate(go); else if (obj is Component comp) UnityEngine.Object.Destroy(comp.gameObject); else UnityEngine.Object.Destroy(obj);
-                    }
+            if (pooledObjects != null)
+            {
+                toDestroy.Clear();
+                toDestroy.AddRange(pooledObjects);
+                foreach (var obj in toDestroy) if (obj != null)
+                {
+                    if (obj is GameObject go) UnityEngine.Object.DestroyImmediate(go); else if (obj is Component comp) UnityEngine.Object.Destroy(comp.gameObject); else UnityEngine.Object.Destroy(obj);
+                }
+                toDestroy.Clear();
+            }
+            if (claimedObjects != null)
+            {
+                toDestroy.Clear();
+                toDestroy.AddRange(claimedObjects);
+                foreach (var obj in toDestroy) if (obj != null)
+                {
+                    if (obj is GameObject go) UnityEngine.Object.DestroyImmediate(go); else if (obj is Component comp) UnityEngine.Object.Destroy(comp.gameObject); else UnityEngine.Object.Destroy(obj);
+                }
+                toDestroy.Clear(); 
+            }
 
             pooledObjects?.Clear();
             claimedObjects?.Clear();
