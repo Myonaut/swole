@@ -115,7 +115,11 @@ namespace Swole
                             j++;
                             assetPath = Path.Combine(assetDir, editedMesh.name + "_" + j + ".asset");
                         }*/
+#if UNITY_6000_0_OR_NEWER
                         if (UnityEditor.AssetDatabase.AssetPathExists(assetPath))
+#else
+                        if (UnityEditor.AssetDatabase.LoadAssetAtPath<Mesh>(assetPath) != null)
+#endif
                         {
                             // This deletes the asset file and its corresponding .meta file
                             UnityEditor.AssetDatabase.DeleteAsset(assetPath);

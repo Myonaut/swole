@@ -2268,7 +2268,9 @@ namespace Swole.Morphing
             animatablePropertiesController = controller;
             if (animatablePropertiesController == null)
             {
-                Debug.LogError($"AnimatablePropertiesController is null for {name}");
+#if UNITY_EDITOR
+                Debug.LogWarning($"AnimatablePropertiesController is null for {name}");
+#endif
                 return;
             }
 

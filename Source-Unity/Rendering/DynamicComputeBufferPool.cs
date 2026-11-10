@@ -301,7 +301,9 @@ namespace Swole
             
             if (invalid || bufferPool == null)
             {
-                Debug.LogError($"Could not upload invalid buffer {Name}"); 
+#if UNITY_EDITOR
+                Debug.LogError($"Could not upload invalid buffer {Name}");
+#endif
                 return;
             }
 

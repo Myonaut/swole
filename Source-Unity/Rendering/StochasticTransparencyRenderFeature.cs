@@ -1,3 +1,5 @@
+#if UNITY_6000_0_OR_NEWER
+
 using UnityEngine;
 using UnityEngine.Rendering;
 using UnityEngine.Rendering.Universal;
@@ -194,3 +196,5 @@ namespace Swole.Rendering
     }
 
 }
+
+#endif

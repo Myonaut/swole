@@ -53,7 +53,11 @@ namespace SplineMesh {
             [Tooltip("Material to apply on the bent mesh.")]
             public Material material;
             [Tooltip("Physic material to apply on the bent mesh.")]
+#if UNITY_6000_0_OR_NEWER
             public PhysicsMaterial physicMaterial;
+#else
+            public PhysicMaterial physicMaterial;
+#endif
             [Tooltip("Translation to apply on the mesh before bending it.")]
             public Vector3 translation;
             [Tooltip("Rotation to apply on the mesh before bending it.")]
@@ -161,9 +165,17 @@ namespace SplineMesh {
             public int lodIndex;
             public Material[] materials;
             public bool useCollider;
+#if UNITY_6000_0_OR_NEWER
             public PhysicsMaterial physicMaterial;
+#else
+            public PhysicMaterial physicMaterial;
+#endif
 
+#if UNITY_6000_0_OR_NEWER
             public bool IsMatch(int lodIndex, Material[] materials, bool useCollider, PhysicsMaterial physicMaterial)
+#else
+            public bool IsMatch(int lodIndex, Material[] materials, bool useCollider, PhysicMaterial physicMaterial)
+#endif
             {
                 if (this.lodIndex != lodIndex) return false;
                 if (this.useCollider != useCollider) return false;
@@ -190,7 +202,11 @@ namespace SplineMesh {
                 instances.Add(instance); 
             }
 
+#if UNITY_6000_0_OR_NEWER
             public bool IsMatch(int lodIndex, Material[] materials, bool useCollider, PhysicsMaterial physicMaterial)
+#else
+            public bool IsMatch(int lodIndex, Material[] materials, bool useCollider, PhysicMaterial physicMaterial)
+#endif
             {
                 return combineKey.IsMatch(lodIndex, materials, useCollider, physicMaterial);
             }
@@ -439,7 +455,12 @@ namespace SplineMesh {
 
                         var collider = renderingObj.GetComponent<MeshCollider>();
                         bool useCollider = collider != null && collider.enabled;
+
+#if UNITY_6000_0_OR_NEWER
                         PhysicsMaterial physicMaterial = collider.sharedMaterial;
+#else
+                        PhysicMaterial physicMaterial = collider.sharedMaterial;
+#endif
 
                         CombineMeshGroup combineGroup = null;
                         if (combineLodGroup.groups != null)
@@ -619,7 +640,13 @@ namespace SplineMesh {
 
             return res;
         }
-        private GameObject FindOrCreate(string name, MeshBender.FillingMode fillingMode, List<MeshLOD> meshes, Material material, PhysicsMaterial physicMaterial, Vector3 translation, Vector3 rotation, Vector3 scale, out SourceMesh sourceMesh)
+
+#if UNITY_6000_0_OR_NEWER
+            private GameObject FindOrCreate(string name, MeshBender.FillingMode fillingMode, List<MeshLOD> meshes, Material material, PhysicsMaterial physicMaterial, Vector3 translation, Vector3 rotation, Vector3 scale, out SourceMesh sourceMesh)
+#else
+            private GameObject FindOrCreate(string name, MeshBender.FillingMode fillingMode, List<MeshLOD> meshes, Material material, PhysicMaterial physicMaterial, Vector3 translation, Vector3 rotation, Vector3 scale, out SourceMesh sourceMesh)
+#endif
+
         {
             sourceMesh = default;
 
